@@ -16,14 +16,30 @@ def payload_hash(payload: dict[str, Any]) -> str:
 
 
 def to_openai_messages(messages: list[Message]) -> list[dict[str, Any]]:
-    return [
-        {
+    payloads: list[dict[str, Any]] = []
+    for message in messages:
+        item: dict[str, Any] = {
             "role": message.role,
             "content": message.content,
-            **({"name": message.name} if message.name else {}),
         }
-        for message in messages
-    ]
+        if message.name:
+            item["name"] = message.name
+        if message.tool_call_id:
+            item["tool_call_id"] = message.tool_call_id
+        if message.tool_calls:
+            item["tool_calls"] = [
+                {
+                    "id": call.tool_call_id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": json.dumps(call.arguments, ensure_ascii=True, sort_keys=True),
+                    },
+                }
+                for call in message.tool_calls
+            ]
+        payloads.append(item)
+    return payloads
 
 
 def parse_usage(

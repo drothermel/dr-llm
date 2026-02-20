@@ -196,15 +196,18 @@ class SessionClient:
                 if strategy == "native" and state.strategy_mode.value == "native_only" and not adapter.capabilities.supports_native_tools:
                     raise ValueError("Session configured native_only, but provider does not support native tools")
 
-                assistant_tool_request_text = initial_response.text.strip()
-                if assistant_tool_request_text:
-                    conversation.append(Message(role="assistant", content=assistant_tool_request_text))
-                    self._repository.append_session_event(
-                        session_id=input.session_id,
-                        turn_id=turn_id,
-                        event_type="message",
-                        payload={"message": Message(role="assistant", content=assistant_tool_request_text).model_dump(mode="json")},
-                    )
+                assistant_tool_request = Message(
+                    role="assistant",
+                    content=initial_response.text,
+                    tool_calls=tool_calls if strategy == "native" else None,
+                )
+                conversation.append(assistant_tool_request)
+                self._repository.append_session_event(
+                    session_id=input.session_id,
+                    turn_id=turn_id,
+                    event_type="message",
+                    payload={"message": assistant_tool_request.model_dump(mode="json")},
+                )
 
                 for model_tool_call in tool_calls:
                     self._repository.append_session_event(
@@ -264,6 +267,7 @@ class SessionClient:
                         role="tool",
                         name=model_tool_call.name,
                         content=tool_message_content,
+                        tool_call_id=model_tool_call.tool_call_id,
                     )
                     conversation.append(tool_message)
                     self._repository.append_session_event(

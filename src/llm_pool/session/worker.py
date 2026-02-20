@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from uuid import uuid4
 
@@ -48,8 +49,8 @@ def run_tool_worker(
                 turn_id=call.turn_id,
             )
             result = executor.invoke(invocation)
-            repository.complete_tool_call(result=result)
             if result.ok:
+                repository.complete_tool_call(result=result)
                 stats["succeeded"] += 1
             else:
                 stats["failed"] += 1
@@ -64,6 +65,11 @@ def run_tool_worker(
                         },
                     )
                     stats["dead_lettered"] += 1
+                else:
+                    repository.release_tool_claim(
+                        tool_call_id=call.tool_call_id,
+                        error_text=json.dumps(result.error, ensure_ascii=True, sort_keys=True),
+                    )
         if max_loops is None:
             continue
     return stats
