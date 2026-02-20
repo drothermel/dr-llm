@@ -17,6 +17,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 
 from llm_pool.errors import PersistenceError, SessionConflictError, TransientPersistenceError
 from llm_pool.types import (
+    CallMode,
     LlmRequest,
     LlmResponse,
     RecordedCall,
@@ -186,6 +187,7 @@ class PostgresRepository:
         response: LlmResponse | None = None,
         run_id: str | None = None,
         status: str | None = None,
+        mode: CallMode | str | None = None,
         error_text: str | None = None,
         external_call_id: str | None = None,
         metadata: dict[str, Any] | None = None,
@@ -198,7 +200,12 @@ class PostgresRepository:
         request_hash = _hash_payload(request_payload)
         response_hash = _hash_payload(response_payload) if response_payload is not None else None
         resolved_status = status or ("success" if response is not None and error_text is None else "failed")
-        resolved_mode = response.mode.value if response is not None else "api"
+        if mode is not None:
+            resolved_mode = mode.value if isinstance(mode, CallMode) else str(mode)
+        elif response is not None:
+            resolved_mode = response.mode.value
+        else:
+            resolved_mode = "api"
         latency_ms = int(response.latency_ms) if response is not None else 0
 
         with self._conn() as conn:

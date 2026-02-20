@@ -159,6 +159,7 @@ class SessionStepInput(BaseModel):
     session_id: str
     messages: list[Message]
     expected_version: int | None = None
+    inline_tool_execution: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

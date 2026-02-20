@@ -53,6 +53,7 @@ class LlmClient:
                     response=None,
                     run_id=run_id,
                     status="failed",
+                    mode=adapter.mode,
                     error_text=str(exc),
                     external_call_id=external_call_id,
                     metadata=metadata,
@@ -65,6 +66,7 @@ class LlmClient:
                 response=response,
                 run_id=run_id,
                 status="success",
+                mode=adapter.mode,
                 external_call_id=external_call_id,
                 metadata=metadata,
             )

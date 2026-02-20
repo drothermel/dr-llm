@@ -57,7 +57,12 @@ def _parse_json(value: str | None, *, arg_name: str, expected: type | tuple[type
     return parsed
 
 
-def _load_messages(messages_file: Path | None, messages: list[str]) -> list[Message]:
+def _load_messages(
+    messages_file: Path | None,
+    messages: list[str],
+    *,
+    require_nonempty: bool = True,
+) -> list[Message]:
     result: list[Message] = []
     if messages_file is not None:
         try:
@@ -72,7 +77,7 @@ def _load_messages(messages_file: Path | None, messages: list[str]) -> list[Mess
             result.append(Message.model_validate(item))
 
     result.extend(Message(role="user", content=content) for content in messages)
-    if not result:
+    if require_nonempty and not result:
         raise typer.BadParameter("At least one message is required (use --message or --messages-file)")
     return result
 
@@ -276,6 +281,11 @@ def session_step(
     message: list[str] = typer.Option(None, "--message", help="User message. Repeatable."),
     messages_file: Path | None = typer.Option(None),
     expected_version: int | None = typer.Option(None),
+    inline_tool_execution: bool = typer.Option(
+        False,
+        "--inline-tool-execution/--queue-tool-execution",
+        help="Execute tool calls synchronously in-process instead of queueing for workers.",
+    ),
     metadata_json: str | None = typer.Option(None),
     tool_loader: list[str] = typer.Option(None, "--tool-loader", help="module:function loader for tools"),
     dsn: str | None = typer.Option(None, envvar="LLM_POOL_DATABASE_URL"),
@@ -284,7 +294,7 @@ def session_step(
 ) -> None:
     """Advance a session by one model/tool step."""
     metadata = _parse_json(metadata_json, arg_name="metadata_json", expected=dict) or {}
-    messages_payload = _load_messages(messages_file, message or [])
+    messages_payload = _load_messages(messages_file, message or [], require_nonempty=False)
 
     repository = _repo(dsn, min_pool_size, max_pool_size)
     try:
@@ -296,6 +306,7 @@ def session_step(
                 session_id=session_id,
                 messages=messages_payload,
                 expected_version=expected_version,
+                inline_tool_execution=inline_tool_execution,
                 metadata=metadata,
             )
         )

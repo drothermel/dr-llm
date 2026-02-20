@@ -61,7 +61,10 @@ llm-pool session step --session-id <session_id> --message "next"
 llm-pool session resume --session-id <session_id>
 llm-pool session cancel --session-id <session_id> --reason "stopped"
 
+# brokered tool calls are queued by default; use workers
 llm-pool tool worker run --tool-loader mypkg.tools:register_tools
+# optional synchronous override for a single step:
+llm-pool session step --session-id <session_id> --inline-tool-execution
 
 llm-pool replay session --session-id <session_id>
 ```

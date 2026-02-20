@@ -33,6 +33,9 @@ class FakeRepository:
         self.dead_lettered.append(tool_call_id)
         return "dead_1"
 
+    def append_session_event(self, *, session_id: str, event_type: str, payload: dict[str, Any], turn_id: str | None = None):  # noqa: ANN001, ARG002
+        return "event_1"
+
 
 @dataclass
 class FakeExecutor:

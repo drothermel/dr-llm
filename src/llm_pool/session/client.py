@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from llm_pool.client import LlmClient
+from llm_pool.errors import SessionConflictError
 from llm_pool.session.strategy import resolve_tool_strategy
 from llm_pool.storage.repository import PostgresRepository
 from llm_pool.tools.executor import ToolExecutor
@@ -117,12 +118,16 @@ class SessionClient:
 
     def step_session(self, input: SessionStepInput) -> SessionStepResult:
         state = self._repository.get_session(session_id=input.session_id)
+        if state.status != SessionStatus.active:
+            raise SessionConflictError(
+                f"Cannot step session {input.session_id}: status={state.status.value}"
+            )
         expected_version = input.expected_version if input.expected_version is not None else state.version
         new_version = self._repository.advance_session_version(
             session_id=input.session_id,
             expected_version=expected_version,
         )
-        turn_id, turn_index = self._repository.create_session_turn(
+        turn_id, _turn_index = self._repository.create_session_turn(
             session_id=input.session_id,
             status=SessionTurnStatus.active,
             metadata={"kind": "session_step"},
@@ -209,6 +214,7 @@ class SessionClient:
                     payload={"message": assistant_tool_request.model_dump(mode="json")},
                 )
 
+                execute_inline = strategy == "native" or input.inline_tool_execution
                 for model_tool_call in tool_calls:
                     self._repository.append_session_event(
                         session_id=input.session_id,
@@ -236,6 +242,17 @@ class SessionClient:
                             "tool_name": model_tool_call.name,
                         },
                     )
+                    if not execute_inline:
+                        self._repository.append_session_event(
+                            session_id=input.session_id,
+                            turn_id=turn_id,
+                            event_type="tool_queued",
+                            payload={
+                                "tool_call_id": persisted_tool_call_id,
+                                "tool_name": model_tool_call.name,
+                            },
+                        )
+                        continue
                     tool_result = self._tool_executor.invoke(
                         ToolInvocation(
                             tool_call_id=persisted_tool_call_id,
@@ -275,6 +292,25 @@ class SessionClient:
                         turn_id=turn_id,
                         event_type="tool_result_message",
                         payload={"message": tool_message.model_dump(mode="json")},
+                    )
+
+                if not execute_inline:
+                    self._repository.append_session_event(
+                        session_id=input.session_id,
+                        turn_id=turn_id,
+                        event_type="session_waiting_for_tools",
+                        payload={
+                            "tool_call_ids": [call.tool_call_id for call in tool_calls],
+                            "message": "Tool calls enqueued; run worker and step session again to continue.",
+                        },
+                    )
+                    return SessionStepResult(
+                        session_id=input.session_id,
+                        turn_id=turn_id,
+                        status=SessionTurnStatus.active,
+                        version=new_version,
+                        output=assistant_tool_request,
+                        tool_calls=tool_calls,
                     )
 
                 followup_request = LlmRequest(
