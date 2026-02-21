@@ -70,7 +70,7 @@ class SessionClient:
         self._llm_client = llm_client
         self._repository = repository
         self._tool_registry = tool_registry
-        self._tool_executor = tool_executor or ToolExecutor(tool_registry)
+        self._tool_executor = tool_executor or ToolExecutor(registry=tool_registry)
 
     def start_session(self, input: SessionStartInput) -> SessionHandle:
         metadata = {

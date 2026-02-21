@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, cast
+
+from pydantic import BaseModel, Field
 
 from llm_pool.session.worker import run_tool_worker
 from llm_pool.types import ToolResult
 
 
-@dataclass
-class FakeRepository:
+class FakeRepository(BaseModel):
     claims: list[list[Any]]
     claim_calls: int = 0
-    completed: list[str] = field(default_factory=list)
-    released: list[str] = field(default_factory=list)
-    dead_lettered: list[str] = field(default_factory=list)
+    completed: list[str] = Field(default_factory=list)
+    released: list[str] = Field(default_factory=list)
+    dead_lettered: list[str] = Field(default_factory=list)
 
     def claim_tool_calls(self, *, worker_id: str, limit: int, lease_seconds: int):  # noqa: ARG002
         idx = self.claim_calls
@@ -48,8 +48,7 @@ class FakeRepository:
         return "event_1"
 
 
-@dataclass
-class FakeExecutor:
+class FakeExecutor(BaseModel):
     result: ToolResult
 
     def invoke(self, call):  # noqa: ANN001
@@ -75,7 +74,7 @@ def _call(attempt_count: int) -> Any:
 def test_worker_releases_failed_call_for_retry_before_max_attempts() -> None:
     repository = FakeRepository(claims=[[_call(attempt_count=1)], []])
     executor = FakeExecutor(
-        ToolResult(
+        result=ToolResult(
             tool_call_id="tc_1",
             ok=False,
             error={"error_type": "RuntimeError", "message": "boom"},
@@ -100,7 +99,7 @@ def test_worker_releases_failed_call_for_retry_before_max_attempts() -> None:
 def test_worker_dead_letters_when_attempt_threshold_reached() -> None:
     repository = FakeRepository(claims=[[_call(attempt_count=3)], []])
     executor = FakeExecutor(
-        ToolResult(
+        result=ToolResult(
             tool_call_id="tc_1",
             ok=False,
             error={"error_type": "RuntimeError", "message": "boom"},
@@ -125,7 +124,7 @@ def test_worker_dead_letters_when_attempt_threshold_reached() -> None:
 def test_worker_completes_successful_call() -> None:
     repository = FakeRepository(claims=[[_call(attempt_count=1)], []])
     executor = FakeExecutor(
-        ToolResult(tool_call_id="tc_1", ok=True, result={"ok": True})
+        result=ToolResult(tool_call_id="tc_1", ok=True, result={"ok": True})
     )
 
     stats = run_tool_worker(

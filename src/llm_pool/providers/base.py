@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+
+from pydantic import BaseModel, ConfigDict
 
 from llm_pool.types import LlmRequest, LlmResponse
 
 
-@dataclass(frozen=True, slots=True)
-class ProviderCapabilities:
+class ProviderCapabilities(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     supports_native_tools: bool = False
     supports_structured_output: bool = False
 

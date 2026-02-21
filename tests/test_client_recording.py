@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
+from pydantic import BaseModel, Field
 
 from llm_pool.client import LlmClient
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
@@ -11,9 +11,8 @@ from llm_pool.providers.registry import ProviderRegistry
 from llm_pool.types import LlmRequest, Message
 
 
-@dataclass
-class CapturingRepository:
-    calls: list[dict]
+class CapturingRepository(BaseModel):
+    calls: list[dict[str, Any]] = Field(default_factory=list)
 
     def record_call(self, **kwargs):  # noqa: ANN003
         self.calls.append(kwargs)

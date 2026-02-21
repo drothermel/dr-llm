@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Awaitable
-from dataclasses import dataclass
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict
 
 from llm_pool.errors import ToolExecutionError
 from llm_pool.tools.registry import ToolRegistry
@@ -15,8 +16,9 @@ async def _await_result(awaitable: Awaitable[dict[str, Any]]) -> dict[str, Any]:
     return await awaitable
 
 
-@dataclass(frozen=True, slots=True)
-class ToolExecutor:
+class ToolExecutor(BaseModel):
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
     registry: ToolRegistry
 
     def invoke(self, call: ToolInvocation) -> ToolResult:

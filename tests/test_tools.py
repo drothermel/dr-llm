@@ -15,7 +15,7 @@ def test_tool_executor_sync_handler() -> None:
             handler=lambda args: {"sum": int(args["a"]) + int(args["b"])},
         )
     )
-    executor = ToolExecutor(registry)
+    executor = ToolExecutor(registry=registry)
     result = executor.invoke(
         ToolInvocation(
             tool_call_id="tc1", name="add", arguments={"a": 2, "b": 3}, session_id="s1"
@@ -26,7 +26,7 @@ def test_tool_executor_sync_handler() -> None:
 
 
 def test_tool_executor_unknown_tool() -> None:
-    executor = ToolExecutor(ToolRegistry())
+    executor = ToolExecutor(registry=ToolRegistry())
     result = executor.invoke(
         ToolInvocation(
             tool_call_id="tc1", name="missing", arguments={}, session_id="s1"
@@ -50,7 +50,7 @@ def test_tool_executor_async_handler_with_running_loop_returns_error() -> None:
             handler=async_handler,
         )
     )
-    executor = ToolExecutor(registry)
+    executor = ToolExecutor(registry=registry)
 
     async def invoke_inside_loop():
         return executor.invoke(

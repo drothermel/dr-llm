@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any, cast
 
 import pytest
+from pydantic import BaseModel, ConfigDict, Field
 
 from llm_pool.errors import SessionConflictError
 from llm_pool.providers.base import ProviderCapabilities
@@ -23,13 +23,13 @@ from llm_pool.types import (
 )
 
 
-@dataclass
-class FakeAdapter:
+class FakeAdapter(BaseModel):
     capabilities: ProviderCapabilities
 
 
-@dataclass
-class FakeLlmClient:
+class FakeLlmClient(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     adapter: FakeAdapter
     response: LlmResponse
 
@@ -40,11 +40,10 @@ class FakeLlmClient:
         return self.response
 
 
-@dataclass
-class FakeRepository:
+class FakeRepository(BaseModel):
     session_state: SessionState
-    events: list[tuple[str, dict]] = field(default_factory=list)
-    enqueued: list[str] = field(default_factory=list)
+    events: list[tuple[str, dict[str, Any]]] = Field(default_factory=list)
+    enqueued: list[str] = Field(default_factory=list)
     advanced: bool = False
 
     def get_session(self, *, session_id: str):  # noqa: ARG002
@@ -119,7 +118,9 @@ def test_step_rejects_non_active_session() -> None:
         llm_client=cast(
             Any,
             FakeLlmClient(
-                adapter=FakeAdapter(ProviderCapabilities(supports_native_tools=False)),
+                adapter=FakeAdapter(
+                    capabilities=ProviderCapabilities(supports_native_tools=False)
+                ),
                 response=LlmResponse(
                     text="",
                     usage=TokenUsage(),
@@ -146,7 +147,9 @@ def test_step_rejects_non_active_session() -> None:
 def test_brokered_step_queues_tools_when_inline_disabled() -> None:
     repo = FakeRepository(session_state=_session_state(SessionStatus.active))
     llm_client = FakeLlmClient(
-        adapter=FakeAdapter(ProviderCapabilities(supports_native_tools=False)),
+        adapter=FakeAdapter(
+            capabilities=ProviderCapabilities(supports_native_tools=False)
+        ),
         response=LlmResponse(
             text='{"tool_calls":[{"name":"lookup","arguments":{"q":"x"}}]}',
             usage=TokenUsage(),

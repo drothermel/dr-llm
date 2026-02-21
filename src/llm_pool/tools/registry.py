@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Awaitable
 from collections.abc import Callable
-from dataclasses import dataclass
 from threading import RLock
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict
 
 
 ToolHandler = Callable[[dict[str, Any]], dict[str, Any] | Awaitable[dict[str, Any]]]
 
 
-@dataclass(frozen=True, slots=True)
-class ToolDefinition:
+class ToolDefinition(BaseModel):
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
     name: str
     description: str
     input_schema: dict[str, Any]

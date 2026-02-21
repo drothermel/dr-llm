@@ -448,7 +448,7 @@ def tool_worker_run(
     repository = _repo(dsn, min_pool_size, max_pool_size)
     try:
         tool_registry = _build_tool_registry(tool_loader)
-        executor = ToolExecutor(tool_registry)
+        executor = ToolExecutor(registry=tool_registry)
         stats = run_tool_worker(
             repository=repository,
             executor=executor,
