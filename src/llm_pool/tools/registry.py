@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from llm_pool.types import ProviderToolSpec, ToolFunctionSpec
+
 
 ToolHandler = Callable[[dict[str, Any]], dict[str, Any] | Awaitable[dict[str, Any]]]
 
@@ -18,6 +20,15 @@ class ToolDefinition(BaseModel):
     description: str
     input_schema: dict[str, Any]
     handler: ToolHandler
+
+    def to_provider_tool(self) -> ProviderToolSpec:
+        return ProviderToolSpec(
+            function=ToolFunctionSpec(
+                name=self.name,
+                description=self.description,
+                parameters=self.input_schema,
+            )
+        )
 
 
 class ToolRegistry:
@@ -45,17 +56,7 @@ class ToolRegistry:
         with self._lock:
             return set(self._tools.keys())
 
-    def to_provider_tools(self) -> list[dict[str, Any]]:
+    def to_provider_tools(self) -> list[ProviderToolSpec]:
         with self._lock:
             items = list(self._tools.values())
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.input_schema,
-                },
-            }
-            for tool in items
-        ]
+        return [tool.to_provider_tool() for tool in items]

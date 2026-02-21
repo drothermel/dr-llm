@@ -152,6 +152,21 @@ class ModelToolCall(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class ToolFunctionSpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
+class ProviderToolSpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["function"] = "function"
+    function: ToolFunctionSpec
+
+
 class LlmRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -163,7 +178,7 @@ class LlmRequest(BaseModel):
     max_tokens: int | None = None
     reasoning: ReasoningConfig | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-    tools: list[dict[str, Any]] | None = None
+    tools: list[ProviderToolSpec] | None = None
     tool_policy: ToolPolicy = ToolPolicy.native_preferred
 
 

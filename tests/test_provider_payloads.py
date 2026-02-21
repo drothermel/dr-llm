@@ -7,7 +7,13 @@ import httpx
 
 from llm_pool.providers.anthropic import AnthropicAdapter, AnthropicConfig
 from llm_pool.providers.google import GoogleAdapter, GoogleConfig
-from llm_pool.types import LlmRequest, Message, ModelToolCall
+from llm_pool.types import (
+    LlmRequest,
+    Message,
+    ModelToolCall,
+    ProviderToolSpec,
+    ToolFunctionSpec,
+)
 
 
 def test_anthropic_payload_preserves_tool_context() -> None:
@@ -54,17 +60,16 @@ def test_anthropic_payload_preserves_tool_context() -> None:
             ),
         ],
         tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": "lookup",
-                    "description": "Lookup a value",
-                    "parameters": {
+            ProviderToolSpec(
+                function=ToolFunctionSpec(
+                    name="lookup",
+                    description="Lookup a value",
+                    parameters={
                         "type": "object",
                         "properties": {"q": {"type": "string"}},
                     },
-                },
-            }
+                )
+            )
         ],
     )
 
@@ -145,17 +150,16 @@ def test_google_payload_preserves_tool_context() -> None:
             ),
         ],
         tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": "lookup",
-                    "description": "Lookup a value",
-                    "parameters": {
+            ProviderToolSpec(
+                function=ToolFunctionSpec(
+                    name="lookup",
+                    description="Lookup a value",
+                    parameters={
                         "type": "object",
                         "properties": {"q": {"type": "string"}},
                     },
-                },
-            }
+                )
+            )
         ],
     )
 

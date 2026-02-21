@@ -22,7 +22,14 @@ from llm_pool.providers.utils import (
     parse_reasoning_tokens,
     parse_usage,
 )
-from llm_pool.types import CallMode, LlmRequest, LlmResponse, Message, ModelToolCall
+from llm_pool.types import (
+    CallMode,
+    LlmRequest,
+    LlmResponse,
+    Message,
+    ModelToolCall,
+    ProviderToolSpec,
+)
 
 
 class _GoogleGenerationConfig(BaseModel):
@@ -31,11 +38,21 @@ class _GoogleGenerationConfig(BaseModel):
     maxOutputTokens: int | None = None
 
 
+class _GoogleFunctionDeclaration(BaseModel):
+    name: str
+    description: str | None = None
+    parameters: dict[str, Any] | None = None
+
+
+class _GoogleToolBlock(BaseModel):
+    functionDeclarations: list[_GoogleFunctionDeclaration]
+
+
 class _GoogleRequestPayload(BaseModel):
     contents: list[dict[str, Any]]
     systemInstruction: dict[str, Any] | None = None
     generationConfig: _GoogleGenerationConfig | None = None
-    tools: list[dict[str, Any]] | None = None
+    tools: list[_GoogleToolBlock] | None = None
 
 
 class _GoogleFunctionCall(BaseModel):
@@ -215,34 +232,22 @@ class GoogleAdapter(ProviderAdapter):
         )
 
 
-def _to_google_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+def _to_google_tools(
+    tools: list[ProviderToolSpec] | None,
+) -> list[_GoogleToolBlock] | None:
     if not tools:
         return None
-    out: list[dict[str, Any]] = []
-    declarations: list[dict[str, Any]] = []
-    for item in tools:
-        if not isinstance(item, dict):
-            continue
-        if "functionDeclarations" in item:
-            out.append(item)
-            continue
-        fn = item.get("function") if item.get("type") == "function" else None
-        if not isinstance(fn, dict):
-            continue
-        name = str(fn.get("name") or "").strip()
-        if not name:
-            continue
-        declaration: dict[str, Any] = {"name": name}
-        description = fn.get("description")
-        if isinstance(description, str) and description:
-            declaration["description"] = description
-        params = fn.get("parameters")
-        if isinstance(params, dict):
-            declaration["parameters"] = params
+    declarations: list[_GoogleFunctionDeclaration] = []
+    for tool in tools:
+        declaration = _GoogleFunctionDeclaration(
+            name=tool.function.name,
+            description=tool.function.description or None,
+            parameters=tool.function.parameters or None,
+        )
         declarations.append(declaration)
-    if declarations:
-        out.append({"functionDeclarations": declarations})
-    return out or None
+    return (
+        [_GoogleToolBlock(functionDeclarations=declarations)] if declarations else None
+    )
 
 
 def _parse_tool_response_content(content: str) -> dict[str, Any]:

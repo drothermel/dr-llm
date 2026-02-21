@@ -22,7 +22,20 @@ from llm_pool.providers.utils import (
     parse_reasoning_tokens,
     parse_usage,
 )
-from llm_pool.types import CallMode, LlmRequest, LlmResponse, Message, ModelToolCall
+from llm_pool.types import (
+    CallMode,
+    LlmRequest,
+    LlmResponse,
+    Message,
+    ModelToolCall,
+    ProviderToolSpec,
+)
+
+
+class _AnthropicToolSpec(BaseModel):
+    name: str
+    description: str
+    input_schema: dict[str, Any]
 
 
 class _AnthropicRequestPayload(BaseModel):
@@ -32,7 +45,7 @@ class _AnthropicRequestPayload(BaseModel):
     system: str | None = None
     temperature: float | None = None
     top_p: float | None = None
-    tools: list[dict[str, Any]] | None = None
+    tools: list[_AnthropicToolSpec] | None = None
 
 
 class _AnthropicUsage(BaseModel):
@@ -198,33 +211,18 @@ class AnthropicAdapter(ProviderAdapter):
 
 
 def _to_anthropic_tools(
-    tools: list[dict[str, Any]] | None,
-) -> list[dict[str, Any]] | None:
+    tools: list[ProviderToolSpec] | None,
+) -> list[_AnthropicToolSpec] | None:
     if not tools:
         return None
-    normalized: list[dict[str, Any]] = []
-    for item in tools:
-        if not isinstance(item, dict):
-            continue
-        fn = item.get("function") if item.get("type") == "function" else None
-        if isinstance(fn, dict):
-            name = str(fn.get("name") or "").strip()
-            if not name:
-                continue
-            schema = fn.get("parameters")
-            normalized.append(
-                {
-                    "name": name,
-                    "description": str(fn.get("description") or ""),
-                    "input_schema": schema
-                    if isinstance(schema, dict)
-                    else {"type": "object", "properties": {}},
-                }
-            )
-            continue
-        if "name" in item and "input_schema" in item:
-            normalized.append(item)
-    return normalized or None
+    return [
+        _AnthropicToolSpec(
+            name=tool.function.name,
+            description=tool.function.description,
+            input_schema=tool.function.parameters,
+        )
+        for tool in tools
+    ] or None
 
 
 def _to_anthropic_messages(messages: list[Message]) -> list[dict[str, Any]]:

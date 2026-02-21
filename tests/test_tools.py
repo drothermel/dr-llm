@@ -2,7 +2,7 @@ import asyncio
 
 from llm_pool.tools.executor import ToolExecutor
 from llm_pool.tools.registry import ToolDefinition, ToolRegistry
-from llm_pool.types import ToolInvocation
+from llm_pool.types import ProviderToolSpec, ToolInvocation
 
 
 def test_tool_executor_sync_handler() -> None:
@@ -66,3 +66,23 @@ def test_tool_executor_async_handler_with_running_loop_returns_error() -> None:
     assert not result.ok
     assert result.error is not None
     assert result.error["error_type"] == "ToolExecutionError"
+
+
+def test_registry_to_provider_tools_returns_typed_models() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="lookup",
+            description="Lookup by key",
+            input_schema={
+                "type": "object",
+                "properties": {"k": {"type": "string"}},
+                "required": ["k"],
+            },
+            handler=lambda args: {"k": args.get("k")},
+        )
+    )
+    tools = registry.to_provider_tools()
+    assert len(tools) == 1
+    assert isinstance(tools[0], ProviderToolSpec)
+    assert tools[0].function.name == "lookup"

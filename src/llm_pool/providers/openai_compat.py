@@ -23,7 +23,7 @@ from llm_pool.providers.utils import (
     parse_usage,
     to_openai_messages,
 )
-from llm_pool.types import CallMode, LlmRequest, LlmResponse
+from llm_pool.types import CallMode, LlmRequest, LlmResponse, ProviderToolSpec
 
 
 class _OpenAICompatRequestPayload(BaseModel):
@@ -33,7 +33,7 @@ class _OpenAICompatRequestPayload(BaseModel):
     top_p: float | None = None
     max_tokens: int | None = None
     reasoning: dict[str, Any] | None = None
-    tools: list[dict[str, Any]] | None = None
+    tools: list[ProviderToolSpec] | None = None
 
 
 class _OpenAICompatUsageDetails(BaseModel):

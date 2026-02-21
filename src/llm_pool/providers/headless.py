@@ -59,7 +59,12 @@ class _BaseHeadlessAdapter(ProviderAdapter):
             if request.reasoning
             else None,
             "metadata": request.metadata,
-            "tools": request.tools,
+            "tools": [
+                tool.model_dump(mode="json", exclude_computed_fields=True)
+                for tool in request.tools
+            ]
+            if request.tools
+            else None,
             "tool_policy": request.tool_policy.value,
         }
 
