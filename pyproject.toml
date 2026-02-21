@@ -35,3 +35,14 @@ dev = [
 markers = [
     "integration: marks tests that require external systems (e.g., PostgreSQL)",
 ]
+
+[tool.ruff]
+include = ["src/**/*.py", "src/**/*.pyi"]
+
+[tool.ty.environment]
+root = ["src"]
+
+[tool.ty.src]
+respect-ignore-files = true
+include = ["**/*.py"]
+exclude = []
