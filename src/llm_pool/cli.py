@@ -16,6 +16,7 @@ from llm_pool.tools.registry import ToolDefinition
 from llm_pool.types import (
     LlmRequest,
     Message,
+    ReasoningConfig,
     RunStatus,
     SessionStartInput,
     SessionStepInput,
@@ -40,7 +41,9 @@ def _emit(payload: Any) -> None:
     typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
 
 
-def _parse_json(value: str | None, *, arg_name: str, expected: type | tuple[type, ...] | None = None) -> Any:
+def _parse_json(
+    value: str | None, *, arg_name: str, expected: type | tuple[type, ...] | None = None
+) -> Any:
     if value is None:
         return None
     try:
@@ -72,17 +75,23 @@ def _load_messages(
         if isinstance(payload, dict):
             payload = payload.get("messages")
         if not isinstance(payload, list):
-            raise typer.BadParameter("messages-file must be a JSON list or an object with a 'messages' list")
+            raise typer.BadParameter(
+                "messages-file must be a JSON list or an object with a 'messages' list"
+            )
         for item in payload:
             result.append(Message.model_validate(item))
 
     result.extend(Message(role="user", content=content) for content in messages)
     if require_nonempty and not result:
-        raise typer.BadParameter("At least one message is required (use --message or --messages-file)")
+        raise typer.BadParameter(
+            "At least one message is required (use --message or --messages-file)"
+        )
     return result
 
 
-def _repo(dsn: str | None, min_pool_size: int, max_pool_size: int) -> PostgresRepository:
+def _repo(
+    dsn: str | None, min_pool_size: int, max_pool_size: int
+) -> PostgresRepository:
     cfg = StorageConfig(
         **({"dsn": dsn} if dsn else {}),
         min_pool_size=min_pool_size,
@@ -141,13 +150,23 @@ def providers() -> None:
 def query(
     provider: str = typer.Option(..., help="Provider key registered in llm-pool."),
     model: str = typer.Option(..., help="Model identifier for the provider."),
-    message: list[str] = typer.Option(None, "--message", help="User message. Repeatable."),
-    messages_file: Path | None = typer.Option(None, help="Path to JSON messages payload."),
+    message: list[str] = typer.Option(
+        None, "--message", help="User message. Repeatable."
+    ),
+    messages_file: Path | None = typer.Option(
+        None, help="Path to JSON messages payload."
+    ),
     temperature: float | None = typer.Option(None),
     top_p: float | None = typer.Option(None),
     max_tokens: int | None = typer.Option(None),
-    tools_json: str | None = typer.Option(None, help="JSON list of provider tool definitions."),
+    tools_json: str | None = typer.Option(
+        None, help="JSON list of provider tool definitions."
+    ),
     tool_policy: ToolPolicy = typer.Option(ToolPolicy.native_preferred),
+    reasoning_json: str | None = typer.Option(
+        None,
+        help='JSON reasoning config (e.g. {"effort":"high"} or {"max_tokens":2000}).',
+    ),
     metadata_json: str | None = typer.Option(None, help="JSON object metadata."),
     run_id: str | None = typer.Option(None),
     external_call_id: str | None = typer.Option(None),
@@ -159,6 +178,12 @@ def query(
     """Execute a single LLM query through the unified provider interface."""
     metadata = _parse_json(metadata_json, arg_name="metadata_json", expected=dict) or {}
     tools = _parse_json(tools_json, arg_name="tools_json", expected=list)
+    reasoning_payload = _parse_json(reasoning_json, arg_name="reasoning_json", expected=dict)
+    reasoning = (
+        ReasoningConfig.model_validate(reasoning_payload)
+        if isinstance(reasoning_payload, dict)
+        else None
+    )
     messages_payload = _load_messages(messages_file, message or [])
 
     repository: PostgresRepository | None = None
@@ -173,6 +198,7 @@ def query(
             temperature=temperature,
             top_p=top_p,
             max_tokens=max_tokens,
+            reasoning=reasoning,
             tools=tools,
             tool_policy=tool_policy,
             metadata=metadata,
@@ -195,14 +221,18 @@ def run_start(
     status: RunStatus = typer.Option(RunStatus.running),
     run_id: str | None = typer.Option(None),
     metadata_json: str | None = typer.Option(None),
-    parameters_json: str | None = typer.Option(None, help="Optional JSON object of run parameters."),
+    parameters_json: str | None = typer.Option(
+        None, help="Optional JSON object of run parameters."
+    ),
     dsn: str | None = typer.Option(None, envvar="LLM_POOL_DATABASE_URL"),
     min_pool_size: int = typer.Option(4),
     max_pool_size: int = typer.Option(64),
 ) -> None:
     """Start or upsert a run record."""
     metadata = _parse_json(metadata_json, arg_name="metadata_json", expected=dict) or {}
-    parameters = _parse_json(parameters_json, arg_name="parameters_json", expected=dict) or {}
+    parameters = (
+        _parse_json(parameters_json, arg_name="parameters_json", expected=dict) or {}
+    )
 
     repository = _repo(dsn, min_pool_size, max_pool_size)
     try:
@@ -212,7 +242,9 @@ def run_start(
             metadata=metadata,
             run_id=run_id,
         )
-        written = repository.upsert_run_parameters(run_id=persisted_run_id, parameters=parameters)
+        written = repository.upsert_run_parameters(
+            run_id=persisted_run_id, parameters=parameters
+        )
         _emit({"run_id": persisted_run_id, "parameters_written": written})
     finally:
         repository.close()
@@ -241,30 +273,47 @@ def run_finish(
 def session_start(
     provider: str = typer.Option(...),
     model: str = typer.Option(...),
-    message: list[str] = typer.Option(None, "--message", help="User message. Repeatable."),
+    message: list[str] = typer.Option(
+        None, "--message", help="User message. Repeatable."
+    ),
     messages_file: Path | None = typer.Option(None),
     strategy_mode: ToolPolicy = typer.Option(ToolPolicy.native_preferred),
+    reasoning_json: str | None = typer.Option(
+        None,
+        help="JSON reasoning config to persist for this session's model calls.",
+    ),
     metadata_json: str | None = typer.Option(None),
     run_id: str | None = typer.Option(None),
-    tool_loader: list[str] = typer.Option(None, "--tool-loader", help="module:function loader for tools"),
+    tool_loader: list[str] = typer.Option(
+        None, "--tool-loader", help="module:function loader for tools"
+    ),
     dsn: str | None = typer.Option(None, envvar="LLM_POOL_DATABASE_URL"),
     min_pool_size: int = typer.Option(4),
     max_pool_size: int = typer.Option(64),
 ) -> None:
     """Create a session and persist initial messages."""
     metadata = _parse_json(metadata_json, arg_name="metadata_json", expected=dict) or {}
+    reasoning_payload = _parse_json(reasoning_json, arg_name="reasoning_json", expected=dict)
+    reasoning = (
+        ReasoningConfig.model_validate(reasoning_payload)
+        if isinstance(reasoning_payload, dict)
+        else None
+    )
     messages_payload = _load_messages(messages_file, message or [])
 
     repository = _repo(dsn, min_pool_size, max_pool_size)
     try:
         tool_registry = _build_tool_registry(tool_loader or [])
         llm_client = LlmClient(registry=build_default_registry(), repository=repository)
-        client = SessionClient(llm_client=llm_client, repository=repository, tool_registry=tool_registry)
+        client = SessionClient(
+            llm_client=llm_client, repository=repository, tool_registry=tool_registry
+        )
         handle = client.start_session(
             SessionStartInput(
                 provider=provider,
                 model=model,
                 messages=messages_payload,
+                reasoning=reasoning,
                 strategy_mode=strategy_mode,
                 metadata=metadata,
                 run_id=run_id,
@@ -278,7 +327,9 @@ def session_start(
 @session_app.command("step")
 def session_step(
     session_id: str = typer.Option(...),
-    message: list[str] = typer.Option(None, "--message", help="User message. Repeatable."),
+    message: list[str] = typer.Option(
+        None, "--message", help="User message. Repeatable."
+    ),
     messages_file: Path | None = typer.Option(None),
     expected_version: int | None = typer.Option(None),
     inline_tool_execution: bool = typer.Option(
@@ -286,27 +337,44 @@ def session_step(
         "--inline-tool-execution/--queue-tool-execution",
         help="Execute tool calls synchronously in-process instead of queueing for workers.",
     ),
+    reasoning_json: str | None = typer.Option(
+        None,
+        help="Optional JSON reasoning config override for this step.",
+    ),
     metadata_json: str | None = typer.Option(None),
-    tool_loader: list[str] = typer.Option(None, "--tool-loader", help="module:function loader for tools"),
+    tool_loader: list[str] = typer.Option(
+        None, "--tool-loader", help="module:function loader for tools"
+    ),
     dsn: str | None = typer.Option(None, envvar="LLM_POOL_DATABASE_URL"),
     min_pool_size: int = typer.Option(4),
     max_pool_size: int = typer.Option(64),
 ) -> None:
     """Advance a session by one model/tool step."""
     metadata = _parse_json(metadata_json, arg_name="metadata_json", expected=dict) or {}
-    messages_payload = _load_messages(messages_file, message or [], require_nonempty=False)
+    reasoning_payload = _parse_json(reasoning_json, arg_name="reasoning_json", expected=dict)
+    reasoning = (
+        ReasoningConfig.model_validate(reasoning_payload)
+        if isinstance(reasoning_payload, dict)
+        else None
+    )
+    messages_payload = _load_messages(
+        messages_file, message or [], require_nonempty=False
+    )
 
     repository = _repo(dsn, min_pool_size, max_pool_size)
     try:
         tool_registry = _build_tool_registry(tool_loader or [])
         llm_client = LlmClient(registry=build_default_registry(), repository=repository)
-        client = SessionClient(llm_client=llm_client, repository=repository, tool_registry=tool_registry)
+        client = SessionClient(
+            llm_client=llm_client, repository=repository, tool_registry=tool_registry
+        )
         result = client.step_session(
             SessionStepInput(
                 session_id=session_id,
                 messages=messages_payload,
                 expected_version=expected_version,
                 inline_tool_execution=inline_tool_execution,
+                reasoning=reasoning,
                 metadata=metadata,
             )
         )
@@ -343,7 +411,9 @@ def session_cancel(
     repository = _repo(dsn, min_pool_size, max_pool_size)
     try:
         llm_client = LlmClient(registry=build_default_registry(), repository=repository)
-        client = SessionClient(llm_client=llm_client, repository=repository, tool_registry=ToolRegistry())
+        client = SessionClient(
+            llm_client=llm_client, repository=repository, tool_registry=ToolRegistry()
+        )
         client.cancel_session(session_id=session_id, reason=reason)
         _emit({"session_id": session_id, "status": "canceled", "reason": reason})
     finally:
@@ -352,7 +422,9 @@ def session_cancel(
 
 @worker_app.command("run")
 def tool_worker_run(
-    tool_loader: list[str] = typer.Option(..., "--tool-loader", help="module:function loader for tools"),
+    tool_loader: list[str] = typer.Option(
+        ..., "--tool-loader", help="module:function loader for tools"
+    ),
     worker_id: str | None = typer.Option(None),
     lease_seconds: int = typer.Option(60),
     batch_size: int = typer.Option(8),

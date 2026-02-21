@@ -46,6 +46,7 @@ llm-pool providers
 llm-pool query \
   --provider openai \
   --model gpt-4.1 \
+  --reasoning-json '{"effort":"high"}' \
   --message "hello"
 
 llm-pool run start --run-type benchmark
@@ -68,6 +69,12 @@ llm-pool session step --session-id <session_id> --inline-tool-execution
 
 llm-pool replay session --session-id <session_id>
 ```
+
+Reasoning + cost notes:
+- OpenAI-compatible adapters now accept `LlmRequest.reasoning` / `--reasoning-json`.
+- Reasoning text/details and reasoning token counts are normalized on `LlmResponse`.
+- Provider-returned cost fields (e.g. OpenRouter `usage.cost` variants) are normalized into `LlmResponse.cost`.
+- These are persisted in `llm_call_responses` alongside standard token usage.
 
 ## Python Example
 

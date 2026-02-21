@@ -56,12 +56,33 @@ class Message(BaseModel):
     tool_calls: list[ModelToolCall] | None = None
 
 
+class ReasoningConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    effort: Literal["xhigh", "high", "medium", "low", "minimal", "none"] | None = None
+    max_tokens: int | None = None
+    exclude: bool | None = None
+    enabled: bool | None = None
+
+
 class TokenUsage(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    reasoning_tokens: int = 0
+
+
+class CostInfo(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    total_cost_usd: float | None = None
+    prompt_cost_usd: float | None = None
+    completion_cost_usd: float | None = None
+    reasoning_cost_usd: float | None = None
+    currency: str | None = "USD"
+    raw: dict[str, Any] = Field(default_factory=dict)
 
 
 class ModelToolCall(BaseModel):
@@ -81,6 +102,7 @@ class LlmRequest(BaseModel):
     temperature: float | None = None
     top_p: float | None = None
     max_tokens: int | None = None
+    reasoning: ReasoningConfig | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     tools: list[dict[str, Any]] | None = None
     tool_policy: ToolPolicy = ToolPolicy.native_preferred
@@ -92,6 +114,9 @@ class LlmResponse(BaseModel):
     text: str
     finish_reason: str | None = None
     usage: TokenUsage = Field(default_factory=TokenUsage)
+    reasoning: str | None = None
+    reasoning_details: list[dict[str, Any]] | None = None
+    cost: CostInfo | None = None
     raw_json: dict[str, Any] = Field(default_factory=dict)
     latency_ms: int = 0
     provider: str
@@ -148,6 +173,7 @@ class SessionStartInput(BaseModel):
     provider: str
     model: str
     messages: list[Message]
+    reasoning: ReasoningConfig | None = None
     strategy_mode: ToolPolicy = ToolPolicy.native_preferred
     metadata: dict[str, Any] = Field(default_factory=dict)
     run_id: str | None = None
@@ -160,6 +186,7 @@ class SessionStepInput(BaseModel):
     messages: list[Message]
     expected_version: int | None = None
     inline_tool_execution: bool = False
+    reasoning: ReasoningConfig | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -222,6 +249,12 @@ class RecordedCall(BaseModel):
     created_at: datetime
     latency_ms: int
     error_text: str | None
+    reasoning_tokens: int = 0
+    reasoning_text: str | None = None
+    cost_total_usd: float | None = None
+    cost_prompt_usd: float | None = None
+    cost_completion_usd: float | None = None
+    cost_reasoning_usd: float | None = None
     request: dict[str, Any]
     response: dict[str, Any] | None
 

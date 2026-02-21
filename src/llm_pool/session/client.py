@@ -12,6 +12,7 @@ from llm_pool.types import (
     LlmRequest,
     Message,
     ModelToolCall,
+    ReasoningConfig,
     SessionHandle,
     SessionStartInput,
     SessionState,
@@ -75,6 +76,7 @@ class SessionClient:
             "provider": input.provider,
             "model": input.model,
             "run_id": input.run_id,
+            "reasoning": input.reasoning.model_dump(mode="json", exclude_none=True) if input.reasoning else None,
         }
         handle = self._repository.start_session(
             strategy_mode=input.strategy_mode,
@@ -154,6 +156,13 @@ class SessionClient:
 
             provider = str(state.metadata.get("provider"))
             model = str(state.metadata.get("model"))
+            stored_reasoning_raw = state.metadata.get("reasoning")
+            stored_reasoning = (
+                ReasoningConfig.model_validate(stored_reasoning_raw)
+                if isinstance(stored_reasoning_raw, dict)
+                else None
+            )
+            resolved_reasoning = input.reasoning or stored_reasoning
             run_id = (
                 str(state.metadata.get("run_id"))
                 if state.metadata.get("run_id") is not None
@@ -169,6 +178,7 @@ class SessionClient:
                 model=model,
                 messages=conversation,
                 metadata=input.metadata,
+                reasoning=resolved_reasoning,
                 tools=self._tool_registry.to_provider_tools() or None,
                 tool_policy=state.strategy_mode,
             )
@@ -317,6 +327,7 @@ class SessionClient:
                     provider=provider,
                     model=model,
                     messages=conversation,
+                    reasoning=resolved_reasoning,
                     metadata={
                         **input.metadata,
                         "followup_after_tools": True,

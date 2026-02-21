@@ -275,9 +275,18 @@ class PostgresRepository:
                             finish_reason,
                             prompt_tokens,
                             completion_tokens,
+                            reasoning_tokens,
                             total_tokens,
+                            reasoning_text,
+                            reasoning_details_json,
+                            cost_total_usd,
+                            cost_prompt_usd,
+                            cost_completion_usd,
+                            cost_reasoning_usd,
+                            cost_currency,
+                            cost_json,
                             created_at
-                        ) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, now())
+                        ) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s::jsonb, now())
                         ON CONFLICT (call_id)
                         DO UPDATE SET response_json = excluded.response_json,
                                       response_hash = excluded.response_hash,
@@ -285,7 +294,16 @@ class PostgresRepository:
                                       finish_reason = excluded.finish_reason,
                                       prompt_tokens = excluded.prompt_tokens,
                                       completion_tokens = excluded.completion_tokens,
-                                      total_tokens = excluded.total_tokens
+                                      reasoning_tokens = excluded.reasoning_tokens,
+                                      total_tokens = excluded.total_tokens,
+                                      reasoning_text = excluded.reasoning_text,
+                                      reasoning_details_json = excluded.reasoning_details_json,
+                                      cost_total_usd = excluded.cost_total_usd,
+                                      cost_prompt_usd = excluded.cost_prompt_usd,
+                                      cost_completion_usd = excluded.cost_completion_usd,
+                                      cost_reasoning_usd = excluded.cost_reasoning_usd,
+                                      cost_currency = excluded.cost_currency,
+                                      cost_json = excluded.cost_json
                         """,
                         [
                             persisted_call_id,
@@ -295,7 +313,16 @@ class PostgresRepository:
                             response.finish_reason,
                             response.usage.prompt_tokens,
                             response.usage.completion_tokens,
+                            response.usage.reasoning_tokens,
                             response.usage.total_tokens,
+                            response.reasoning,
+                            json.dumps(response.reasoning_details, ensure_ascii=True) if response.reasoning_details is not None else None,
+                            response.cost.total_cost_usd if response.cost is not None else None,
+                            response.cost.prompt_cost_usd if response.cost is not None else None,
+                            response.cost.completion_cost_usd if response.cost is not None else None,
+                            response.cost.reasoning_cost_usd if response.cost is not None else None,
+                            response.cost.currency if response.cost is not None else None,
+                            json.dumps(response.cost.raw, ensure_ascii=True) if response.cost is not None else None,
                         ],
                     )
 
@@ -344,6 +371,12 @@ class PostgresRepository:
                     lc.created_at,
                     lc.latency_ms,
                     lc.error_text,
+                    lcs.reasoning_tokens,
+                    lcs.reasoning_text,
+                    lcs.cost_total_usd,
+                    lcs.cost_prompt_usd,
+                    lcs.cost_completion_usd,
+                    lcs.cost_reasoning_usd,
                     lcr.request_json,
                     lcs.response_json
                 FROM llm_calls lc
@@ -369,8 +402,14 @@ class PostgresRepository:
                     created_at=row[6],
                     latency_ms=int(row[7]),
                     error_text=str(row[8]) if row[8] is not None else None,
-                    request=row[9] if isinstance(row[9], dict) else {},
-                    response=row[10] if isinstance(row[10], dict) else None,
+                    reasoning_tokens=int(row[9] or 0),
+                    reasoning_text=str(row[10]) if row[10] is not None else None,
+                    cost_total_usd=float(row[11]) if row[11] is not None else None,
+                    cost_prompt_usd=float(row[12]) if row[12] is not None else None,
+                    cost_completion_usd=float(row[13]) if row[13] is not None else None,
+                    cost_reasoning_usd=float(row[14]) if row[14] is not None else None,
+                    request=row[15] if isinstance(row[15], dict) else {},
+                    response=row[16] if isinstance(row[16], dict) else None,
                 )
             )
         return out

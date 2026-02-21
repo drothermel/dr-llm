@@ -6,10 +6,12 @@ from llm_pool.tools.executor import ToolExecutor
 from llm_pool.tools.registry import ToolDefinition, ToolRegistry
 from llm_pool.types import (
     CallMode,
+    CostInfo,
     LlmRequest,
     LlmResponse,
     Message,
     ModelToolCall,
+    ReasoningConfig,
     RunStatus,
     SessionEvent,
     SessionHandle,
@@ -26,12 +28,14 @@ from llm_pool.types import (
 
 __all__ = [
     "CallMode",
+    "CostInfo",
     "LlmClient",
     "LlmRequest",
     "LlmResponse",
     "Message",
     "ModelToolCall",
     "PostgresRepository",
+    "ReasoningConfig",
     "RunStatus",
     "SessionClient",
     "SessionEvent",

@@ -10,7 +10,14 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from llm_pool.errors import ProviderSemanticError, ProviderTransportError
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
-from llm_pool.providers.utils import parse_tool_calls, parse_usage, to_openai_messages
+from llm_pool.providers.utils import (
+    parse_cost_info,
+    parse_reasoning,
+    parse_reasoning_tokens,
+    parse_tool_calls,
+    parse_usage,
+    to_openai_messages,
+)
 from llm_pool.types import CallMode, LlmRequest, LlmResponse
 
 
@@ -68,6 +75,8 @@ class OpenAICompatAdapter(ProviderAdapter):
             payload["top_p"] = request.top_p
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens
+        if request.reasoning is not None:
+            payload["reasoning"] = request.reasoning.model_dump(mode="json", exclude_none=True)
         if request.tools:
             payload["tools"] = request.tools
         endpoint = self._config.base_url.rstrip("/") + self._config.chat_path
@@ -94,16 +103,23 @@ class OpenAICompatAdapter(ProviderAdapter):
         message = choices[0].get("message") or {}
         text = str(message.get("content") or "")
         usage_raw = body.get("usage") or {}
+        reasoning_tokens = parse_reasoning_tokens(usage_raw if isinstance(usage_raw, dict) else {})
         usage = parse_usage(
             prompt_tokens=usage_raw.get("prompt_tokens"),
             completion_tokens=usage_raw.get("completion_tokens"),
             total_tokens=usage_raw.get("total_tokens"),
+            reasoning_tokens=reasoning_tokens,
         )
+        reasoning, reasoning_details = parse_reasoning(message if isinstance(message, dict) else {})
+        cost = parse_cost_info(body if isinstance(body, dict) else {})
         tool_calls = parse_tool_calls(message.get("tool_calls"))
         return LlmResponse(
             text=text,
             finish_reason=choices[0].get("finish_reason"),
             usage=usage,
+            reasoning=reasoning,
+            reasoning_details=reasoning_details,
+            cost=cost,
             raw_json=body,
             latency_ms=latency_ms,
             provider=request.provider,

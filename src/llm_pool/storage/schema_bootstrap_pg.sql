@@ -56,11 +56,32 @@ CREATE TABLE IF NOT EXISTS llm_call_responses (
     finish_reason TEXT,
     prompt_tokens INTEGER NOT NULL DEFAULT 0,
     completion_tokens INTEGER NOT NULL DEFAULT 0,
+    reasoning_tokens INTEGER NOT NULL DEFAULT 0,
     total_tokens INTEGER NOT NULL DEFAULT 0,
+    reasoning_text TEXT,
+    reasoning_details_json JSONB,
+    cost_total_usd DOUBLE PRECISION,
+    cost_prompt_usd DOUBLE PRECISION,
+    cost_completion_usd DOUBLE PRECISION,
+    cost_reasoning_usd DOUBLE PRECISION,
+    cost_currency TEXT,
+    cost_json JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_llm_call_responses_hash ON llm_call_responses(response_hash);
+
+ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS reasoning_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS reasoning_text TEXT;
+ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS reasoning_details_json JSONB;
+ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS cost_total_usd DOUBLE PRECISION;
+ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS cost_prompt_usd DOUBLE PRECISION;
+ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS cost_completion_usd DOUBLE PRECISION;
+ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS cost_reasoning_usd DOUBLE PRECISION;
+ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS cost_currency TEXT;
+ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS cost_json JSONB;
+
+CREATE INDEX IF NOT EXISTS idx_llm_call_responses_reasoning_tokens ON llm_call_responses(reasoning_tokens);
 
 CREATE TABLE IF NOT EXISTS artifacts (
     artifact_id TEXT PRIMARY KEY,

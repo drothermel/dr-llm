@@ -4,7 +4,7 @@ import json
 from hashlib import sha256
 from typing import Any
 
-from llm_pool.types import Message, ModelToolCall, TokenUsage
+from llm_pool.types import CostInfo, Message, ModelToolCall, TokenUsage
 
 
 def stable_json_dumps(payload: dict[str, Any]) -> str:
@@ -47,11 +47,94 @@ def parse_usage(
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     total_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
 ) -> TokenUsage:
     p = int(prompt_tokens or 0)
     c = int(completion_tokens or 0)
     t = int(total_tokens or (p + c))
-    return TokenUsage(prompt_tokens=p, completion_tokens=c, total_tokens=t)
+    r = int(reasoning_tokens or 0)
+    return TokenUsage(prompt_tokens=p, completion_tokens=c, total_tokens=t, reasoning_tokens=r)
+
+
+def parse_reasoning_tokens(usage_raw: dict[str, Any] | None) -> int:
+    if not isinstance(usage_raw, dict):
+        return 0
+    direct = _as_int(usage_raw.get("reasoning_tokens"))
+    if direct is not None:
+        return direct
+
+    completion_details = usage_raw.get("completion_tokens_details")
+    if isinstance(completion_details, dict):
+        value = _as_int(completion_details.get("reasoning_tokens"))
+        if value is not None:
+            return value
+
+    output_details = usage_raw.get("output_tokens_details")
+    if isinstance(output_details, dict):
+        value = _as_int(output_details.get("reasoning_tokens"))
+        if value is not None:
+            return value
+    return 0
+
+
+def parse_reasoning(
+    message_raw: dict[str, Any] | None,
+) -> tuple[str | None, list[dict[str, Any]] | None]:
+    if not isinstance(message_raw, dict):
+        return None, None
+
+    reasoning_raw = message_raw.get("reasoning")
+    if reasoning_raw is None:
+        reasoning_raw = message_raw.get("reasoning_content")
+    reasoning_text = str(reasoning_raw) if isinstance(reasoning_raw, (str, int, float)) else None
+
+    reasoning_details_raw = message_raw.get("reasoning_details")
+    reasoning_details: list[dict[str, Any]] | None = None
+    if isinstance(reasoning_details_raw, list):
+        reasoning_details = [item for item in reasoning_details_raw if isinstance(item, dict)]
+    return reasoning_text, reasoning_details
+
+
+def parse_cost_info(body_raw: dict[str, Any] | None) -> CostInfo | None:
+    if not isinstance(body_raw, dict):
+        return None
+    usage_raw = body_raw.get("usage")
+    usage = usage_raw if isinstance(usage_raw, dict) else {}
+
+    total_cost = _first_float(
+        usage.get("total_cost"),
+        usage.get("cost"),
+        body_raw.get("total_cost"),
+        body_raw.get("cost"),
+    )
+    prompt_cost = _first_float(usage.get("prompt_cost"), body_raw.get("prompt_cost"))
+    completion_cost = _first_float(usage.get("completion_cost"), body_raw.get("completion_cost"))
+    reasoning_cost = _first_float(usage.get("reasoning_cost"), body_raw.get("reasoning_cost"))
+    currency = _first_str(usage.get("currency"), body_raw.get("currency")) or "USD"
+
+    if (
+        total_cost is None
+        and prompt_cost is None
+        and completion_cost is None
+        and reasoning_cost is None
+    ):
+        return None
+
+    raw: dict[str, Any] = {}
+    for key in ("cost", "total_cost", "prompt_cost", "completion_cost", "reasoning_cost", "currency"):
+        if key in usage:
+            raw[f"usage.{key}"] = usage[key]
+        if key in body_raw:
+            raw[f"body.{key}"] = body_raw[key]
+
+    return CostInfo(
+        total_cost_usd=total_cost,
+        prompt_cost_usd=prompt_cost,
+        completion_cost_usd=completion_cost,
+        reasoning_cost_usd=reasoning_cost,
+        currency=currency,
+        raw=raw,
+    )
 
 
 def parse_tool_calls(raw: list[dict[str, Any]] | None) -> list[ModelToolCall]:
@@ -86,3 +169,36 @@ def parse_tool_calls(raw: list[dict[str, Any]] | None) -> list[ModelToolCall]:
             )
         )
     return parsed
+
+
+def _as_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _first_float(*values: Any) -> float | None:
+    for value in values:
+        parsed = _as_float(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _first_str(*values: Any) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value:
+            return value
+    return None
