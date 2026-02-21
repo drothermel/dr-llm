@@ -5,10 +5,35 @@ from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Generator
 
 import pytest
+import psycopg
+from psycopg import sql
 
 from llm_pool.errors import SessionConflictError
 from llm_pool.storage.repository import PostgresRepository, StorageConfig
 from llm_pool.types import SessionTurnStatus, ToolPolicy
+
+_TEST_TABLES = (
+    "tool_call_dead_letters",
+    "tool_results",
+    "tool_calls",
+    "session_events",
+    "session_turns",
+    "sessions",
+    "artifacts",
+    "llm_call_responses",
+    "llm_call_requests",
+    "llm_calls",
+    "run_parameters",
+    "runs",
+)
+
+
+def _truncate_test_tables(dsn: str) -> None:
+    table_list = sql.SQL(", ").join(sql.Identifier(name) for name in _TEST_TABLES)
+    stmt = sql.SQL("TRUNCATE TABLE {} RESTART IDENTITY CASCADE").format(table_list)
+    with psycopg.connect(dsn) as conn:
+        conn.execute(stmt)
+        conn.commit()
 
 
 @pytest.fixture(scope="module")
@@ -27,7 +52,9 @@ def repository() -> Generator[PostgresRepository, None, None]:
         )
     )
     repo.init_schema()
+    _truncate_test_tables(dsn)
     yield repo
+    _truncate_test_tables(dsn)
     repo.close()
 
 

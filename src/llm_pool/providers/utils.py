@@ -199,11 +199,13 @@ def parse_cost_info(body_raw: dict[str, Any] | None) -> CostInfo | None:
     )
 
 
-def parse_tool_calls(raw: list[dict[str, Any]] | None) -> list[ModelToolCall]:
+def parse_tool_calls(raw: list[Any] | None) -> list[ModelToolCall]:
     if not raw:
         return []
     parsed: list[ModelToolCall] = []
     for item in raw:
+        if not isinstance(item, dict):
+            continue
         call_id = str(item.get(KEY_ID) or item.get(KEY_TOOL_CALL_ID) or "")
         fn = item.get(KEY_FUNCTION) or {}
         name = str(fn.get(KEY_NAME) or item.get(KEY_NAME) or "")

@@ -225,15 +225,20 @@ class GoogleAdapter(ProviderAdapter):
         parts = candidate.content.parts if candidate.content else []
         text_chunks: list[str] = []
         tool_calls: list[ModelToolCall] = []
-        for idx, part in enumerate(parts):
+        tool_call_ordinal = 0
+        for part in parts:
             if part.text:
                 text_chunks.append(part.text)
             fc = part.functionCall
             if fc is not None:
+                name = str(fc.name or "")
+                if not name:
+                    continue
+                tool_call_ordinal += 1
                 tool_calls.append(
                     ModelToolCall(
-                        tool_call_id=f"google_call_{idx + 1}",
-                        name=str(fc.name or ""),
+                        tool_call_id=f"google_call_{tool_call_ordinal}",
+                        name=name,
                         arguments=fc.args if isinstance(fc.args, dict) else {},
                     )
                 )
@@ -271,7 +276,7 @@ class GoogleAdapter(ProviderAdapter):
             provider=request.provider,
             model=request.model,
             mode=CallMode.api,
-            tool_calls=[tc for tc in tool_calls if tc.name],
+            tool_calls=tool_calls,
         )
 
 

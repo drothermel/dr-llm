@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from typing import Any, cast
 
 import httpx
 
 from llm_pool.providers.anthropic import AnthropicAdapter, AnthropicConfig
 from llm_pool.providers.google import GoogleAdapter, GoogleConfig
+from llm_pool.providers.headless import CodexHeadlessAdapter
 from llm_pool.types import (
     LlmRequest,
     Message,
@@ -187,3 +189,95 @@ def test_google_payload_preserves_tool_context() -> None:
     tools = cast(list[dict[str, Any]], payload["tools"])
     declarations = cast(list[dict[str, Any]], tools[0]["functionDeclarations"])
     assert declarations[0]["name"] == "lookup"
+
+
+def test_google_tool_call_ids_are_sequential_for_valid_function_calls() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:  # noqa: ARG001
+        return httpx.Response(
+            status_code=200,
+            json={
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {"text": "thinking"},
+                                {"functionCall": {"name": "", "args": {}}},
+                                {
+                                    "functionCall": {
+                                        "name": "lookup",
+                                        "args": {"q": "x"},
+                                    }
+                                },
+                                {"text": "more text"},
+                                {
+                                    "functionCall": {
+                                        "name": "search",
+                                        "args": {"q": "y"},
+                                    }
+                                },
+                            ]
+                        },
+                        "finishReason": "STOP",
+                    }
+                ],
+                "usageMetadata": {
+                    "promptTokenCount": 1,
+                    "candidatesTokenCount": 2,
+                    "totalTokenCount": 3,
+                },
+            },
+        )
+
+    adapter = GoogleAdapter(
+        config=GoogleConfig(
+            api_key="x", base_url="https://generativelanguage.googleapis.com/v1beta"
+        ),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    response = adapter.generate(
+        LlmRequest(
+            provider="google",
+            model="gemini-test",
+            messages=[Message(role="user", content="go")],
+        )
+    )
+
+    assert [call.tool_call_id for call in response.tool_calls] == [
+        "google_call_1",
+        "google_call_2",
+    ]
+    assert [call.name for call in response.tool_calls] == ["lookup", "search"]
+
+
+def test_headless_tool_call_ids_are_sequential_for_valid_items(monkeypatch) -> None:  # noqa: ANN001
+    body = {
+        "text": "ok",
+        "tool_calls": [
+            "not-a-dict",
+            {"arguments": {"q": "ignored"}},
+            {"name": "lookup", "arguments": {"q": "x"}},
+            {"name": "search", "arguments": {"q": "y"}},
+        ],
+    }
+
+    def fake_run(*args, **kwargs):  # noqa: ANN002, ANN003
+        return subprocess.CompletedProcess(
+            args=kwargs.get("args") or [],
+            returncode=0,
+            stdout=json.dumps(body, ensure_ascii=True),
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    adapter = CodexHeadlessAdapter(command=["codex", "--headless", "--json"])
+    response = adapter.generate(
+        LlmRequest(
+            provider="codex",
+            model="codex-test",
+            messages=[Message(role="user", content="go")],
+        )
+    )
+
+    assert [call.tool_call_id for call in response.tool_calls] == ["call_1", "call_2"]
+    assert [call.name for call in response.tool_calls] == ["lookup", "search"]

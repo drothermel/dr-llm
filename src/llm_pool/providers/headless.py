@@ -14,13 +14,13 @@ from llm_pool.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
+    parse_tool_calls,
 )
 from llm_pool.types import (
     CallMode,
     LlmRequest,
     LlmResponse,
     Message,
-    ModelToolCall,
     ProviderToolSpec,
     ReasoningConfig,
     TokenUsage,
@@ -169,27 +169,9 @@ class _BaseHeadlessAdapter(ProviderAdapter):
                 item for item in body.get("reasoning_details") if isinstance(item, dict)
             ]
         cost = parse_cost_info(body if isinstance(body, dict) else {})
-        tool_calls: list[ModelToolCall] = []
-        for idx, item in enumerate(
+        tool_calls = parse_tool_calls(
             (body.get("tool_calls") or []) if isinstance(body, dict) else []
-        ):
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name") or "")
-            if not name:
-                continue
-            args = (
-                item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
-            )
-            tool_calls.append(
-                ModelToolCall(
-                    tool_call_id=str(
-                        item.get("tool_call_id") or item.get("id") or f"call_{idx + 1}"
-                    ),
-                    name=name,
-                    arguments=args,
-                )
-            )
+        )
 
         return LlmResponse(
             text=str(body.get("text") or ""),

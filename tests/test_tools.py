@@ -86,3 +86,112 @@ def test_registry_to_provider_tools_returns_typed_models() -> None:
     assert len(tools) == 1
     assert isinstance(tools[0], ProviderToolSpec)
     assert tools[0].function.name == "lookup"
+
+
+def test_tool_executor_invoke_async_with_async_handler() -> None:
+    async def async_handler(args: dict[str, int]) -> dict[str, int]:
+        return {"value": args["x"]}
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="async_tool",
+            description="Returns value",
+            input_schema={"type": "object"},
+            handler=async_handler,
+        )
+    )
+    executor = ToolExecutor(registry=registry)
+
+    async def run_invoke_async():
+        return await executor.invoke_async(
+            ToolInvocation(
+                tool_call_id="tc_async",
+                name="async_tool",
+                arguments={"x": 9},
+                session_id="s1",
+            )
+        )
+
+    result = asyncio.run(run_invoke_async())
+    assert result.ok
+    assert result.result == {"value": 9}
+
+
+def test_tool_executor_invoke_async_wraps_non_dict_results() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="plain",
+            description="Returns scalar",
+            input_schema={"type": "object"},
+            handler=lambda _args: 42,
+        )
+    )
+    executor = ToolExecutor(registry=registry)
+
+    async def run_invoke_async():
+        return await executor.invoke_async(
+            ToolInvocation(
+                tool_call_id="tc_plain",
+                name="plain",
+                arguments={},
+                session_id="s1",
+            )
+        )
+
+    result = asyncio.run(run_invoke_async())
+    assert result.ok
+    assert result.result == {"value": 42}
+
+
+def test_tool_executor_invoke_async_unknown_tool() -> None:
+    executor = ToolExecutor(registry=ToolRegistry())
+
+    async def run_invoke_async():
+        return await executor.invoke_async(
+            ToolInvocation(
+                tool_call_id="tc_missing",
+                name="missing",
+                arguments={},
+                session_id="s1",
+            )
+        )
+
+    result = asyncio.run(run_invoke_async())
+    assert not result.ok
+    assert result.error is not None
+    assert result.error.error_code == ToolErrorCode.unknown_tool
+
+
+def test_tool_executor_invoke_async_handler_exception() -> None:
+    def failing_handler(_args):  # noqa: ANN001
+        raise ValueError("boom")
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="failing",
+            description="Raises",
+            input_schema={"type": "object"},
+            handler=failing_handler,
+        )
+    )
+    executor = ToolExecutor(registry=registry)
+
+    async def run_invoke_async():
+        return await executor.invoke_async(
+            ToolInvocation(
+                tool_call_id="tc_fail",
+                name="failing",
+                arguments={},
+                session_id="s1",
+            )
+        )
+
+    result = asyncio.run(run_invoke_async())
+    assert not result.ok
+    assert result.error is not None
+    assert result.error.error_code == ToolErrorCode.tool_execution_failed
+    assert result.error.exception_type == "ValueError"
+    assert result.error.message == "boom"

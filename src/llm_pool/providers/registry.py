@@ -41,8 +41,8 @@ class ProviderRegistry:
         key = provider_name.strip().lower()
         with self._lock:
             adapter = self._adapters.get(key)
+            known = ", ".join(sorted(self._adapters.keys()))
         if adapter is None:
-            known = ", ".join(sorted(self.names()))
             raise KeyError(
                 f"Unknown provider {provider_name!r}. Known providers: {known}"
             )
