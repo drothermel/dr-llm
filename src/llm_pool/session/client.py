@@ -323,6 +323,15 @@ class SessionClient:
                     )
                     self._repository.complete_tool_call(result=tool_result)
                     event_type = "tool_succeeded" if tool_result.ok else "tool_failed"
+                    error_payload = (
+                        tool_result.error.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                            exclude_computed_fields=True,
+                        )
+                        if tool_result.error is not None
+                        else None
+                    )
                     self._repository.append_session_event(
                         session_id=input.session_id,
                         turn_id=turn_id,
@@ -331,13 +340,13 @@ class SessionClient:
                             "tool_call_id": persisted_tool_call_id,
                             "tool_name": model_tool_call.name,
                             "result": tool_result.result,
-                            "error": tool_result.error,
+                            "error": error_payload,
                         },
                     )
                     tool_message_content = json.dumps(
                         tool_result.result
                         if tool_result.ok
-                        else {"error": tool_result.error},
+                        else {"error": error_payload},
                         ensure_ascii=True,
                         sort_keys=True,
                     )

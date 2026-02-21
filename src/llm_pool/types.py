@@ -53,6 +53,12 @@ class ToolCallStatus(str, Enum):
     dead_letter = "dead_letter"
 
 
+class ToolErrorCode(str, Enum):
+    unknown_tool = "unknown_tool"
+    tool_execution_failed = "tool_execution_failed"
+    tool_async_in_running_loop = "tool_async_in_running_loop"
+
+
 class Message(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -285,13 +291,21 @@ class ToolInvocation(BaseModel):
     turn_id: str | None = None
 
 
+class ToolError(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    error_code: ToolErrorCode
+    message: str
+    exception_type: str | None = None
+
+
 class ToolResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     tool_call_id: str
     ok: bool
     result: dict[str, Any] | None = None
-    error: dict[str, Any] | None = None
+    error: ToolError | None = None
 
 
 class ToolCallRecord(BaseModel):

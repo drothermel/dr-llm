@@ -6,7 +6,7 @@ from typing import Any, cast
 from pydantic import BaseModel, Field
 
 from llm_pool.session.worker import run_tool_worker
-from llm_pool.types import ToolResult
+from llm_pool.types import ToolError, ToolErrorCode, ToolResult
 
 
 class FakeRepository(BaseModel):
@@ -77,7 +77,11 @@ def test_worker_releases_failed_call_for_retry_before_max_attempts() -> None:
         result=ToolResult(
             tool_call_id="tc_1",
             ok=False,
-            error={"error_type": "RuntimeError", "message": "boom"},
+            error=ToolError(
+                error_code=ToolErrorCode.tool_execution_failed,
+                message="boom",
+                exception_type="RuntimeError",
+            ),
         )
     )
 
@@ -102,7 +106,11 @@ def test_worker_dead_letters_when_attempt_threshold_reached() -> None:
         result=ToolResult(
             tool_call_id="tc_1",
             ok=False,
-            error={"error_type": "RuntimeError", "message": "boom"},
+            error=ToolError(
+                error_code=ToolErrorCode.tool_execution_failed,
+                message="boom",
+                exception_type="RuntimeError",
+            ),
         )
     )
 

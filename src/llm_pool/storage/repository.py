@@ -1003,7 +1003,14 @@ class PostgresRepository:
                     """,
                     [
                         status.value,
-                        json.dumps(result.error, ensure_ascii=True)
+                        json.dumps(
+                            result.error.model_dump(
+                                mode="json",
+                                exclude_none=True,
+                                exclude_computed_fields=True,
+                            ),
+                            ensure_ascii=True,
+                        )
                         if result.error
                         else None,
                         result.tool_call_id,
@@ -1024,7 +1031,14 @@ class PostgresRepository:
                         json.dumps(result.result, ensure_ascii=True)
                         if result.result is not None
                         else None,
-                        json.dumps(result.error, ensure_ascii=True)
+                        json.dumps(
+                            result.error.model_dump(
+                                mode="json",
+                                exclude_none=True,
+                                exclude_computed_fields=True,
+                            ),
+                            ensure_ascii=True,
+                        )
                         if result.error is not None
                         else None,
                     ],

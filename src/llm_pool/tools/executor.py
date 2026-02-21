@@ -7,7 +7,7 @@ from typing import Any
 
 from llm_pool.errors import ToolExecutionError
 from llm_pool.tools.registry import ToolRegistry
-from llm_pool.types import ToolInvocation, ToolResult
+from llm_pool.types import ToolError, ToolErrorCode, ToolInvocation, ToolResult
 
 
 async def _await_result(awaitable: Awaitable[dict[str, Any]]) -> dict[str, Any]:
@@ -25,7 +25,11 @@ class ToolExecutor:
             return ToolResult(
                 tool_call_id=call.tool_call_id,
                 ok=False,
-                error={"error_type": "unknown_tool", "message": str(exc)},
+                error=ToolError(
+                    error_code=ToolErrorCode.unknown_tool,
+                    message=str(exc),
+                    exception_type=type(exc).__name__,
+                ),
             )
 
         try:
@@ -54,9 +58,23 @@ class ToolExecutor:
             if not isinstance(result, dict):
                 result = {"value": result}
             return ToolResult(tool_call_id=call.tool_call_id, ok=True, result=result)
+        except ToolExecutionError as exc:
+            return ToolResult(
+                tool_call_id=call.tool_call_id,
+                ok=False,
+                error=ToolError(
+                    error_code=ToolErrorCode.tool_async_in_running_loop,
+                    message=str(exc),
+                    exception_type=type(exc).__name__,
+                ),
+            )
         except Exception as exc:  # noqa: BLE001
             return ToolResult(
                 tool_call_id=call.tool_call_id,
                 ok=False,
-                error={"error_type": type(exc).__name__, "message": str(exc)},
+                error=ToolError(
+                    error_code=ToolErrorCode.tool_execution_failed,
+                    message=str(exc),
+                    exception_type=type(exc).__name__,
+                ),
             )

@@ -2,7 +2,7 @@ import asyncio
 
 from llm_pool.tools.executor import ToolExecutor
 from llm_pool.tools.registry import ToolDefinition, ToolRegistry
-from llm_pool.types import ProviderToolSpec, ToolInvocation
+from llm_pool.types import ProviderToolSpec, ToolErrorCode, ToolInvocation
 
 
 def test_tool_executor_sync_handler() -> None:
@@ -34,7 +34,7 @@ def test_tool_executor_unknown_tool() -> None:
     )
     assert not result.ok
     assert result.error is not None
-    assert result.error["error_type"] == "unknown_tool"
+    assert result.error.error_code == ToolErrorCode.unknown_tool
 
 
 def test_tool_executor_async_handler_with_running_loop_returns_error() -> None:
@@ -65,7 +65,7 @@ def test_tool_executor_async_handler_with_running_loop_returns_error() -> None:
     result = asyncio.run(invoke_inside_loop())
     assert not result.ok
     assert result.error is not None
-    assert result.error["error_type"] == "ToolExecutionError"
+    assert result.error.error_code == ToolErrorCode.tool_async_in_running_loop
 
 
 def test_registry_to_provider_tools_returns_typed_models() -> None:

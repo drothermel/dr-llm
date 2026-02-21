@@ -82,14 +82,25 @@ def run_tool_worker(
                 stats["succeeded"] += 1
             else:
                 stats["failed"] += 1
+                error_payload = (
+                    result.error.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                        exclude_computed_fields=True,
+                    )
+                    if result.error is not None
+                    else None
+                )
                 if call.attempt_count >= max_attempts_before_dead_letter:
                     repository.dead_letter_tool_call(
                         tool_call_id=call.tool_call_id,
-                        reason=str(result.error),
+                        reason=result.error.message
+                        if result.error is not None
+                        else "unknown tool error",
                         payload={
                             "worker_id": wid,
                             "status": ToolCallStatus.failed.value,
-                            "error": result.error,
+                            "error": error_payload,
                         },
                     )
                     repository.append_session_event(
@@ -99,7 +110,7 @@ def run_tool_worker(
                         payload={
                             "tool_call_id": call.tool_call_id,
                             "tool_name": call.tool_name,
-                            "error": result.error,
+                            "error": error_payload,
                             "terminal": True,
                         },
                     )
@@ -108,7 +119,7 @@ def run_tool_worker(
                     repository.release_tool_claim(
                         tool_call_id=call.tool_call_id,
                         error_text=json.dumps(
-                            result.error, ensure_ascii=True, sort_keys=True
+                            error_payload, ensure_ascii=True, sort_keys=True
                         ),
                     )
                     repository.append_session_event(
@@ -118,7 +129,7 @@ def run_tool_worker(
                         payload={
                             "tool_call_id": call.tool_call_id,
                             "tool_name": call.tool_name,
-                            "error": result.error,
+                            "error": error_payload,
                             "attempt_count": call.attempt_count,
                         },
                     )
