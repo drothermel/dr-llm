@@ -178,7 +178,9 @@ def query(
     """Execute a single LLM query through the unified provider interface."""
     metadata = _parse_json(metadata_json, arg_name="metadata_json", expected=dict) or {}
     tools = _parse_json(tools_json, arg_name="tools_json", expected=list)
-    reasoning_payload = _parse_json(reasoning_json, arg_name="reasoning_json", expected=dict)
+    reasoning_payload = _parse_json(
+        reasoning_json, arg_name="reasoning_json", expected=dict
+    )
     reasoning = (
         ReasoningConfig.model_validate(reasoning_payload)
         if isinstance(reasoning_payload, dict)
@@ -293,7 +295,9 @@ def session_start(
 ) -> None:
     """Create a session and persist initial messages."""
     metadata = _parse_json(metadata_json, arg_name="metadata_json", expected=dict) or {}
-    reasoning_payload = _parse_json(reasoning_json, arg_name="reasoning_json", expected=dict)
+    reasoning_payload = _parse_json(
+        reasoning_json, arg_name="reasoning_json", expected=dict
+    )
     reasoning = (
         ReasoningConfig.model_validate(reasoning_payload)
         if isinstance(reasoning_payload, dict)
@@ -351,7 +355,9 @@ def session_step(
 ) -> None:
     """Advance a session by one model/tool step."""
     metadata = _parse_json(metadata_json, arg_name="metadata_json", expected=dict) or {}
-    reasoning_payload = _parse_json(reasoning_json, arg_name="reasoning_json", expected=dict)
+    reasoning_payload = _parse_json(
+        reasoning_json, arg_name="reasoning_json", expected=dict
+    )
     reasoning = (
         ReasoningConfig.model_validate(reasoning_payload)
         if isinstance(reasoning_payload, dict)

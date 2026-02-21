@@ -25,7 +25,9 @@ def test_anthropic_payload_preserves_tool_context() -> None:
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     adapter = AnthropicAdapter(
-        config=AnthropicConfig(api_key="x", base_url="https://api.anthropic.com/v1/messages"),
+        config=AnthropicConfig(
+            api_key="x", base_url="https://api.anthropic.com/v1/messages"
+        ),
         client=client,
     )
 
@@ -37,9 +39,18 @@ def test_anthropic_payload_preserves_tool_context() -> None:
             Message(
                 role="assistant",
                 content="",
-                tool_calls=[ModelToolCall(tool_call_id="tc_1", name="lookup", arguments={"q": "abc"})],
+                tool_calls=[
+                    ModelToolCall(
+                        tool_call_id="tc_1", name="lookup", arguments={"q": "abc"}
+                    )
+                ],
             ),
-            Message(role="tool", name="lookup", tool_call_id="tc_1", content='{"result": 123}'),
+            Message(
+                role="tool",
+                name="lookup",
+                tool_call_id="tc_1",
+                content='{"result": 123}',
+            ),
         ],
         tools=[
             {
@@ -47,7 +58,10 @@ def test_anthropic_payload_preserves_tool_context() -> None:
                 "function": {
                     "name": "lookup",
                     "description": "Lookup a value",
-                    "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"q": {"type": "string"}},
+                    },
                 },
             }
         ],
@@ -61,7 +75,10 @@ def test_anthropic_payload_preserves_tool_context() -> None:
     messages = payload["messages"]
     assert any(
         message["role"] == "assistant"
-        and any(block.get("type") == "tool_use" and block.get("id") == "tc_1" for block in message["content"])
+        and any(
+            block.get("type") == "tool_use" and block.get("id") == "tc_1"
+            for block in message["content"]
+        )
         for message in messages
     )
     assert any(
@@ -99,7 +116,9 @@ def test_google_payload_preserves_tool_context() -> None:
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     adapter = GoogleAdapter(
-        config=GoogleConfig(api_key="x", base_url="https://generativelanguage.googleapis.com/v1beta"),
+        config=GoogleConfig(
+            api_key="x", base_url="https://generativelanguage.googleapis.com/v1beta"
+        ),
         client=client,
     )
 
@@ -111,9 +130,18 @@ def test_google_payload_preserves_tool_context() -> None:
             Message(
                 role="assistant",
                 content="",
-                tool_calls=[ModelToolCall(tool_call_id="tc_1", name="lookup", arguments={"q": "abc"})],
+                tool_calls=[
+                    ModelToolCall(
+                        tool_call_id="tc_1", name="lookup", arguments={"q": "abc"}
+                    )
+                ],
             ),
-            Message(role="tool", name="lookup", tool_call_id="tc_1", content='{"result": 123}'),
+            Message(
+                role="tool",
+                name="lookup",
+                tool_call_id="tc_1",
+                content='{"result": 123}',
+            ),
         ],
         tools=[
             {
@@ -121,7 +149,10 @@ def test_google_payload_preserves_tool_context() -> None:
                 "function": {
                     "name": "lookup",
                     "description": "Lookup a value",
-                    "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"q": {"type": "string"}},
+                    },
                 },
             }
         ],
@@ -135,12 +166,18 @@ def test_google_payload_preserves_tool_context() -> None:
     contents = payload["contents"]
     assert any(
         content["role"] == "model"
-        and any(part.get("functionCall", {}).get("name") == "lookup" for part in content["parts"])
+        and any(
+            part.get("functionCall", {}).get("name") == "lookup"
+            for part in content["parts"]
+        )
         for content in contents
     )
     assert any(
         content["role"] == "user"
-        and any(part.get("functionResponse", {}).get("name") == "lookup" for part in content["parts"])
+        and any(
+            part.get("functionResponse", {}).get("name") == "lookup"
+            for part in content["parts"]
+        )
         for content in contents
     )
     assert payload["tools"][0]["functionDeclarations"][0]["name"] == "lookup"

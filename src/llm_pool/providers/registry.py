@@ -10,7 +10,9 @@ class ProviderRegistry:
         self._lock = RLock()
         self._adapters: dict[str, ProviderAdapter] = {}
 
-    def register(self, adapter: ProviderAdapter, *, aliases: list[str] | None = None) -> None:
+    def register(
+        self, adapter: ProviderAdapter, *, aliases: list[str] | None = None
+    ) -> None:
         names = [adapter.name]
         if aliases:
             names.extend(aliases)
@@ -24,7 +26,9 @@ class ProviderRegistry:
             adapter = self._adapters.get(key)
         if adapter is None:
             known = ", ".join(sorted(self.names()))
-            raise KeyError(f"Unknown provider {provider_name!r}. Known providers: {known}")
+            raise KeyError(
+                f"Unknown provider {provider_name!r}. Known providers: {known}"
+            )
         return adapter
 
     def names(self) -> set[str]:

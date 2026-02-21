@@ -18,7 +18,9 @@ def test_parse_usage_defaults_total() -> None:
 
 
 def test_parse_usage_includes_reasoning_tokens() -> None:
-    usage = parse_usage(prompt_tokens=10, completion_tokens=5, total_tokens=20, reasoning_tokens=7)
+    usage = parse_usage(
+        prompt_tokens=10, completion_tokens=5, total_tokens=20, reasoning_tokens=7
+    )
     assert usage.reasoning_tokens == 7
 
 
@@ -94,7 +96,11 @@ def test_to_openai_messages_includes_assistant_tool_calls() -> None:
             Message(
                 role="assistant",
                 content="",
-                tool_calls=[ModelToolCall(tool_call_id="tc_1", name="lookup", arguments={"q": "abc"})],
+                tool_calls=[
+                    ModelToolCall(
+                        tool_call_id="tc_1", name="lookup", arguments={"q": "abc"}
+                    )
+                ],
             )
         ]
     )

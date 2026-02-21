@@ -7,7 +7,12 @@ from typing import Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from llm_pool.errors import ProviderSemanticError, ProviderTransportError
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
@@ -28,16 +33,22 @@ class GoogleAdapter(ProviderAdapter):
     name = "google"
     mode = "api"
 
-    def __init__(self, config: GoogleConfig | None = None, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self, config: GoogleConfig | None = None, client: httpx.Client | None = None
+    ) -> None:
         self._config = config or GoogleConfig()
         self._client = client or httpx.Client(timeout=self._config.timeout_seconds)
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(supports_native_tools=True, supports_structured_output=True)
+        return ProviderCapabilities(
+            supports_native_tools=True, supports_structured_output=True
+        )
 
     @retry(
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.TransportError, ProviderTransportError)),
+        retry=retry_if_exception_type(
+            (httpx.TimeoutException, httpx.TransportError, ProviderTransportError)
+        ),
         wait=wait_exponential_jitter(initial=0.5, max=8),
         stop=stop_after_attempt(3),
         reraise=True,
@@ -49,15 +60,20 @@ class GoogleAdapter(ProviderAdapter):
                 f"Missing Google API key. Set {self._config.api_key_env} or pass config.api_key"
             )
         endpoint = (
-            f"{self._config.base_url}/models/{request.model}:generateContent"
-            f"?key={key}"
+            f"{self._config.base_url}/models/{request.model}:generateContent?key={key}"
         )
-        system = "\n".join(msg.content for msg in request.messages if msg.role == "system")
+        system = "\n".join(
+            msg.content for msg in request.messages if msg.role == "system"
+        )
         contents = _to_google_contents(request.messages)
         payload: dict[str, Any] = {"contents": contents}
         if system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
-        if request.temperature is not None or request.top_p is not None or request.max_tokens is not None:
+        if (
+            request.temperature is not None
+            or request.top_p is not None
+            or request.max_tokens is not None
+        ):
             payload["generationConfig"] = {}
             if request.temperature is not None:
                 payload["generationConfig"]["temperature"] = request.temperature
@@ -96,9 +112,11 @@ class GoogleAdapter(ProviderAdapter):
             if isinstance(fc, dict):
                 tool_calls.append(
                     ModelToolCall(
-                        tool_call_id=f"google_call_{idx+1}",
+                        tool_call_id=f"google_call_{idx + 1}",
                         name=str(fc.get("name") or ""),
-                        arguments=fc.get("args") if isinstance(fc.get("args"), dict) else {},
+                        arguments=fc.get("args")
+                        if isinstance(fc.get("args"), dict)
+                        else {},
                     )
                 )
         usage_raw = body.get("usageMetadata") or {}
@@ -177,7 +195,9 @@ def _to_google_contents(messages: list[Message]) -> list[dict[str, Any]]:
                             {
                                 "functionResponse": {
                                     "name": msg.name,
-                                    "response": _parse_tool_response_content(msg.content),
+                                    "response": _parse_tool_response_content(
+                                        msg.content
+                                    ),
                                 }
                             }
                         ],

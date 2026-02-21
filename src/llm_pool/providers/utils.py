@@ -33,7 +33,9 @@ def to_openai_messages(messages: list[Message]) -> list[dict[str, Any]]:
                     "type": "function",
                     "function": {
                         "name": call.name,
-                        "arguments": json.dumps(call.arguments, ensure_ascii=True, sort_keys=True),
+                        "arguments": json.dumps(
+                            call.arguments, ensure_ascii=True, sort_keys=True
+                        ),
                     },
                 }
                 for call in message.tool_calls
@@ -53,7 +55,9 @@ def parse_usage(
     c = int(completion_tokens or 0)
     t = int(total_tokens or (p + c))
     r = int(reasoning_tokens or 0)
-    return TokenUsage(prompt_tokens=p, completion_tokens=c, total_tokens=t, reasoning_tokens=r)
+    return TokenUsage(
+        prompt_tokens=p, completion_tokens=c, total_tokens=t, reasoning_tokens=r
+    )
 
 
 def parse_reasoning_tokens(usage_raw: dict[str, Any] | None) -> int:
@@ -86,12 +90,16 @@ def parse_reasoning(
     reasoning_raw = message_raw.get("reasoning")
     if reasoning_raw is None:
         reasoning_raw = message_raw.get("reasoning_content")
-    reasoning_text = str(reasoning_raw) if isinstance(reasoning_raw, (str, int, float)) else None
+    reasoning_text = (
+        str(reasoning_raw) if isinstance(reasoning_raw, (str, int, float)) else None
+    )
 
     reasoning_details_raw = message_raw.get("reasoning_details")
     reasoning_details: list[dict[str, Any]] | None = None
     if isinstance(reasoning_details_raw, list):
-        reasoning_details = [item for item in reasoning_details_raw if isinstance(item, dict)]
+        reasoning_details = [
+            item for item in reasoning_details_raw if isinstance(item, dict)
+        ]
     return reasoning_text, reasoning_details
 
 
@@ -108,8 +116,12 @@ def parse_cost_info(body_raw: dict[str, Any] | None) -> CostInfo | None:
         body_raw.get("cost"),
     )
     prompt_cost = _first_float(usage.get("prompt_cost"), body_raw.get("prompt_cost"))
-    completion_cost = _first_float(usage.get("completion_cost"), body_raw.get("completion_cost"))
-    reasoning_cost = _first_float(usage.get("reasoning_cost"), body_raw.get("reasoning_cost"))
+    completion_cost = _first_float(
+        usage.get("completion_cost"), body_raw.get("completion_cost")
+    )
+    reasoning_cost = _first_float(
+        usage.get("reasoning_cost"), body_raw.get("reasoning_cost")
+    )
     currency = _first_str(usage.get("currency"), body_raw.get("currency")) or "USD"
 
     if (
@@ -121,7 +133,14 @@ def parse_cost_info(body_raw: dict[str, Any] | None) -> CostInfo | None:
         return None
 
     raw: dict[str, Any] = {}
-    for key in ("cost", "total_cost", "prompt_cost", "completion_cost", "reasoning_cost", "currency"):
+    for key in (
+        "cost",
+        "total_cost",
+        "prompt_cost",
+        "completion_cost",
+        "reasoning_cost",
+        "currency",
+    ):
         if key in usage:
             raw[f"usage.{key}"] = usage[key]
         if key in body_raw:
@@ -145,7 +164,9 @@ def parse_tool_calls(raw: list[dict[str, Any]] | None) -> list[ModelToolCall]:
         call_id = str(item.get("id") or item.get("tool_call_id") or "")
         fn = item.get("function") or {}
         name = str(fn.get("name") or item.get("name") or "")
-        args_raw = fn.get("arguments") if isinstance(fn, dict) else item.get("arguments")
+        args_raw = (
+            fn.get("arguments") if isinstance(fn, dict) else item.get("arguments")
+        )
         args: dict[str, Any]
         if isinstance(args_raw, str):
             try:
@@ -163,7 +184,7 @@ def parse_tool_calls(raw: list[dict[str, Any]] | None) -> list[ModelToolCall]:
             continue
         parsed.append(
             ModelToolCall(
-                tool_call_id=call_id or f"call_{len(parsed)+1}",
+                tool_call_id=call_id or f"call_{len(parsed) + 1}",
                 name=name,
                 arguments=args,
             )

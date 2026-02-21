@@ -7,7 +7,12 @@ from typing import Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from llm_pool.errors import ProviderSemanticError, ProviderTransportError
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
@@ -29,13 +34,17 @@ class AnthropicAdapter(ProviderAdapter):
     name = "anthropic"
     mode = "api"
 
-    def __init__(self, config: AnthropicConfig | None = None, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self, config: AnthropicConfig | None = None, client: httpx.Client | None = None
+    ) -> None:
         self._config = config or AnthropicConfig()
         self._client = client or httpx.Client(timeout=self._config.timeout_seconds)
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(supports_native_tools=True, supports_structured_output=True)
+        return ProviderCapabilities(
+            supports_native_tools=True, supports_structured_output=True
+        )
 
     def _headers(self) -> dict[str, str]:
         key = self._config.api_key or os.getenv(self._config.api_key_env)
@@ -50,13 +59,17 @@ class AnthropicAdapter(ProviderAdapter):
         }
 
     @retry(
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.TransportError, ProviderTransportError)),
+        retry=retry_if_exception_type(
+            (httpx.TimeoutException, httpx.TransportError, ProviderTransportError)
+        ),
         wait=wait_exponential_jitter(initial=0.5, max=8),
         stop=stop_after_attempt(3),
         reraise=True,
     )
     def generate(self, request: LlmRequest) -> LlmResponse:
-        system = "\n".join(msg.content for msg in request.messages if msg.role == "system")
+        system = "\n".join(
+            msg.content for msg in request.messages if msg.role == "system"
+        )
         messages = _to_anthropic_messages(request.messages)
         payload: dict[str, Any] = {
             "model": request.model,
@@ -73,7 +86,9 @@ class AnthropicAdapter(ProviderAdapter):
         if normalized_tools:
             payload["tools"] = normalized_tools
         started = time.perf_counter()
-        resp = self._client.post(self._config.base_url, headers=self._headers(), json=payload)
+        resp = self._client.post(
+            self._config.base_url, headers=self._headers(), json=payload
+        )
         latency_ms = int((time.perf_counter() - started) * 1000)
 
         if resp.status_code >= 500 or resp.status_code == 429:
@@ -96,9 +111,11 @@ class AnthropicAdapter(ProviderAdapter):
             elif item_type == "tool_use":
                 tool_calls.append(
                     ModelToolCall(
-                        tool_call_id=str(item.get("id") or f"call_{idx+1}"),
+                        tool_call_id=str(item.get("id") or f"call_{idx + 1}"),
                         name=str(item.get("name") or ""),
-                        arguments=item.get("input") if isinstance(item.get("input"), dict) else {},
+                        arguments=item.get("input")
+                        if isinstance(item.get("input"), dict)
+                        else {},
                     )
                 )
 
@@ -106,7 +123,9 @@ class AnthropicAdapter(ProviderAdapter):
         usage = parse_usage(
             prompt_tokens=usage_raw.get("input_tokens"),
             completion_tokens=usage_raw.get("output_tokens"),
-            total_tokens=(usage_raw.get("input_tokens", 0) + usage_raw.get("output_tokens", 0)),
+            total_tokens=(
+                usage_raw.get("input_tokens", 0) + usage_raw.get("output_tokens", 0)
+            ),
         )
         return LlmResponse(
             text="\n".join(chunk for chunk in text_chunks if chunk),
@@ -121,7 +140,9 @@ class AnthropicAdapter(ProviderAdapter):
         )
 
 
-def _to_anthropic_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+def _to_anthropic_tools(
+    tools: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]] | None:
     if not tools:
         return None
     normalized: list[dict[str, Any]] = []
@@ -138,7 +159,9 @@ def _to_anthropic_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, An
                 {
                     "name": name,
                     "description": str(fn.get("description") or ""),
-                    "input_schema": schema if isinstance(schema, dict) else {"type": "object", "properties": {}},
+                    "input_schema": schema
+                    if isinstance(schema, dict)
+                    else {"type": "object", "properties": {}},
                 }
             )
             continue
@@ -169,7 +192,9 @@ def _to_anthropic_messages(messages: list[Message]) -> list[dict[str, Any]]:
                     block["is_error"] = True
                 payload.append({"role": "user", "content": [block]})
             elif msg.content:
-                payload.append({"role": "user", "content": [{"type": "text", "text": msg.content}]})
+                payload.append(
+                    {"role": "user", "content": [{"type": "text", "text": msg.content}]}
+                )
             continue
 
         if msg.role == "assistant":
@@ -191,6 +216,8 @@ def _to_anthropic_messages(messages: list[Message]) -> list[dict[str, Any]]:
             continue
 
         if msg.role == "user" and msg.content:
-            payload.append({"role": "user", "content": [{"type": "text", "text": msg.content}]})
+            payload.append(
+                {"role": "user", "content": [{"type": "text", "text": msg.content}]}
+            )
 
     return payload

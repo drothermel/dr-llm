@@ -59,7 +59,14 @@ class FakeRepository:
     def replay_session_messages(self, *, session_id: str):  # noqa: ARG002
         return []
 
-    def append_session_event(self, *, session_id: str, event_type: str, payload: dict, turn_id: str | None = None):  # noqa: ARG002
+    def append_session_event(
+        self,
+        *,
+        session_id: str,
+        event_type: str,
+        payload: dict,
+        turn_id: str | None = None,
+    ):  # noqa: ARG002
         self.events.append((event_type, payload))
         return "event_1"
 
@@ -123,7 +130,11 @@ def test_step_rejects_non_active_session() -> None:
     )
 
     with pytest.raises(SessionConflictError):
-        client.step_session(SessionStepInput(session_id="s1", messages=[Message(role="user", content="next")]))
+        client.step_session(
+            SessionStepInput(
+                session_id="s1", messages=[Message(role="user", content="next")]
+            )
+        )
 
     assert repo.advanced is False
 
@@ -138,7 +149,9 @@ def test_brokered_step_queues_tools_when_inline_disabled() -> None:
             provider="openai",
             model="gpt-test",
             mode=CallMode.api,
-            tool_calls=[ModelToolCall(tool_call_id="tc_1", name="lookup", arguments={"q": "x"})],
+            tool_calls=[
+                ModelToolCall(tool_call_id="tc_1", name="lookup", arguments={"q": "x"})
+            ],
         ),
     )
     client = SessionClient(

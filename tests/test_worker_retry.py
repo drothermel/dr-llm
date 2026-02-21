@@ -26,14 +26,25 @@ class FakeRepository:
     def complete_tool_call(self, *, result: ToolResult) -> None:
         self.completed.append(result.tool_call_id)
 
-    def release_tool_claim(self, *, tool_call_id: str, error_text: str | None = None) -> None:  # noqa: ARG002
+    def release_tool_claim(
+        self, *, tool_call_id: str, error_text: str | None = None
+    ) -> None:  # noqa: ARG002
         self.released.append(tool_call_id)
 
-    def dead_letter_tool_call(self, *, tool_call_id: str, reason: str, payload: dict[str, Any] | None = None) -> str:  # noqa: ARG002
+    def dead_letter_tool_call(
+        self, *, tool_call_id: str, reason: str, payload: dict[str, Any] | None = None
+    ) -> str:  # noqa: ARG002
         self.dead_lettered.append(tool_call_id)
         return "dead_1"
 
-    def append_session_event(self, *, session_id: str, event_type: str, payload: dict[str, Any], turn_id: str | None = None):  # noqa: ANN001, ARG002
+    def append_session_event(
+        self,
+        *,
+        session_id: str,
+        event_type: str,
+        payload: dict[str, Any],
+        turn_id: str | None = None,
+    ):  # noqa: ANN001, ARG002
         return "event_1"
 
 
@@ -64,7 +75,11 @@ def _call(attempt_count: int) -> Any:
 def test_worker_releases_failed_call_for_retry_before_max_attempts() -> None:
     repository = FakeRepository(claims=[[_call(attempt_count=1)], []])
     executor = FakeExecutor(
-        ToolResult(tool_call_id="tc_1", ok=False, error={"error_type": "RuntimeError", "message": "boom"})
+        ToolResult(
+            tool_call_id="tc_1",
+            ok=False,
+            error={"error_type": "RuntimeError", "message": "boom"},
+        )
     )
 
     stats = run_tool_worker(
@@ -85,7 +100,11 @@ def test_worker_releases_failed_call_for_retry_before_max_attempts() -> None:
 def test_worker_dead_letters_when_attempt_threshold_reached() -> None:
     repository = FakeRepository(claims=[[_call(attempt_count=3)], []])
     executor = FakeExecutor(
-        ToolResult(tool_call_id="tc_1", ok=False, error={"error_type": "RuntimeError", "message": "boom"})
+        ToolResult(
+            tool_call_id="tc_1",
+            ok=False,
+            error={"error_type": "RuntimeError", "message": "boom"},
+        )
     )
 
     stats = run_tool_worker(
@@ -105,7 +124,9 @@ def test_worker_dead_letters_when_attempt_threshold_reached() -> None:
 
 def test_worker_completes_successful_call() -> None:
     repository = FakeRepository(claims=[[_call(attempt_count=1)], []])
-    executor = FakeExecutor(ToolResult(tool_call_id="tc_1", ok=True, result={"ok": True}))
+    executor = FakeExecutor(
+        ToolResult(tool_call_id="tc_1", ok=True, result={"ok": True})
+    )
 
     stats = run_tool_worker(
         repository=repository,

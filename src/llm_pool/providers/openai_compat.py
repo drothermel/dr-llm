@@ -6,7 +6,12 @@ from typing import Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from llm_pool.errors import ProviderSemanticError, ProviderTransportError
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
@@ -38,7 +43,13 @@ class OpenAICompatConfig(BaseModel):
 class OpenAICompatAdapter(ProviderAdapter):
     mode = "api"
 
-    def __init__(self, *, name: str, config: OpenAICompatConfig, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        name: str,
+        config: OpenAICompatConfig,
+        client: httpx.Client | None = None,
+    ) -> None:
         self.name = name
         self._config = config
         self._client = client or httpx.Client(timeout=self._config.timeout_seconds)
@@ -59,7 +70,9 @@ class OpenAICompatAdapter(ProviderAdapter):
         }
 
     @retry(
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.TransportError, ProviderTransportError)),
+        retry=retry_if_exception_type(
+            (httpx.TimeoutException, httpx.TransportError, ProviderTransportError)
+        ),
         wait=wait_exponential_jitter(initial=0.5, max=8),
         stop=stop_after_attempt(3),
         reraise=True,
@@ -76,7 +89,9 @@ class OpenAICompatAdapter(ProviderAdapter):
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens
         if request.reasoning is not None:
-            payload["reasoning"] = request.reasoning.model_dump(mode="json", exclude_none=True)
+            payload["reasoning"] = request.reasoning.model_dump(
+                mode="json", exclude_none=True
+            )
         if request.tools:
             payload["tools"] = request.tools
         endpoint = self._config.base_url.rstrip("/") + self._config.chat_path
@@ -103,14 +118,18 @@ class OpenAICompatAdapter(ProviderAdapter):
         message = choices[0].get("message") or {}
         text = str(message.get("content") or "")
         usage_raw = body.get("usage") or {}
-        reasoning_tokens = parse_reasoning_tokens(usage_raw if isinstance(usage_raw, dict) else {})
+        reasoning_tokens = parse_reasoning_tokens(
+            usage_raw if isinstance(usage_raw, dict) else {}
+        )
         usage = parse_usage(
             prompt_tokens=usage_raw.get("prompt_tokens"),
             completion_tokens=usage_raw.get("completion_tokens"),
             total_tokens=usage_raw.get("total_tokens"),
             reasoning_tokens=reasoning_tokens,
         )
-        reasoning, reasoning_details = parse_reasoning(message if isinstance(message, dict) else {})
+        reasoning, reasoning_details = parse_reasoning(
+            message if isinstance(message, dict) else {}
+        )
         cost = parse_cost_info(body if isinstance(body, dict) else {})
         tool_calls = parse_tool_calls(message.get("tool_calls"))
         return LlmResponse(

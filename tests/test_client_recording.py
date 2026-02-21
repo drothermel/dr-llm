@@ -24,7 +24,9 @@ class FailingHeadlessAdapter(ProviderAdapter):
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(supports_native_tools=False, supports_structured_output=True)
+        return ProviderCapabilities(
+            supports_native_tools=False, supports_structured_output=True
+        )
 
     def generate(self, request):  # noqa: ANN001, ARG002
         raise RuntimeError("boom")

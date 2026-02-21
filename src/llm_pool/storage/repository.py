@@ -13,9 +13,18 @@ import psycopg
 from psycopg import errors
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict, Field
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential_jitter
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
-from llm_pool.errors import PersistenceError, SessionConflictError, TransientPersistenceError
+from llm_pool.errors import (
+    PersistenceError,
+    SessionConflictError,
+    TransientPersistenceError,
+)
 from llm_pool.types import (
     CallMode,
     LlmRequest,
@@ -41,7 +50,11 @@ _SCHEMA_PATH = Path(__file__).with_name("schema_bootstrap_pg.sql")
 class StorageConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    dsn: str = Field(default_factory=lambda: getenv("LLM_POOL_DATABASE_URL", "postgresql://localhost/llm_pool"))
+    dsn: str = Field(
+        default_factory=lambda: getenv(
+            "LLM_POOL_DATABASE_URL", "postgresql://localhost/llm_pool"
+        )
+    )
     min_pool_size: int = 4
     max_pool_size: int = 64
     statement_timeout_ms: int | None = None
@@ -49,7 +62,15 @@ class StorageConfig(BaseModel):
 
 
 def _is_retryable_db_error(exc: Exception) -> bool:
-    if isinstance(exc, (psycopg.OperationalError, psycopg.InterfaceError, errors.DeadlockDetected, errors.SerializationFailure)):
+    if isinstance(
+        exc,
+        (
+            psycopg.OperationalError,
+            psycopg.InterfaceError,
+            errors.DeadlockDetected,
+            errors.SerializationFailure,
+        ),
+    ):
         return True
     if isinstance(exc, TransientPersistenceError):
         return True
@@ -57,7 +78,9 @@ def _is_retryable_db_error(exc: Exception) -> bool:
 
 
 def _hash_payload(payload: dict[str, Any]) -> str:
-    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    encoded = json.dumps(
+        payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    )
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -80,7 +103,10 @@ class PostgresRepository:
     def _conn(self) -> Generator[psycopg.Connection[tuple[Any, ...]], None, None]:
         with self._pool.connection() as conn:
             if self.config.statement_timeout_ms is not None:
-                conn.execute("SET statement_timeout = %s", [int(self.config.statement_timeout_ms)])
+                conn.execute(
+                    "SET statement_timeout = %s",
+                    [int(self.config.statement_timeout_ms)],
+                )
             yield conn
 
     def init_schema(self) -> None:
@@ -122,7 +148,12 @@ class PostgresRepository:
                                   status = excluded.status,
                                   metadata_json = excluded.metadata_json
                     """,
-                    [resolved_run_id, run_type, status.value, json.dumps(metadata or {}, ensure_ascii=True)],
+                    [
+                        resolved_run_id,
+                        run_type,
+                        status.value,
+                        json.dumps(metadata or {}, ensure_ascii=True),
+                    ],
                 )
                 conn.commit()
                 return resolved_run_id
@@ -146,14 +177,20 @@ class PostgresRepository:
                         DO UPDATE SET param_value = excluded.param_value,
                                       created_at = excluded.created_at
                         """,
-                        [run_id, str(key), json.dumps(value, ensure_ascii=True, sort_keys=True)],
+                        [
+                            run_id,
+                            str(key),
+                            json.dumps(value, ensure_ascii=True, sort_keys=True),
+                        ],
                     )
                     written += 1
                 conn.commit()
                 return written
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
-                raise PersistenceError(f"Failed to upsert run parameters: {exc}") from exc
+                raise PersistenceError(
+                    f"Failed to upsert run parameters: {exc}"
+                ) from exc
 
     def finish_run(
         self,
@@ -173,7 +210,13 @@ class PostgresRepository:
                         finished_at = now()
                     WHERE run_id = %s
                     """,
-                    [status.value, json.dumps(metadata, ensure_ascii=True) if metadata is not None else None, run_id],
+                    [
+                        status.value,
+                        json.dumps(metadata, ensure_ascii=True)
+                        if metadata is not None
+                        else None,
+                        run_id,
+                    ],
                 )
                 conn.commit()
             except Exception as exc:  # noqa: BLE001
@@ -196,10 +239,16 @@ class PostgresRepository:
         self.init_schema()
         resolved_call_id = call_id or uuid4().hex
         request_payload = request.model_dump(mode="json")
-        response_payload = response.model_dump(mode="json") if response is not None else None
+        response_payload = (
+            response.model_dump(mode="json") if response is not None else None
+        )
         request_hash = _hash_payload(request_payload)
-        response_hash = _hash_payload(response_payload) if response_payload is not None else None
-        resolved_status = status or ("success" if response is not None and error_text is None else "failed")
+        response_hash = (
+            _hash_payload(response_payload) if response_payload is not None else None
+        )
+        resolved_status = status or (
+            "success" if response is not None and error_text is None else "failed"
+        )
         if mode is not None:
             resolved_mode = mode.value if isinstance(mode, CallMode) else str(mode)
         elif response is not None:
@@ -261,7 +310,11 @@ class PostgresRepository:
                     DO UPDATE SET request_json = excluded.request_json,
                                   request_hash = excluded.request_hash
                     """,
-                    [persisted_call_id, json.dumps(request_payload, ensure_ascii=True), request_hash],
+                    [
+                        persisted_call_id,
+                        json.dumps(request_payload, ensure_ascii=True),
+                        request_hash,
+                    ],
                 )
 
                 if response_payload is not None:
@@ -316,13 +369,27 @@ class PostgresRepository:
                             response.usage.reasoning_tokens,
                             response.usage.total_tokens,
                             response.reasoning,
-                            json.dumps(response.reasoning_details, ensure_ascii=True) if response.reasoning_details is not None else None,
-                            response.cost.total_cost_usd if response.cost is not None else None,
-                            response.cost.prompt_cost_usd if response.cost is not None else None,
-                            response.cost.completion_cost_usd if response.cost is not None else None,
-                            response.cost.reasoning_cost_usd if response.cost is not None else None,
-                            response.cost.currency if response.cost is not None else None,
-                            json.dumps(response.cost.raw, ensure_ascii=True) if response.cost is not None else None,
+                            json.dumps(response.reasoning_details, ensure_ascii=True)
+                            if response.reasoning_details is not None
+                            else None,
+                            response.cost.total_cost_usd
+                            if response.cost is not None
+                            else None,
+                            response.cost.prompt_cost_usd
+                            if response.cost is not None
+                            else None,
+                            response.cost.completion_cost_usd
+                            if response.cost is not None
+                            else None,
+                            response.cost.reasoning_cost_usd
+                            if response.cost is not None
+                            else None,
+                            response.cost.currency
+                            if response.cost is not None
+                            else None,
+                            json.dumps(response.cost.raw, ensure_ascii=True)
+                            if response.cost is not None
+                            else None,
                         ],
                     )
 
@@ -330,7 +397,9 @@ class PostgresRepository:
                 return persisted_call_id
             except errors.UniqueViolation as exc:
                 conn.rollback()
-                raise TransientPersistenceError(f"Unique constraint conflict while recording call: {exc}") from exc
+                raise TransientPersistenceError(
+                    f"Unique constraint conflict while recording call: {exc}"
+                ) from exc
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
                 raise PersistenceError(f"Failed to record call: {exc}") from exc
@@ -346,10 +415,14 @@ class PostgresRepository:
             raise ValueError("requests and responses must have same length")
         call_ids: list[str] = []
         for request, response in zip(requests, responses, strict=True):
-            call_ids.append(self.record_call(request=request, response=response, run_id=run_id))
+            call_ids.append(
+                self.record_call(request=request, response=response, run_id=run_id)
+            )
         return call_ids
 
-    def list_calls(self, *, run_id: str | None = None, limit: int = 100, offset: int = 0) -> list[RecordedCall]:
+    def list_calls(
+        self, *, run_id: str | None = None, limit: int = 100, offset: int = 0
+    ) -> list[RecordedCall]:
         self.init_schema()
         where = ""
         params: list[Any] = []
@@ -431,7 +504,13 @@ class PostgresRepository:
                     INSERT INTO artifacts (artifact_id, run_id, artifact_type, artifact_path, metadata_json, created_at)
                     VALUES (%s, %s, %s, %s, %s::jsonb, now())
                     """,
-                    [artifact_id, run_id, artifact_type, artifact_path, json.dumps(metadata or {}, ensure_ascii=True)],
+                    [
+                        artifact_id,
+                        run_id,
+                        artifact_type,
+                        artifact_path,
+                        json.dumps(metadata or {}, ensure_ascii=True),
+                    ],
                 )
                 conn.commit()
                 return artifact_id
@@ -469,7 +548,15 @@ class PostgresRepository:
                         metadata_json = excluded.metadata_json,
                         updated_at = excluded.updated_at
                     """,
-                    [sid, SessionStatus.active.value, 1, strategy_mode.value, json.dumps(metadata or {}, ensure_ascii=True), now, now],
+                    [
+                        sid,
+                        SessionStatus.active.value,
+                        1,
+                        strategy_mode.value,
+                        json.dumps(metadata or {}, ensure_ascii=True),
+                        now,
+                        now,
+                    ],
                 )
                 conn.commit()
                 return SessionHandle(
@@ -532,7 +619,9 @@ class PostgresRepository:
                 raise
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
-                raise PersistenceError(f"Failed to advance session version: {exc}") from exc
+                raise PersistenceError(
+                    f"Failed to advance session version: {exc}"
+                ) from exc
 
     def update_session_status(
         self,
@@ -557,7 +646,9 @@ class PostgresRepository:
                 conn.commit()
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
-                raise PersistenceError(f"Failed to update session status: {exc}") from exc
+                raise PersistenceError(
+                    f"Failed to update session status: {exc}"
+                ) from exc
 
     def create_session_turn(
         self,
@@ -575,7 +666,9 @@ class PostgresRepository:
                     [session_id],
                 ).fetchone()
                 if session_row is None:
-                    raise PersistenceError(f"Session not found while creating turn: {session_id}")
+                    raise PersistenceError(
+                        f"Session not found while creating turn: {session_id}"
+                    )
                 row = conn.execute(
                     "SELECT COALESCE(MAX(turn_index), -1) + 1 FROM session_turns WHERE session_id = %s",
                     [session_id],
@@ -586,7 +679,13 @@ class PostgresRepository:
                     INSERT INTO session_turns (turn_id, session_id, turn_index, status, metadata_json, created_at)
                     VALUES (%s, %s, %s, %s, %s::jsonb, now())
                     """,
-                    [turn_id, session_id, turn_index, status.value, json.dumps(metadata or {}, ensure_ascii=True)],
+                    [
+                        turn_id,
+                        session_id,
+                        turn_index,
+                        status.value,
+                        json.dumps(metadata or {}, ensure_ascii=True),
+                    ],
                 )
                 conn.commit()
                 return turn_id, turn_index
@@ -615,7 +714,9 @@ class PostgresRepository:
                 conn.commit()
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
-                raise PersistenceError(f"Failed to complete session turn: {exc}") from exc
+                raise PersistenceError(
+                    f"Failed to complete session turn: {exc}"
+                ) from exc
 
     def append_session_event(
         self,
@@ -636,13 +737,21 @@ class PostgresRepository:
                     VALUES (%s, %s, %s, %s, %s::jsonb, now())
                     ON CONFLICT (event_id) DO NOTHING
                     """,
-                    [eid, session_id, turn_id, event_type, json.dumps(payload, ensure_ascii=True)],
+                    [
+                        eid,
+                        session_id,
+                        turn_id,
+                        event_type,
+                        json.dumps(payload, ensure_ascii=True),
+                    ],
                 )
                 conn.commit()
                 return eid
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
-                raise PersistenceError(f"Failed to append session event: {exc}") from exc
+                raise PersistenceError(
+                    f"Failed to append session event: {exc}"
+                ) from exc
 
     def load_session_events(self, *, session_id: str) -> list[SessionEvent]:
         self.init_schema()
@@ -719,7 +828,9 @@ class PostgresRepository:
                 conn.rollback()
                 raise PersistenceError(f"Failed to enqueue tool call: {exc}") from exc
 
-    def claim_tool_calls(self, *, worker_id: str, limit: int, lease_seconds: int) -> list[ToolCallRecord]:
+    def claim_tool_calls(
+        self, *, worker_id: str, limit: int, lease_seconds: int
+    ) -> list[ToolCallRecord]:
         self.init_schema()
         if limit < 1:
             raise ValueError("limit must be >= 1")
@@ -798,7 +909,9 @@ class PostgresRepository:
             )
         return claimed
 
-    def renew_tool_lease(self, *, tool_call_id: str, worker_id: str, lease_seconds: int) -> bool:
+    def renew_tool_lease(
+        self, *, tool_call_id: str, worker_id: str, lease_seconds: int
+    ) -> bool:
         self.init_schema()
         with self._conn() as conn:
             try:
@@ -811,7 +924,12 @@ class PostgresRepository:
                       AND status = %s
                     RETURNING tool_call_id
                     """,
-                    [int(lease_seconds), tool_call_id, worker_id, ToolCallStatus.claimed.value],
+                    [
+                        int(lease_seconds),
+                        tool_call_id,
+                        worker_id,
+                        ToolCallStatus.claimed.value,
+                    ],
                 ).fetchone()
                 conn.commit()
                 return row is not None
@@ -819,7 +937,9 @@ class PostgresRepository:
                 conn.rollback()
                 raise PersistenceError(f"Failed to renew tool lease: {exc}") from exc
 
-    def release_tool_claim(self, *, tool_call_id: str, error_text: str | None = None) -> None:
+    def release_tool_claim(
+        self, *, tool_call_id: str, error_text: str | None = None
+    ) -> None:
         self.init_schema()
         with self._conn() as conn:
             try:
@@ -853,7 +973,13 @@ class PostgresRepository:
                         last_error_text = %s
                     WHERE tool_call_id = %s
                     """,
-                    [status.value, json.dumps(result.error, ensure_ascii=True) if result.error else None, result.tool_call_id],
+                    [
+                        status.value,
+                        json.dumps(result.error, ensure_ascii=True)
+                        if result.error
+                        else None,
+                        result.tool_call_id,
+                    ],
                 )
                 conn.execute(
                     """
@@ -867,8 +993,12 @@ class PostgresRepository:
                     """,
                     [
                         result.tool_call_id,
-                        json.dumps(result.result, ensure_ascii=True) if result.result is not None else None,
-                        json.dumps(result.error, ensure_ascii=True) if result.error is not None else None,
+                        json.dumps(result.result, ensure_ascii=True)
+                        if result.result is not None
+                        else None,
+                        json.dumps(result.error, ensure_ascii=True)
+                        if result.error is not None
+                        else None,
                     ],
                 )
                 conn.commit()
@@ -902,13 +1032,20 @@ class PostgresRepository:
                     INSERT INTO tool_call_dead_letters (dead_letter_id, tool_call_id, reason, payload_json, created_at)
                     VALUES (%s, %s, %s, %s::jsonb, now())
                     """,
-                    [dead_id, tool_call_id, reason, json.dumps(payload or {}, ensure_ascii=True)],
+                    [
+                        dead_id,
+                        tool_call_id,
+                        reason,
+                        json.dumps(payload or {}, ensure_ascii=True),
+                    ],
                 )
                 conn.commit()
                 return dead_id
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
-                raise PersistenceError(f"Failed to dead-letter tool call: {exc}") from exc
+                raise PersistenceError(
+                    f"Failed to dead-letter tool call: {exc}"
+                ) from exc
 
     def replay_session_messages(self, *, session_id: str) -> list[dict[str, Any]]:
         events = self.load_session_events(session_id=session_id)

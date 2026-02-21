@@ -22,7 +22,9 @@ def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:
                         "message": {
                             "content": "final answer",
                             "reasoning": "internal trace",
-                            "reasoning_details": [{"type": "reasoning.text", "text": "step 1"}],
+                            "reasoning_details": [
+                                {"type": "reasoning.text", "text": "step 1"}
+                            ],
                         },
                     }
                 ],

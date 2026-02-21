@@ -48,7 +48,9 @@ def _parse_brokered_tool_calls(text: str) -> list[ModelToolCall]:
             args = {}
         parsed.append(
             ModelToolCall(
-                tool_call_id=str(item.get("tool_call_id") or f"brokered_call_{idx+1}"),
+                tool_call_id=str(
+                    item.get("tool_call_id") or f"brokered_call_{idx + 1}"
+                ),
                 name=name,
                 arguments=args,
             )
@@ -76,7 +78,9 @@ class SessionClient:
             "provider": input.provider,
             "model": input.model,
             "run_id": input.run_id,
-            "reasoning": input.reasoning.model_dump(mode="json", exclude_none=True) if input.reasoning else None,
+            "reasoning": input.reasoning.model_dump(mode="json", exclude_none=True)
+            if input.reasoning
+            else None,
         }
         handle = self._repository.start_session(
             strategy_mode=input.strategy_mode,
@@ -91,7 +95,11 @@ class SessionClient:
             session_id=handle.session_id,
             turn_id=turn_id,
             event_type="session_started",
-            payload={"messages": [message.model_dump(mode="json") for message in input.messages]},
+            payload={
+                "messages": [
+                    message.model_dump(mode="json") for message in input.messages
+                ]
+            },
         )
         for message in input.messages:
             self._repository.append_session_event(
@@ -100,7 +108,9 @@ class SessionClient:
                 event_type="message",
                 payload={"message": message.model_dump(mode="json")},
             )
-        self._repository.complete_session_turn(turn_id=turn_id, status=SessionTurnStatus.completed)
+        self._repository.complete_session_turn(
+            turn_id=turn_id, status=SessionTurnStatus.completed
+        )
         return handle
 
     def resume_session(self, session_id: str) -> SessionState:
@@ -124,7 +134,11 @@ class SessionClient:
             raise SessionConflictError(
                 f"Cannot step session {input.session_id}: status={state.status.value}"
             )
-        expected_version = input.expected_version if input.expected_version is not None else state.version
+        expected_version = (
+            input.expected_version
+            if input.expected_version is not None
+            else state.version
+        )
         new_version = self._repository.advance_session_version(
             session_id=input.session_id,
             expected_version=expected_version,
@@ -136,7 +150,9 @@ class SessionClient:
         )
 
         try:
-            history = self._repository.replay_session_messages(session_id=input.session_id)
+            history = self._repository.replay_session_messages(
+                session_id=input.session_id
+            )
             conversation = [Message.model_validate(m) for m in history]
             conversation.extend(input.messages)
 
@@ -197,7 +213,10 @@ class SessionClient:
                     "response": {
                         "text": initial_response.text,
                         "finish_reason": initial_response.finish_reason,
-                        "tool_calls": [tc.model_dump(mode="json") for tc in initial_response.tool_calls],
+                        "tool_calls": [
+                            tc.model_dump(mode="json")
+                            for tc in initial_response.tool_calls
+                        ],
                     }
                 },
             )
@@ -208,8 +227,14 @@ class SessionClient:
 
             final_output = Message(role="assistant", content=initial_response.text)
             if tool_calls:
-                if strategy == "native" and state.strategy_mode.value == "native_only" and not adapter.capabilities.supports_native_tools:
-                    raise ValueError("Session configured native_only, but provider does not support native tools")
+                if (
+                    strategy == "native"
+                    and state.strategy_mode.value == "native_only"
+                    and not adapter.capabilities.supports_native_tools
+                ):
+                    raise ValueError(
+                        "Session configured native_only, but provider does not support native tools"
+                    )
 
                 assistant_tool_request = Message(
                     role="assistant",
@@ -232,9 +257,7 @@ class SessionClient:
                         event_type="model_requested_tool",
                         payload={"tool_call": model_tool_call.model_dump(mode="json")},
                     )
-                    idempotency_key = (
-                        f"{input.session_id}:{turn_id}:{model_tool_call.tool_call_id}:{model_tool_call.name}"
-                    )
+                    idempotency_key = f"{input.session_id}:{turn_id}:{model_tool_call.tool_call_id}:{model_tool_call.name}"
                     persisted_tool_call_id = self._repository.enqueue_tool_call(
                         session_id=input.session_id,
                         turn_id=turn_id,
@@ -286,7 +309,9 @@ class SessionClient:
                         },
                     )
                     tool_message_content = json.dumps(
-                        tool_result.result if tool_result.ok else {"error": tool_result.error},
+                        tool_result.result
+                        if tool_result.ok
+                        else {"error": tool_result.error},
                         ensure_ascii=True,
                         sort_keys=True,
                     )
@@ -339,7 +364,11 @@ class SessionClient:
                     followup_request,
                     run_id=run_id,
                     external_call_id=f"session:{input.session_id}:turn:{turn_id}:followup",
-                    metadata={"session_id": input.session_id, "turn_id": turn_id, "phase": "followup"},
+                    metadata={
+                        "session_id": input.session_id,
+                        "turn_id": turn_id,
+                        "phase": "followup",
+                    },
                 )
                 final_output = Message(role="assistant", content=followup_response.text)
 

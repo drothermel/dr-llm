@@ -10,7 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from llm_pool.errors import HeadlessExecutionError
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
-from llm_pool.providers.utils import parse_cost_info, parse_reasoning, parse_reasoning_tokens, parse_usage
+from llm_pool.providers.utils import (
+    parse_cost_info,
+    parse_reasoning,
+    parse_reasoning_tokens,
+    parse_usage,
+)
 from llm_pool.types import CallMode, LlmRequest, LlmResponse, ModelToolCall
 
 
@@ -31,7 +36,9 @@ class _BaseHeadlessAdapter(ProviderAdapter):
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(supports_native_tools=False, supports_structured_output=True)
+        return ProviderCapabilities(
+            supports_native_tools=False, supports_structured_output=True
+        )
 
     def _payload(self, request: LlmRequest) -> dict[str, Any]:
         return {
@@ -41,7 +48,9 @@ class _BaseHeadlessAdapter(ProviderAdapter):
             "temperature": request.temperature,
             "top_p": request.top_p,
             "max_tokens": request.max_tokens,
-            "reasoning": request.reasoning.model_dump(mode="json", exclude_none=True) if request.reasoning else None,
+            "reasoning": request.reasoning.model_dump(mode="json", exclude_none=True)
+            if request.reasoning
+            else None,
             "metadata": request.metadata,
             "tools": request.tools,
             "tool_policy": request.tool_policy.value,
@@ -99,31 +108,61 @@ class _BaseHeadlessAdapter(ProviderAdapter):
             )
 
         raw_usage = body.get("usage") if isinstance(body, dict) else None
-        reasoning_tokens = parse_reasoning_tokens(raw_usage if isinstance(raw_usage, dict) else {})
+        reasoning_tokens = parse_reasoning_tokens(
+            raw_usage if isinstance(raw_usage, dict) else {}
+        )
         usage = parse_usage(
-            prompt_tokens=(raw_usage or {}).get("prompt_tokens") if isinstance(raw_usage, dict) else None,
-            completion_tokens=(raw_usage or {}).get("completion_tokens") if isinstance(raw_usage, dict) else None,
-            total_tokens=(raw_usage or {}).get("total_tokens") if isinstance(raw_usage, dict) else None,
+            prompt_tokens=(raw_usage or {}).get("prompt_tokens")
+            if isinstance(raw_usage, dict)
+            else None,
+            completion_tokens=(raw_usage or {}).get("completion_tokens")
+            if isinstance(raw_usage, dict)
+            else None,
+            total_tokens=(raw_usage or {}).get("total_tokens")
+            if isinstance(raw_usage, dict)
+            else None,
             reasoning_tokens=reasoning_tokens,
         )
-        message_raw = body.get("message") if isinstance(body, dict) and isinstance(body.get("message"), dict) else body
-        reasoning, reasoning_details = parse_reasoning(message_raw if isinstance(message_raw, dict) else None)
-        if reasoning is None and isinstance(body, dict) and isinstance(body.get("reasoning"), str):
+        message_raw = (
+            body.get("message")
+            if isinstance(body, dict) and isinstance(body.get("message"), dict)
+            else body
+        )
+        reasoning, reasoning_details = parse_reasoning(
+            message_raw if isinstance(message_raw, dict) else None
+        )
+        if (
+            reasoning is None
+            and isinstance(body, dict)
+            and isinstance(body.get("reasoning"), str)
+        ):
             reasoning = body.get("reasoning")
-        if reasoning_details is None and isinstance(body, dict) and isinstance(body.get("reasoning_details"), list):
-            reasoning_details = [item for item in body.get("reasoning_details") if isinstance(item, dict)]
+        if (
+            reasoning_details is None
+            and isinstance(body, dict)
+            and isinstance(body.get("reasoning_details"), list)
+        ):
+            reasoning_details = [
+                item for item in body.get("reasoning_details") if isinstance(item, dict)
+            ]
         cost = parse_cost_info(body if isinstance(body, dict) else {})
         tool_calls: list[ModelToolCall] = []
-        for idx, item in enumerate((body.get("tool_calls") or []) if isinstance(body, dict) else []):
+        for idx, item in enumerate(
+            (body.get("tool_calls") or []) if isinstance(body, dict) else []
+        ):
             if not isinstance(item, dict):
                 continue
             name = str(item.get("name") or "")
             if not name:
                 continue
-            args = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
+            args = (
+                item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
+            )
             tool_calls.append(
                 ModelToolCall(
-                    tool_call_id=str(item.get("tool_call_id") or item.get("id") or f"call_{idx+1}"),
+                    tool_call_id=str(
+                        item.get("tool_call_id") or item.get("id") or f"call_{idx + 1}"
+                    ),
                     name=name,
                     arguments=args,
                 )
@@ -157,5 +196,7 @@ class ClaudeHeadlessAdapter(_BaseHeadlessAdapter):
     def __init__(self, command: list[str] | None = None) -> None:
         super().__init__(
             name="claude-code",
-            config=HeadlessConfig(command=command or ["claude", "--print", "--output-format", "json"]),
+            config=HeadlessConfig(
+                command=command or ["claude", "--print", "--output-format", "json"]
+            ),
         )

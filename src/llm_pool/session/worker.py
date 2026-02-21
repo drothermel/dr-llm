@@ -64,7 +64,9 @@ def run_tool_worker(
                 tool_message = Message(
                     role="tool",
                     name=call.tool_name,
-                    content=json.dumps(result.result or {}, ensure_ascii=True, sort_keys=True),
+                    content=json.dumps(
+                        result.result or {}, ensure_ascii=True, sort_keys=True
+                    ),
                     tool_call_id=call.tool_call_id,
                 )
                 repository.append_session_event(
@@ -101,7 +103,9 @@ def run_tool_worker(
                 else:
                     repository.release_tool_claim(
                         tool_call_id=call.tool_call_id,
-                        error_text=json.dumps(result.error, ensure_ascii=True, sort_keys=True),
+                        error_text=json.dumps(
+                            result.error, ensure_ascii=True, sort_keys=True
+                        ),
                     )
                     repository.append_session_event(
                         session_id=call.session_id,

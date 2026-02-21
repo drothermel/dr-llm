@@ -17,7 +17,9 @@ def test_tool_executor_sync_handler() -> None:
     )
     executor = ToolExecutor(registry)
     result = executor.invoke(
-        ToolInvocation(tool_call_id="tc1", name="add", arguments={"a": 2, "b": 3}, session_id="s1")
+        ToolInvocation(
+            tool_call_id="tc1", name="add", arguments={"a": 2, "b": 3}, session_id="s1"
+        )
     )
     assert result.ok
     assert result.result == {"sum": 5}
@@ -26,7 +28,9 @@ def test_tool_executor_sync_handler() -> None:
 def test_tool_executor_unknown_tool() -> None:
     executor = ToolExecutor(ToolRegistry())
     result = executor.invoke(
-        ToolInvocation(tool_call_id="tc1", name="missing", arguments={}, session_id="s1")
+        ToolInvocation(
+            tool_call_id="tc1", name="missing", arguments={}, session_id="s1"
+        )
     )
     assert not result.ok
     assert result.error is not None
@@ -50,7 +54,12 @@ def test_tool_executor_async_handler_with_running_loop_returns_error() -> None:
 
     async def invoke_inside_loop():
         return executor.invoke(
-            ToolInvocation(tool_call_id="tc1", name="async_tool", arguments={"x": 7}, session_id="s1")
+            ToolInvocation(
+                tool_call_id="tc1",
+                name="async_tool",
+                arguments={"x": 7},
+                session_id="s1",
+            )
         )
 
     result = asyncio.run(invoke_inside_loop())

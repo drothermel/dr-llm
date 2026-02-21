@@ -14,7 +14,9 @@ from llm_pool.types import SessionTurnStatus, ToolPolicy
 def repository() -> PostgresRepository:
     dsn = os.getenv("LLM_POOL_TEST_DATABASE_URL") or os.getenv("LLM_POOL_DATABASE_URL")
     if not dsn:
-        pytest.skip("Set LLM_POOL_TEST_DATABASE_URL (or LLM_POOL_DATABASE_URL) to run integration tests")
+        pytest.skip(
+            "Set LLM_POOL_TEST_DATABASE_URL (or LLM_POOL_DATABASE_URL) to run integration tests"
+        )
     repo = PostgresRepository(
         StorageConfig(
             dsn=dsn,
@@ -40,14 +42,18 @@ def test_session_event_append_and_replay(repository: PostgresRepository) -> None
         strategy_mode=ToolPolicy.native_preferred,
         metadata={"provider": "openai", "model": "gpt-4.1"},
     )
-    turn_id, _ = repository.create_session_turn(session_id=handle.session_id, status=SessionTurnStatus.active)
+    turn_id, _ = repository.create_session_turn(
+        session_id=handle.session_id, status=SessionTurnStatus.active
+    )
     repository.append_session_event(
         session_id=handle.session_id,
         turn_id=turn_id,
         event_type="message",
         payload={"message": {"role": "user", "content": "hello"}},
     )
-    repository.complete_session_turn(turn_id=turn_id, status=SessionTurnStatus.completed)
+    repository.complete_session_turn(
+        turn_id=turn_id, status=SessionTurnStatus.completed
+    )
 
     replayed = repository.replay_session_messages(session_id=handle.session_id)
     assert replayed[-1] == {"role": "user", "content": "hello"}
@@ -61,7 +67,9 @@ def test_session_version_conflict(repository: PostgresRepository) -> None:
     )
     repository.advance_session_version(session_id=handle.session_id, expected_version=1)
     with pytest.raises(SessionConflictError):
-        repository.advance_session_version(session_id=handle.session_id, expected_version=1)
+        repository.advance_session_version(
+            session_id=handle.session_id, expected_version=1
+        )
 
 
 @pytest.mark.integration
@@ -70,7 +78,9 @@ def test_tool_claim_parallel_without_duplicates(repository: PostgresRepository) 
         strategy_mode=ToolPolicy.native_preferred,
         metadata={"provider": "openai", "model": "gpt-4.1"},
     )
-    turn_id, _ = repository.create_session_turn(session_id=handle.session_id, status=SessionTurnStatus.active)
+    turn_id, _ = repository.create_session_turn(
+        session_id=handle.session_id, status=SessionTurnStatus.active
+    )
 
     for idx in range(24):
         repository.enqueue_tool_call(
@@ -85,14 +95,19 @@ def test_tool_claim_parallel_without_duplicates(repository: PostgresRepository) 
     def claim_all(worker: str) -> list[str]:
         claimed_ids: list[str] = []
         while True:
-            batch = repository.claim_tool_calls(worker_id=worker, limit=3, lease_seconds=120)
+            batch = repository.claim_tool_calls(
+                worker_id=worker, limit=3, lease_seconds=120
+            )
             if not batch:
                 return claimed_ids
             claimed_ids.extend(call.tool_call_id for call in batch)
 
     workers = [f"w{idx}" for idx in range(8)]
     with ThreadPoolExecutor(max_workers=len(workers)) as pool:
-        results = [future.result() for future in [pool.submit(claim_all, worker) for worker in workers]]
+        results = [
+            future.result()
+            for future in [pool.submit(claim_all, worker) for worker in workers]
+        ]
 
     flattened = [item for sublist in results for item in sublist]
     assert len(flattened) == 24
