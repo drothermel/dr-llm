@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any
@@ -11,7 +12,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 from llm_pool.errors import ProviderSemanticError, ProviderTransportError
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
 from llm_pool.providers.utils import parse_usage
-from llm_pool.types import CallMode, LlmRequest, LlmResponse, ModelToolCall
+from llm_pool.types import CallMode, LlmRequest, LlmResponse, Message, ModelToolCall
 
 
 class GoogleConfig(BaseModel):
@@ -52,14 +53,7 @@ class GoogleAdapter(ProviderAdapter):
             f"?key={key}"
         )
         system = "\n".join(msg.content for msg in request.messages if msg.role == "system")
-        contents = [
-            {
-                "role": "model" if msg.role == "assistant" else "user",
-                "parts": [{"text": msg.content}],
-            }
-            for msg in request.messages
-            if msg.role in {"user", "assistant"}
-        ]
+        contents = _to_google_contents(request.messages)
         payload: dict[str, Any] = {"contents": contents}
         if system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
@@ -69,10 +63,11 @@ class GoogleAdapter(ProviderAdapter):
                 payload["generationConfig"]["temperature"] = request.temperature
             if request.top_p is not None:
                 payload["generationConfig"]["topP"] = request.top_p
-            if request.max_tokens is not None:
-                payload["generationConfig"]["maxOutputTokens"] = request.max_tokens
-        if request.tools:
-            payload["tools"] = request.tools
+        if request.max_tokens is not None:
+            payload["generationConfig"]["maxOutputTokens"] = request.max_tokens
+        normalized_tools = _to_google_tools(request.tools)
+        if normalized_tools:
+            payload["tools"] = normalized_tools
 
         started = time.perf_counter()
         resp = self._client.post(endpoint, json=payload)
@@ -123,3 +118,93 @@ class GoogleAdapter(ProviderAdapter):
             mode=CallMode.api,
             tool_calls=[tc for tc in tool_calls if tc.name],
         )
+
+
+def _to_google_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+    if not tools:
+        return None
+    out: list[dict[str, Any]] = []
+    declarations: list[dict[str, Any]] = []
+    for item in tools:
+        if not isinstance(item, dict):
+            continue
+        if "functionDeclarations" in item:
+            out.append(item)
+            continue
+        fn = item.get("function") if item.get("type") == "function" else None
+        if not isinstance(fn, dict):
+            continue
+        name = str(fn.get("name") or "").strip()
+        if not name:
+            continue
+        declaration: dict[str, Any] = {"name": name}
+        description = fn.get("description")
+        if isinstance(description, str) and description:
+            declaration["description"] = description
+        params = fn.get("parameters")
+        if isinstance(params, dict):
+            declaration["parameters"] = params
+        declarations.append(declaration)
+    if declarations:
+        out.append({"functionDeclarations": declarations})
+    return out or None
+
+
+def _parse_tool_response_content(content: str) -> dict[str, Any]:
+    if not content:
+        return {"content": ""}
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return {"content": content}
+    if isinstance(parsed, dict):
+        return parsed
+    return {"content": parsed}
+
+
+def _to_google_contents(messages: list[Message]) -> list[dict[str, Any]]:
+    contents: list[dict[str, Any]] = []
+    for msg in messages:
+        if msg.role == "system":
+            continue
+
+        if msg.role == "tool":
+            if msg.name:
+                contents.append(
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "functionResponse": {
+                                    "name": msg.name,
+                                    "response": _parse_tool_response_content(msg.content),
+                                }
+                            }
+                        ],
+                    }
+                )
+            elif msg.content:
+                contents.append({"role": "user", "parts": [{"text": msg.content}]})
+            continue
+
+        if msg.role == "assistant":
+            parts: list[dict[str, Any]] = []
+            if msg.content:
+                parts.append({"text": msg.content})
+            if msg.tool_calls:
+                for call in msg.tool_calls:
+                    parts.append(
+                        {
+                            "functionCall": {
+                                "name": call.name,
+                                "args": call.arguments,
+                            }
+                        }
+                    )
+            if parts:
+                contents.append({"role": "model", "parts": parts})
+            continue
+
+        if msg.role == "user" and msg.content:
+            contents.append({"role": "user", "parts": [{"text": msg.content}]})
+    return contents

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any
@@ -11,7 +12,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 from llm_pool.errors import ProviderSemanticError, ProviderTransportError
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
 from llm_pool.providers.utils import parse_usage
-from llm_pool.types import CallMode, LlmRequest, LlmResponse, ModelToolCall
+from llm_pool.types import CallMode, LlmRequest, LlmResponse, Message, ModelToolCall
 
 
 class AnthropicConfig(BaseModel):
@@ -56,11 +57,7 @@ class AnthropicAdapter(ProviderAdapter):
     )
     def generate(self, request: LlmRequest) -> LlmResponse:
         system = "\n".join(msg.content for msg in request.messages if msg.role == "system")
-        messages = [
-            {"role": msg.role, "content": msg.content}
-            for msg in request.messages
-            if msg.role in {"user", "assistant"}
-        ]
+        messages = _to_anthropic_messages(request.messages)
         payload: dict[str, Any] = {
             "model": request.model,
             "messages": messages,
@@ -72,8 +69,9 @@ class AnthropicAdapter(ProviderAdapter):
             payload["temperature"] = request.temperature
         if request.top_p is not None:
             payload["top_p"] = request.top_p
-        if request.tools:
-            payload["tools"] = request.tools
+        normalized_tools = _to_anthropic_tools(request.tools)
+        if normalized_tools:
+            payload["tools"] = normalized_tools
         started = time.perf_counter()
         resp = self._client.post(self._config.base_url, headers=self._headers(), json=payload)
         latency_ms = int((time.perf_counter() - started) * 1000)
@@ -121,3 +119,78 @@ class AnthropicAdapter(ProviderAdapter):
             mode=CallMode.api,
             tool_calls=[tc for tc in tool_calls if tc.name],
         )
+
+
+def _to_anthropic_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+    if not tools:
+        return None
+    normalized: list[dict[str, Any]] = []
+    for item in tools:
+        if not isinstance(item, dict):
+            continue
+        fn = item.get("function") if item.get("type") == "function" else None
+        if isinstance(fn, dict):
+            name = str(fn.get("name") or "").strip()
+            if not name:
+                continue
+            schema = fn.get("parameters")
+            normalized.append(
+                {
+                    "name": name,
+                    "description": str(fn.get("description") or ""),
+                    "input_schema": schema if isinstance(schema, dict) else {"type": "object", "properties": {}},
+                }
+            )
+            continue
+        if "name" in item and "input_schema" in item:
+            normalized.append(item)
+    return normalized or None
+
+
+def _to_anthropic_messages(messages: list[Message]) -> list[dict[str, Any]]:
+    payload: list[dict[str, Any]] = []
+    for msg in messages:
+        if msg.role == "system":
+            continue
+
+        if msg.role == "tool":
+            if msg.tool_call_id:
+                content = msg.content or "{}"
+                block: dict[str, Any] = {
+                    "type": "tool_result",
+                    "tool_use_id": msg.tool_call_id,
+                    "content": content,
+                }
+                try:
+                    parsed = json.loads(content)
+                except json.JSONDecodeError:
+                    parsed = None
+                if isinstance(parsed, dict) and "error" in parsed:
+                    block["is_error"] = True
+                payload.append({"role": "user", "content": [block]})
+            elif msg.content:
+                payload.append({"role": "user", "content": [{"type": "text", "text": msg.content}]})
+            continue
+
+        if msg.role == "assistant":
+            blocks: list[dict[str, Any]] = []
+            if msg.content:
+                blocks.append({"type": "text", "text": msg.content})
+            if msg.tool_calls:
+                for call in msg.tool_calls:
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": call.tool_call_id,
+                            "name": call.name,
+                            "input": call.arguments,
+                        }
+                    )
+            if blocks:
+                payload.append({"role": "assistant", "content": blocks})
+            continue
+
+        if msg.role == "user" and msg.content:
+            payload.append({"role": "user", "content": [{"type": "text", "text": msg.content}]})
+
+    return payload
