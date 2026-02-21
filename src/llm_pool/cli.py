@@ -92,11 +92,14 @@ def _load_messages(
 def _repo(
     dsn: str | None, min_pool_size: int, max_pool_size: int
 ) -> PostgresRepository:
-    cfg = StorageConfig(
-        **({"dsn": dsn} if dsn else {}),
-        min_pool_size=min_pool_size,
-        max_pool_size=max_pool_size,
-    )
+    if dsn is None:
+        cfg = StorageConfig(min_pool_size=min_pool_size, max_pool_size=max_pool_size)
+    else:
+        cfg = StorageConfig(
+            dsn=dsn,
+            min_pool_size=min_pool_size,
+            max_pool_size=max_pool_size,
+        )
     return PostgresRepository(cfg)
 
 

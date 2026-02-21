@@ -6,11 +6,11 @@ from contextlib import contextmanager
 from hashlib import sha256
 from os import getenv
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any, Generator, LiteralString, cast
 from uuid import uuid4
 
 import psycopg
-from psycopg import errors
+from psycopg import errors, sql
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import (
@@ -61,7 +61,7 @@ class StorageConfig(BaseModel):
     application_name: str = "llm_pool"
 
 
-def _is_retryable_db_error(exc: Exception) -> bool:
+def _is_retryable_db_error(exc: BaseException) -> bool:
     if isinstance(
         exc,
         (
@@ -117,7 +117,7 @@ class PostgresRepository:
                 return
             schema_sql = _SCHEMA_PATH.read_text(encoding="utf-8")
             with self._conn() as conn:
-                conn.execute(schema_sql)
+                conn.execute(sql.SQL(cast(LiteralString, schema_sql)))
                 conn.commit()
             self._schema_initialized = True
 
@@ -317,7 +317,8 @@ class PostgresRepository:
                     ],
                 )
 
-                if response_payload is not None:
+                if response_payload is not None and response is not None:
+                    response_obj = response
                     conn.execute(
                         """
                         INSERT INTO llm_call_responses (
@@ -362,33 +363,35 @@ class PostgresRepository:
                             persisted_call_id,
                             json.dumps(response_payload, ensure_ascii=True),
                             response_hash,
-                            response.text,
-                            response.finish_reason,
-                            response.usage.prompt_tokens,
-                            response.usage.completion_tokens,
-                            response.usage.reasoning_tokens,
-                            response.usage.total_tokens,
-                            response.reasoning,
-                            json.dumps(response.reasoning_details, ensure_ascii=True)
-                            if response.reasoning_details is not None
+                            response_obj.text,
+                            response_obj.finish_reason,
+                            response_obj.usage.prompt_tokens,
+                            response_obj.usage.completion_tokens,
+                            response_obj.usage.reasoning_tokens,
+                            response_obj.usage.total_tokens,
+                            response_obj.reasoning,
+                            json.dumps(
+                                response_obj.reasoning_details, ensure_ascii=True
+                            )
+                            if response_obj.reasoning_details is not None
                             else None,
-                            response.cost.total_cost_usd
-                            if response.cost is not None
+                            response_obj.cost.total_cost_usd
+                            if response_obj.cost is not None
                             else None,
-                            response.cost.prompt_cost_usd
-                            if response.cost is not None
+                            response_obj.cost.prompt_cost_usd
+                            if response_obj.cost is not None
                             else None,
-                            response.cost.completion_cost_usd
-                            if response.cost is not None
+                            response_obj.cost.completion_cost_usd
+                            if response_obj.cost is not None
                             else None,
-                            response.cost.reasoning_cost_usd
-                            if response.cost is not None
+                            response_obj.cost.reasoning_cost_usd
+                            if response_obj.cost is not None
                             else None,
-                            response.cost.currency
-                            if response.cost is not None
+                            response_obj.cost.currency
+                            if response_obj.cost is not None
                             else None,
-                            json.dumps(response.cost.raw, ensure_ascii=True)
-                            if response.cost is not None
+                            json.dumps(response_obj.cost.raw, ensure_ascii=True)
+                            if response_obj.cost is not None
                             else None,
                         ],
                     )
@@ -424,19 +427,43 @@ class PostgresRepository:
         self, *, run_id: str | None = None, limit: int = 100, offset: int = 0
     ) -> list[RecordedCall]:
         self.init_schema()
-        where = ""
-        params: list[Any] = []
-        if run_id is not None:
-            where = "WHERE lc.run_id = %s"
-            params.append(run_id)
-        params.extend([int(limit), int(offset)])
-
         with self._conn() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT
-                    lc.call_id,
-                    lc.run_id,
+            if run_id is not None:
+                rows = conn.execute(
+                    """
+                    SELECT
+                        lc.call_id,
+                        lc.run_id,
+                        lc.provider,
+                        lc.model,
+                        lc.mode,
+                        lc.status,
+                        lc.created_at,
+                        lc.latency_ms,
+                        lc.error_text,
+                        lcs.reasoning_tokens,
+                        lcs.reasoning_text,
+                        lcs.cost_total_usd,
+                        lcs.cost_prompt_usd,
+                        lcs.cost_completion_usd,
+                        lcs.cost_reasoning_usd,
+                        lcr.request_json,
+                        lcs.response_json
+                    FROM llm_calls lc
+                    LEFT JOIN llm_call_requests lcr ON lcr.call_id = lc.call_id
+                    LEFT JOIN llm_call_responses lcs ON lcs.call_id = lc.call_id
+                    WHERE lc.run_id = %s
+                    ORDER BY lc.created_at DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    [run_id, int(limit), int(offset)],
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT
+                        lc.call_id,
+                        lc.run_id,
                     lc.provider,
                     lc.model,
                     lc.mode,
@@ -452,15 +479,14 @@ class PostgresRepository:
                     lcs.cost_reasoning_usd,
                     lcr.request_json,
                     lcs.response_json
-                FROM llm_calls lc
-                LEFT JOIN llm_call_requests lcr ON lcr.call_id = lc.call_id
-                LEFT JOIN llm_call_responses lcs ON lcs.call_id = lc.call_id
-                {where}
-                ORDER BY lc.created_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                params,
-            ).fetchall()
+                    FROM llm_calls lc
+                    LEFT JOIN llm_call_requests lcr ON lcr.call_id = lc.call_id
+                    LEFT JOIN llm_call_responses lcs ON lcs.call_id = lc.call_id
+                    ORDER BY lc.created_at DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    [int(limit), int(offset)],
+                ).fetchall()
 
         out: list[RecordedCall] = []
         for row in rows:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import RLock
 from typing import Any
 
 
-ToolHandler = Callable[[dict[str, Any]], dict[str, Any]]
+ToolHandler = Callable[[dict[str, Any]], dict[str, Any] | Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True, slots=True)

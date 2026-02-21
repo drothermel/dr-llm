@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 import httpx
 
@@ -57,8 +58,7 @@ def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:
 
     response = adapter.generate(request)
 
-    payload = captured["payload"]
-    assert isinstance(payload, dict)
+    payload = cast(dict[str, Any], captured["payload"])
     assert payload["reasoning"] == {"effort": "high", "exclude": False}
 
     assert response.reasoning == "internal trace"

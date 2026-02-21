@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Generator
 
 import pytest
 
@@ -11,7 +12,7 @@ from llm_pool.types import SessionTurnStatus, ToolPolicy
 
 
 @pytest.fixture(scope="module")
-def repository() -> PostgresRepository:
+def repository() -> Generator[PostgresRepository, None, None]:
     dsn = os.getenv("LLM_POOL_TEST_DATABASE_URL") or os.getenv("LLM_POOL_DATABASE_URL")
     if not dsn:
         pytest.skip(

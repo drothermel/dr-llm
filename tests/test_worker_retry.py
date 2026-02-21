@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from llm_pool.session.worker import run_tool_worker
 from llm_pool.types import ToolResult
@@ -83,8 +83,8 @@ def test_worker_releases_failed_call_for_retry_before_max_attempts() -> None:
     )
 
     stats = run_tool_worker(
-        repository=repository,
-        executor=executor,
+        repository=cast(Any, repository),
+        executor=cast(Any, executor),
         max_loops=2,
         idle_sleep_seconds=0,
         max_attempts_before_dead_letter=3,
@@ -108,8 +108,8 @@ def test_worker_dead_letters_when_attempt_threshold_reached() -> None:
     )
 
     stats = run_tool_worker(
-        repository=repository,
-        executor=executor,
+        repository=cast(Any, repository),
+        executor=cast(Any, executor),
         max_loops=2,
         idle_sleep_seconds=0,
         max_attempts_before_dead_letter=3,
@@ -129,8 +129,8 @@ def test_worker_completes_successful_call() -> None:
     )
 
     stats = run_tool_worker(
-        repository=repository,
-        executor=executor,
+        repository=cast(Any, repository),
+        executor=cast(Any, executor),
         max_loops=2,
         idle_sleep_seconds=0,
         max_attempts_before_dead_letter=3,

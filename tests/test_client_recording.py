@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, cast
 
 import pytest
 
@@ -36,7 +37,7 @@ def test_failed_query_records_adapter_mode() -> None:
     registry = ProviderRegistry()
     registry.register(FailingHeadlessAdapter())
     repo = CapturingRepository(calls=[])
-    client = LlmClient(registry=registry, repository=repo)
+    client = LlmClient(registry=registry, repository=cast(Any, repo))
 
     request = LlmRequest(
         provider="failing-headless",

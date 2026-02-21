@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 import httpx
 
@@ -70,9 +71,8 @@ def test_anthropic_payload_preserves_tool_context() -> None:
     response = adapter.generate(request)
     assert response.text == "done"
 
-    payload = captured["payload"]
-    assert isinstance(payload, dict)
-    messages = payload["messages"]
+    payload = cast(dict[str, Any], captured["payload"])
+    messages = cast(list[dict[str, Any]], payload["messages"])
     assert any(
         message["role"] == "assistant"
         and any(
@@ -89,7 +89,8 @@ def test_anthropic_payload_preserves_tool_context() -> None:
         )
         for message in messages
     )
-    assert payload["tools"][0]["name"] == "lookup"
+    tools = cast(list[dict[str, Any]], payload["tools"])
+    assert tools[0]["name"] == "lookup"
 
 
 def test_google_payload_preserves_tool_context() -> None:
@@ -161,9 +162,8 @@ def test_google_payload_preserves_tool_context() -> None:
     response = adapter.generate(request)
     assert response.text == "done"
 
-    payload = captured["payload"]
-    assert isinstance(payload, dict)
-    contents = payload["contents"]
+    payload = cast(dict[str, Any], captured["payload"])
+    contents = cast(list[dict[str, Any]], payload["contents"])
     assert any(
         content["role"] == "model"
         and any(
@@ -180,4 +180,6 @@ def test_google_payload_preserves_tool_context() -> None:
         )
         for content in contents
     )
-    assert payload["tools"][0]["functionDeclarations"][0]["name"] == "lookup"
+    tools = cast(list[dict[str, Any]], payload["tools"])
+    declarations = cast(list[dict[str, Any]], tools[0]["functionDeclarations"])
+    assert declarations[0]["name"] == "lookup"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 import pytest
 
@@ -115,17 +116,20 @@ def _session_state(status: SessionStatus = SessionStatus.active) -> SessionState
 def test_step_rejects_non_active_session() -> None:
     repo = FakeRepository(session_state=_session_state(SessionStatus.canceled))
     client = SessionClient(
-        llm_client=FakeLlmClient(
-            adapter=FakeAdapter(ProviderCapabilities(supports_native_tools=False)),
-            response=LlmResponse(
-                text="",
-                usage=TokenUsage(),
-                provider="openai",
-                model="gpt-test",
-                mode=CallMode.api,
+        llm_client=cast(
+            Any,
+            FakeLlmClient(
+                adapter=FakeAdapter(ProviderCapabilities(supports_native_tools=False)),
+                response=LlmResponse(
+                    text="",
+                    usage=TokenUsage(),
+                    provider="openai",
+                    model="gpt-test",
+                    mode=CallMode.api,
+                ),
             ),
         ),
-        repository=repo,
+        repository=cast(Any, repo),
         tool_registry=ToolRegistry(),
     )
 
@@ -155,10 +159,10 @@ def test_brokered_step_queues_tools_when_inline_disabled() -> None:
         ),
     )
     client = SessionClient(
-        llm_client=llm_client,
-        repository=repo,
+        llm_client=cast(Any, llm_client),
+        repository=cast(Any, repo),
         tool_registry=ToolRegistry(),
-        tool_executor=RaisingExecutor(),
+        tool_executor=cast(Any, RaisingExecutor()),
     )
 
     result = client.step_session(
