@@ -33,7 +33,7 @@ class SessionsStore:
         now = utcnow()
         with self._runtime.conn() as conn:
             try:
-                conn.execute(
+                row = conn.execute(
                     """
                     INSERT INTO sessions (
                         session_id,
@@ -50,6 +50,7 @@ class SessionsStore:
                         strategy_mode = excluded.strategy_mode,
                         metadata_json = excluded.metadata_json,
                         updated_at = excluded.updated_at
+                    RETURNING version
                     """,
                     [
                         sid,
@@ -60,12 +61,13 @@ class SessionsStore:
                         now,
                         now,
                     ],
-                )
+                ).fetchone()
                 conn.commit()
+                version = int(row[0]) if row is not None else 1
                 return SessionHandle(
                     session_id=sid,
                     status=SessionStatus.active,
-                    version=1,
+                    version=version,
                     strategy_mode=strategy_mode,
                 )
             except Exception as exc:  # noqa: BLE001

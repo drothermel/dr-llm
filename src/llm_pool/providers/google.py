@@ -169,7 +169,12 @@ class GoogleAdapter(ProviderAdapter):
             raise ProviderSemanticError(
                 f"google rejected request status={resp.status_code} body={resp.text[:500]}"
             )
-        body_raw = resp.json()
+        try:
+            body_raw = resp.json()
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ProviderTransportError(
+                f"google invalid JSON response: {exc}"
+            ) from exc
         try:
             body = _GoogleResponse.model_validate(body_raw)
         except ValidationError as exc:

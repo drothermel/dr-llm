@@ -143,6 +143,14 @@ class SessionClient:
             raise SessionConflictError(
                 f"Cannot step session {input.session_id}: status={state.status.value}"
             )
+        provider_raw = state.metadata.get("provider")
+        model_raw = state.metadata.get("model")
+        provider = str(provider_raw).strip() if provider_raw is not None else ""
+        model = str(model_raw).strip() if model_raw is not None else ""
+        if not provider or not model:
+            raise ValueError(
+                f"Session metadata missing provider/model for session={input.session_id}"
+            )
         expected_version = (
             input.expected_version
             if input.expected_version is not None
@@ -177,14 +185,12 @@ class SessionClient:
                     },
                 )
 
-            adapter = self._llm_client.get_adapter(state.metadata.get("provider", ""))
+            adapter = self._llm_client.get_adapter(provider)
             strategy = resolve_tool_strategy(
                 policy=state.strategy_mode,
                 capabilities=adapter.capabilities,
             )
 
-            provider = str(state.metadata.get("provider"))
-            model = str(state.metadata.get("model"))
             stored_reasoning_raw = state.metadata.get("reasoning")
             stored_reasoning = (
                 ReasoningConfig.model_validate(stored_reasoning_raw)
@@ -197,10 +203,6 @@ class SessionClient:
                 if state.metadata.get("run_id") is not None
                 else None
             )
-            if not provider or not model:
-                raise ValueError(
-                    f"Session metadata missing provider/model for session={input.session_id}"
-                )
 
             request = LlmRequest(
                 provider=provider,

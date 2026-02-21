@@ -40,6 +40,8 @@ class ToolRegistry:
         key = tool.name.strip()
         if not key:
             raise ValueError("tool.name must be non-empty")
+        if tool.name != key:
+            raise ValueError("tool.name must not have leading or trailing whitespace")
         with self._lock:
             self._tools[key] = tool
 

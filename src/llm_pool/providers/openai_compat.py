@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any
@@ -98,7 +99,26 @@ class OpenAICompatAdapter(ProviderAdapter):
     ) -> None:
         self.name = name
         self._config = config
-        self._client = client or httpx.Client(timeout=self._config.timeout_seconds)
+        self._client: httpx.Client | None = None
+        self._set_client(client or httpx.Client(timeout=self._config.timeout_seconds))
+
+    def _set_client(self, client: httpx.Client) -> None:
+        if self._client is not None and self._client is not client:
+            self._client.close()
+        self._client = client
+
+    def set_client(self, client: httpx.Client) -> None:
+        self._set_client(client)
+
+    def close(self) -> None:
+        if self._client is not None:
+            self._client.close()
+
+    def __enter__(self) -> OpenAICompatAdapter:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.close()
 
     @property
     def capabilities(self) -> ProviderCapabilities:
@@ -124,6 +144,8 @@ class OpenAICompatAdapter(ProviderAdapter):
         reraise=True,
     )
     def generate(self, request: LlmRequest) -> LlmResponse:
+        if self._client is None:
+            raise ProviderTransportError(f"{self.name} client is not initialized")
         payload = _OpenAICompatRequestPayload(
             model=request.model,
             messages=to_openai_messages(request.messages),
@@ -158,7 +180,12 @@ class OpenAICompatAdapter(ProviderAdapter):
             raise ProviderSemanticError(
                 f"{self.name} request rejected status={resp.status_code} body={resp.text[:500]}"
             )
-        body_raw = resp.json()
+        try:
+            body_raw = resp.json()
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ProviderTransportError(
+                f"{self.name} invalid JSON response: {exc}"
+            ) from exc
         try:
             body = _OpenAICompatResponse.model_validate(body_raw)
         except ValidationError as exc:

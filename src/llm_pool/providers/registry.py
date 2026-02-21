@@ -13,12 +13,29 @@ class ProviderRegistry:
     def register(
         self, adapter: ProviderAdapter, *, aliases: list[str] | None = None
     ) -> None:
-        names = [adapter.name]
+        raw_primary = adapter.name
+        primary = raw_primary.strip()
+        if not primary:
+            raise ValueError("adapter.name must be non-empty")
+        if raw_primary != primary:
+            raise ValueError(
+                "adapter.name must not have leading or trailing whitespace"
+            )
+
+        names = [primary]
         if aliases:
-            names.extend(aliases)
+            for alias in aliases:
+                normalized = alias.strip()
+                if not normalized:
+                    raise ValueError("provider alias must be non-empty")
+                if alias != normalized:
+                    raise ValueError(
+                        "provider alias must not have leading or trailing whitespace"
+                    )
+                names.append(normalized)
         with self._lock:
             for name in names:
-                self._adapters[name.strip().lower()] = adapter
+                self._adapters[name.lower()] = adapter
 
     def get(self, provider_name: str) -> ProviderAdapter:
         key = provider_name.strip().lower()

@@ -8,22 +8,20 @@ from llm_pool.providers.registry import ProviderRegistry
 
 def build_default_registry() -> ProviderRegistry:
     registry = ProviderRegistry()
+    openai_config = OpenAICompatConfig(
+        base_url="https://api.openai.com/v1",
+        api_key_env="OPENAI_API_KEY",
+    )
     registry.register(
         OpenAICompatAdapter(
             name="openai",
-            config=OpenAICompatConfig(
-                base_url="https://api.openai.com/v1",
-                api_key_env="OPENAI_API_KEY",
-            ),
+            config=openai_config,
         )
     )
     registry.register(
         OpenAICompatAdapter(
             name="openai-compatible",
-            config=OpenAICompatConfig(
-                base_url="https://api.openai.com/v1",
-                api_key_env="OPENAI_API_KEY",
-            ),
+            config=openai_config,
         )
     )
     registry.register(

@@ -153,7 +153,12 @@ class AnthropicAdapter(ProviderAdapter):
                 f"anthropic rejected request status={resp.status_code} body={resp.text[:500]}"
             )
 
-        body_raw = resp.json()
+        try:
+            body_raw = resp.json()
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ProviderTransportError(
+                f"anthropic invalid JSON response: {exc}"
+            ) from exc
         try:
             body = _AnthropicResponse.model_validate(body_raw)
         except ValidationError as exc:

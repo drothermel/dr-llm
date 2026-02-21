@@ -94,6 +94,9 @@ response = client.query(
 print(response.text)
 ```
 
+Adapter lifecycle note:
+- If you instantiate provider adapters directly, call `adapter.close()` when done (or use context manager form `with ... as adapter:`) to release underlying HTTP connections.
+
 ## Testing
 
 ```bash

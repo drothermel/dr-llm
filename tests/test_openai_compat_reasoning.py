@@ -43,12 +43,6 @@ def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    adapter = OpenAICompatAdapter(
-        name="openrouter",
-        config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
-        client=client,
-    )
-
     request = LlmRequest(
         provider="openrouter",
         model="openai/o3-mini",
@@ -56,7 +50,12 @@ def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:
         reasoning=ReasoningConfig(effort="high", exclude=False),
     )
 
-    response = adapter.generate(request)
+    with OpenAICompatAdapter(
+        name="openrouter",
+        config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
+        client=client,
+    ) as adapter:
+        response = adapter.generate(request)
 
     payload = cast(dict[str, Any], captured["payload"])
     assert payload["reasoning"] == {"effort": "high", "exclude": False}
@@ -68,3 +67,30 @@ def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:
     assert response.cost.total_cost_usd == 0.003
     assert response.cost.prompt_cost_usd == 0.001
     assert response.cost.completion_cost_usd == 0.002
+
+
+def test_openai_compat_close_closes_underlying_client() -> None:
+    client = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
+    adapter = OpenAICompatAdapter(
+        name="openrouter",
+        config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
+        client=client,
+    )
+    assert not client.is_closed
+    adapter.close()
+    assert client.is_closed
+
+
+def test_openai_compat_set_client_closes_previous_client() -> None:
+    first = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
+    second = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
+    adapter = OpenAICompatAdapter(
+        name="openrouter",
+        config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
+        client=first,
+    )
+    adapter.set_client(second)
+    assert first.is_closed
+    assert not second.is_closed
+    adapter.close()
+    assert second.is_closed
