@@ -214,7 +214,7 @@ def query(
             external_call_id=external_call_id,
             metadata=metadata,
         )
-        _emit(response.model_dump(mode="json"))
+        _emit(response.model_dump(mode="json", exclude_computed_fields=True))
     finally:
         if repository is not None:
             repository.close()
@@ -326,7 +326,7 @@ def session_start(
                 run_id=run_id,
             )
         )
-        _emit(handle.model_dump(mode="json"))
+        _emit(handle.model_dump(mode="json", exclude_computed_fields=True))
     finally:
         repository.close()
 
@@ -387,7 +387,7 @@ def session_step(
                 metadata=metadata,
             )
         )
-        _emit(result.model_dump(mode="json"))
+        _emit(result.model_dump(mode="json", exclude_computed_fields=True))
     finally:
         repository.close()
 
@@ -403,7 +403,7 @@ def session_resume(
     repository = _repo(dsn, min_pool_size, max_pool_size)
     try:
         state = repository.get_session(session_id=session_id)
-        _emit(state.model_dump(mode="json"))
+        _emit(state.model_dump(mode="json", exclude_computed_fields=True))
     finally:
         repository.close()
 
@@ -478,13 +478,16 @@ def replay_session(
         state = repository.get_session(session_id=session_id)
         messages = repository.replay_session_messages(session_id=session_id)
         payload: dict[str, Any] = {
-            "state": state.model_dump(mode="json"),
+            "state": state.model_dump(mode="json", exclude_computed_fields=True),
             "replayed_messages": messages,
             "message_count": len(messages),
         }
         if include_events:
             events = repository.load_session_events(session_id=session_id)
-            payload["events"] = [event.model_dump(mode="json") for event in events]
+            payload["events"] = [
+                event.model_dump(mode="json", exclude_computed_fields=True)
+                for event in events
+            ]
             payload["event_count"] = len(events)
         _emit(payload)
     finally:

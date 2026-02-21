@@ -44,11 +44,18 @@ class _BaseHeadlessAdapter(ProviderAdapter):
         return {
             "provider": request.provider,
             "model": request.model,
-            "messages": [msg.model_dump(mode="json") for msg in request.messages],
+            "messages": [
+                msg.model_dump(mode="json", exclude_computed_fields=True)
+                for msg in request.messages
+            ],
             "temperature": request.temperature,
             "top_p": request.top_p,
             "max_tokens": request.max_tokens,
-            "reasoning": request.reasoning.model_dump(mode="json", exclude_none=True)
+            "reasoning": request.reasoning.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_computed_fields=True,
+            )
             if request.reasoning
             else None,
             "metadata": request.metadata,

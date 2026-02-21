@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -16,8 +16,64 @@ from tenacity import (
 
 from llm_pool.errors import ProviderSemanticError, ProviderTransportError
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
-from llm_pool.providers.utils import parse_usage
+from llm_pool.providers.utils import (
+    parse_cost_info,
+    parse_reasoning,
+    parse_reasoning_tokens,
+    parse_usage,
+)
 from llm_pool.types import CallMode, LlmRequest, LlmResponse, Message, ModelToolCall
+
+
+class _GoogleGenerationConfig(BaseModel):
+    temperature: float | None = None
+    topP: float | None = None
+    maxOutputTokens: int | None = None
+
+
+class _GoogleRequestPayload(BaseModel):
+    contents: list[dict[str, Any]]
+    systemInstruction: dict[str, Any] | None = None
+    generationConfig: _GoogleGenerationConfig | None = None
+    tools: list[dict[str, Any]] | None = None
+
+
+class _GoogleFunctionCall(BaseModel):
+    name: str | None = None
+    args: dict[str, Any] | None = None
+
+
+class _GooglePart(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    text: str | None = None
+    functionCall: _GoogleFunctionCall | None = None
+
+
+class _GoogleContent(BaseModel):
+    role: str | None = None
+    parts: list[_GooglePart] = Field(default_factory=list)
+
+
+class _GoogleCandidate(BaseModel):
+    content: _GoogleContent | None = None
+    finishReason: str | None = None
+
+
+class _GoogleUsageMetadata(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    promptTokenCount: int | None = None
+    candidatesTokenCount: int | None = None
+    totalTokenCount: int | None = None
+    output_tokens_details: dict[str, Any] | None = None
+
+
+class _GoogleResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    candidates: list[_GoogleCandidate] = Field(default_factory=list)
+    usageMetadata: _GoogleUsageMetadata | None = None
 
 
 class GoogleConfig(BaseModel):
@@ -66,27 +122,27 @@ class GoogleAdapter(ProviderAdapter):
             msg.content for msg in request.messages if msg.role == "system"
         )
         contents = _to_google_contents(request.messages)
-        payload: dict[str, Any] = {"contents": contents}
+        payload = _GoogleRequestPayload(contents=contents)
         if system:
-            payload["systemInstruction"] = {"parts": [{"text": system}]}
+            payload.systemInstruction = {"parts": [{"text": system}]}
         if (
             request.temperature is not None
             or request.top_p is not None
             or request.max_tokens is not None
         ):
-            payload["generationConfig"] = {}
-            if request.temperature is not None:
-                payload["generationConfig"]["temperature"] = request.temperature
-            if request.top_p is not None:
-                payload["generationConfig"]["topP"] = request.top_p
-        if request.max_tokens is not None:
-            payload["generationConfig"]["maxOutputTokens"] = request.max_tokens
+            payload.generationConfig = _GoogleGenerationConfig(
+                temperature=request.temperature,
+                topP=request.top_p,
+                maxOutputTokens=request.max_tokens,
+            )
         normalized_tools = _to_google_tools(request.tools)
         if normalized_tools:
-            payload["tools"] = normalized_tools
+            payload.tools = normalized_tools
 
         started = time.perf_counter()
-        resp = self._client.post(endpoint, json=payload)
+        resp = self._client.post(
+            endpoint, json=payload.model_dump(mode="json", exclude_none=True)
+        )
         latency_ms = int((time.perf_counter() - started) * 1000)
         if resp.status_code >= 500 or resp.status_code == 429:
             raise ProviderTransportError(
@@ -96,40 +152,61 @@ class GoogleAdapter(ProviderAdapter):
             raise ProviderSemanticError(
                 f"google rejected request status={resp.status_code} body={resp.text[:500]}"
             )
-        body = resp.json()
-        candidates = body.get("candidates") or []
-        if not candidates:
+        body_raw = resp.json()
+        try:
+            body = _GoogleResponse.model_validate(body_raw)
+        except ValidationError as exc:
+            raise ProviderSemanticError(
+                f"google response shape invalid: {exc}"
+            ) from exc
+        if not body.candidates:
             raise ProviderSemanticError("google response missing candidates")
-        candidate = candidates[0]
-        content = candidate.get("content") or {}
-        parts = content.get("parts") or []
+        candidate = body.candidates[0]
+        parts = candidate.content.parts if candidate.content else []
         text_chunks: list[str] = []
         tool_calls: list[ModelToolCall] = []
         for idx, part in enumerate(parts):
-            if "text" in part:
-                text_chunks.append(str(part.get("text") or ""))
-            fc = part.get("functionCall")
-            if isinstance(fc, dict):
+            if part.text:
+                text_chunks.append(part.text)
+            fc = part.functionCall
+            if fc is not None:
                 tool_calls.append(
                     ModelToolCall(
                         tool_call_id=f"google_call_{idx + 1}",
-                        name=str(fc.get("name") or ""),
-                        arguments=fc.get("args")
-                        if isinstance(fc.get("args"), dict)
-                        else {},
+                        name=str(fc.name or ""),
+                        arguments=fc.args if isinstance(fc.args, dict) else {},
                     )
                 )
-        usage_raw = body.get("usageMetadata") or {}
-        usage = parse_usage(
-            prompt_tokens=usage_raw.get("promptTokenCount"),
-            completion_tokens=usage_raw.get("candidatesTokenCount"),
-            total_tokens=usage_raw.get("totalTokenCount"),
+        usage_raw = (
+            body.usageMetadata.model_dump(mode="json", exclude_none=True)
+            if body.usageMetadata
+            else {}
         )
+        reasoning_tokens = parse_reasoning_tokens(usage_raw)
+        usage = parse_usage(
+            prompt_tokens=body.usageMetadata.promptTokenCount
+            if body.usageMetadata
+            else None,
+            completion_tokens=body.usageMetadata.candidatesTokenCount
+            if body.usageMetadata
+            else None,
+            total_tokens=body.usageMetadata.totalTokenCount
+            if body.usageMetadata
+            else None,
+            reasoning_tokens=reasoning_tokens,
+        )
+        reasoning, reasoning_details = parse_reasoning(
+            body_raw if isinstance(body_raw, dict) else None
+        )
+        cost = parse_cost_info(body_raw if isinstance(body_raw, dict) else {})
         return LlmResponse(
             text="\n".join(chunk for chunk in text_chunks if chunk),
-            finish_reason=candidate.get("finishReason"),
+            finish_reason=candidate.finishReason,
             usage=usage,
-            raw_json=body,
+            reasoning=reasoning,
+            reasoning_details=reasoning_details,
+            cost=cost,
+            raw_json=body_raw if isinstance(body_raw, dict) else {"body": body_raw},
             latency_ms=latency_ms,
             provider=request.provider,
             model=request.model,

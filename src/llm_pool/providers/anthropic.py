@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -16,8 +16,49 @@ from tenacity import (
 
 from llm_pool.errors import ProviderSemanticError, ProviderTransportError
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
-from llm_pool.providers.utils import parse_usage
+from llm_pool.providers.utils import (
+    parse_cost_info,
+    parse_reasoning,
+    parse_reasoning_tokens,
+    parse_usage,
+)
 from llm_pool.types import CallMode, LlmRequest, LlmResponse, Message, ModelToolCall
+
+
+class _AnthropicRequestPayload(BaseModel):
+    model: str
+    messages: list[dict[str, Any]]
+    max_tokens: int
+    system: str | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    tools: list[dict[str, Any]] | None = None
+
+
+class _AnthropicUsage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    output_tokens_details: dict[str, Any] | None = None
+
+
+class _AnthropicContentItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    type: str
+    text: str | None = None
+    id: str | None = None
+    name: str | None = None
+    input: dict[str, Any] | None = None
+
+
+class _AnthropicResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    content: list[_AnthropicContentItem] = Field(default_factory=list)
+    usage: _AnthropicUsage | None = None
+    stop_reason: str | None = None
 
 
 class AnthropicConfig(BaseModel):
@@ -71,23 +112,22 @@ class AnthropicAdapter(ProviderAdapter):
             msg.content for msg in request.messages if msg.role == "system"
         )
         messages = _to_anthropic_messages(request.messages)
-        payload: dict[str, Any] = {
-            "model": request.model,
-            "messages": messages,
-            "max_tokens": request.max_tokens or 1024,
-        }
-        if system:
-            payload["system"] = system
-        if request.temperature is not None:
-            payload["temperature"] = request.temperature
-        if request.top_p is not None:
-            payload["top_p"] = request.top_p
+        payload = _AnthropicRequestPayload(
+            model=request.model,
+            messages=messages,
+            max_tokens=request.max_tokens or 1024,
+            system=system or None,
+            temperature=request.temperature,
+            top_p=request.top_p,
+        )
         normalized_tools = _to_anthropic_tools(request.tools)
         if normalized_tools:
-            payload["tools"] = normalized_tools
+            payload.tools = normalized_tools
         started = time.perf_counter()
         resp = self._client.post(
-            self._config.base_url, headers=self._headers(), json=payload
+            self._config.base_url,
+            headers=self._headers(),
+            json=payload.model_dump(mode="json", exclude_none=True),
         )
         latency_ms = int((time.perf_counter() - started) * 1000)
 
@@ -100,38 +140,55 @@ class AnthropicAdapter(ProviderAdapter):
                 f"anthropic rejected request status={resp.status_code} body={resp.text[:500]}"
             )
 
-        body = resp.json()
-        content = body.get("content") or []
+        body_raw = resp.json()
+        try:
+            body = _AnthropicResponse.model_validate(body_raw)
+        except ValidationError as exc:
+            raise ProviderSemanticError(
+                f"anthropic response shape invalid: {exc}"
+            ) from exc
+
         text_chunks: list[str] = []
         tool_calls: list[ModelToolCall] = []
-        for idx, item in enumerate(content):
-            item_type = item.get("type")
+        for idx, item in enumerate(body.content):
+            item_type = item.type
             if item_type == "text":
-                text_chunks.append(str(item.get("text") or ""))
+                text_chunks.append(item.text or "")
             elif item_type == "tool_use":
                 tool_calls.append(
                     ModelToolCall(
-                        tool_call_id=str(item.get("id") or f"call_{idx + 1}"),
-                        name=str(item.get("name") or ""),
-                        arguments=item.get("input")
-                        if isinstance(item.get("input"), dict)
-                        else {},
+                        tool_call_id=str(item.id or f"call_{idx + 1}"),
+                        name=str(item.name or ""),
+                        arguments=item.input if isinstance(item.input, dict) else {},
                     )
                 )
 
-        usage_raw = body.get("usage") or {}
-        usage = parse_usage(
-            prompt_tokens=usage_raw.get("input_tokens"),
-            completion_tokens=usage_raw.get("output_tokens"),
-            total_tokens=(
-                usage_raw.get("input_tokens", 0) + usage_raw.get("output_tokens", 0)
-            ),
+        usage_raw = (
+            body.usage.model_dump(mode="json", exclude_none=True) if body.usage else {}
         )
+        reasoning_tokens = parse_reasoning_tokens(usage_raw)
+        usage = parse_usage(
+            prompt_tokens=body.usage.input_tokens if body.usage else None,
+            completion_tokens=body.usage.output_tokens if body.usage else None,
+            total_tokens=(
+                (body.usage.input_tokens or 0) + (body.usage.output_tokens or 0)
+                if body.usage
+                else None
+            ),
+            reasoning_tokens=reasoning_tokens,
+        )
+        reasoning, reasoning_details = parse_reasoning(
+            body_raw if isinstance(body_raw, dict) else None
+        )
+        cost = parse_cost_info(body_raw if isinstance(body_raw, dict) else {})
         return LlmResponse(
             text="\n".join(chunk for chunk in text_chunks if chunk),
-            finish_reason=body.get("stop_reason"),
+            finish_reason=body.stop_reason,
             usage=usage,
-            raw_json=body,
+            reasoning=reasoning,
+            reasoning_details=reasoning_details,
+            cost=cost,
+            raw_json=body_raw if isinstance(body_raw, dict) else {"body": body_raw},
             latency_ms=latency_ms,
             provider=request.provider,
             model=request.model,

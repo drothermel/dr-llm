@@ -73,7 +73,11 @@ def run_tool_worker(
                     session_id=call.session_id,
                     turn_id=call.turn_id,
                     event_type="tool_result_message",
-                    payload={"message": tool_message.model_dump(mode="json")},
+                    payload={
+                        "message": tool_message.model_dump(
+                            mode="json", exclude_computed_fields=True
+                        )
+                    },
                 )
                 stats["succeeded"] += 1
             else:

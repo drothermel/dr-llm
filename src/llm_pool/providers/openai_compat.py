@@ -5,7 +5,7 @@ import time
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -24,6 +24,52 @@ from llm_pool.providers.utils import (
     to_openai_messages,
 )
 from llm_pool.types import CallMode, LlmRequest, LlmResponse
+
+
+class _OpenAICompatRequestPayload(BaseModel):
+    model: str
+    messages: list[dict[str, Any]]
+    temperature: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
+    reasoning: dict[str, Any] | None = None
+    tools: list[dict[str, Any]] | None = None
+
+
+class _OpenAICompatUsageDetails(BaseModel):
+    reasoning_tokens: int | None = None
+
+
+class _OpenAICompatUsage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    completion_tokens_details: _OpenAICompatUsageDetails | None = None
+    output_tokens_details: _OpenAICompatUsageDetails | None = None
+
+
+class _OpenAICompatMessage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    content: str | None = None
+    reasoning: str | int | float | None = None
+    reasoning_content: str | int | float | None = None
+    reasoning_details: list[dict[str, Any]] | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+
+
+class _OpenAICompatChoice(BaseModel):
+    finish_reason: str | None = None
+    message: _OpenAICompatMessage
+
+
+class _OpenAICompatResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    choices: list[_OpenAICompatChoice] = Field(default_factory=list)
+    usage: _OpenAICompatUsage | None = None
 
 
 class OpenAICompatConfig(BaseModel):
@@ -78,22 +124,23 @@ class OpenAICompatAdapter(ProviderAdapter):
         reraise=True,
     )
     def generate(self, request: LlmRequest) -> LlmResponse:
-        payload: dict[str, Any] = {
-            "model": request.model,
-            "messages": to_openai_messages(request.messages),
-        }
-        if request.temperature is not None:
-            payload["temperature"] = request.temperature
-        if request.top_p is not None:
-            payload["top_p"] = request.top_p
-        if request.max_tokens is not None:
-            payload["max_tokens"] = request.max_tokens
-        if request.reasoning is not None:
-            payload["reasoning"] = request.reasoning.model_dump(
-                mode="json", exclude_none=True
-            )
-        if request.tools:
-            payload["tools"] = request.tools
+        payload = _OpenAICompatRequestPayload(
+            model=request.model,
+            messages=to_openai_messages(request.messages),
+            temperature=request.temperature,
+            top_p=request.top_p,
+            max_tokens=request.max_tokens,
+            reasoning=(
+                request.reasoning.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                    exclude_computed_fields=True,
+                )
+                if request.reasoning is not None
+                else None
+            ),
+            tools=request.tools,
+        ).model_dump(mode="json", exclude_none=True)
         endpoint = self._config.base_url.rstrip("/") + self._config.chat_path
         started = time.perf_counter()
         try:
@@ -111,35 +158,43 @@ class OpenAICompatAdapter(ProviderAdapter):
             raise ProviderSemanticError(
                 f"{self.name} request rejected status={resp.status_code} body={resp.text[:500]}"
             )
-        body = resp.json()
-        choices = body.get("choices") or []
-        if not choices:
+        body_raw = resp.json()
+        try:
+            body = _OpenAICompatResponse.model_validate(body_raw)
+        except ValidationError as exc:
+            raise ProviderSemanticError(
+                f"{self.name} response shape invalid: {exc}"
+            ) from exc
+        if not body.choices:
             raise ProviderSemanticError(f"{self.name} response missing choices")
-        message = choices[0].get("message") or {}
-        text = str(message.get("content") or "")
-        usage_raw = body.get("usage") or {}
+        choice = body.choices[0]
+        message = choice.message
+        text = message.content or ""
+        usage_raw = (
+            body.usage.model_dump(mode="json", exclude_none=True) if body.usage else {}
+        )
         reasoning_tokens = parse_reasoning_tokens(
             usage_raw if isinstance(usage_raw, dict) else {}
         )
         usage = parse_usage(
-            prompt_tokens=usage_raw.get("prompt_tokens"),
-            completion_tokens=usage_raw.get("completion_tokens"),
-            total_tokens=usage_raw.get("total_tokens"),
+            prompt_tokens=body.usage.prompt_tokens if body.usage else None,
+            completion_tokens=body.usage.completion_tokens if body.usage else None,
+            total_tokens=body.usage.total_tokens if body.usage else None,
             reasoning_tokens=reasoning_tokens,
         )
         reasoning, reasoning_details = parse_reasoning(
-            message if isinstance(message, dict) else {}
+            message.model_dump(mode="json", exclude_none=True)
         )
-        cost = parse_cost_info(body if isinstance(body, dict) else {})
-        tool_calls = parse_tool_calls(message.get("tool_calls"))
+        cost = parse_cost_info(body_raw if isinstance(body_raw, dict) else {})
+        tool_calls = parse_tool_calls(message.tool_calls)
         return LlmResponse(
             text=text,
-            finish_reason=choices[0].get("finish_reason"),
+            finish_reason=choice.finish_reason,
             usage=usage,
             reasoning=reasoning,
             reasoning_details=reasoning_details,
             cost=cost,
-            raw_json=body,
+            raw_json=body_raw if isinstance(body_raw, dict) else {"body": body_raw},
             latency_ms=latency_ms,
             provider=request.provider,
             model=request.model,

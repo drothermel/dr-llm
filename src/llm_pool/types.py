@@ -4,7 +4,14 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 
 class CallMode(str, Enum):
@@ -55,6 +62,16 @@ class Message(BaseModel):
     tool_call_id: str | None = None
     tool_calls: list[ModelToolCall] | None = None
 
+    @model_validator(mode="after")
+    def _validate_role_fields(self) -> Message:
+        if self.role == "tool" and not self.tool_call_id:
+            raise ValueError("tool messages must include tool_call_id")
+        if self.role != "tool" and self.tool_call_id is not None:
+            raise ValueError("tool_call_id is only valid for tool messages")
+        if self.role != "assistant" and self.tool_calls is not None:
+            raise ValueError("tool_calls are only valid for assistant messages")
+        return self
+
 
 class ReasoningConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -64,6 +81,34 @@ class ReasoningConfig(BaseModel):
     exclude: bool | None = None
     enabled: bool | None = None
 
+    @field_validator("max_tokens")
+    @classmethod
+    def _validate_max_tokens(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("reasoning.max_tokens must be > 0")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_consistency(self) -> ReasoningConfig:
+        if self.effort is not None and self.max_tokens is not None:
+            raise ValueError(
+                "reasoning.effort and reasoning.max_tokens are mutually exclusive"
+            )
+        if self.enabled is False and (
+            self.effort is not None or self.max_tokens is not None
+        ):
+            raise ValueError(
+                "reasoning.enabled=false cannot be combined with effort or max_tokens"
+            )
+        return self
+
+    @computed_field
+    @property
+    def effective_enabled(self) -> bool:
+        if self.enabled is not None:
+            return self.enabled
+        return self.effort is not None or self.max_tokens is not None
+
 
 class TokenUsage(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -72,6 +117,20 @@ class TokenUsage(BaseModel):
     completion_tokens: int = 0
     total_tokens: int = 0
     reasoning_tokens: int = 0
+
+    @field_validator(
+        "prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens"
+    )
+    @classmethod
+    def _validate_non_negative(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("token counts must be non-negative")
+        return value
+
+    @computed_field
+    @property
+    def computed_total_tokens(self) -> int:
+        return self.prompt_tokens + self.completion_tokens
 
 
 class CostInfo(BaseModel):

@@ -238,9 +238,11 @@ class PostgresRepository:
     ) -> str:
         self.init_schema()
         resolved_call_id = call_id or uuid4().hex
-        request_payload = request.model_dump(mode="json")
+        request_payload = request.model_dump(mode="json", exclude_computed_fields=True)
         response_payload = (
-            response.model_dump(mode="json") if response is not None else None
+            response.model_dump(mode="json", exclude_computed_fields=True)
+            if response is not None
+            else None
         )
         request_hash = _hash_payload(request_payload)
         response_hash = (

@@ -78,7 +78,11 @@ class SessionClient:
             "provider": input.provider,
             "model": input.model,
             "run_id": input.run_id,
-            "reasoning": input.reasoning.model_dump(mode="json", exclude_none=True)
+            "reasoning": input.reasoning.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_computed_fields=True,
+            )
             if input.reasoning
             else None,
         }
@@ -97,7 +101,8 @@ class SessionClient:
             event_type="session_started",
             payload={
                 "messages": [
-                    message.model_dump(mode="json") for message in input.messages
+                    message.model_dump(mode="json", exclude_computed_fields=True)
+                    for message in input.messages
                 ]
             },
         )
@@ -106,7 +111,11 @@ class SessionClient:
                 session_id=handle.session_id,
                 turn_id=turn_id,
                 event_type="message",
-                payload={"message": message.model_dump(mode="json")},
+                payload={
+                    "message": message.model_dump(
+                        mode="json", exclude_computed_fields=True
+                    )
+                },
             )
         self._repository.complete_session_turn(
             turn_id=turn_id, status=SessionTurnStatus.completed
@@ -161,7 +170,11 @@ class SessionClient:
                     session_id=input.session_id,
                     turn_id=turn_id,
                     event_type="message",
-                    payload={"message": message.model_dump(mode="json")},
+                    payload={
+                        "message": message.model_dump(
+                            mode="json", exclude_computed_fields=True
+                        )
+                    },
                 )
 
             adapter = self._llm_client.get_adapter(state.metadata.get("provider", ""))
@@ -214,7 +227,10 @@ class SessionClient:
                         "text": initial_response.text,
                         "finish_reason": initial_response.finish_reason,
                         "tool_calls": [
-                            tc.model_dump(mode="json")
+                            tc.model_dump(
+                                mode="json",
+                                exclude_computed_fields=True,
+                            )
                             for tc in initial_response.tool_calls
                         ],
                     }
@@ -246,7 +262,12 @@ class SessionClient:
                     session_id=input.session_id,
                     turn_id=turn_id,
                     event_type="message",
-                    payload={"message": assistant_tool_request.model_dump(mode="json")},
+                    payload={
+                        "message": assistant_tool_request.model_dump(
+                            mode="json",
+                            exclude_computed_fields=True,
+                        )
+                    },
                 )
 
                 execute_inline = strategy == "native" or input.inline_tool_execution
@@ -255,7 +276,12 @@ class SessionClient:
                         session_id=input.session_id,
                         turn_id=turn_id,
                         event_type="model_requested_tool",
-                        payload={"tool_call": model_tool_call.model_dump(mode="json")},
+                        payload={
+                            "tool_call": model_tool_call.model_dump(
+                                mode="json",
+                                exclude_computed_fields=True,
+                            )
+                        },
                     )
                     idempotency_key = f"{input.session_id}:{turn_id}:{model_tool_call.tool_call_id}:{model_tool_call.name}"
                     persisted_tool_call_id = self._repository.enqueue_tool_call(
@@ -326,7 +352,12 @@ class SessionClient:
                         session_id=input.session_id,
                         turn_id=turn_id,
                         event_type="tool_result_message",
-                        payload={"message": tool_message.model_dump(mode="json")},
+                        payload={
+                            "message": tool_message.model_dump(
+                                mode="json",
+                                exclude_computed_fields=True,
+                            )
+                        },
                     )
 
                 if not execute_inline:
@@ -376,13 +407,21 @@ class SessionClient:
                 session_id=input.session_id,
                 turn_id=turn_id,
                 event_type="model_completed",
-                payload={"message": final_output.model_dump(mode="json")},
+                payload={
+                    "message": final_output.model_dump(
+                        mode="json", exclude_computed_fields=True
+                    )
+                },
             )
             self._repository.append_session_event(
                 session_id=input.session_id,
                 turn_id=turn_id,
                 event_type="message",
-                payload={"message": final_output.model_dump(mode="json")},
+                payload={
+                    "message": final_output.model_dump(
+                        mode="json", exclude_computed_fields=True
+                    )
+                },
             )
             self._repository.complete_session_turn(
                 turn_id=turn_id,

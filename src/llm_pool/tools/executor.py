@@ -5,8 +5,6 @@ import inspect
 from collections.abc import Awaitable
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
-
 from llm_pool.errors import ToolExecutionError
 from llm_pool.tools.registry import ToolRegistry
 from llm_pool.types import ToolInvocation, ToolResult
@@ -16,10 +14,9 @@ async def _await_result(awaitable: Awaitable[dict[str, Any]]) -> dict[str, Any]:
     return await awaitable
 
 
-class ToolExecutor(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
-
-    registry: ToolRegistry
+class ToolExecutor:
+    def __init__(self, *, registry: ToolRegistry) -> None:
+        self.registry = registry
 
     def invoke(self, call: ToolInvocation) -> ToolResult:
         try:
