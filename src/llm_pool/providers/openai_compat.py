@@ -21,10 +21,15 @@ from llm_pool.providers.utils import (
     parse_reasoning,
     parse_reasoning_tokens,
     parse_tool_calls,
-    parse_usage,
     to_openai_messages,
 )
-from llm_pool.types import CallMode, LlmRequest, LlmResponse, ProviderToolSpec
+from llm_pool.types import (
+    CallMode,
+    LlmRequest,
+    LlmResponse,
+    ProviderToolSpec,
+    TokenUsage,
+)
 
 
 class _OpenAICompatRequestPayload(BaseModel):
@@ -186,8 +191,12 @@ class OpenAICompatAdapter(ProviderAdapter):
             raise ProviderTransportError(
                 f"{self.name} invalid JSON response: {exc}"
             ) from exc
+        if not isinstance(body_raw, dict):
+            raise ProviderSemanticError(
+                f"{self.name} response shape invalid: expected JSON object"
+            )
         try:
-            body = _OpenAICompatResponse.model_validate(body_raw)
+            body = _OpenAICompatResponse(**body_raw)
         except ValidationError as exc:
             raise ProviderSemanticError(
                 f"{self.name} response shape invalid: {exc}"
@@ -203,7 +212,7 @@ class OpenAICompatAdapter(ProviderAdapter):
         reasoning_tokens = parse_reasoning_tokens(
             usage_raw if isinstance(usage_raw, dict) else {}
         )
-        usage = parse_usage(
+        usage = TokenUsage.from_raw(
             prompt_tokens=body.usage.prompt_tokens if body.usage else None,
             completion_tokens=body.usage.completion_tokens if body.usage else None,
             total_tokens=body.usage.total_tokens if body.usage else None,

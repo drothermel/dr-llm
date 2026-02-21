@@ -3,22 +3,23 @@ from llm_pool.providers.utils import (
     parse_reasoning,
     parse_reasoning_tokens,
     parse_tool_calls,
-    parse_usage,
     to_openai_messages,
 )
-from llm_pool.types import Message, ModelToolCall
+from llm_pool.types import Message, ModelToolCall, TokenUsage
 
 
-def test_parse_usage_defaults_total() -> None:
-    usage = parse_usage(prompt_tokens=10, completion_tokens=5, total_tokens=None)
+def test_token_usage_defaults_total() -> None:
+    usage = TokenUsage.from_raw(
+        prompt_tokens=10, completion_tokens=5, total_tokens=None
+    )
     assert usage.prompt_tokens == 10
     assert usage.completion_tokens == 5
     assert usage.total_tokens == 15
     assert usage.reasoning_tokens == 0
 
 
-def test_parse_usage_includes_reasoning_tokens() -> None:
-    usage = parse_usage(
+def test_token_usage_includes_reasoning_tokens() -> None:
+    usage = TokenUsage.from_raw(
         prompt_tokens=10, completion_tokens=5, total_tokens=20, reasoning_tokens=7
     )
     assert usage.reasoning_tokens == 7

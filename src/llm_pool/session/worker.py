@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
@@ -13,7 +13,7 @@ from llm_pool.tools.executor import ToolExecutor
 from llm_pool.types import Message, ToolCallStatus, ToolInvocation
 
 
-class ToolWorkerEventType(str, Enum):
+class ToolWorkerEventType(StrEnum):
     tool_succeeded = "tool_succeeded"
     tool_result_message = "tool_result_message"
     tool_failed = "tool_failed"

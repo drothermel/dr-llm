@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import (
@@ -14,38 +14,38 @@ from pydantic import (
 )
 
 
-class CallMode(str, Enum):
+class CallMode(StrEnum):
     api = "api"
     headless = "headless"
 
 
-class RunStatus(str, Enum):
+class RunStatus(StrEnum):
     running = "running"
     success = "success"
     failed = "failed"
     canceled = "canceled"
 
 
-class SessionStatus(str, Enum):
+class SessionStatus(StrEnum):
     active = "active"
     completed = "completed"
     failed = "failed"
     canceled = "canceled"
 
 
-class SessionTurnStatus(str, Enum):
+class SessionTurnStatus(StrEnum):
     active = "active"
     completed = "completed"
     failed = "failed"
 
 
-class ToolPolicy(str, Enum):
+class ToolPolicy(StrEnum):
     native_preferred = "native_preferred"
     brokered_only = "brokered_only"
     native_only = "native_only"
 
 
-class ToolCallStatus(str, Enum):
+class ToolCallStatus(StrEnum):
     pending = "pending"
     claimed = "claimed"
     succeeded = "succeeded"
@@ -53,7 +53,7 @@ class ToolCallStatus(str, Enum):
     dead_letter = "dead_letter"
 
 
-class ToolErrorCode(str, Enum):
+class ToolErrorCode(StrEnum):
     unknown_tool = "unknown_tool"
     tool_execution_failed = "tool_execution_failed"
     tool_async_in_running_loop = "tool_async_in_running_loop"
@@ -124,14 +124,63 @@ class TokenUsage(BaseModel):
     total_tokens: int = 0
     reasoning_tokens: int = 0
 
-    @field_validator(
-        "prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens"
-    )
     @classmethod
-    def _validate_non_negative(cls, value: int) -> int:
-        if value < 0:
+    def _coerce_token_count(cls, value: Any, *, field_name: str) -> int:
+        if value is None:
+            return 0
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field_name} must be an integer") from exc
+        if parsed < 0:
             raise ValueError("token counts must be non-negative")
-        return value
+        return parsed
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_counts(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        prompt_tokens = cls._coerce_token_count(
+            data.get("prompt_tokens"), field_name="prompt_tokens"
+        )
+        completion_tokens = cls._coerce_token_count(
+            data.get("completion_tokens"), field_name="completion_tokens"
+        )
+        reasoning_tokens = cls._coerce_token_count(
+            data.get("reasoning_tokens"), field_name="reasoning_tokens"
+        )
+        total_raw = data.get("total_tokens")
+        total_tokens = (
+            prompt_tokens + completion_tokens
+            if total_raw is None
+            else cls._coerce_token_count(total_raw, field_name="total_tokens")
+        )
+        return {
+            **data,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "reasoning_tokens": reasoning_tokens,
+        }
+
+    @classmethod
+    def from_raw(
+        cls,
+        *,
+        prompt_tokens: Any = None,
+        completion_tokens: Any = None,
+        total_tokens: Any = None,
+        reasoning_tokens: Any = None,
+    ) -> TokenUsage:
+        return cls(
+            **{
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "reasoning_tokens": reasoning_tokens,
+            }
+        )
 
     @computed_field
     @property

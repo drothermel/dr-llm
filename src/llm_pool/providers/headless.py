@@ -14,9 +14,18 @@ from llm_pool.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
-    parse_usage,
 )
-from llm_pool.types import CallMode, LlmRequest, LlmResponse, ModelToolCall
+from llm_pool.types import (
+    CallMode,
+    LlmRequest,
+    LlmResponse,
+    Message,
+    ModelToolCall,
+    ProviderToolSpec,
+    ReasoningConfig,
+    TokenUsage,
+    ToolPolicy,
+)
 
 
 class HeadlessConfig(BaseModel):
@@ -25,6 +34,19 @@ class HeadlessConfig(BaseModel):
     command: list[str]
     timeout_seconds: float = 180.0
     env_overrides: dict[str, str] = Field(default_factory=dict)
+
+
+class _HeadlessRequestPayload(BaseModel):
+    provider: str
+    model: str
+    messages: list[Message]
+    temperature: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
+    reasoning: ReasoningConfig | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    tools: list[ProviderToolSpec] | None = None
+    tool_policy: ToolPolicy
 
 
 class _BaseHeadlessAdapter(ProviderAdapter):
@@ -41,32 +63,21 @@ class _BaseHeadlessAdapter(ProviderAdapter):
         )
 
     def _payload(self, request: LlmRequest) -> dict[str, Any]:
-        return {
-            "provider": request.provider,
-            "model": request.model,
-            "messages": [
-                msg.model_dump(mode="json", exclude_computed_fields=True)
-                for msg in request.messages
-            ],
-            "temperature": request.temperature,
-            "top_p": request.top_p,
-            "max_tokens": request.max_tokens,
-            "reasoning": request.reasoning.model_dump(
-                mode="json",
-                exclude_none=True,
-                exclude_computed_fields=True,
-            )
-            if request.reasoning
-            else None,
-            "metadata": request.metadata,
-            "tools": [
-                tool.model_dump(mode="json", exclude_computed_fields=True)
-                for tool in request.tools
-            ]
-            if request.tools
-            else None,
-            "tool_policy": request.tool_policy.value,
-        }
+        return _HeadlessRequestPayload(
+            provider=request.provider,
+            model=request.model,
+            messages=request.messages,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            max_tokens=request.max_tokens,
+            reasoning=request.reasoning,
+            metadata=request.metadata,
+            tools=request.tools,
+            tool_policy=request.tool_policy,
+        ).model_dump(
+            mode="json",
+            exclude_computed_fields=True,
+        )
 
     def generate(self, request: LlmRequest) -> LlmResponse:
         payload = self._payload(request)
@@ -97,7 +108,7 @@ class _BaseHeadlessAdapter(ProviderAdapter):
             return LlmResponse(
                 text="",
                 finish_reason=None,
-                usage=parse_usage(),
+                usage=TokenUsage(),
                 raw_json={"stdout": "", "stderr": proc.stderr},
                 latency_ms=latency_ms,
                 provider=request.provider,
@@ -111,7 +122,7 @@ class _BaseHeadlessAdapter(ProviderAdapter):
             return LlmResponse(
                 text=stdout,
                 finish_reason=None,
-                usage=parse_usage(),
+                usage=TokenUsage(),
                 raw_json={"stdout": stdout, "stderr": proc.stderr},
                 latency_ms=latency_ms,
                 provider=request.provider,
@@ -123,7 +134,7 @@ class _BaseHeadlessAdapter(ProviderAdapter):
         reasoning_tokens = parse_reasoning_tokens(
             raw_usage if isinstance(raw_usage, dict) else {}
         )
-        usage = parse_usage(
+        usage = TokenUsage.from_raw(
             prompt_tokens=(raw_usage or {}).get("prompt_tokens")
             if isinstance(raw_usage, dict)
             else None,

@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any
+from typing import Any, Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -20,7 +20,6 @@ from llm_pool.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
-    parse_usage,
 )
 from llm_pool.types import (
     CallMode,
@@ -29,6 +28,7 @@ from llm_pool.types import (
     Message,
     ModelToolCall,
     ProviderToolSpec,
+    TokenUsage,
 )
 
 
@@ -48,16 +48,48 @@ class _GoogleToolBlock(BaseModel):
     functionDeclarations: list[_GoogleFunctionDeclaration]
 
 
-class _GoogleRequestPayload(BaseModel):
-    contents: list[dict[str, Any]]
-    systemInstruction: dict[str, Any] | None = None
-    generationConfig: _GoogleGenerationConfig | None = None
-    tools: list[_GoogleToolBlock] | None = None
-
-
 class _GoogleFunctionCall(BaseModel):
     name: str | None = None
     args: dict[str, Any] | None = None
+
+
+class _GoogleRequestFunctionResponse(BaseModel):
+    name: str
+    response: dict[str, Any]
+
+
+class _GoogleRequestPart(BaseModel):
+    text: str | None = None
+    functionCall: _GoogleFunctionCall | None = None
+    functionResponse: _GoogleRequestFunctionResponse | None = None
+
+    @model_validator(mode="after")
+    def _validate_exactly_one_content_field(self) -> _GoogleRequestPart:
+        populated_fields = sum(
+            value is not None
+            for value in (self.text, self.functionCall, self.functionResponse)
+        )
+        if populated_fields != 1:
+            raise ValueError(
+                "google request part must include exactly one of text, functionCall, functionResponse"
+            )
+        return self
+
+
+class _GoogleRequestContent(BaseModel):
+    role: Literal["user", "model"]
+    parts: list[_GoogleRequestPart] = Field(default_factory=list)
+
+
+class _GoogleSystemInstruction(BaseModel):
+    parts: list[_GoogleRequestPart] = Field(default_factory=list)
+
+
+class _GoogleRequestPayload(BaseModel):
+    contents: list[_GoogleRequestContent]
+    systemInstruction: _GoogleSystemInstruction | None = None
+    generationConfig: _GoogleGenerationConfig | None = None
+    tools: list[_GoogleToolBlock] | None = None
 
 
 class _GooglePart(BaseModel):
@@ -141,7 +173,9 @@ class GoogleAdapter(ProviderAdapter):
         contents = _to_google_contents(request.messages)
         payload = _GoogleRequestPayload(contents=contents)
         if system:
-            payload.systemInstruction = {"parts": [{"text": system}]}
+            payload.systemInstruction = _GoogleSystemInstruction(
+                parts=[_GoogleRequestPart(text=system)]
+            )
         if (
             request.temperature is not None
             or request.top_p is not None
@@ -175,8 +209,12 @@ class GoogleAdapter(ProviderAdapter):
             raise ProviderTransportError(
                 f"google invalid JSON response: {exc}"
             ) from exc
+        if not isinstance(body_raw, dict):
+            raise ProviderSemanticError(
+                "google response shape invalid: expected JSON object"
+            )
         try:
-            body = _GoogleResponse.model_validate(body_raw)
+            body = _GoogleResponse(**body_raw)
         except ValidationError as exc:
             raise ProviderSemanticError(
                 f"google response shape invalid: {exc}"
@@ -205,7 +243,7 @@ class GoogleAdapter(ProviderAdapter):
             else {}
         )
         reasoning_tokens = parse_reasoning_tokens(usage_raw)
-        usage = parse_usage(
+        usage = TokenUsage.from_raw(
             prompt_tokens=body.usageMetadata.promptTokenCount
             if body.usageMetadata
             else None,
@@ -267,8 +305,8 @@ def _parse_tool_response_content(content: str) -> dict[str, Any]:
     return {"content": parsed}
 
 
-def _to_google_contents(messages: list[Message]) -> list[dict[str, Any]]:
-    contents: list[dict[str, Any]] = []
+def _to_google_contents(messages: list[Message]) -> list[_GoogleRequestContent]:
+    contents: list[_GoogleRequestContent] = []
     for msg in messages:
         if msg.role == "system":
             continue
@@ -276,42 +314,50 @@ def _to_google_contents(messages: list[Message]) -> list[dict[str, Any]]:
         if msg.role == "tool":
             if msg.name:
                 contents.append(
-                    {
-                        "role": "user",
-                        "parts": [
-                            {
-                                "functionResponse": {
-                                    "name": msg.name,
-                                    "response": _parse_tool_response_content(
-                                        msg.content
-                                    ),
-                                }
-                            }
+                    _GoogleRequestContent(
+                        role="user",
+                        parts=[
+                            _GoogleRequestPart(
+                                functionResponse=_GoogleRequestFunctionResponse(
+                                    name=msg.name,
+                                    response=_parse_tool_response_content(msg.content),
+                                )
+                            )
                         ],
-                    }
+                    )
                 )
             elif msg.content:
-                contents.append({"role": "user", "parts": [{"text": msg.content}]})
+                contents.append(
+                    _GoogleRequestContent(
+                        role="user",
+                        parts=[_GoogleRequestPart(text=msg.content)],
+                    )
+                )
             continue
 
         if msg.role == "assistant":
-            parts: list[dict[str, Any]] = []
+            parts: list[_GoogleRequestPart] = []
             if msg.content:
-                parts.append({"text": msg.content})
+                parts.append(_GoogleRequestPart(text=msg.content))
             if msg.tool_calls:
                 for call in msg.tool_calls:
                     parts.append(
-                        {
-                            "functionCall": {
-                                "name": call.name,
-                                "args": call.arguments,
-                            }
-                        }
+                        _GoogleRequestPart(
+                            functionCall=_GoogleFunctionCall(
+                                name=call.name,
+                                args=call.arguments,
+                            )
+                        )
                     )
             if parts:
-                contents.append({"role": "model", "parts": parts})
+                contents.append(_GoogleRequestContent(role="model", parts=parts))
             continue
 
         if msg.role == "user" and msg.content:
-            contents.append({"role": "user", "parts": [{"text": msg.content}]})
+            contents.append(
+                _GoogleRequestContent(
+                    role="user",
+                    parts=[_GoogleRequestPart(text=msg.content)],
+                )
+            )
     return contents

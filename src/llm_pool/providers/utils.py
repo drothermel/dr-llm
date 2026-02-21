@@ -2,9 +2,66 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
-from typing import Any
+from typing import Any, Literal
 
-from llm_pool.types import CostInfo, Message, ModelToolCall, TokenUsage
+from pydantic import BaseModel
+from llm_pool.types import CostInfo, Message, ModelToolCall
+
+KEY_NAME = "name"
+KEY_TOOL_CALL_ID = "tool_call_id"
+KEY_ID = "id"
+KEY_FUNCTION = "function"
+KEY_ARGUMENTS = "arguments"
+
+TOOL_TYPE_FUNCTION = "function"
+TOOL_CALL_ID_PREFIX = "call_"
+FALLBACK_RAW_ARGUMENT_KEY = "_raw"
+FALLBACK_VALUE_ARGUMENT_KEY = "_value"
+
+KEY_USAGE = "usage"
+KEY_REASONING = "reasoning"
+KEY_REASONING_CONTENT = "reasoning_content"
+KEY_REASONING_DETAILS = "reasoning_details"
+KEY_REASONING_TOKENS = "reasoning_tokens"
+KEY_COMPLETION_TOKENS_DETAILS = "completion_tokens_details"
+KEY_OUTPUT_TOKENS_DETAILS = "output_tokens_details"
+
+KEY_COST = "cost"
+KEY_TOTAL_COST = "total_cost"
+KEY_PROMPT_COST = "prompt_cost"
+KEY_COMPLETION_COST = "completion_cost"
+KEY_REASONING_COST = "reasoning_cost"
+KEY_CURRENCY = "currency"
+DEFAULT_CURRENCY = "USD"
+COST_INFO_KEYS = (
+    KEY_COST,
+    KEY_TOTAL_COST,
+    KEY_PROMPT_COST,
+    KEY_COMPLETION_COST,
+    KEY_REASONING_COST,
+    KEY_CURRENCY,
+)
+USAGE_PREFIX = "usage."
+BODY_PREFIX = "body."
+
+
+class _OpenAIWireToolFunction(BaseModel):
+    name: str
+    arguments: str
+
+
+class _OpenAIWireToolCall(BaseModel):
+    id: str
+    type: Literal["function"] = "function"
+    function: _OpenAIWireToolFunction
+
+
+class _OpenAIWireMessage(BaseModel):
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str
+    name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[_OpenAIWireToolCall] | None = None
 
 
 def stable_json_dumps(payload: dict[str, Any]) -> str:
@@ -16,66 +73,56 @@ def payload_hash(payload: dict[str, Any]) -> str:
 
 
 def to_openai_messages(messages: list[Message]) -> list[dict[str, Any]]:
-    payloads: list[dict[str, Any]] = []
+    payloads: list[_OpenAIWireMessage] = []
     for message in messages:
-        item: dict[str, Any] = {
-            "role": message.role,
-            "content": message.content,
-        }
-        if message.name:
-            item["name"] = message.name
-        if message.tool_call_id:
-            item["tool_call_id"] = message.tool_call_id
-        if message.tool_calls:
-            item["tool_calls"] = [
-                {
-                    "id": call.tool_call_id,
-                    "type": "function",
-                    "function": {
-                        "name": call.name,
-                        "arguments": json.dumps(
-                            call.arguments, ensure_ascii=True, sort_keys=True
+        payloads.append(
+            _OpenAIWireMessage(
+                role=message.role,
+                content=message.content,
+                name=message.name,
+                tool_call_id=message.tool_call_id,
+                tool_calls=[
+                    _OpenAIWireToolCall(
+                        id=call.tool_call_id,
+                        type=TOOL_TYPE_FUNCTION,
+                        function=_OpenAIWireToolFunction(
+                            name=call.name,
+                            arguments=json.dumps(
+                                call.arguments, ensure_ascii=True, sort_keys=True
+                            ),
                         ),
-                    },
-                }
-                for call in message.tool_calls
-            ]
-        payloads.append(item)
-    return payloads
-
-
-def parse_usage(
-    *,
-    prompt_tokens: int | None = None,
-    completion_tokens: int | None = None,
-    total_tokens: int | None = None,
-    reasoning_tokens: int | None = None,
-) -> TokenUsage:
-    p = int(prompt_tokens or 0)
-    c = int(completion_tokens or 0)
-    t = int(total_tokens or (p + c))
-    r = int(reasoning_tokens or 0)
-    return TokenUsage(
-        prompt_tokens=p, completion_tokens=c, total_tokens=t, reasoning_tokens=r
-    )
+                    )
+                    for call in (message.tool_calls or [])
+                ]
+                or None,
+            )
+        )
+    return [
+        message.model_dump(
+            mode="json",
+            exclude_none=True,
+            exclude_computed_fields=True,
+        )
+        for message in payloads
+    ]
 
 
 def parse_reasoning_tokens(usage_raw: dict[str, Any] | None) -> int:
     if not isinstance(usage_raw, dict):
         return 0
-    direct = _as_int(usage_raw.get("reasoning_tokens"))
+    direct = _as_int(usage_raw.get(KEY_REASONING_TOKENS))
     if direct is not None:
         return direct
 
-    completion_details = usage_raw.get("completion_tokens_details")
+    completion_details = usage_raw.get(KEY_COMPLETION_TOKENS_DETAILS)
     if isinstance(completion_details, dict):
-        value = _as_int(completion_details.get("reasoning_tokens"))
+        value = _as_int(completion_details.get(KEY_REASONING_TOKENS))
         if value is not None:
             return value
 
-    output_details = usage_raw.get("output_tokens_details")
+    output_details = usage_raw.get(KEY_OUTPUT_TOKENS_DETAILS)
     if isinstance(output_details, dict):
-        value = _as_int(output_details.get("reasoning_tokens"))
+        value = _as_int(output_details.get(KEY_REASONING_TOKENS))
         if value is not None:
             return value
     return 0
@@ -87,14 +134,14 @@ def parse_reasoning(
     if not isinstance(message_raw, dict):
         return None, None
 
-    reasoning_raw = message_raw.get("reasoning")
+    reasoning_raw = message_raw.get(KEY_REASONING)
     if reasoning_raw is None:
-        reasoning_raw = message_raw.get("reasoning_content")
+        reasoning_raw = message_raw.get(KEY_REASONING_CONTENT)
     reasoning_text = (
         str(reasoning_raw) if isinstance(reasoning_raw, (str, int, float)) else None
     )
 
-    reasoning_details_raw = message_raw.get("reasoning_details")
+    reasoning_details_raw = message_raw.get(KEY_REASONING_DETAILS)
     reasoning_details: list[dict[str, Any]] | None = None
     if isinstance(reasoning_details_raw, list):
         reasoning_details = [
@@ -106,23 +153,26 @@ def parse_reasoning(
 def parse_cost_info(body_raw: dict[str, Any] | None) -> CostInfo | None:
     if not isinstance(body_raw, dict):
         return None
-    usage_raw = body_raw.get("usage")
+    usage_raw = body_raw.get(KEY_USAGE)
     usage = usage_raw if isinstance(usage_raw, dict) else {}
 
     total_cost = _first_float(
-        usage.get("total_cost"),
-        usage.get("cost"),
-        body_raw.get("total_cost"),
-        body_raw.get("cost"),
+        usage.get(KEY_TOTAL_COST),
+        usage.get(KEY_COST),
+        body_raw.get(KEY_TOTAL_COST),
+        body_raw.get(KEY_COST),
     )
-    prompt_cost = _first_float(usage.get("prompt_cost"), body_raw.get("prompt_cost"))
+    prompt_cost = _first_float(
+        usage.get(KEY_PROMPT_COST), body_raw.get(KEY_PROMPT_COST)
+    )
     completion_cost = _first_float(
-        usage.get("completion_cost"), body_raw.get("completion_cost")
+        usage.get(KEY_COMPLETION_COST), body_raw.get(KEY_COMPLETION_COST)
     )
     reasoning_cost = _first_float(
-        usage.get("reasoning_cost"), body_raw.get("reasoning_cost")
+        usage.get(KEY_REASONING_COST), body_raw.get(KEY_REASONING_COST)
     )
-    currency = _first_str(usage.get("currency"), body_raw.get("currency")) or "USD"
+    currency = _first_str(usage.get(KEY_CURRENCY), body_raw.get(KEY_CURRENCY))
+    currency = currency or DEFAULT_CURRENCY
 
     if (
         total_cost is None
@@ -133,18 +183,11 @@ def parse_cost_info(body_raw: dict[str, Any] | None) -> CostInfo | None:
         return None
 
     raw: dict[str, Any] = {}
-    for key in (
-        "cost",
-        "total_cost",
-        "prompt_cost",
-        "completion_cost",
-        "reasoning_cost",
-        "currency",
-    ):
+    for key in COST_INFO_KEYS:
         if key in usage:
-            raw[f"usage.{key}"] = usage[key]
+            raw[f"{USAGE_PREFIX}{key}"] = usage[key]
         if key in body_raw:
-            raw[f"body.{key}"] = body_raw[key]
+            raw[f"{BODY_PREFIX}{key}"] = body_raw[key]
 
     return CostInfo(
         total_cost_usd=total_cost,
@@ -161,30 +204,34 @@ def parse_tool_calls(raw: list[dict[str, Any]] | None) -> list[ModelToolCall]:
         return []
     parsed: list[ModelToolCall] = []
     for item in raw:
-        call_id = str(item.get("id") or item.get("tool_call_id") or "")
-        fn = item.get("function") or {}
-        name = str(fn.get("name") or item.get("name") or "")
+        call_id = str(item.get(KEY_ID) or item.get(KEY_TOOL_CALL_ID) or "")
+        fn = item.get(KEY_FUNCTION) or {}
+        name = str(fn.get(KEY_NAME) or item.get(KEY_NAME) or "")
         args_raw = (
-            fn.get("arguments") if isinstance(fn, dict) else item.get("arguments")
+            fn.get(KEY_ARGUMENTS) if isinstance(fn, dict) else item.get(KEY_ARGUMENTS)
         )
         args: dict[str, Any]
         if isinstance(args_raw, str):
             try:
                 loaded = json.loads(args_raw)
             except json.JSONDecodeError:
-                loaded = {"_raw": args_raw}
-            args = loaded if isinstance(loaded, dict) else {"_value": loaded}
+                loaded = {FALLBACK_RAW_ARGUMENT_KEY: args_raw}
+            args = (
+                loaded
+                if isinstance(loaded, dict)
+                else {FALLBACK_VALUE_ARGUMENT_KEY: loaded}
+            )
         elif isinstance(args_raw, dict):
             args = args_raw
         elif args_raw is None:
             args = {}
         else:
-            args = {"_value": args_raw}
+            args = {FALLBACK_VALUE_ARGUMENT_KEY: args_raw}
         if not name:
             continue
         parsed.append(
             ModelToolCall(
-                tool_call_id=call_id or f"call_{len(parsed) + 1}",
+                tool_call_id=call_id or f"{TOOL_CALL_ID_PREFIX}{len(parsed) + 1}",
                 name=name,
                 arguments=args,
             )

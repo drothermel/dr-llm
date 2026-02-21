@@ -43,3 +43,17 @@ def test_token_usage_computed_total_and_non_negative_validation() -> None:
 
     with pytest.raises(ValidationError):
         TokenUsage(prompt_tokens=-1)
+
+
+def test_token_usage_coerces_and_derives_total() -> None:
+    usage = TokenUsage.from_raw(
+        prompt_tokens="4", completion_tokens="6", total_tokens=None
+    )
+    assert usage.prompt_tokens == 4
+    assert usage.completion_tokens == 6
+    assert usage.total_tokens == 10
+
+
+def test_token_usage_rejects_invalid_integer_like_values() -> None:
+    with pytest.raises(ValidationError):
+        TokenUsage.from_raw(prompt_tokens="abc")

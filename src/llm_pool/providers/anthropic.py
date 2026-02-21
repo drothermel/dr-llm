@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -20,7 +20,6 @@ from llm_pool.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
-    parse_usage,
 )
 from llm_pool.types import (
     CallMode,
@@ -29,6 +28,7 @@ from llm_pool.types import (
     Message,
     ModelToolCall,
     ProviderToolSpec,
+    TokenUsage,
 )
 
 
@@ -38,9 +38,37 @@ class _AnthropicToolSpec(BaseModel):
     input_schema: dict[str, Any]
 
 
+class _AnthropicRequestTextBlock(BaseModel):
+    type: Literal["text"] = "text"
+    text: str
+
+
+class _AnthropicRequestToolUseBlock(BaseModel):
+    type: Literal["tool_use"] = "tool_use"
+    id: str
+    name: str
+    input: dict[str, Any]
+
+
+class _AnthropicRequestToolResultBlock(BaseModel):
+    type: Literal["tool_result"] = "tool_result"
+    tool_use_id: str
+    content: str
+    is_error: bool | None = None
+
+
+class _AnthropicRequestMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: list[
+        _AnthropicRequestTextBlock
+        | _AnthropicRequestToolUseBlock
+        | _AnthropicRequestToolResultBlock
+    ] = Field(default_factory=list)
+
+
 class _AnthropicRequestPayload(BaseModel):
     model: str
-    messages: list[dict[str, Any]]
+    messages: list[_AnthropicRequestMessage]
     max_tokens: int
     system: str | None = None
     temperature: float | None = None
@@ -159,8 +187,12 @@ class AnthropicAdapter(ProviderAdapter):
             raise ProviderTransportError(
                 f"anthropic invalid JSON response: {exc}"
             ) from exc
+        if not isinstance(body_raw, dict):
+            raise ProviderSemanticError(
+                "anthropic response shape invalid: expected JSON object"
+            )
         try:
-            body = _AnthropicResponse.model_validate(body_raw)
+            body = _AnthropicResponse(**body_raw)
         except ValidationError as exc:
             raise ProviderSemanticError(
                 f"anthropic response shape invalid: {exc}"
@@ -185,7 +217,7 @@ class AnthropicAdapter(ProviderAdapter):
             body.usage.model_dump(mode="json", exclude_none=True) if body.usage else {}
         )
         reasoning_tokens = parse_reasoning_tokens(usage_raw)
-        usage = parse_usage(
+        usage = TokenUsage.from_raw(
             prompt_tokens=body.usage.input_tokens if body.usage else None,
             completion_tokens=body.usage.output_tokens if body.usage else None,
             total_tokens=(
@@ -230,8 +262,8 @@ def _to_anthropic_tools(
     ] or None
 
 
-def _to_anthropic_messages(messages: list[Message]) -> list[dict[str, Any]]:
-    payload: list[dict[str, Any]] = []
+def _to_anthropic_messages(messages: list[Message]) -> list[_AnthropicRequestMessage]:
+    payload: list[_AnthropicRequestMessage] = []
     for msg in messages:
         if msg.role == "system":
             continue
@@ -239,45 +271,59 @@ def _to_anthropic_messages(messages: list[Message]) -> list[dict[str, Any]]:
         if msg.role == "tool":
             if msg.tool_call_id:
                 content = msg.content or "{}"
-                block: dict[str, Any] = {
-                    "type": "tool_result",
-                    "tool_use_id": msg.tool_call_id,
-                    "content": content,
-                }
+                block = _AnthropicRequestToolResultBlock(
+                    tool_use_id=msg.tool_call_id,
+                    content=content,
+                )
                 try:
                     parsed = json.loads(content)
                 except json.JSONDecodeError:
                     parsed = None
                 if isinstance(parsed, dict) and "error" in parsed:
-                    block["is_error"] = True
-                payload.append({"role": "user", "content": [block]})
+                    block = _AnthropicRequestToolResultBlock(
+                        tool_use_id=msg.tool_call_id,
+                        content=content,
+                        is_error=True,
+                    )
+                payload.append(_AnthropicRequestMessage(role="user", content=[block]))
             elif msg.content:
                 payload.append(
-                    {"role": "user", "content": [{"type": "text", "text": msg.content}]}
+                    _AnthropicRequestMessage(
+                        role="user",
+                        content=[_AnthropicRequestTextBlock(text=msg.content)],
+                    )
                 )
             continue
 
         if msg.role == "assistant":
-            blocks: list[dict[str, Any]] = []
+            blocks: list[
+                _AnthropicRequestTextBlock
+                | _AnthropicRequestToolUseBlock
+                | _AnthropicRequestToolResultBlock
+            ] = []
             if msg.content:
-                blocks.append({"type": "text", "text": msg.content})
+                blocks.append(_AnthropicRequestTextBlock(text=msg.content))
             if msg.tool_calls:
                 for call in msg.tool_calls:
                     blocks.append(
-                        {
-                            "type": "tool_use",
-                            "id": call.tool_call_id,
-                            "name": call.name,
-                            "input": call.arguments,
-                        }
+                        _AnthropicRequestToolUseBlock(
+                            id=call.tool_call_id,
+                            name=call.name,
+                            input=call.arguments,
+                        )
                     )
             if blocks:
-                payload.append({"role": "assistant", "content": blocks})
+                payload.append(
+                    _AnthropicRequestMessage(role="assistant", content=blocks)
+                )
             continue
 
         if msg.role == "user" and msg.content:
             payload.append(
-                {"role": "user", "content": [{"type": "text", "text": msg.content}]}
+                _AnthropicRequestMessage(
+                    role="user",
+                    content=[_AnthropicRequestTextBlock(text=msg.content)],
+                )
             )
 
     return payload

@@ -16,3 +16,5 @@ Always use Pydantic models instead of Python `dataclass` definitions.
 
 - Do not introduce new `@dataclass` usage in this repository.
 - When touching existing `@dataclass` models, migrate them to `pydantic.BaseModel`.
+- Prefer constructor-style validation for mapping inputs: `Model(**payload)`.
+- Use `model_validate()` only when the input is not a plain mapping or when constructor style is not viable.

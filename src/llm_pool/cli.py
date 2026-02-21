@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from pydantic import ValidationError
 
 from llm_pool.client import LlmClient
 from llm_pool.providers import build_default_registry
@@ -79,7 +80,14 @@ def _load_messages(
                 "messages-file must be a JSON list or an object with a 'messages' list"
             )
         for item in payload:
-            result.append(Message.model_validate(item))
+            if not isinstance(item, dict):
+                raise typer.BadParameter("messages-file entries must be JSON objects")
+            try:
+                result.append(Message(**item))
+            except ValidationError as exc:
+                raise typer.BadParameter(
+                    f"Invalid message in messages-file: {exc}"
+                ) from exc
 
     result.extend(Message(role="user", content=content) for content in messages)
     if require_nonempty and not result:
@@ -185,7 +193,7 @@ def query(
         reasoning_json, arg_name="reasoning_json", expected=dict
     )
     reasoning = (
-        ReasoningConfig.model_validate(reasoning_payload)
+        ReasoningConfig(**reasoning_payload)
         if isinstance(reasoning_payload, dict)
         else None
     )
@@ -302,7 +310,7 @@ def session_start(
         reasoning_json, arg_name="reasoning_json", expected=dict
     )
     reasoning = (
-        ReasoningConfig.model_validate(reasoning_payload)
+        ReasoningConfig(**reasoning_payload)
         if isinstance(reasoning_payload, dict)
         else None
     )
@@ -362,7 +370,7 @@ def session_step(
         reasoning_json, arg_name="reasoning_json", expected=dict
     )
     reasoning = (
-        ReasoningConfig.model_validate(reasoning_payload)
+        ReasoningConfig(**reasoning_payload)
         if isinstance(reasoning_payload, dict)
         else None
     )
