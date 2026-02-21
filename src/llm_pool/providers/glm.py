@@ -10,7 +10,7 @@ class GlmAdapter(OpenAICompatAdapter):
         super().__init__(
             name="glm",
             config=OpenAICompatConfig(
-                base_url="https://open.bigmodel.cn/api/paas/v4",
-                api_key_env="GLM_API_KEY",
+                base_url="https://api.z.ai/api/coding/paas/v4",
+                api_key_env="ZAI_API_KEY",
             ),
         )

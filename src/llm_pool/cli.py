@@ -17,6 +17,7 @@ from llm_pool.tools.registry import ToolDefinition
 from llm_pool.types import (
     LlmRequest,
     Message,
+    ModelCatalogQuery,
     ReasoningConfig,
     RunStatus,
     SessionStartInput,
@@ -30,11 +31,13 @@ session_app = typer.Typer(help="Session lifecycle commands")
 tool_app = typer.Typer(help="Tool worker commands")
 worker_app = typer.Typer(help="Tool queue worker commands")
 replay_app = typer.Typer(help="Replay and audit commands")
+models_app = typer.Typer(help="Model catalog commands")
 
 app.add_typer(run_app, name="run")
 app.add_typer(session_app, name="session")
 app.add_typer(tool_app, name="tool")
 app.add_typer(replay_app, name="replay")
+app.add_typer(models_app, name="models")
 tool_app.add_typer(worker_app, name="worker")
 
 
@@ -155,6 +158,118 @@ def providers() -> None:
         caps = client.provider_capabilities(name)
         data.append({"provider": name, **caps})
     _emit({"providers": data})
+
+
+@models_app.command("sync")
+def models_sync(
+    provider: str | None = typer.Option(None, help="Optional provider key."),
+    dsn: str | None = typer.Option(None, envvar="LLM_POOL_DATABASE_URL"),
+    min_pool_size: int = typer.Option(4),
+    max_pool_size: int = typer.Option(64),
+) -> None:
+    """Sync provider model catalog into PostgreSQL."""
+    repository = _repo(dsn, min_pool_size, max_pool_size)
+    try:
+        client = LlmClient(registry=build_default_registry(), repository=repository)
+        results = client.sync_models_detailed(provider=provider)
+        _emit(
+            {
+                "results": [
+                    result.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                        exclude_computed_fields=True,
+                    )
+                    for result in results
+                ]
+            }
+        )
+    finally:
+        repository.close()
+
+
+@models_app.command("list")
+def models_list(
+    provider: str | None = typer.Option(None, help="Optional provider filter."),
+    supports_reasoning: bool | None = typer.Option(
+        None, help="Optional reasoning support filter."
+    ),
+    model_contains: str | None = typer.Option(None, help="Substring model filter."),
+    limit: int = typer.Option(200),
+    offset: int = typer.Option(0),
+    json_output: bool = typer.Option(
+        True,
+        "--json/--no-json",
+        help="Emit JSON output.",
+    ),
+    dsn: str | None = typer.Option(None, envvar="LLM_POOL_DATABASE_URL"),
+    min_pool_size: int = typer.Option(4),
+    max_pool_size: int = typer.Option(64),
+) -> None:
+    """List models from stored catalog."""
+    repository = _repo(dsn, min_pool_size, max_pool_size)
+    try:
+        client = LlmClient(registry=build_default_registry(), repository=repository)
+        items = client.list_models(
+            ModelCatalogQuery(
+                provider=provider,
+                supports_reasoning=supports_reasoning,
+                model_contains=model_contains,
+                limit=limit,
+                offset=offset,
+            )
+        )
+        if json_output:
+            _emit(
+                {
+                    "models": [
+                        item.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                            exclude_computed_fields=True,
+                        )
+                        for item in items
+                    ]
+                }
+            )
+        else:
+            for item in items:
+                typer.echo(
+                    "\t".join(
+                        [
+                            item.provider,
+                            item.model,
+                            item.display_name or "",
+                            item.source_quality,
+                        ]
+                    )
+                )
+    finally:
+        repository.close()
+
+
+@models_app.command("show")
+def models_show(
+    provider: str = typer.Option(...),
+    model: str = typer.Option(...),
+    dsn: str | None = typer.Option(None, envvar="LLM_POOL_DATABASE_URL"),
+    min_pool_size: int = typer.Option(4),
+    max_pool_size: int = typer.Option(64),
+) -> None:
+    """Show one model from stored catalog."""
+    repository = _repo(dsn, min_pool_size, max_pool_size)
+    try:
+        client = LlmClient(registry=build_default_registry(), repository=repository)
+        item = client.show_model(provider=provider, model=model)
+        if item is None:
+            raise typer.Exit(code=1)
+        _emit(
+            item.model_dump(
+                mode="json", exclude_none=True, exclude_computed_fields=True
+            )
+        )
+    finally:
+        repository.close()
 
 
 @app.command("query")

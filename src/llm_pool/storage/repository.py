@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from llm_pool.storage._catalog_store import CatalogStore
 from llm_pool.storage._runs_calls_store import RunsCallsStore
 from llm_pool.storage._runtime import StorageConfig, StorageRuntime
 from llm_pool.storage._sessions_store import SessionsStore
@@ -10,6 +11,8 @@ from llm_pool.types import (
     CallMode,
     LlmRequest,
     LlmResponse,
+    ModelCatalogEntry,
+    ModelCatalogQuery,
     RecordedCall,
     RunStatus,
     SessionEvent,
@@ -28,6 +31,7 @@ class PostgresRepository:
         self.config = config or StorageConfig()
         self._runtime = StorageRuntime(self.config)
         self._runs_calls = RunsCallsStore(self._runtime)
+        self._catalog = CatalogStore(self._runtime)
         self._sessions = SessionsStore(self._runtime)
         self._tools = ToolsStore(self._runtime)
 
@@ -128,6 +132,38 @@ class PostgresRepository:
             artifact_path=artifact_path,
             metadata=metadata,
         )
+
+    def record_model_catalog_snapshot(
+        self,
+        *,
+        provider: str,
+        status: str,
+        raw_payload: dict[str, Any] | None = None,
+        error_text: str | None = None,
+    ) -> str:
+        return self._catalog.record_catalog_snapshot(
+            provider=provider,
+            status=status,
+            raw_payload=raw_payload,
+            error_text=error_text,
+        )
+
+    def replace_provider_models(
+        self,
+        *,
+        provider: str,
+        entries: list[ModelCatalogEntry],
+    ) -> int:
+        return self._catalog.replace_provider_models(provider=provider, entries=entries)
+
+    def upsert_model_overrides(self, *, entries: list[ModelCatalogEntry]) -> int:
+        return self._catalog.upsert_model_overrides(entries=entries)
+
+    def list_models(self, *, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
+        return self._catalog.list_models(query=query)
+
+    def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
+        return self._catalog.get_model(provider=provider, model=model)
 
     def start_session(
         self,

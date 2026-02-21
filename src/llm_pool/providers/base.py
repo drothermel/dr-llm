@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-from llm_pool.types import LlmRequest, LlmResponse
+from llm_pool.types import LlmRequest, LlmResponse, ModelCatalogEntry
 
 
 class ProviderCapabilities(BaseModel):
@@ -27,3 +28,9 @@ class ProviderAdapter(ABC):
     @abstractmethod
     def generate(self, request: LlmRequest) -> LlmResponse:
         raise NotImplementedError
+
+
+class ProviderModelCatalogAdapter(Protocol):
+    name: str
+
+    def list_models(self) -> list[ModelCatalogEntry]: ...

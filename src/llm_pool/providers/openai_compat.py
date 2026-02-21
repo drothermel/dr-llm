@@ -15,6 +15,7 @@ from tenacity import (
 )
 
 from llm_pool.errors import ProviderSemanticError, ProviderTransportError
+from llm_pool.logging import emit_generation_event
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
 from llm_pool.providers.utils import (
     parse_cost_info,
@@ -23,6 +24,7 @@ from llm_pool.providers.utils import (
     parse_tool_calls,
     to_openai_messages,
 )
+from llm_pool.reasoning import map_reasoning_for_openai_compat
 from llm_pool.types import (
     CallMode,
     LlmRequest,
@@ -151,21 +153,18 @@ class OpenAICompatAdapter(ProviderAdapter):
     def generate(self, request: LlmRequest) -> LlmResponse:
         if self._client is None:
             raise ProviderTransportError(f"{self.name} client is not initialized")
+        reasoning_mapping = map_reasoning_for_openai_compat(
+            request.reasoning,
+            provider=request.provider,
+            mode=CallMode.api,
+        )
         payload = _OpenAICompatRequestPayload(
             model=request.model,
             messages=to_openai_messages(request.messages),
             temperature=request.temperature,
             top_p=request.top_p,
             max_tokens=request.max_tokens,
-            reasoning=(
-                request.reasoning.model_dump(
-                    mode="json",
-                    exclude_none=True,
-                    exclude_computed_fields=True,
-                )
-                if request.reasoning is not None
-                else None
-            ),
+            reasoning=reasoning_mapping.payload or None,
             tools=request.tools,
         ).model_dump(mode="json", exclude_none=True)
         endpoint = self._config.base_url.rstrip("/") + self._config.chat_path
@@ -177,6 +176,16 @@ class OpenAICompatAdapter(ProviderAdapter):
         except Exception as exc:  # noqa: BLE001
             raise ProviderTransportError(f"{self.name} request failed: {exc}") from exc
         latency_ms = int((time.perf_counter() - started) * 1000)
+        emit_generation_event(
+            event_type="provider.raw_response",
+            stage=f"{self.name}.http_response",
+            payload={
+                "status_code": resp.status_code,
+                "endpoint": endpoint,
+                "response_text": resp.text,
+                "request_payload": payload,
+            },
+        )
         if resp.status_code >= 500 or resp.status_code == 429:
             raise ProviderTransportError(
                 f"{self.name} transient error status={resp.status_code} body={resp.text[:500]}"
@@ -236,4 +245,5 @@ class OpenAICompatAdapter(ProviderAdapter):
             model=request.model,
             mode=CallMode.api,
             tool_calls=tool_calls,
+            warnings=reasoning_mapping.warnings,
         )

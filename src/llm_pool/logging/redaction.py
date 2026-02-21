@@ -1,0 +1,38 @@
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+
+_REDACT_KEYS = {
+    "authorization",
+    "api_key",
+    "apikey",
+    "x-api-key",
+    "token",
+    "auth_token",
+    "anthropic_auth_token",
+    "password",
+    "secret",
+}
+
+
+def redact_payload(payload: Any, *, enabled: bool) -> Any:
+    if not enabled:
+        return payload
+    return _redact(payload)
+
+
+def _redact(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): (
+                "[REDACTED]"
+                if str(key).lower().replace("-", "_") in _REDACT_KEYS
+                else _redact(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_redact(item) for item in value]
+    return value

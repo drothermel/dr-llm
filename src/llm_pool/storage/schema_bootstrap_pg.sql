@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS llm_call_responses (
     cost_reasoning_usd DOUBLE PRECISION,
     cost_currency TEXT,
     cost_json JSONB,
+    warnings_json JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -80,8 +81,51 @@ ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS cost_completion_usd DOUB
 ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS cost_reasoning_usd DOUBLE PRECISION;
 ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS cost_currency TEXT;
 ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS cost_json JSONB;
+ALTER TABLE llm_call_responses ADD COLUMN IF NOT EXISTS warnings_json JSONB;
 
 CREATE INDEX IF NOT EXISTS idx_llm_call_responses_reasoning_tokens ON llm_call_responses(reasoning_tokens);
+
+CREATE TABLE IF NOT EXISTS provider_model_catalog_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    status TEXT NOT NULL,
+    raw_json JSONB,
+    error_text TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_model_catalog_snapshots_provider_fetched
+    ON provider_model_catalog_snapshots(provider, fetched_at DESC);
+
+CREATE TABLE IF NOT EXISTS provider_models_current (
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    display_name TEXT,
+    context_window INTEGER,
+    max_output_tokens INTEGER,
+    supports_reasoning BOOLEAN,
+    supports_tools BOOLEAN,
+    supports_vision BOOLEAN,
+    pricing_json JSONB,
+    rate_limits_json JSONB,
+    source_quality TEXT NOT NULL DEFAULT 'live',
+    metadata_json JSONB,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (provider, model)
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_models_current_provider_reasoning
+    ON provider_models_current(provider, supports_reasoning);
+
+CREATE TABLE IF NOT EXISTS provider_model_overrides (
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    pricing_json JSONB,
+    rate_limits_json JSONB,
+    notes TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (provider, model)
+);
 
 CREATE TABLE IF NOT EXISTS artifacts (
     artifact_id TEXT PRIMARY KEY,

@@ -15,12 +15,14 @@ from tenacity import (
 )
 
 from llm_pool.errors import ProviderSemanticError, ProviderTransportError
+from llm_pool.logging import emit_generation_event
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
 from llm_pool.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
 )
+from llm_pool.reasoning import map_reasoning_for_google
 from llm_pool.types import (
     CallMode,
     LlmRequest,
@@ -36,6 +38,8 @@ class _GoogleGenerationConfig(BaseModel):
     temperature: float | None = None
     topP: float | None = None
     maxOutputTokens: int | None = None
+    thinkingBudget: int | None = None
+    thinkingLevel: str | None = None
 
 
 class _GoogleFunctionDeclaration(BaseModel):
@@ -159,6 +163,11 @@ class GoogleAdapter(ProviderAdapter):
         reraise=True,
     )
     def generate(self, request: LlmRequest) -> LlmResponse:
+        reasoning_mapping = map_reasoning_for_google(
+            request.reasoning,
+            provider=request.provider,
+            mode=CallMode.api,
+        )
         key = self._config.api_key or os.getenv(self._config.api_key_env)
         if not key:
             raise ProviderSemanticError(
@@ -167,11 +176,14 @@ class GoogleAdapter(ProviderAdapter):
         endpoint = (
             f"{self._config.base_url}/models/{request.model}:generateContent?key={key}"
         )
+        masked_endpoint = endpoint.replace(key, "[REDACTED]")
         system = "\n".join(
             msg.content for msg in request.messages if msg.role == "system"
         )
         contents = _to_google_contents(request.messages)
         payload = _GoogleRequestPayload(contents=contents)
+        generation_cfg = _GoogleGenerationConfig()
+        has_generation_cfg = False
         if system:
             payload.systemInstruction = _GoogleSystemInstruction(
                 parts=[_GoogleRequestPart(text=system)]
@@ -181,11 +193,30 @@ class GoogleAdapter(ProviderAdapter):
             or request.top_p is not None
             or request.max_tokens is not None
         ):
-            payload.generationConfig = _GoogleGenerationConfig(
+            generation_cfg = _GoogleGenerationConfig(
                 temperature=request.temperature,
                 topP=request.top_p,
                 maxOutputTokens=request.max_tokens,
             )
+            has_generation_cfg = True
+        if reasoning_mapping.payload:
+            generation_cfg = generation_cfg.model_copy(
+                update={
+                    "thinkingBudget": (
+                        int(reasoning_mapping.payload["thinkingBudget"])
+                        if "thinkingBudget" in reasoning_mapping.payload
+                        else generation_cfg.thinkingBudget
+                    ),
+                    "thinkingLevel": (
+                        str(reasoning_mapping.payload["thinkingLevel"])
+                        if "thinkingLevel" in reasoning_mapping.payload
+                        else generation_cfg.thinkingLevel
+                    ),
+                }
+            )
+            has_generation_cfg = True
+        if has_generation_cfg:
+            payload.generationConfig = generation_cfg
         normalized_tools = _to_google_tools(request.tools)
         if normalized_tools:
             payload.tools = normalized_tools
@@ -195,6 +226,20 @@ class GoogleAdapter(ProviderAdapter):
             endpoint, json=payload.model_dump(mode="json", exclude_none=True)
         )
         latency_ms = int((time.perf_counter() - started) * 1000)
+        emit_generation_event(
+            event_type="provider.raw_response",
+            stage="google.http_response",
+            payload={
+                "status_code": resp.status_code,
+                "endpoint": masked_endpoint,
+                "response_text": resp.text,
+                "request_payload": payload.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                    exclude_computed_fields=True,
+                ),
+            },
+        )
         if resp.status_code >= 500 or resp.status_code == 429:
             raise ProviderTransportError(
                 f"google transient error status={resp.status_code} body={resp.text[:500]}"
@@ -277,6 +322,7 @@ class GoogleAdapter(ProviderAdapter):
             model=request.model,
             mode=CallMode.api,
             tool_calls=tool_calls,
+            warnings=reasoning_mapping.warnings,
         )
 
 

@@ -245,8 +245,9 @@ class RunsCallsStore:
                             cost_reasoning_usd,
                             cost_currency,
                             cost_json,
+                            warnings_json,
                             created_at
-                        ) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s::jsonb, now())
+                        ) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, now())
                         ON CONFLICT (call_id)
                         DO UPDATE SET response_json = excluded.response_json,
                                       response_hash = excluded.response_hash,
@@ -263,7 +264,8 @@ class RunsCallsStore:
                                       cost_completion_usd = excluded.cost_completion_usd,
                                       cost_reasoning_usd = excluded.cost_reasoning_usd,
                                       cost_currency = excluded.cost_currency,
-                                      cost_json = excluded.cost_json
+                                      cost_json = excluded.cost_json,
+                                      warnings_json = excluded.warnings_json
                         """,
                         [
                             persisted_call_id,
@@ -299,6 +301,17 @@ class RunsCallsStore:
                             json.dumps(response_obj.cost.raw, ensure_ascii=True)
                             if response_obj.cost is not None
                             else None,
+                            json.dumps(
+                                [
+                                    warning.model_dump(
+                                        mode="json",
+                                        exclude_none=True,
+                                        exclude_computed_fields=True,
+                                    )
+                                    for warning in response_obj.warnings
+                                ],
+                                ensure_ascii=True,
+                            ),
                         ],
                     )
 
@@ -353,6 +366,7 @@ class RunsCallsStore:
                         lcs.cost_prompt_usd,
                         lcs.cost_completion_usd,
                         lcs.cost_reasoning_usd,
+                        lcs.warnings_json,
                         lcr.request_json,
                         lcs.response_json
                     FROM llm_calls lc
@@ -383,6 +397,7 @@ class RunsCallsStore:
                         lcs.cost_prompt_usd,
                         lcs.cost_completion_usd,
                         lcs.cost_reasoning_usd,
+                        lcs.warnings_json,
                         lcr.request_json,
                         lcs.response_json
                     FROM llm_calls lc
@@ -413,8 +428,9 @@ class RunsCallsStore:
                     cost_prompt_usd=float(row[12]) if row[12] is not None else None,
                     cost_completion_usd=float(row[13]) if row[13] is not None else None,
                     cost_reasoning_usd=float(row[14]) if row[14] is not None else None,
-                    request=row[15] if isinstance(row[15], dict) else {},
-                    response=row[16] if isinstance(row[16], dict) else None,
+                    warnings=(row[15] if isinstance(row[15], list) else []),
+                    request=row[16] if isinstance(row[16], dict) else {},
+                    response=row[17] if isinstance(row[17], dict) else None,
                 )
             )
         return out

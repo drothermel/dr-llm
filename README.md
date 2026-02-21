@@ -34,14 +34,28 @@ uv sync
 - Required for DB-backed workflows: `LLM_POOL_DATABASE_URL`
 - Optional provider keys:
   - `OPENAI_API_KEY`
+  - `OPENROUTER_API_KEY`
   - `ANTHROPIC_API_KEY`
   - `GOOGLE_API_KEY`
-  - `GLM_API_KEY`
+  - `ZAI_API_KEY`
+  - `MINIMAX_API_KEY`
+  - `KIMI_API_KEY`
+- GLM provider defaults to the international Coding Plan endpoint:
+  - `https://api.z.ai/api/coding/paas/v4`
+- MiniMax API provider defaults to:
+  - `https://api.minimax.io/v1`
+- Claude headless coding-plan presets:
+  - `claude-code-minimax`: routes Claude Code via `https://api.minimax.io/anthropic` and maps `MINIMAX_API_KEY` to Anthropic auth envs
+  - `claude-code-kimi`: routes Claude Code via `https://api.kimi.com/coding/` and maps `KIMI_API_KEY` to Anthropic auth envs
 
 ## CLI
 
 ```bash
 llm-pool providers
+
+llm-pool models sync
+llm-pool models list --supports-reasoning --json
+llm-pool models show --provider openrouter --model openai/o3-mini
 
 llm-pool query \
   --provider openai \
@@ -75,6 +89,14 @@ Reasoning + cost notes:
 - Reasoning text/details and reasoning token counts are normalized on `LlmResponse`.
 - Provider-returned cost fields (e.g. OpenRouter `usage.cost` variants) are normalized into `LlmResponse.cost`.
 - These are persisted in `llm_call_responses` alongside standard token usage.
+
+Generation transcript logging (default on):
+- `LLM_POOL_GENERATION_LOG_ENABLED=true`
+- `LLM_POOL_GENERATION_LOG_DIR=.llm_pool/generation_logs`
+- `LLM_POOL_GENERATION_LOG_ROTATE_BYTES=104857600`
+- `LLM_POOL_GENERATION_LOG_BACKUPS=10`
+- `LLM_POOL_GENERATION_LOG_REDACT_SECRETS=true`
+- `LLM_POOL_GENERATION_LOG_MAX_EVENT_BYTES=10485760`
 
 ## Python Example
 

@@ -199,6 +199,69 @@ class CostInfo(BaseModel):
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
+class ReasoningWarningCode(StrEnum):
+    unsupported_for_provider = "unsupported_for_provider"
+    mapped_with_heuristic = "mapped_with_heuristic"
+    partially_supported = "partially_supported"
+
+
+class ReasoningWarning(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    code: ReasoningWarningCode
+    message: str
+    provider: str | None = None
+    mode: CallMode | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelCatalogPricing(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    currency: str | None = "USD"
+    input_cost_per_1m: float | None = None
+    output_cost_per_1m: float | None = None
+    reasoning_cost_per_1m: float | None = None
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelCatalogRateLimit(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    requests_per_minute: int | None = None
+    tokens_per_minute: int | None = None
+    concurrency_limit: int | None = None
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelCatalogEntry(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider: str
+    model: str
+    display_name: str | None = None
+    context_window: int | None = None
+    max_output_tokens: int | None = None
+    supports_reasoning: bool | None = None
+    supports_tools: bool | None = None
+    supports_vision: bool | None = None
+    pricing: ModelCatalogPricing | None = None
+    rate_limits: ModelCatalogRateLimit | None = None
+    source_quality: Literal["live", "overlay", "static"] = "live"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    fetched_at: datetime | None = None
+
+
+class ModelCatalogQuery(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider: str | None = None
+    supports_reasoning: bool | None = None
+    model_contains: str | None = None
+    limit: int = 200
+    offset: int = 0
+
+
 class ModelToolCall(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -252,6 +315,7 @@ class LlmResponse(BaseModel):
     model: str
     mode: CallMode
     tool_calls: list[ModelToolCall] = Field(default_factory=list)
+    warnings: list[ReasoningWarning] = Field(default_factory=list)
 
 
 class CallError(BaseModel):
@@ -392,6 +456,7 @@ class RecordedCall(BaseModel):
     cost_prompt_usd: float | None = None
     cost_completion_usd: float | None = None
     cost_reasoning_usd: float | None = None
+    warnings: list[ReasoningWarning] = Field(default_factory=list)
     request: dict[str, Any]
     response: dict[str, Any] | None
 

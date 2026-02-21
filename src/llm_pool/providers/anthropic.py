@@ -15,12 +15,14 @@ from tenacity import (
 )
 
 from llm_pool.errors import ProviderSemanticError, ProviderTransportError
+from llm_pool.logging import emit_generation_event
 from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
 from llm_pool.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
 )
+from llm_pool.reasoning import map_reasoning_for_anthropic
 from llm_pool.types import (
     CallMode,
     LlmRequest,
@@ -74,6 +76,7 @@ class _AnthropicRequestPayload(BaseModel):
     temperature: float | None = None
     top_p: float | None = None
     tools: list[_AnthropicToolSpec] | None = None
+    thinking: dict[str, Any] | None = None
 
 
 class _AnthropicUsage(BaseModel):
@@ -149,6 +152,12 @@ class AnthropicAdapter(ProviderAdapter):
         reraise=True,
     )
     def generate(self, request: LlmRequest) -> LlmResponse:
+        reasoning_mapping = map_reasoning_for_anthropic(
+            request.reasoning,
+            provider=request.provider,
+            mode=CallMode.api,
+            request_max_tokens=request.max_tokens,
+        )
         system = "\n".join(
             msg.content for msg in request.messages if msg.role == "system"
         )
@@ -160,6 +169,7 @@ class AnthropicAdapter(ProviderAdapter):
             system=system or None,
             temperature=request.temperature,
             top_p=request.top_p,
+            thinking=reasoning_mapping.payload or None,
         )
         normalized_tools = _to_anthropic_tools(request.tools)
         if normalized_tools:
@@ -171,6 +181,20 @@ class AnthropicAdapter(ProviderAdapter):
             json=payload.model_dump(mode="json", exclude_none=True),
         )
         latency_ms = int((time.perf_counter() - started) * 1000)
+        emit_generation_event(
+            event_type="provider.raw_response",
+            stage="anthropic.http_response",
+            payload={
+                "status_code": resp.status_code,
+                "endpoint": self._config.base_url,
+                "response_text": resp.text,
+                "request_payload": payload.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                    exclude_computed_fields=True,
+                ),
+            },
+        )
 
         if resp.status_code >= 500 or resp.status_code == 429:
             raise ProviderTransportError(
@@ -244,6 +268,7 @@ class AnthropicAdapter(ProviderAdapter):
             model=request.model,
             mode=CallMode.api,
             tool_calls=[tc for tc in tool_calls if tc.name],
+            warnings=reasoning_mapping.warnings,
         )
 
 

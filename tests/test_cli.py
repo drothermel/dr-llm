@@ -16,3 +16,6 @@ def test_providers_command_lists_known_providers() -> None:
     assert "anthropic" in providers
     assert "google" in providers
     assert "glm" in providers
+    assert "minimax" in providers
+    assert "claude-code-minimax" in providers
+    assert "claude-code-kimi" in providers
