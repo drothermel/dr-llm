@@ -59,7 +59,7 @@ class RunsCallsStore:
             resolved_mode = response.mode.value
         else:
             resolved_mode = "api"
-        latency_ms = int(response.latency_ms) if response is not None else 0
+        latency_ms = int(response.latency_ms) if response is not None else None
 
         row = conn.execute(
             """
@@ -432,7 +432,7 @@ class RunsCallsStore:
                     mode=row[4],
                     status=str(row[5]),
                     created_at=row[6],
-                    latency_ms=int(row[7]),
+                    latency_ms=int(row[7]) if row[7] is not None else None,
                     error_text=str(row[8]) if row[8] is not None else None,
                     reasoning_tokens=int(row[9] or 0),
                     reasoning_text=str(row[10]) if row[10] is not None else None,

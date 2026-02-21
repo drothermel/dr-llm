@@ -5,8 +5,18 @@ from typing import Any, cast
 
 import httpx
 
-from llm_pool.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
-from llm_pool.types import LlmRequest, Message, ReasoningConfig
+from llm_pool.providers.openai_compat import (
+    OpenAICompatAdapter,
+    OpenAICompatConfig,
+    _OpenAICompatRequestPayload,
+)
+from llm_pool.types import (
+    LlmRequest,
+    Message,
+    ProviderToolSpec,
+    ReasoningConfig,
+    ToolFunctionSpec,
+)
 
 
 def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:
@@ -94,3 +104,37 @@ def test_openai_compat_set_client_closes_previous_client() -> None:
     assert not second.is_closed
     adapter.close()
     assert second.is_closed
+
+
+def test_openai_compat_request_payload_serializes_tools() -> None:
+    tool = ProviderToolSpec(
+        function=ToolFunctionSpec(
+            name="lookup",
+            description="Lookup a value",
+            parameters={
+                "type": "object",
+                "properties": {"q": {"type": "string"}},
+                "required": ["q"],
+            },
+        )
+    )
+    payload = _OpenAICompatRequestPayload(
+        model="openai/gpt-4o-mini",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[tool],
+    ).model_dump(mode="json", exclude_none=True)
+
+    assert payload["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "Lookup a value",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"q": {"type": "string"}},
+                    "required": ["q"],
+                },
+            },
+        }
+    ]

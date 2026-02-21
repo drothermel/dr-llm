@@ -31,8 +31,14 @@ class FakeRepository(BaseModel):
         self.completed.append(result.tool_call_id)
 
     def release_tool_claim(
-        self, *, tool_call_id: str, error_text: str | None = None
+        self,
+        *,
+        tool_call_id: str,
+        worker_id: str,
+        error_text: str | None = None,
     ) -> None:
+        _worker_id = worker_id
+        _ = _worker_id
         _error_text = error_text
         _ = _error_text
         self.released.append(tool_call_id)

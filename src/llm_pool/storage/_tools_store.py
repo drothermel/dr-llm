@@ -171,12 +171,17 @@ class ToolsStore:
                 raise PersistenceError(f"Failed to renew tool lease: {exc}") from exc
 
     def release_tool_claim(
-        self, *, tool_call_id: str, error_text: str | None = None
+        self,
+        *,
+        tool_call_id: str,
+        worker_id: str,
+        error_text: str | None = None,
     ) -> None:
+        """Release a claimed tool call back to pending for the owning worker only."""
         self._runtime.init_schema()
         with self._runtime.conn() as conn:
             try:
-                conn.execute(
+                row = conn.execute(
                     """
                     UPDATE tool_calls
                     SET status = %s,
@@ -185,12 +190,27 @@ class ToolsStore:
                         lease_expires_at = NULL,
                         last_error_text = %s
                     WHERE tool_call_id = %s
+                      AND worker_id = %s
+                      AND status = %s
+                    RETURNING tool_call_id
                     """,
-                    [ToolCallStatus.pending.value, error_text, tool_call_id],
-                )
+                    [
+                        ToolCallStatus.pending.value,
+                        error_text,
+                        tool_call_id,
+                        worker_id,
+                        ToolCallStatus.claimed.value,
+                    ],
+                ).fetchone()
+                if row is None:
+                    raise PersistenceError(
+                        f"Failed to release tool claim: no claimed row owned by worker {worker_id!r} for tool_call_id={tool_call_id!r}"
+                    )
                 conn.commit()
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
+                if isinstance(exc, PersistenceError):
+                    raise
                 raise PersistenceError(f"Failed to release tool claim: {exc}") from exc
 
     def complete_tool_call(self, *, result: ToolResult) -> None:

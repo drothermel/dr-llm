@@ -41,6 +41,9 @@ class PostgresRepository:
     def init_schema(self) -> None:
         self._runtime.init_schema()
 
+    def initialize(self) -> None:
+        self._runtime.initialize()
+
     def start_run(
         self,
         *,
@@ -293,9 +296,14 @@ class PostgresRepository:
         self,
         *,
         tool_call_id: str,
+        worker_id: str,
         error_text: str | None = None,
     ) -> None:
-        self._tools.release_tool_claim(tool_call_id=tool_call_id, error_text=error_text)
+        self._tools.release_tool_claim(
+            tool_call_id=tool_call_id,
+            worker_id=worker_id,
+            error_text=error_text,
+        )
 
     def complete_tool_call(self, *, result: ToolResult) -> None:
         self._tools.complete_tool_call(result=result)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from enum import StrEnum
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -152,7 +153,7 @@ def parse_brokered_tool_calls(text: str) -> list[ModelToolCall]:
         return []
 
     parsed: list[ModelToolCall] = []
-    for idx, item in enumerate(raw_calls):
+    for item in raw_calls:
         if not isinstance(item, dict):
             continue
         try:
@@ -161,7 +162,7 @@ def parse_brokered_tool_calls(text: str) -> list[ModelToolCall]:
             continue
         parsed.append(
             ModelToolCall(
-                tool_call_id=candidate.tool_call_id or f"brokered_call_{idx + 1}",
+                tool_call_id=candidate.tool_call_id or f"brokered_call_{uuid4().hex}",
                 name=candidate.name,
                 arguments=candidate.arguments,
             )

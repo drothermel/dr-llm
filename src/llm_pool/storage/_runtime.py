@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from hashlib import sha256
 from os import getenv
 from pathlib import Path
+from time import sleep
 from typing import Any, Generator, LiteralString, cast
 
 import psycopg
@@ -31,6 +32,9 @@ class StorageConfig(BaseModel):
     max_pool_size: int = 64
     statement_timeout_ms: int | None = None
     application_name: str = "llm_pool"
+    open_on_init: bool = False
+    pool_open_retries: int = 3
+    pool_open_retry_backoff_seconds: float = 0.1
 
 
 def is_retryable_db_error(exc: BaseException) -> bool:
@@ -63,16 +67,48 @@ class StorageRuntime:
             self.config.dsn,
             min_size=self.config.min_pool_size,
             max_size=self.config.max_pool_size,
-            open=True,
+            open=False,
         )
         self.schema_lock = threading.Lock()
         self.schema_initialized = False
+        self._pool_lock = threading.Lock()
+        self._pool_opened = False
+        if self.config.open_on_init:
+            self.open_pool()
 
     def close(self) -> None:
         self.pool.close()
+        self._pool_opened = False
+
+    def open_pool(self) -> None:
+        if self._pool_opened:
+            return
+        with self._pool_lock:
+            if self._pool_opened:
+                return
+            retries = max(1, int(self.config.pool_open_retries))
+            last_exc: Exception | None = None
+            for attempt in range(1, retries + 1):
+                try:
+                    self.pool.open(wait=True)
+                    self._pool_opened = True
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    last_exc = exc
+                    if attempt >= retries:
+                        break
+                    sleep(max(0.0, float(self.config.pool_open_retry_backoff_seconds)))
+            raise TransientPersistenceError(
+                f"Failed to open connection pool after {retries} attempts: {last_exc}"
+            ) from last_exc
+
+    def initialize(self) -> None:
+        self.open_pool()
+        self.init_schema()
 
     @contextmanager
     def conn(self) -> Generator[psycopg.Connection[tuple[Any, ...]], None, None]:
+        self.open_pool()
         with self.pool.connection() as conn:
             if self.config.statement_timeout_ms is not None:
                 conn.execute(

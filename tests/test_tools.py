@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from llm_pool.tools.executor import ToolExecutor
 from llm_pool.tools.registry import ToolDefinition, ToolRegistry
 from llm_pool.types import ProviderToolSpec, ToolErrorCode, ToolInvocation
@@ -195,3 +197,39 @@ def test_tool_executor_invoke_async_handler_exception() -> None:
     assert result.error.error_code == ToolErrorCode.tool_execution_failed
     assert result.error.exception_type == "ValueError"
     assert result.error.message == "boom"
+
+
+def test_tool_registry_get_is_case_insensitive() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="Lookup",
+            description="Case test",
+            input_schema={"type": "object"},
+            handler=lambda args: {"q": args.get("q")},
+        )
+    )
+
+    tool = registry.get("lookup")
+    assert tool.name == "Lookup"
+
+
+def test_tool_registry_rejects_case_collisions() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="Lookup",
+            description="First",
+            input_schema={"type": "object"},
+            handler=lambda _args: {"ok": True},
+        )
+    )
+    with pytest.raises(ValueError, match="tool name collision"):
+        registry.register(
+            ToolDefinition(
+                name="lookup",
+                description="Second",
+                input_schema={"type": "object"},
+                handler=lambda _args: {"ok": False},
+            )
+        )

@@ -110,7 +110,7 @@ def run_tool_worker(
     idle_sleep_seconds: float = 0.5,
     max_loops: int | None = None,
     max_attempts_before_dead_letter: int = 3,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     config = ToolWorkerConfig(
         worker_id=worker_id,
         lease_seconds=lease_seconds,
@@ -211,11 +211,15 @@ def run_tool_worker(
                     )
                     stats.dead_lettered += 1
                 else:
+                    release_error_text = (
+                        json.dumps(error_payload, ensure_ascii=True, sort_keys=True)
+                        if error_payload is not None
+                        else None
+                    )
                     repository.release_tool_claim(
                         tool_call_id=call.tool_call_id,
-                        error_text=json.dumps(
-                            error_payload, ensure_ascii=True, sort_keys=True
-                        ),
+                        worker_id=wid,
+                        error_text=release_error_text,
                     )
                     _append_event(
                         repository=repository,

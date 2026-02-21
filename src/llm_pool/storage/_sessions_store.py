@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 from uuid import uuid4
 
@@ -20,6 +21,17 @@ from llm_pool.types import (
 class SessionsStore:
     def __init__(self, runtime: StorageRuntime) -> None:
         self._runtime = runtime
+        self._schema_checked = False
+        self._schema_lock = threading.Lock()
+
+    def _ensure_schema(self) -> None:
+        if self._schema_checked:
+            return
+        with self._schema_lock:
+            if self._schema_checked:
+                return
+            self._runtime.init_schema()
+            self._schema_checked = True
 
     def start_session(
         self,
@@ -28,7 +40,7 @@ class SessionsStore:
         metadata: dict[str, Any] | None = None,
         session_id: str | None = None,
     ) -> SessionHandle:
-        self._runtime.init_schema()
+        self._ensure_schema()
         sid = session_id or uuid4().hex
         now = utcnow()
         with self._runtime.conn() as conn:
@@ -75,7 +87,7 @@ class SessionsStore:
                 raise PersistenceError(f"Failed to start session: {exc}") from exc
 
     def get_session(self, *, session_id: str) -> SessionState:
-        self._runtime.init_schema()
+        self._ensure_schema()
         with self._runtime.conn() as conn:
             row = conn.execute(
                 """
@@ -99,7 +111,7 @@ class SessionsStore:
         )
 
     def advance_session_version(self, *, session_id: str, expected_version: int) -> int:
-        self._runtime.init_schema()
+        self._ensure_schema()
         with self._runtime.conn() as conn:
             try:
                 row = conn.execute(
@@ -120,8 +132,6 @@ class SessionsStore:
                     )
                 conn.commit()
                 return int(row[0])
-            except SessionConflictError:
-                raise
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
                 raise PersistenceError(
@@ -135,7 +145,7 @@ class SessionsStore:
         status: SessionStatus,
         last_error_text: str | None = None,
     ) -> None:
-        self._runtime.init_schema()
+        self._ensure_schema()
         with self._runtime.conn() as conn:
             try:
                 conn.execute(
@@ -162,7 +172,7 @@ class SessionsStore:
         status: SessionTurnStatus = SessionTurnStatus.active,
         metadata: dict[str, Any] | None = None,
     ) -> tuple[str, int]:
-        self._runtime.init_schema()
+        self._ensure_schema()
         turn_id = uuid4().hex
         with self._runtime.conn() as conn:
             try:
@@ -204,7 +214,7 @@ class SessionsStore:
         turn_id: str,
         status: SessionTurnStatus,
     ) -> None:
-        self._runtime.init_schema()
+        self._ensure_schema()
         with self._runtime.conn() as conn:
             try:
                 conn.execute(
@@ -232,7 +242,7 @@ class SessionsStore:
         turn_id: str | None = None,
         event_id: str | None = None,
     ) -> str:
-        self._runtime.init_schema()
+        self._ensure_schema()
         eid = event_id or uuid4().hex
         with self._runtime.conn() as conn:
             try:
@@ -259,7 +269,7 @@ class SessionsStore:
                 ) from exc
 
     def load_session_events(self, *, session_id: str) -> list[SessionEvent]:
-        self._runtime.init_schema()
+        self._ensure_schema()
         with self._runtime.conn() as conn:
             rows = conn.execute(
                 """

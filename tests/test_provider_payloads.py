@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from typing import Any, cast
 
@@ -110,6 +111,8 @@ def test_google_payload_preserves_tool_context() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["payload"] = json.loads(request.content.decode("utf-8"))
+        captured["headers"] = dict(request.headers)
+        captured["url"] = str(request.url)
         return httpx.Response(
             status_code=200,
             json={
@@ -174,6 +177,9 @@ def test_google_payload_preserves_tool_context() -> None:
     assert response.text == "done"
 
     payload = cast(dict[str, Any], captured["payload"])
+    headers = cast(dict[str, str], captured["headers"])
+    assert headers["x-goog-api-key"] == "x"
+    assert "?key=" not in cast(str, captured["url"])
     contents = cast(list[dict[str, Any]], payload["contents"])
     assert any(
         content["role"] == "model"
@@ -247,10 +253,11 @@ def test_google_tool_call_ids_are_sequential_for_valid_function_calls() -> None:
         )
     )
 
-    assert [call.tool_call_id for call in response.tool_calls] == [
-        "google_call_1",
-        "google_call_2",
-    ]
+    ids = [call.tool_call_id for call in response.tool_calls]
+    assert len(ids) == 2
+    assert re.match(r"^google_[0-9a-f]{32}_call_1$", ids[0]) is not None
+    assert re.match(r"^google_[0-9a-f]{32}_call_2$", ids[1]) is not None
+    assert ids[0].split("_call_")[0] == ids[1].split("_call_")[0]
     assert [call.name for call in response.tool_calls] == ["lookup", "search"]
 
 
@@ -265,9 +272,9 @@ def test_headless_tool_call_ids_are_sequential_for_valid_items(monkeypatch) -> N
         ],
     }
 
-    def fake_run(*args, **kwargs):
+    def fake_run(command: list[str], **kwargs):
         return subprocess.CompletedProcess(
-            args=kwargs.get("args") or [],
+            args=kwargs.get("args") or command,
             returncode=0,
             stdout=json.dumps(body, ensure_ascii=True),
             stderr="",

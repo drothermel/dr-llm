@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     model TEXT NOT NULL,
     mode TEXT NOT NULL,
     status TEXT NOT NULL,
-    latency_ms INTEGER NOT NULL DEFAULT 0,
+    latency_ms INTEGER,
     error_text TEXT,
     metadata_json JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -38,6 +38,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_calls_external_call_id
 CREATE INDEX IF NOT EXISTS idx_llm_calls_run_id_created ON llm_calls(run_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_provider_model_created ON llm_calls(provider, model, created_at);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_status_created ON llm_calls(status, created_at);
+
+ALTER TABLE llm_calls ALTER COLUMN latency_ms DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS llm_call_requests (
     call_id TEXT PRIMARY KEY,

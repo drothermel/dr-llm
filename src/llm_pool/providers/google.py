@@ -4,6 +4,7 @@ import json
 import os
 import time
 from typing import Any, Literal
+from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -173,10 +174,8 @@ class GoogleAdapter(ProviderAdapter):
             raise ProviderSemanticError(
                 f"Missing Google API key. Set {self._config.api_key_env} or pass config.api_key"
             )
-        endpoint = (
-            f"{self._config.base_url}/models/{request.model}:generateContent?key={key}"
-        )
-        masked_endpoint = endpoint.replace(key, "[REDACTED]")
+        endpoint = f"{self._config.base_url}/models/{request.model}:generateContent"
+        masked_endpoint = endpoint
         system = "\n".join(
             msg.content for msg in request.messages if msg.role == "system"
         )
@@ -223,7 +222,9 @@ class GoogleAdapter(ProviderAdapter):
 
         started = time.perf_counter()
         resp = self._client.post(
-            endpoint, json=payload.model_dump(mode="json", exclude_none=True)
+            endpoint,
+            headers={"x-goog-api-key": key},
+            json=payload.model_dump(mode="json", exclude_none=True),
         )
         latency_ms = int((time.perf_counter() - started) * 1000)
         emit_generation_event(
@@ -270,6 +271,7 @@ class GoogleAdapter(ProviderAdapter):
         parts = candidate.content.parts if candidate.content else []
         text_chunks: list[str] = []
         tool_calls: list[ModelToolCall] = []
+        request_id = uuid4().hex
         tool_call_ordinal = 0
         for part in parts:
             if part.text:
@@ -282,7 +284,7 @@ class GoogleAdapter(ProviderAdapter):
                 tool_call_ordinal += 1
                 tool_calls.append(
                     ModelToolCall(
-                        tool_call_id=f"google_call_{tool_call_ordinal}",
+                        tool_call_id=f"google_{request_id}_call_{tool_call_ordinal}",
                         name=name,
                         arguments=fc.args if isinstance(fc.args, dict) else {},
                     )

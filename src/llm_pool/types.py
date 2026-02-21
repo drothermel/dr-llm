@@ -119,10 +119,11 @@ class ReasoningConfig(BaseModel):
 class TokenUsage(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-    reasoning_tokens: int = 0
+    prompt_tokens: int = Field(default=0)
+    completion_tokens: int = Field(default=0)
+    # Provider-reported total when available; defaults to prompt+completion on input.
+    total_tokens: int = Field(default=0)
+    reasoning_tokens: int = Field(default=0)
 
     @classmethod
     def _coerce_token_count(cls, value: Any, *, field_name: str) -> int:
@@ -185,6 +186,7 @@ class TokenUsage(BaseModel):
     @computed_field
     @property
     def computed_total_tokens(self) -> int:
+        # Always prompt+completion. This may differ from provider-reported total_tokens.
         return self.prompt_tokens + self.completion_tokens
 
 
@@ -448,7 +450,7 @@ class RecordedCall(BaseModel):
     mode: CallMode
     status: str
     created_at: datetime
-    latency_ms: int
+    latency_ms: int | None
     error_text: str | None
     reasoning_tokens: int = 0
     reasoning_text: str | None = None

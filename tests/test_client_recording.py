@@ -37,6 +37,7 @@ def test_failed_query_records_adapter_mode() -> None:
     registry = ProviderRegistry()
     registry.register(FailingHeadlessAdapter())
     repo = CapturingRepository(calls=[])
+    # CapturingRepository is a duck-typed test double for LlmClient(repository=...).
     client = LlmClient(registry=registry, repository=cast(Any, repo))
 
     request = LlmRequest(

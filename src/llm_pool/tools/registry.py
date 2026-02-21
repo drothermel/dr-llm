@@ -37,20 +37,25 @@ class ToolRegistry:
         self._tools: dict[str, ToolDefinition] = {}
 
     def register(self, tool: ToolDefinition) -> None:
-        key = tool.name.strip()
+        key = tool.name.strip().lower()
         if not key:
             raise ValueError("tool.name must be non-empty")
-        if tool.name != key:
+        if tool.name != tool.name.strip():
             raise ValueError("tool.name must not have leading or trailing whitespace")
         with self._lock:
+            existing = self._tools.get(key)
+            if existing is not None and existing.name != tool.name:
+                raise ValueError(
+                    f"tool name collision for normalized key {key!r}: {existing.name!r} vs {tool.name!r}"
+                )
             self._tools[key] = tool
 
     def get(self, name: str) -> ToolDefinition:
-        key = name.strip()
+        key = name.strip().lower()
         with self._lock:
             tool = self._tools.get(key)
+            known = ", ".join(sorted(self._tools.keys()))
         if tool is None:
-            known = ", ".join(sorted(self.names()))
             raise KeyError(f"Unknown tool {name!r}. Known tools: {known}")
         return tool
 

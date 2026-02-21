@@ -33,19 +33,19 @@ def test_openai_compat_invalid_json_is_transport_error() -> None:
 
 
 def test_anthropic_invalid_json_is_transport_error() -> None:
-    adapter = AnthropicAdapter(
-        config=AnthropicConfig(
-            api_key="x", base_url="https://api.anthropic.com/v1/messages"
-        ),
-        client=httpx.Client(transport=_invalid_json_transport()),
-    )
     request = LlmRequest(
         provider="anthropic",
         model="claude-test",
         messages=[Message(role="user", content="hi")],
     )
-    with pytest.raises(ProviderTransportError, match="invalid JSON response"):
-        adapter.generate(request)
+    with AnthropicAdapter(
+        config=AnthropicConfig(
+            api_key="x", base_url="https://api.anthropic.com/v1/messages"
+        ),
+        client=httpx.Client(transport=_invalid_json_transport()),
+    ) as adapter:
+        with pytest.raises(ProviderTransportError, match="invalid JSON response"):
+            adapter.generate(request)
 
 
 def test_google_invalid_json_is_transport_error() -> None:
