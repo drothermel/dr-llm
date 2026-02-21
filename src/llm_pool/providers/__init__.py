@@ -26,6 +26,15 @@ def build_default_registry() -> ProviderRegistry:
             ),
         )
     )
+    registry.register(
+        OpenAICompatAdapter(
+            name="openrouter",
+            config=OpenAICompatConfig(
+                base_url="https://openrouter.ai/api/v1",
+                api_key_env="OPENROUTER_API_KEY",
+            ),
+        )
+    )
     registry.register(AnthropicAdapter())
     registry.register(GoogleAdapter())
     registry.register(GlmAdapter())
