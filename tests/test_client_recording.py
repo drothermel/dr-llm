@@ -14,7 +14,7 @@ from llm_pool.types import LlmRequest, Message
 class CapturingRepository(BaseModel):
     calls: list[dict[str, Any]] = Field(default_factory=list)
 
-    def record_call(self, **kwargs):  # noqa: ANN003
+    def record_call(self, **kwargs: Any) -> None:
         self.calls.append(kwargs)
 
 
@@ -28,7 +28,8 @@ class FailingHeadlessAdapter(ProviderAdapter):
             supports_native_tools=False, supports_structured_output=True
         )
 
-    def generate(self, request):  # noqa: ANN001, ARG002
+    def generate(self, request: Any) -> Any:
+        _ = request
         raise RuntimeError("boom")
 
 

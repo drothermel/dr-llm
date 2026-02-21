@@ -48,9 +48,44 @@ def test_parse_tool_calls_skips_missing_name() -> None:
     assert calls == []
 
 
+def test_parse_tool_calls_invalid_json_arguments_fallback_raw() -> None:
+    calls = parse_tool_calls(
+        [
+            {
+                "id": "abc",
+                "function": {"name": "lookup", "arguments": "{not-json"},
+            }
+        ]
+    )
+    assert len(calls) == 1
+    assert calls[0].arguments == {"_raw": "{not-json"}
+
+
+def test_parse_tool_calls_non_dict_json_arguments_fallback_value() -> None:
+    calls = parse_tool_calls(
+        [
+            {
+                "id": "abc",
+                "function": {"name": "lookup", "arguments": '["a","b"]'},
+            }
+        ]
+    )
+    assert len(calls) == 1
+    assert calls[0].arguments == {"_value": ["a", "b"]}
+
+
 def test_parse_reasoning_tokens_nested_details() -> None:
     usage_raw = {"completion_tokens_details": {"reasoning_tokens": 13}}
     assert parse_reasoning_tokens(usage_raw) == 13
+
+
+def test_parse_reasoning_tokens_output_tokens_details() -> None:
+    usage_raw = {"output_tokens_details": {"reasoning_tokens": 7}}
+    assert parse_reasoning_tokens(usage_raw) == 7
+
+
+def test_parse_reasoning_tokens_missing_returns_zero() -> None:
+    assert parse_reasoning_tokens({"completion_tokens": 42}) == 0
 
 
 def test_parse_reasoning_fields() -> None:
@@ -80,6 +115,10 @@ def test_parse_cost_info() -> None:
     assert cost.prompt_cost_usd == 0.004
     assert cost.completion_cost_usd == 0.0083
     assert cost.currency == "USD"
+
+
+def test_parse_cost_info_missing_keys_returns_none() -> None:
+    assert parse_cost_info({"usage": {"prompt_tokens": 1}}) is None
 
 
 def test_to_openai_messages_includes_tool_call_id() -> None:

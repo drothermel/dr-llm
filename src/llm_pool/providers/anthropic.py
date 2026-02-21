@@ -123,7 +123,18 @@ class AnthropicAdapter(ProviderAdapter):
         self, config: AnthropicConfig | None = None, client: httpx.Client | None = None
     ) -> None:
         self._config = config or AnthropicConfig()
+        self._owns_client = client is None
         self._client = client or httpx.Client(timeout=self._config.timeout_seconds)
+
+    def close(self) -> None:
+        if self._owns_client:
+            self._client.close()
+
+    def __enter__(self) -> AnthropicAdapter:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.close()
 
     @property
     def capabilities(self) -> ProviderCapabilities:

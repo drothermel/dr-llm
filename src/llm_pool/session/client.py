@@ -48,10 +48,6 @@ from llm_pool.types import (
 )
 
 
-def _parse_brokered_tool_calls(text: str) -> list[ModelToolCall]:
-    return parse_brokered_tool_calls(text)
-
-
 class SessionClient:
     def __init__(
         self,

@@ -197,7 +197,7 @@ def test_google_payload_preserves_tool_context() -> None:
 
 
 def test_google_tool_call_ids_are_sequential_for_valid_function_calls() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:  # noqa: ARG001
+    def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             status_code=200,
             json={
@@ -254,7 +254,7 @@ def test_google_tool_call_ids_are_sequential_for_valid_function_calls() -> None:
     assert [call.name for call in response.tool_calls] == ["lookup", "search"]
 
 
-def test_headless_tool_call_ids_are_sequential_for_valid_items(monkeypatch) -> None:  # noqa: ANN001
+def test_headless_tool_call_ids_are_sequential_for_valid_items(monkeypatch) -> None:
     body = {
         "text": "ok",
         "tool_calls": [
@@ -265,7 +265,7 @@ def test_headless_tool_call_ids_are_sequential_for_valid_items(monkeypatch) -> N
         ],
     }
 
-    def fake_run(*args, **kwargs):  # noqa: ANN002, ANN003
+    def fake_run(*args, **kwargs):
         return subprocess.CompletedProcess(
             args=kwargs.get("args") or [],
             returncode=0,

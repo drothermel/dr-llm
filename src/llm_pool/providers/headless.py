@@ -233,7 +233,7 @@ class _BaseHeadlessAdapter(ProviderAdapter):
         *,
         request: LlmRequest,
         latency_ms: int,
-        body: dict[str, Any],
+        body: Any,
         raw_json: dict[str, Any] | None = None,
     ) -> LlmResponse:
         raw_usage = body.get(KEY_USAGE) if isinstance(body, dict) else None
@@ -280,15 +280,24 @@ class _BaseHeadlessAdapter(ProviderAdapter):
         tool_calls = parse_tool_calls(
             (body.get("tool_calls") or []) if isinstance(body, dict) else []
         )
+        text = str(body.get(KEY_TEXT) or "") if isinstance(body, dict) else str(body)
+        finish_reason = body.get("finish_reason") if isinstance(body, dict) else None
+        resolved_raw_json = (
+            raw_json
+            if raw_json is not None
+            else body
+            if isinstance(body, dict)
+            else {"body": body}
+        )
 
         return LlmResponse(
-            text=str(body.get(KEY_TEXT) or ""),
-            finish_reason=body.get("finish_reason"),
+            text=text,
+            finish_reason=finish_reason,
             usage=usage,
             reasoning=reasoning,
             reasoning_details=reasoning_details,
             cost=cost,
-            raw_json=raw_json or body,
+            raw_json=resolved_raw_json,
             latency_ms=latency_ms,
             provider=request.provider,
             model=request.model,

@@ -29,14 +29,15 @@ class _FakeAdapter(ProviderAdapter):
 
 def test_register_rejects_empty_adapter_name() -> None:
     registry = ProviderRegistry()
-    with pytest.raises(ValueError, match="adapter.name must be non-empty"):
+    with pytest.raises(ValueError, match=r"adapter\.name must be non-empty"):
         registry.register(_FakeAdapter(name=""))
 
 
 def test_register_rejects_whitespace_adapter_name() -> None:
     registry = ProviderRegistry()
     with pytest.raises(
-        ValueError, match="adapter.name must not have leading or trailing whitespace"
+        ValueError,
+        match=r"adapter\.name must not have leading or trailing whitespace",
     ):
         registry.register(_FakeAdapter(name=" fake "))
 

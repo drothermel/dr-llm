@@ -52,7 +52,7 @@ def _parse_json(
         return None
     try:
         parsed = json.loads(value)
-    except json.JSONDecodeError as exc:  # noqa: PERF203
+    except json.JSONDecodeError as exc:
         raise typer.BadParameter(f"Invalid JSON for {arg_name}: {exc}") from exc
     if expected is not None and not isinstance(parsed, expected):
         expected_names = (
@@ -141,6 +141,10 @@ def _build_tool_registry(tool_loader: list[str]) -> ToolRegistry:
             continue
         if isinstance(loaded, list):
             for tool in loaded:
+                if not isinstance(tool, ToolDefinition):
+                    raise typer.BadParameter(
+                        f"Tool loader '{spec}' returned non-ToolDefinition item in list: {tool!r}"
+                    )
                 registry.register(tool)
             continue
         raise typer.BadParameter(

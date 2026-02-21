@@ -165,7 +165,7 @@ def test_tool_executor_invoke_async_unknown_tool() -> None:
 
 
 def test_tool_executor_invoke_async_handler_exception() -> None:
-    def failing_handler(_args):  # noqa: ANN001
+    def failing_handler(_args):
         raise ValueError("boom")
 
     registry = ToolRegistry()

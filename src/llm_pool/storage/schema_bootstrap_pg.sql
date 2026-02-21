@@ -213,3 +213,78 @@ CREATE TABLE IF NOT EXISTS tool_call_dead_letters (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tool_call_dead_letters_created ON tool_call_dead_letters(created_at);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_run_parameters_run_id') THEN
+        ALTER TABLE run_parameters
+            ADD CONSTRAINT fk_run_parameters_run_id
+            FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_llm_calls_run_id') THEN
+        ALTER TABLE llm_calls
+            ADD CONSTRAINT fk_llm_calls_run_id
+            FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_llm_call_requests_call_id') THEN
+        ALTER TABLE llm_call_requests
+            ADD CONSTRAINT fk_llm_call_requests_call_id
+            FOREIGN KEY (call_id) REFERENCES llm_calls(call_id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_llm_call_responses_call_id') THEN
+        ALTER TABLE llm_call_responses
+            ADD CONSTRAINT fk_llm_call_responses_call_id
+            FOREIGN KEY (call_id) REFERENCES llm_calls(call_id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_artifacts_run_id') THEN
+        ALTER TABLE artifacts
+            ADD CONSTRAINT fk_artifacts_run_id
+            FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_session_turns_session') THEN
+        ALTER TABLE session_turns
+            ADD CONSTRAINT fk_session_turns_session
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_session_events_session') THEN
+        ALTER TABLE session_events
+            ADD CONSTRAINT fk_session_events_session
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_session_events_turn') THEN
+        ALTER TABLE session_events
+            ADD CONSTRAINT fk_session_events_turn
+            FOREIGN KEY (turn_id) REFERENCES session_turns(turn_id) ON DELETE SET NULL;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tool_calls_session') THEN
+        ALTER TABLE tool_calls
+            ADD CONSTRAINT fk_tool_calls_session
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tool_calls_turn') THEN
+        ALTER TABLE tool_calls
+            ADD CONSTRAINT fk_tool_calls_turn
+            FOREIGN KEY (turn_id) REFERENCES session_turns(turn_id) ON DELETE SET NULL;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tool_results_tool_call') THEN
+        ALTER TABLE tool_results
+            ADD CONSTRAINT fk_tool_results_tool_call
+            FOREIGN KEY (tool_call_id) REFERENCES tool_calls(tool_call_id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tool_call_dead_letters_tool_call') THEN
+        ALTER TABLE tool_call_dead_letters
+            ADD CONSTRAINT fk_tool_call_dead_letters_tool_call
+            FOREIGN KEY (tool_call_id) REFERENCES tool_calls(tool_call_id) ON DELETE CASCADE;
+    END IF;
+END $$;

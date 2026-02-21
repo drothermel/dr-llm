@@ -66,7 +66,7 @@ class FakeRepository(BaseModel):
         event_type: str,
         payload: dict,
         turn_id: str | None = None,
-    ):  # noqa: ARG002
+    ):
         self.events.append((event_type, payload))
         return "event_1"
 
@@ -79,19 +79,20 @@ class FakeRepository(BaseModel):
         idempotency_key: str,
         turn_id: str | None = None,
         tool_call_id: str | None = None,
-    ):  # noqa: ARG002
+    ):
         persisted_id = tool_call_id or "queued_call"
         self.enqueued.append(persisted_id)
         return persisted_id
 
-    def complete_tool_call(self, *, result):  # noqa: ANN001, ARG002
+    def complete_tool_call(self, *, result):
+        _ = result
         raise AssertionError("Should not complete tools in queued brokered mode")
 
-    def complete_session_turn(self, *, turn_id: str, status):  # noqa: ANN001, ARG002
-        pass
+    def complete_session_turn(self, *, turn_id: str, status):
+        _ = (turn_id, status)
 
-    def update_session_status(self, *, session_id: str, status, last_error_text=None):  # noqa: ANN001, ARG002
-        pass
+    def update_session_status(self, *, session_id: str, status, last_error_text=None):
+        _ = (session_id, status, last_error_text)
 
 
 class RaisingExecutor:

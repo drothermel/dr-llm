@@ -377,12 +377,9 @@ def _to_google_contents(messages: list[Message]) -> list[_GoogleRequestContent]:
                         ],
                     )
                 )
-            elif msg.content:
-                contents.append(
-                    _GoogleRequestContent(
-                        role="user",
-                        parts=[_GoogleRequestPart(text=msg.content)],
-                    )
+            else:
+                raise ValueError(
+                    f"google tool message missing name; cannot encode functionResponse: {msg!r}"
                 )
             continue
 

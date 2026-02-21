@@ -16,7 +16,11 @@ class FakeRepository(BaseModel):
     released: list[str] = Field(default_factory=list)
     dead_lettered: list[str] = Field(default_factory=list)
 
-    def claim_tool_calls(self, *, worker_id: str, limit: int, lease_seconds: int):  # noqa: ARG002
+    def claim_tool_calls(
+        self, *, worker_id: str, limit: int, lease_seconds: int
+    ) -> list[Any]:
+        _worker_id, _limit, _lease_seconds = worker_id, limit, lease_seconds
+        _ = (_worker_id, _limit, _lease_seconds)
         idx = self.claim_calls
         self.claim_calls += 1
         if idx < len(self.claims):
@@ -28,12 +32,16 @@ class FakeRepository(BaseModel):
 
     def release_tool_claim(
         self, *, tool_call_id: str, error_text: str | None = None
-    ) -> None:  # noqa: ARG002
+    ) -> None:
+        _error_text = error_text
+        _ = _error_text
         self.released.append(tool_call_id)
 
     def dead_letter_tool_call(
         self, *, tool_call_id: str, reason: str, payload: dict[str, Any] | None = None
-    ) -> str:  # noqa: ARG002
+    ) -> str:
+        _payload = payload
+        _ = (reason, _payload)
         self.dead_lettered.append(tool_call_id)
         return "dead_1"
 
@@ -44,14 +52,21 @@ class FakeRepository(BaseModel):
         event_type: str,
         payload: dict[str, Any],
         turn_id: str | None = None,
-    ):  # noqa: ANN001, ARG002
+    ) -> str:
+        _session_id, _event_type, _payload, _turn_id = (
+            session_id,
+            event_type,
+            payload,
+            turn_id,
+        )
+        _ = (_session_id, _event_type, _payload, _turn_id)
         return "event_1"
 
 
 class FakeExecutor(BaseModel):
     result: ToolResult
 
-    def invoke(self, call):  # noqa: ANN001
+    def invoke(self, call: Any) -> ToolResult:
         return ToolResult(
             tool_call_id=call.tool_call_id,
             ok=self.result.ok,
