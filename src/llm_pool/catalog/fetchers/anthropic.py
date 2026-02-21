@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from llm_pool.catalog.fetchers.common import api_key_from_env, get_json
+from llm_pool.catalog.fetchers.common import api_key_from_env, as_int, get_json
 from llm_pool.providers.anthropic import AnthropicAdapter
 from llm_pool.types import ModelCatalogEntry
 
@@ -35,8 +35,8 @@ def fetch_anthropic_models(
                 provider=adapter.name,
                 model=model_id,
                 display_name=str(item.get("display_name") or model_id),
-                context_window=_as_int(item.get("context_window")),
-                max_output_tokens=_as_int(item.get("max_output_tokens")),
+                context_window=as_int(item.get("context_window")),
+                max_output_tokens=as_int(item.get("max_output_tokens")),
                 supports_reasoning=True,
                 supports_tools=True,
                 supports_vision=None,
@@ -46,12 +46,3 @@ def fetch_anthropic_models(
             )
         )
     return out, payload
-
-
-def _as_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except Exception:  # noqa: BLE001
-        return None

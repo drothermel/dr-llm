@@ -6,9 +6,17 @@ from typing import Any
 
 _REDACT_KEYS = {
     "authorization",
+    "bearer",
+    "credentials",
     "api_key",
     "apikey",
     "x-api-key",
+    "private_key",
+    "client_secret",
+    "access_token",
+    "refresh_token",
+    "session_token",
+    "cookie",
     "token",
     "auth_token",
     "anthropic_auth_token",

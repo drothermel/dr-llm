@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from llm_pool.types import ModelCatalogEntry
 
 
-DEFAULT_MODEL_OVERRIDES_PATH = Path("config/model_overrides.yaml")
+DEFAULT_MODEL_OVERRIDES_PATH = Path("config/model_overrides.json")
 
 
 class ModelCatalogSyncResult(BaseModel):

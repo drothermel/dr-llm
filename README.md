@@ -47,6 +47,8 @@ uv sync
 - Claude headless coding-plan presets:
   - `claude-code-minimax`: routes Claude Code via `https://api.minimax.io/anthropic` and maps `MINIMAX_API_KEY` to Anthropic auth envs
   - `claude-code-kimi`: routes Claude Code via `https://api.kimi.com/coding/` and maps `KIMI_API_KEY` to Anthropic auth envs
+- Model catalog overrides default file: `config/model_overrides.json`
+- YAML override parsing is supported and requires `PyYAML` (included as a core dependency).
 
 ## CLI
 

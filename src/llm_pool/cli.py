@@ -266,6 +266,11 @@ def models_show(
         client = LlmClient(registry=build_default_registry(), repository=repository)
         item = client.show_model(provider=provider, model=model)
         if item is None:
+            typer.secho(
+                f"Model not found for provider={provider!r} model={model!r}",
+                fg=typer.colors.RED,
+                err=True,
+            )
             raise typer.Exit(code=1)
         _emit(
             item.model_dump(

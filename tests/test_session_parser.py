@@ -15,3 +15,13 @@ def test_parse_brokered_tool_calls_invalid_payload() -> None:
     assert parse_brokered_tool_calls("not json") == []
     assert parse_brokered_tool_calls("{}") == []
     assert parse_brokered_tool_calls('{"tool_calls":[{"arguments":{}}]}') == []
+
+
+def test_parse_brokered_tool_calls_generates_uuid_when_id_missing() -> None:
+    calls = parse_brokered_tool_calls(
+        '{"tool_calls":[{"name":"search","arguments":{"q":"foo"}}]}'
+    )
+    assert len(calls) == 1
+    assert calls[0].tool_call_id.startswith("brokered_call_")
+    assert len(calls[0].tool_call_id) == len("brokered_call_") + 32
+    assert calls[0].name == "search"

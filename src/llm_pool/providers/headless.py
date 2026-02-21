@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import tempfile
@@ -124,6 +125,8 @@ KEY_IS_ERROR = "is_error"
 KEY_INPUT_TOKENS = "input_tokens"
 KEY_OUTPUT_TOKENS = "output_tokens"
 KEY_NON_JSON_STDOUT_LINES = "non_json_stdout_lines"
+
+logger = logging.getLogger(__name__)
 
 
 def _message_label(message: Message) -> str:
@@ -507,8 +510,14 @@ class CodexHeadlessAdapter(_BaseHeadlessAdapter):
 
         for event in events:
             if event.get(KEY_TYPE) == "error":
+                logger.debug(
+                    "headless error event provider=%s event=%s",
+                    self.name,
+                    event,
+                )
+                event_message = event.get("message") or event.get("code") or event
                 raise HeadlessExecutionError(
-                    f"{self.name} command returned an error event: {event}"
+                    f"{self.name} command returned error event: {str(event_message)[:200]}"
                 )
 
         body = _codex_events_to_body(events, passthrough_lines=passthrough_lines)

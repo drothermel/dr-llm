@@ -24,14 +24,15 @@ class GenerationLogEvent(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
-_GENERATION_LOG_CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
+_GENERATION_LOG_CONTEXT: ContextVar[dict[str, Any] | None] = ContextVar(
     "llm_pool_generation_log_context",
-    default={},
+    default=None,
 )
 
 
 def get_generation_log_context() -> dict[str, Any]:
-    return dict(_GENERATION_LOG_CONTEXT.get())
+    current = _GENERATION_LOG_CONTEXT.get()
+    return dict(current) if isinstance(current, dict) else {}
 
 
 @contextmanager
@@ -39,7 +40,7 @@ def generation_log_context(values: dict[str, Any]) -> Generator[None, None, None
     current = get_generation_log_context()
     merged = {**current, **values}
     merged.setdefault("thread_id", get_ident())
-    token = _GENERATION_LOG_CONTEXT.set(merged)
+    token = _GENERATION_LOG_CONTEXT.set(dict(merged))
     try:
         yield
     finally:

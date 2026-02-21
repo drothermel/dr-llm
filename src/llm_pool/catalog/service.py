@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
+import traceback
 from pathlib import Path
 from typing import Any, Protocol
+
+import yaml
 
 from llm_pool.catalog.fetchers import (
     fetch_models_for_adapter,
@@ -16,6 +20,8 @@ from llm_pool.catalog.models import (
 )
 from llm_pool.providers.registry import ProviderRegistry
 from llm_pool.types import ModelCatalogEntry, ModelCatalogQuery
+
+logger = logging.getLogger(__name__)
 
 
 class ModelCatalogRepository(Protocol):
@@ -97,13 +103,17 @@ class ModelCatalogService:
                     )
                 )
             except Exception as exc:  # noqa: BLE001
+                if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                    raise
+                logger.exception("Model catalog sync failed provider=%s", target)
+                detailed_error = f"{exc}\n{traceback.format_exc()}"
                 snapshot_id: str | None = None
                 if self._repository is not None:
                     snapshot_id = self._repository.record_model_catalog_snapshot(
                         provider=target,
                         status="failed",
                         raw_payload={},
-                        error_text=str(exc),
+                        error_text=detailed_error,
                     )
                 results.append(
                     ModelCatalogSyncResult(
@@ -111,7 +121,7 @@ class ModelCatalogService:
                         success=False,
                         entry_count=0,
                         snapshot_id=snapshot_id,
-                        error=str(exc),
+                        error=detailed_error,
                     )
                 )
         if self._repository is not None and persisted_overrides:
@@ -158,11 +168,23 @@ class ModelCatalogService:
             payload = parsed if isinstance(parsed, dict) else {}
         except json.JSONDecodeError:
             try:
-                import yaml  # type: ignore[import-not-found]
-
                 loaded = yaml.safe_load(text)
                 payload = loaded if isinstance(loaded, dict) else {}
-            except Exception:  # noqa: BLE001
+            except yaml.YAMLError as exc:
+                snippet = text[:200].replace("\n", "\\n")
+                logger.warning(
+                    "Failed to parse model overrides as YAML: %s snippet=%s",
+                    exc,
+                    snippet,
+                )
+                payload = {}
+            except Exception as exc:  # noqa: BLE001
+                snippet = text[:200].replace("\n", "\\n")
+                logger.warning(
+                    "Failed to parse model overrides as YAML: %s snippet=%s",
+                    exc,
+                    snippet,
+                )
                 payload = {}
         model = ModelOverridesFile(**payload)
         return [

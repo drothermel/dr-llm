@@ -67,8 +67,11 @@ def test_generation_log_sink_is_thread_safe(tmp_path: Path) -> None:
         )
 
     with ThreadPoolExecutor(max_workers=32) as pool:
+        futures = []
         for idx in range(total):
-            pool.submit(emit_one, idx)
+            futures.append(pool.submit(emit_one, idx))
+        for future in futures:
+            future.result()
 
     lines = (
         (tmp_path / "generation_transcripts.jsonl")

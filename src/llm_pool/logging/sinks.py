@@ -77,6 +77,8 @@ class GenerationLogSink:
             {
                 TRUNCATION_KEY: True,
                 "max_event_bytes": max_bytes,
+                "event_type": payload.get("event_type"),
+                "stage": payload.get("stage"),
                 "event_prefix": raw[: max_bytes // 2].decode("utf-8", errors="ignore"),
             },
             ensure_ascii=True,

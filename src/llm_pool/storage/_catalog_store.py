@@ -4,6 +4,8 @@ import json
 from typing import Any, Literal
 from uuid import uuid4
 
+from psycopg.rows import dict_row
+
 from llm_pool.errors import PersistenceError
 from llm_pool.storage._runtime import StorageRuntime
 from llm_pool.types import (
@@ -49,13 +51,14 @@ class CatalogStore:
                         error_text,
                     ],
                 )
-                conn.commit()
-                return snapshot_id
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 conn.rollback()
                 raise PersistenceError(
                     f"Failed to record model catalog snapshot: {exc}"
                 ) from exc
+            else:
+                conn.commit()
+                return snapshot_id
 
     def replace_provider_models(
         self,
@@ -70,42 +73,8 @@ class CatalogStore:
                     "DELETE FROM provider_models_current WHERE provider = %s",
                     [provider],
                 )
-                count = 0
-                for entry in entries:
-                    conn.execute(
-                        """
-                        INSERT INTO provider_models_current (
-                            provider,
-                            model,
-                            display_name,
-                            context_window,
-                            max_output_tokens,
-                            supports_reasoning,
-                            supports_tools,
-                            supports_vision,
-                            pricing_json,
-                            rate_limits_json,
-                            source_quality,
-                            metadata_json,
-                            updated_at
-                        ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s::jsonb, %s::jsonb, %s, %s::jsonb, now()
-                        )
-                        ON CONFLICT (provider, model)
-                        DO UPDATE SET
-                            display_name = excluded.display_name,
-                            context_window = excluded.context_window,
-                            max_output_tokens = excluded.max_output_tokens,
-                            supports_reasoning = excluded.supports_reasoning,
-                            supports_tools = excluded.supports_tools,
-                            supports_vision = excluded.supports_vision,
-                            pricing_json = excluded.pricing_json,
-                            rate_limits_json = excluded.rate_limits_json,
-                            source_quality = excluded.source_quality,
-                            metadata_json = excluded.metadata_json,
-                            updated_at = excluded.updated_at
-                        """,
+                if entries:
+                    params = [
                         [
                             entry.provider,
                             entry.model,
@@ -141,11 +110,48 @@ class CatalogStore:
                             ),
                             entry.source_quality,
                             json.dumps(entry.metadata, ensure_ascii=True),
-                        ],
-                    )
-                    count += 1
+                        ]
+                        for entry in entries
+                    ]
+                    with conn.cursor() as cur:
+                        cur.executemany(
+                            """
+                            INSERT INTO provider_models_current (
+                                provider,
+                                model,
+                                display_name,
+                                context_window,
+                                max_output_tokens,
+                                supports_reasoning,
+                                supports_tools,
+                                supports_vision,
+                                pricing_json,
+                                rate_limits_json,
+                                source_quality,
+                                metadata_json,
+                                updated_at
+                            ) VALUES (
+                                %s, %s, %s, %s, %s, %s, %s, %s,
+                                %s::jsonb, %s::jsonb, %s, %s::jsonb, now()
+                            )
+                            ON CONFLICT (provider, model)
+                            DO UPDATE SET
+                                display_name = excluded.display_name,
+                                context_window = excluded.context_window,
+                                max_output_tokens = excluded.max_output_tokens,
+                                supports_reasoning = excluded.supports_reasoning,
+                                supports_tools = excluded.supports_tools,
+                                supports_vision = excluded.supports_vision,
+                                pricing_json = excluded.pricing_json,
+                                rate_limits_json = excluded.rate_limits_json,
+                                source_quality = excluded.source_quality,
+                                metadata_json = excluded.metadata_json,
+                                updated_at = excluded.updated_at
+                            """,
+                            params,
+                        )
                 conn.commit()
-                return count
+                return len(entries)
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
                 raise PersistenceError(
@@ -223,51 +229,9 @@ class CatalogStore:
     def list_models(self, *, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
         self._runtime.init_schema()
         with self._runtime.conn() as conn:
-            rows = conn.execute(
-                """
-            SELECT
-                provider,
-                model,
-                display_name,
-                context_window,
-                max_output_tokens,
-                supports_reasoning,
-                supports_tools,
-                supports_vision,
-                pricing_json,
-                rate_limits_json,
-                source_quality,
-                metadata_json,
-                updated_at
-            FROM provider_models_current
-            WHERE (%s::text IS NULL OR provider = %s)
-              AND (%s::boolean IS NULL OR supports_reasoning = %s)
-              AND (%s::text IS NULL OR model ILIKE %s)
-            ORDER BY provider, model
-            LIMIT %s OFFSET %s
-                """,
-                [
-                    query.provider,
-                    query.provider,
-                    query.supports_reasoning,
-                    query.supports_reasoning,
-                    query.model_contains,
-                    (
-                        f"%{query.model_contains}%"
-                        if query.model_contains is not None
-                        else None
-                    ),
-                    int(query.limit),
-                    int(query.offset),
-                ],
-            ).fetchall()
-        return [_row_to_entry(row) for row in rows]
-
-    def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
-        self._runtime.init_schema()
-        with self._runtime.conn() as conn:
-            row = conn.execute(
-                """
+            with conn.cursor(row_factory=dict_row) as cur:
+                rows = cur.execute(
+                    """
                 SELECT
                     provider,
                     model,
@@ -283,41 +247,116 @@ class CatalogStore:
                     metadata_json,
                     updated_at
                 FROM provider_models_current
-                WHERE provider = %s AND model = %s
-                """,
-                [provider, model],
-            ).fetchone()
+                WHERE (%s::text IS NULL OR provider = %s)
+                  AND (%s::boolean IS NULL OR supports_reasoning = %s)
+                  AND (%s::text IS NULL OR model ILIKE %s)
+                ORDER BY provider, model
+                LIMIT %s OFFSET %s
+                    """,
+                    [
+                        query.provider,
+                        query.provider,
+                        query.supports_reasoning,
+                        query.supports_reasoning,
+                        query.model_contains,
+                        (
+                            f"%{query.model_contains}%"
+                            if query.model_contains is not None
+                            else None
+                        ),
+                        int(query.limit),
+                        int(query.offset),
+                    ],
+                ).fetchall()
+        return [_row_to_entry(row) for row in rows]
+
+    def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
+        self._runtime.init_schema()
+        with self._runtime.conn() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                row = cur.execute(
+                    """
+                    SELECT
+                        provider,
+                        model,
+                        display_name,
+                        context_window,
+                        max_output_tokens,
+                        supports_reasoning,
+                        supports_tools,
+                        supports_vision,
+                        pricing_json,
+                        rate_limits_json,
+                        source_quality,
+                        metadata_json,
+                        updated_at
+                    FROM provider_models_current
+                    WHERE provider = %s AND model = %s
+                    """,
+                    [provider, model],
+                ).fetchone()
         if row is None:
             return None
         return _row_to_entry(row)
 
 
-def _row_to_entry(row: tuple[Any, ...]) -> ModelCatalogEntry:
+def _row_to_entry(row: dict[str, Any]) -> ModelCatalogEntry:
     pricing = (
-        ModelCatalogPricing(**row[8]) if isinstance(row[8], dict) and row[8] else None
+        ModelCatalogPricing(**row["pricing_json"])
+        if isinstance(row.get("pricing_json"), dict) and row.get("pricing_json")
+        else None
     )
     rate_limits = (
-        ModelCatalogRateLimit(**row[9]) if isinstance(row[9], dict) and row[9] else None
+        ModelCatalogRateLimit(**row["rate_limits_json"])
+        if isinstance(row.get("rate_limits_json"), dict) and row.get("rate_limits_json")
+        else None
     )
-    source_quality_raw = str(row[10]) if row[10] is not None else "live"
+    source_quality_raw = (
+        str(row.get("source_quality"))
+        if row.get("source_quality") is not None
+        else "live"
+    )
     if source_quality_raw == "overlay":
         source_quality: Literal["live", "overlay", "static"] = "overlay"
     elif source_quality_raw == "static":
         source_quality = "static"
     else:
         source_quality = "live"
+    display_name_raw = row.get("display_name")
+    context_window_raw = row.get("context_window")
+    max_output_tokens_raw = row.get("max_output_tokens")
+    supports_reasoning_raw = row.get("supports_reasoning")
+    supports_tools_raw = row.get("supports_tools")
+    supports_vision_raw = row.get("supports_vision")
+    metadata_raw = row.get("metadata_json")
+
     return ModelCatalogEntry(
-        provider=str(row[0]),
-        model=str(row[1]),
-        display_name=str(row[2]) if row[2] is not None else None,
-        context_window=int(row[3]) if row[3] is not None else None,
-        max_output_tokens=int(row[4]) if row[4] is not None else None,
-        supports_reasoning=bool(row[5]) if row[5] is not None else None,
-        supports_tools=bool(row[6]) if row[6] is not None else None,
-        supports_vision=bool(row[7]) if row[7] is not None else None,
+        provider=str(row["provider"]),
+        model=str(row["model"]),
+        display_name=str(display_name_raw) if display_name_raw is not None else None,
+        context_window=_as_optional_int(context_window_raw),
+        max_output_tokens=_as_optional_int(max_output_tokens_raw),
+        supports_reasoning=(
+            bool(supports_reasoning_raw) if supports_reasoning_raw is not None else None
+        ),
+        supports_tools=(
+            bool(supports_tools_raw) if supports_tools_raw is not None else None
+        ),
+        supports_vision=(
+            bool(supports_vision_raw) if supports_vision_raw is not None else None
+        ),
         pricing=pricing,
         rate_limits=rate_limits,
         source_quality=source_quality,
-        metadata=row[11] if isinstance(row[11], dict) else {},
-        fetched_at=row[12],
+        metadata=metadata_raw if isinstance(metadata_raw, dict) else {},
+        fetched_at=row.get("updated_at"),
     )
+
+
+def _as_optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

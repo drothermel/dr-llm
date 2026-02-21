@@ -77,8 +77,9 @@ class StorageRuntime:
             self.open_pool()
 
     def close(self) -> None:
-        self.pool.close()
-        self._pool_opened = False
+        with self._pool_lock:
+            self.pool.close()
+            self._pool_opened = False
 
     def open_pool(self) -> None:
         if self._pool_opened:

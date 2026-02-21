@@ -44,3 +44,12 @@ def get_json(
             f"catalog invalid JSON shape for {url}: expected object"
         )
     return payload
+
+
+def as_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except Exception:  # noqa: BLE001
+        return None

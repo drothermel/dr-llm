@@ -82,8 +82,16 @@ def _as_float(value: Any) -> float | None:
 def _parse_pricing(value: Any) -> ModelCatalogPricing | None:
     if not isinstance(value, dict):
         return None
-    input_cost = _as_float(value.get("prompt")) or _as_float(value.get("input"))
-    output_cost = _as_float(value.get("completion")) or _as_float(value.get("output"))
+    input_cost = (
+        _as_float(value.get("prompt"))
+        if value.get("prompt") is not None
+        else _as_float(value.get("input"))
+    )
+    output_cost = (
+        _as_float(value.get("completion"))
+        if value.get("completion") is not None
+        else _as_float(value.get("output"))
+    )
     reasoning_cost = _as_float(value.get("reasoning"))
     if input_cost is None and output_cost is None and reasoning_cost is None:
         return None

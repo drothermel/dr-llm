@@ -30,10 +30,27 @@ def fetch_google_models(
         if not name_raw:
             continue
         model_name = name_raw.split("/")[-1]
-        methods = item.get("supportedGenerationMethods")
-        supports_reasoning = None
-        if isinstance(methods, list):
-            supports_reasoning = True
+        supports_reasoning = bool(item.get("thinking")) if "thinking" in item else None
+        supports_tools = _first_bool(
+            item,
+            "supportsTools",
+            "supports_tools",
+            "toolCalling",
+            "tool_calling",
+            "functionCalling",
+            "function_calling",
+        )
+        if supports_tools is None:
+            supports_tools = True
+        supports_vision = _first_bool(
+            item,
+            "supportsVision",
+            "supports_vision",
+            "vision",
+            "multimodal",
+        )
+        if supports_vision is None:
+            supports_vision = True
         out.append(
             ModelCatalogEntry(
                 provider=adapter.name,
@@ -42,8 +59,8 @@ def fetch_google_models(
                 context_window=_as_int(item.get("inputTokenLimit")),
                 max_output_tokens=_as_int(item.get("outputTokenLimit")),
                 supports_reasoning=supports_reasoning,
-                supports_tools=True,
-                supports_vision=True,
+                supports_tools=supports_tools,
+                supports_vision=supports_vision,
                 metadata=item,
                 fetched_at=now,
                 source_quality="live",
@@ -59,3 +76,24 @@ def _as_int(value: Any) -> int | None:
         return int(value)
     except Exception:  # noqa: BLE001
         return None
+
+
+def _as_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off"}:
+            return False
+    return None
+
+
+def _first_bool(item: dict[str, Any], *keys: str) -> bool | None:
+    for key in keys:
+        if key in item:
+            parsed = _as_bool(item.get(key))
+            if parsed is not None:
+                return parsed
+    return None

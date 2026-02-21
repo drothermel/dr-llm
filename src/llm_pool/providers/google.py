@@ -175,7 +175,6 @@ class GoogleAdapter(ProviderAdapter):
                 f"Missing Google API key. Set {self._config.api_key_env} or pass config.api_key"
             )
         endpoint = f"{self._config.base_url}/models/{request.model}:generateContent"
-        masked_endpoint = endpoint
         system = "\n".join(
             msg.content for msg in request.messages if msg.role == "system"
         )
@@ -232,7 +231,7 @@ class GoogleAdapter(ProviderAdapter):
             stage="google.http_response",
             payload={
                 "status_code": resp.status_code,
-                "endpoint": masked_endpoint,
+                "endpoint": endpoint,
                 "response_text": resp.text,
                 "request_payload": payload.model_dump(
                     mode="json",
