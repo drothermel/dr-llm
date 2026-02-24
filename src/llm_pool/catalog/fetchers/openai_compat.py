@@ -11,9 +11,9 @@ from llm_pool.types import ModelCatalogEntry, ModelCatalogPricing
 def fetch_openai_compat_models(
     adapter: OpenAICompatAdapter,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    base = adapter._config.base_url.rstrip("/")  # noqa: SLF001
+    base = adapter.config.base_url.rstrip("/")
     endpoint = f"{base}/models"
-    key = adapter._config.api_key or api_key_from_env(adapter._config.api_key_env)  # noqa: SLF001
+    key = adapter.config.api_key or api_key_from_env(adapter.config.api_key_env)
     headers: dict[str, str] | None = None
     if key:
         headers = {"Authorization": f"Bearer {key}"}

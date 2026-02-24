@@ -120,7 +120,10 @@ class _GoogleUsageMetadata(BaseModel):
     promptTokenCount: int | None = None
     candidatesTokenCount: int | None = None
     totalTokenCount: int | None = None
-    output_tokens_details: dict[str, Any] | None = None
+    output_tokens_details: dict[str, Any] | None = Field(
+        default=None,
+        alias="candidatesTokensDetails",
+    )
 
 
 class _GoogleResponse(BaseModel):
@@ -148,6 +151,10 @@ class GoogleAdapter(ProviderAdapter):
     ) -> None:
         self._config = config or GoogleConfig()
         self._client = client or httpx.Client(timeout=self._config.timeout_seconds)
+
+    @property
+    def config(self) -> GoogleConfig:
+        return self._config
 
     @property
     def capabilities(self) -> ProviderCapabilities:

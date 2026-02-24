@@ -223,9 +223,16 @@ def merge_overlay_entries(
                 "source_quality": "overlay",
                 "metadata": {**base.metadata, **overlay.metadata},
                 "display_name": overlay.display_name or base.display_name,
-                "context_window": overlay.context_window or base.context_window,
-                "max_output_tokens": overlay.max_output_tokens
-                or base.max_output_tokens,
+                "context_window": (
+                    overlay.context_window
+                    if overlay.context_window is not None
+                    else base.context_window
+                ),
+                "max_output_tokens": (
+                    overlay.max_output_tokens
+                    if overlay.max_output_tokens is not None
+                    else base.max_output_tokens
+                ),
                 "supports_reasoning": (
                     overlay.supports_reasoning
                     if overlay.supports_reasoning is not None

@@ -4,6 +4,7 @@ import importlib
 import json
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import typer
 from pydantic import ValidationError
@@ -316,11 +317,14 @@ def query(
     reasoning_payload = _parse_json(
         reasoning_json, arg_name="reasoning_json", expected=dict
     )
-    reasoning = (
-        ReasoningConfig(**reasoning_payload)
-        if isinstance(reasoning_payload, dict)
-        else None
-    )
+    try:
+        reasoning = (
+            ReasoningConfig(**reasoning_payload)
+            if isinstance(reasoning_payload, dict)
+            else None
+        )
+    except ValidationError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     messages_payload = _load_messages(messages_file, message or [])
 
     repository: PostgresRepository | None = None
@@ -328,18 +332,21 @@ def query(
         if record:
             repository = _repo(dsn, min_pool_size, max_pool_size)
         client = LlmClient(registry=build_default_registry(), repository=repository)
-        request = LlmRequest(
-            provider=provider,
-            model=model,
-            messages=messages_payload,
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=max_tokens,
-            reasoning=reasoning,
-            tools=tools,
-            tool_policy=tool_policy,
-            metadata=metadata,
-        )
+        try:
+            request = LlmRequest(
+                provider=provider,
+                model=model,
+                messages=messages_payload,
+                temperature=temperature,
+                top_p=top_p,
+                max_tokens=max_tokens,
+                reasoning=reasoning,
+                tools=tools,
+                tool_policy=tool_policy,
+                metadata=metadata,
+            )
+        except ValidationError as exc:
+            raise typer.BadParameter(str(exc)) from exc
         response = client.query(
             request,
             run_id=run_id,
@@ -433,11 +440,14 @@ def session_start(
     reasoning_payload = _parse_json(
         reasoning_json, arg_name="reasoning_json", expected=dict
     )
-    reasoning = (
-        ReasoningConfig(**reasoning_payload)
-        if isinstance(reasoning_payload, dict)
-        else None
-    )
+    try:
+        reasoning = (
+            ReasoningConfig(**reasoning_payload)
+            if isinstance(reasoning_payload, dict)
+            else None
+        )
+    except ValidationError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     messages_payload = _load_messages(messages_file, message or [])
 
     repository = _repo(dsn, min_pool_size, max_pool_size)
@@ -447,8 +457,8 @@ def session_start(
         client = SessionClient(
             llm_client=llm_client, repository=repository, tool_registry=tool_registry
         )
-        handle = client.start_session(
-            SessionStartInput(
+        try:
+            input_payload = SessionStartInput(
                 provider=provider,
                 model=model,
                 messages=messages_payload,
@@ -457,7 +467,9 @@ def session_start(
                 metadata=metadata,
                 run_id=run_id,
             )
-        )
+        except ValidationError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        handle = client.start_session(input_payload)
         _emit(handle.model_dump(mode="json", exclude_computed_fields=True))
     finally:
         repository.close()
@@ -493,11 +505,14 @@ def session_step(
     reasoning_payload = _parse_json(
         reasoning_json, arg_name="reasoning_json", expected=dict
     )
-    reasoning = (
-        ReasoningConfig(**reasoning_payload)
-        if isinstance(reasoning_payload, dict)
-        else None
-    )
+    try:
+        reasoning = (
+            ReasoningConfig(**reasoning_payload)
+            if isinstance(reasoning_payload, dict)
+            else None
+        )
+    except ValidationError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     messages_payload = _load_messages(
         messages_file, message or [], require_nonempty=False
     )
@@ -509,8 +524,8 @@ def session_step(
         client = SessionClient(
             llm_client=llm_client, repository=repository, tool_registry=tool_registry
         )
-        result = client.step_session(
-            SessionStepInput(
+        try:
+            input_payload = SessionStepInput(
                 session_id=session_id,
                 messages=messages_payload,
                 expected_version=expected_version,
@@ -518,7 +533,9 @@ def session_step(
                 reasoning=reasoning,
                 metadata=metadata,
             )
-        )
+        except ValidationError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        result = client.step_session(input_payload)
         _emit(result.model_dump(mode="json", exclude_computed_fields=True))
     finally:
         repository.close()
@@ -581,17 +598,18 @@ def tool_worker_run(
     try:
         tool_registry = _build_tool_registry(tool_loader)
         executor = ToolExecutor(registry=tool_registry)
+        effective_worker_id = worker_id or f"tool-worker-{uuid4().hex[:8]}"
         stats = run_tool_worker(
             repository=repository,
             executor=executor,
-            worker_id=worker_id,
+            worker_id=effective_worker_id,
             lease_seconds=lease_seconds,
             batch_size=batch_size,
             idle_sleep_seconds=idle_sleep_seconds,
             max_loops=max_loops,
             max_attempts_before_dead_letter=max_attempts_before_dead_letter,
         )
-        _emit({"worker_id": worker_id, "stats": stats})
+        _emit({"worker_id": effective_worker_id, "stats": stats})
     finally:
         repository.close()
 

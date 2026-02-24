@@ -77,6 +77,19 @@ def map_reasoning_for_anthropic(
         budget = max(1024, min(int(max_tokens * ratio), 128000))
     if budget is None:
         return ReasoningMappingResult()
+    if request_max_tokens is not None and request_max_tokens <= 1024:
+        warnings.append(
+            ReasoningWarning(
+                code=ReasoningWarningCode.mapped_with_heuristic,
+                message=(
+                    "anthropic reasoning budget cannot be strictly less than max_tokens when max_tokens <= 1024; reasoning payload was omitted"
+                ),
+                provider=provider,
+                mode=mode,
+                details={"requested_max_tokens": request_max_tokens},
+            )
+        )
+        return ReasoningMappingResult(warnings=warnings)
     if request_max_tokens is not None and budget >= request_max_tokens:
         warnings.append(
             ReasoningWarning(

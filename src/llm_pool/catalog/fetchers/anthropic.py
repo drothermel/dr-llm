@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from llm_pool.catalog.fetchers.common import api_key_from_env, as_int, get_json
+from llm_pool.errors import ProviderSemanticError
 from llm_pool.providers.anthropic import AnthropicAdapter
 from llm_pool.types import ModelCatalogEntry
 
@@ -11,14 +13,23 @@ from llm_pool.types import ModelCatalogEntry
 def fetch_anthropic_models(
     adapter: AnthropicAdapter,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    base_url = adapter._config.base_url  # noqa: SLF001
-    models_url = base_url.replace("/messages", "/models")
-    key = adapter._config.api_key or api_key_from_env(adapter._config.api_key_env)  # noqa: SLF001
+    parsed = urlsplit(adapter.config.base_url)
+    path = parsed.path.rstrip("/")
+    if not path.endswith("/messages"):
+        raise ProviderSemanticError(
+            f"Anthropic base URL must end with '/messages' for catalog sync. Got: {adapter.config.base_url}"
+        )
+    models_path = f"{path[: -len('/messages')]}/models"
+    models_url = urlunsplit((parsed.scheme, parsed.netloc, models_path, "", ""))
+    key = adapter.config.api_key or api_key_from_env(adapter.config.api_key_env)
+    if not key:
+        raise ProviderSemanticError(
+            f"Missing Anthropic API key for catalog sync. Set {adapter.config.api_key_env}"
+        )
     headers = {
-        "anthropic-version": adapter._config.anthropic_version,  # noqa: SLF001
+        "anthropic-version": adapter.config.anthropic_version,
+        "x-api-key": key,
     }
-    if key:
-        headers["x-api-key"] = key
     payload = get_json(url=models_url, headers=headers)
     items_raw = payload.get("data")
     items = items_raw if isinstance(items_raw, list) else []

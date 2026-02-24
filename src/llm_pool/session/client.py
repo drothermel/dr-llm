@@ -186,6 +186,15 @@ class SessionClient:
         tool_calls: list[ModelToolCall],
         initial_response: LlmResponse,
     ) -> ToolProcessingResult:
+        if (
+            strategy == "native"
+            and state.strategy_mode == ToolPolicy.native_only
+            and not supports_native_tools
+        ):
+            raise ValueError(
+                "Session configured native_only, but provider does not support native tools"
+            )
+
         assistant_tool_request = Message(
             role="assistant",
             content=initial_response.text,
@@ -198,15 +207,6 @@ class SessionClient:
             event_type=SessionEventType.message,
             payload=SessionMessagePayload(message=assistant_tool_request),
         )
-
-        if (
-            strategy == "native"
-            and state.strategy_mode == ToolPolicy.native_only
-            and not supports_native_tools
-        ):
-            raise ValueError(
-                "Session configured native_only, but provider does not support native tools"
-            )
 
         execute_inline = strategy == "native" or input.inline_tool_execution
         for model_tool_call in tool_calls:

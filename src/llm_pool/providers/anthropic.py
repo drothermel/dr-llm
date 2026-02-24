@@ -137,6 +137,10 @@ class AnthropicAdapter(ProviderAdapter):
         self.close()
 
     @property
+    def config(self) -> AnthropicConfig:
+        return self._config
+
+    @property
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
             supports_native_tools=True, supports_structured_output=True

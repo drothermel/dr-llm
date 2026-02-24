@@ -18,6 +18,9 @@ from llm_pool.errors import TransientPersistenceError
 
 
 _SCHEMA_PATH = Path(__file__).with_name("schema_bootstrap_pg.sql")
+_MIGRATION_PATHS = [
+    Path(__file__).with_name("schema_migration_20260224_llm_call_response_columns.sql"),
+]
 
 
 class StorageConfig(BaseModel):
@@ -127,5 +130,10 @@ class StorageRuntime:
             schema_sql = _SCHEMA_PATH.read_text(encoding="utf-8")
             with self.conn() as conn:
                 conn.execute(sql.SQL(cast(LiteralString, schema_sql)))
+                for migration_path in _MIGRATION_PATHS:
+                    if not migration_path.exists():
+                        continue
+                    migration_sql = migration_path.read_text(encoding="utf-8")
+                    conn.execute(sql.SQL(cast(LiteralString, migration_sql)))
                 conn.commit()
             self.schema_initialized = True

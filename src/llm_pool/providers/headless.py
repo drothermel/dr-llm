@@ -42,6 +42,9 @@ class HeadlessConfig(BaseModel):
     command: list[str]
     timeout_seconds: float = 180.0
     env_overrides: dict[str, str] = Field(default_factory=dict)
+    log_full_io: bool = False
+    redact_io: bool = True
+    max_logged_chars: int = 512
 
 
 class _HeadlessRequestPayload(BaseModel):
@@ -128,6 +131,8 @@ KEY_NON_JSON_STDOUT_LINES = "non_json_stdout_lines"
 
 logger = logging.getLogger(__name__)
 
+_DISALLOWED_HEADLESS_COMMANDS = {"sh", "bash", "zsh", "fish", "pwsh", "powershell"}
+
 
 def _message_label(message: Message) -> str:
     if message.role == "tool":
@@ -143,6 +148,36 @@ def _messages_to_prompt(messages: list[Message]) -> str:
             continue
         parts.append(f"{_message_label(message)}: {content}")
     return "\n\n".join(parts)
+
+
+def _validate_headless_command(command: list[str]) -> None:
+    if not command:
+        raise HeadlessExecutionError("headless command must be non-empty")
+    executable = command[0].strip()
+    if not executable:
+        raise HeadlessExecutionError("headless command executable must be non-empty")
+    command_name = os.path.basename(executable).lower()
+    if command_name in _DISALLOWED_HEADLESS_COMMANDS:
+        raise HeadlessExecutionError(
+            f"headless command executable {command_name!r} is disallowed"
+        )
+
+
+def _sanitize_io_for_logs(
+    value: str,
+    *,
+    log_full_io: bool,
+    redact_io: bool,
+    max_logged_chars: int,
+) -> str:
+    if not log_full_io:
+        return "<omitted>"
+    sanitized = value
+    if redact_io:
+        sanitized = f"<redacted len={len(value)}>"
+    if len(sanitized) > max_logged_chars:
+        return f"{sanitized[:max_logged_chars]}...[truncated]"
+    return sanitized
 
 
 class _BaseHeadlessAdapter(ProviderAdapter):
@@ -350,8 +385,15 @@ class _BaseHeadlessAdapter(ProviderAdapter):
         payload = self._payload(request)
         reasoning_mapping = self._reasoning_mapping(request)
         command = self._command_for_request(request, payload, reasoning_mapping)
+        _validate_headless_command(command)
         stdin_text = self._stdin_for_request(request, payload)
         started = time.perf_counter()
+        logged_stdin = _sanitize_io_for_logs(
+            stdin_text,
+            log_full_io=self._config.log_full_io,
+            redact_io=self._config.redact_io,
+            max_logged_chars=self._config.max_logged_chars,
+        )
         try:
             proc = subprocess.run(
                 command,
@@ -368,7 +410,7 @@ class _BaseHeadlessAdapter(ProviderAdapter):
                 stage=f"{self.name}.subprocess_timeout",
                 payload={
                     "command": command,
-                    "stdin": stdin_text,
+                    "stdin": logged_stdin,
                     "timeout_seconds": self._config.timeout_seconds,
                 },
             )
@@ -377,20 +419,32 @@ class _BaseHeadlessAdapter(ProviderAdapter):
             ) from exc
 
         latency_ms = int((time.perf_counter() - started) * 1000)
+        logged_stdout = _sanitize_io_for_logs(
+            proc.stdout,
+            log_full_io=self._config.log_full_io,
+            redact_io=self._config.redact_io,
+            max_logged_chars=self._config.max_logged_chars,
+        )
+        logged_stderr = _sanitize_io_for_logs(
+            proc.stderr,
+            log_full_io=self._config.log_full_io,
+            redact_io=self._config.redact_io,
+            max_logged_chars=self._config.max_logged_chars,
+        )
         emit_generation_event(
             event_type="provider.raw_response",
             stage=f"{self.name}.subprocess_result",
             payload={
                 "command": command,
-                "stdin": stdin_text,
+                "stdin": logged_stdin,
                 "returncode": proc.returncode,
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
+                "stdout": logged_stdout,
+                "stderr": logged_stderr,
             },
         )
         if proc.returncode != 0:
             raise HeadlessExecutionError(
-                f"{self.name} command failed with exit code {proc.returncode}: {proc.stderr[:800]}"
+                f"{self.name} command failed with exit code {proc.returncode}: {logged_stderr[:800]}"
             )
         response = self._parse_stdout(
             request=request,

@@ -100,6 +100,13 @@ def _append_event(
     )
 
 
+def _serialize_tool_result(result: Any) -> str:
+    try:
+        return json.dumps(result, ensure_ascii=True, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return str(result)
+
+
 def run_tool_worker(
     *,
     repository: PostgresRepository,
@@ -135,44 +142,44 @@ def run_tool_worker(
 
         stats.claimed += len(claimed)
         for call in claimed:
-            invocation = ToolInvocation(
-                tool_call_id=call.tool_call_id,
-                name=call.tool_name,
-                arguments=call.args,
-                session_id=call.session_id,
-                turn_id=call.turn_id,
-            )
-            result = executor.invoke(invocation)
-            if result.ok:
-                repository.complete_tool_call(result=result)
-                _append_event(
-                    repository=repository,
-                    session_id=call.session_id,
-                    turn_id=call.turn_id,
-                    event_type=ToolWorkerEventType.tool_succeeded,
-                    payload=ToolSucceededPayload(
-                        tool_call_id=call.tool_call_id,
-                        tool_name=call.tool_name,
-                        result=result.result,
-                    ),
-                )
-                tool_message = Message(
-                    role="tool",
-                    name=call.tool_name,
-                    content=json.dumps(
-                        result.result or {}, ensure_ascii=True, sort_keys=True
-                    ),
+            try:
+                invocation = ToolInvocation(
                     tool_call_id=call.tool_call_id,
-                )
-                _append_event(
-                    repository=repository,
+                    name=call.tool_name,
+                    arguments=call.args,
                     session_id=call.session_id,
                     turn_id=call.turn_id,
-                    event_type=ToolWorkerEventType.tool_result_message,
-                    payload=ToolResultMessagePayload(message=tool_message),
                 )
-                stats.succeeded += 1
-            else:
+                result = executor.invoke(invocation)
+                if result.ok:
+                    repository.complete_tool_call(result=result)
+                    _append_event(
+                        repository=repository,
+                        session_id=call.session_id,
+                        turn_id=call.turn_id,
+                        event_type=ToolWorkerEventType.tool_succeeded,
+                        payload=ToolSucceededPayload(
+                            tool_call_id=call.tool_call_id,
+                            tool_name=call.tool_name,
+                            result=result.result,
+                        ),
+                    )
+                    tool_message = Message(
+                        role="tool",
+                        name=call.tool_name,
+                        content=_serialize_tool_result(result.result or {}),
+                        tool_call_id=call.tool_call_id,
+                    )
+                    _append_event(
+                        repository=repository,
+                        session_id=call.session_id,
+                        turn_id=call.turn_id,
+                        event_type=ToolWorkerEventType.tool_result_message,
+                        payload=ToolResultMessagePayload(message=tool_message),
+                    )
+                    stats.succeeded += 1
+                    continue
+
                 stats.failed += 1
                 error_payload = (
                     result.error.model_dump(
@@ -230,6 +237,55 @@ def run_tool_worker(
                             tool_call_id=call.tool_call_id,
                             tool_name=call.tool_name,
                             error=error_payload,
+                            attempt_count=call.attempt_count,
+                        ),
+                    )
+            except Exception as exc:  # noqa: BLE001
+                stats.failed += 1
+                exc_payload = {
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                }
+                if call.attempt_count >= config.max_attempts_before_dead_letter:
+                    repository.dead_letter_tool_call(
+                        tool_call_id=call.tool_call_id,
+                        reason=f"worker_exception:{type(exc).__name__}",
+                        payload=_payload_dict(
+                            ToolDeadLetterPayload(
+                                worker_id=wid,
+                                status=ToolCallStatus.failed,
+                                error=exc_payload,
+                            )
+                        ),
+                    )
+                    _append_event(
+                        repository=repository,
+                        session_id=call.session_id,
+                        turn_id=call.turn_id,
+                        event_type=ToolWorkerEventType.tool_failed,
+                        payload=ToolFailedPayload(
+                            tool_call_id=call.tool_call_id,
+                            tool_name=call.tool_name,
+                            error=exc_payload,
+                            terminal=True,
+                        ),
+                    )
+                    stats.dead_lettered += 1
+                else:
+                    repository.release_tool_claim(
+                        tool_call_id=call.tool_call_id,
+                        worker_id=wid,
+                        error_text=str(exc),
+                    )
+                    _append_event(
+                        repository=repository,
+                        session_id=call.session_id,
+                        turn_id=call.turn_id,
+                        event_type=ToolWorkerEventType.tool_retry_scheduled,
+                        payload=ToolRetryScheduledPayload(
+                            tool_call_id=call.tool_call_id,
+                            tool_name=call.tool_name,
+                            error=exc_payload,
                             attempt_count=call.attempt_count,
                         ),
                     )

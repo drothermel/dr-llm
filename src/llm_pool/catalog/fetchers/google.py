@@ -12,12 +12,12 @@ from llm_pool.types import ModelCatalogEntry
 def fetch_google_models(
     adapter: GoogleAdapter,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    key = adapter._config.api_key or api_key_from_env(adapter._config.api_key_env)  # noqa: SLF001
+    key = adapter.config.api_key or api_key_from_env(adapter.config.api_key_env)
     if not key:
         raise ProviderSemanticError(
-            f"Missing Google API key for catalog sync. Set {adapter._config.api_key_env}"  # noqa: SLF001
+            f"Missing Google API key for catalog sync. Set {adapter.config.api_key_env}"
         )
-    endpoint = f"{adapter._config.base_url.rstrip('/')}/models?key={key}"  # noqa: SLF001
+    endpoint = f"{adapter.config.base_url.rstrip('/')}/models?key={key}"
     payload = get_json(url=endpoint)
     items_raw = payload.get("models")
     items = items_raw if isinstance(items_raw, list) else []
@@ -40,8 +40,6 @@ def fetch_google_models(
             "functionCalling",
             "function_calling",
         )
-        if supports_tools is None:
-            supports_tools = True
         supports_vision = _first_bool(
             item,
             "supportsVision",
@@ -49,8 +47,6 @@ def fetch_google_models(
             "vision",
             "multimodal",
         )
-        if supports_vision is None:
-            supports_vision = True
         out.append(
             ModelCatalogEntry(
                 provider=adapter.name,

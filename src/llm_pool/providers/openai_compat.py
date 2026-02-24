@@ -4,6 +4,7 @@ import json
 import os
 import time
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -107,19 +108,34 @@ class OpenAICompatAdapter(ProviderAdapter):
         self.name = name
         self._config = config
         self._client: httpx.Client | None = None
-        self._set_client(client or httpx.Client(timeout=self._config.timeout_seconds))
+        self._owns_client = False
+        self._set_client(
+            client or httpx.Client(timeout=self._config.timeout_seconds),
+            owns_client=client is None,
+        )
 
-    def _set_client(self, client: httpx.Client) -> None:
-        if self._client is not None and self._client is not client:
+    @property
+    def config(self) -> OpenAICompatConfig:
+        return self._config
+
+    def _set_client(self, client: httpx.Client, *, owns_client: bool) -> None:
+        if (
+            self._client is not None
+            and self._client is not client
+            and self._owns_client
+        ):
             self._client.close()
         self._client = client
+        self._owns_client = owns_client
 
     def set_client(self, client: httpx.Client) -> None:
-        self._set_client(client)
+        self._set_client(client, owns_client=False)
 
     def close(self) -> None:
-        if self._client is not None:
+        if self._client is not None and self._owns_client:
             self._client.close()
+        self._client = None
+        self._owns_client = False
 
     def __enter__(self) -> OpenAICompatAdapter:
         return self
@@ -131,16 +147,19 @@ class OpenAICompatAdapter(ProviderAdapter):
     def capabilities(self) -> ProviderCapabilities:
         return self._config.capabilities
 
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, *, idempotency_key: str | None = None) -> dict[str, str]:
         key = self._config.api_key or os.getenv(self._config.api_key_env)
         if not key:
             raise ProviderSemanticError(
                 f"Missing API key for {self.name}. Set {self._config.api_key_env} or pass config.api_key"
             )
-        return {
+        headers = {
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
+        return headers
 
     @retry(
         retry=retry_if_exception_type(
@@ -167,12 +186,24 @@ class OpenAICompatAdapter(ProviderAdapter):
             reasoning=reasoning_mapping.payload or None,
             tools=request.tools,
         ).model_dump(mode="json", exclude_none=True)
+        request_idempotency_key = request.metadata.get("idempotency_key")
+        idempotency_key = (
+            str(request_idempotency_key)
+            if isinstance(request_idempotency_key, str) and request_idempotency_key
+            else uuid4().hex
+        )
         endpoint = self._config.base_url.rstrip("/") + self._config.chat_path
         started = time.perf_counter()
         try:
-            resp = self._client.post(endpoint, headers=self._headers(), json=payload)
-        except (httpx.TimeoutException, httpx.TransportError):
-            raise
+            resp = self._client.post(
+                endpoint,
+                headers=self._headers(idempotency_key=idempotency_key),
+                json=payload,
+            )
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise ProviderTransportError(
+                f"{self.name} transport failure: {type(exc).__name__}: {exc}"
+            ) from exc
         except Exception as exc:  # noqa: BLE001
             raise ProviderTransportError(f"{self.name} request failed: {exc}") from exc
         latency_ms = int((time.perf_counter() - started) * 1000)
@@ -182,8 +213,13 @@ class OpenAICompatAdapter(ProviderAdapter):
             payload={
                 "status_code": resp.status_code,
                 "endpoint": endpoint,
-                "response_text": resp.text,
-                "request_payload": payload,
+                "idempotency_key": idempotency_key,
+                "response_text_preview": resp.text[:500],
+                "request_shape": {
+                    "model": payload.get("model"),
+                    "message_count": len(payload.get("messages", [])),
+                    "tool_count": len(payload.get("tools") or []),
+                },
             },
         )
         if resp.status_code >= 500 or resp.status_code == 429:
