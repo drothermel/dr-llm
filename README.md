@@ -67,6 +67,7 @@ llm-pool query \
 
 llm-pool run start --run-type benchmark
 llm-pool run finish --run-id <run_id> --status success
+llm-pool run benchmark --workers 128 --operations-per-worker 200
 
 llm-pool session start \
   --provider openai \
@@ -131,3 +132,16 @@ uv run pytest
 Postgres integration tests are env-gated:
 - set `LLM_POOL_TEST_DATABASE_URL` (or `LLM_POOL_DATABASE_URL`)
 - run `uv run pytest -m integration`
+
+## Milestone Closeout Artifacts
+
+- Milestone status: `docs/milestones.md`
+- M2b operations checklist: `docs/ops/m2b-hardening-checklist.md`
+- Compatibility contract: `docs/compatibility-contract.md`
+- Migration guide: `docs/migration-guide.md`
+- Integration notes:
+  - `docs/integrations/nl_latents.md`
+  - `docs/integrations/unitbench.md`
+- Example gateways:
+  - `examples/nl_latents_gateway.py`
+  - `examples/unitbench_gateway.py`

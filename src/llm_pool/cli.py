@@ -9,6 +9,7 @@ from uuid import uuid4
 import typer
 from pydantic import ValidationError
 
+from llm_pool.benchmark import RepositoryBenchmarkConfig, run_repository_benchmark
 from llm_pool.client import LlmClient
 from llm_pool.providers import build_default_registry
 from llm_pool.session import SessionClient, run_tool_worker
@@ -409,6 +410,29 @@ def run_finish(
     try:
         repository.finish_run(run_id=run_id, status=status, metadata=metadata)
         _emit({"run_id": run_id, "status": status.value})
+    finally:
+        repository.close()
+
+
+@run_app.command("benchmark")
+def run_benchmark(
+    workers: int = typer.Option(64, help="Parallel worker threads."),
+    operations_per_worker: int = typer.Option(100, help="Operations per worker."),
+    run_type: str = typer.Option("benchmark"),
+    dsn: str | None = typer.Option(None, envvar="LLM_POOL_DATABASE_URL"),
+    min_pool_size: int = typer.Option(4),
+    max_pool_size: int = typer.Option(64),
+) -> None:
+    """Run a DB-backed mixed read/write concurrency benchmark."""
+    repository = _repo(dsn, min_pool_size, max_pool_size)
+    try:
+        config = RepositoryBenchmarkConfig(
+            workers=workers,
+            operations_per_worker=operations_per_worker,
+            run_type=run_type,
+        )
+        stats = run_repository_benchmark(repository=repository, config=config)
+        _emit(stats.model_dump(mode="json", exclude_computed_fields=True))
     finally:
         repository.close()
 

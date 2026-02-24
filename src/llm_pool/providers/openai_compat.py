@@ -119,11 +119,7 @@ class OpenAICompatAdapter(ProviderAdapter):
         return self._config
 
     def _set_client(self, client: httpx.Client, *, owns_client: bool) -> None:
-        if (
-            self._client is not None
-            and self._client is not client
-            and self._owns_client
-        ):
+        if self._client is not None and self._client is not client:
             self._client.close()
         self._client = client
         self._owns_client = owns_client
@@ -132,7 +128,7 @@ class OpenAICompatAdapter(ProviderAdapter):
         self._set_client(client, owns_client=False)
 
     def close(self) -> None:
-        if self._client is not None and self._owns_client:
+        if self._client is not None:
             self._client.close()
         self._client = None
         self._owns_client = False
