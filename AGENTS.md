@@ -12,6 +12,16 @@ Before completing any coding task in this repository, always run:
 
 Fix all issues reported by these commands before considering the task complete.
 
+## CI Parity
+
+CI mirrors the local quality gate with split jobs:
+
+1. `.github/workflows/ci.yml`:
+- `quality-unit`: `ruff format --check`, `ruff check`, `ty check src`, `pytest -m "not integration"`
+- `security`: `uv lock --check`, `uvx pip-audit`
+2. `.github/workflows/integration.yml`:
+- Postgres-backed `pytest -m integration` on `main`, manual dispatch, and PRs labeled `run-integration`.
+
 ## Modeling Standard
 
 Always use Pydantic models instead of Python `dataclass` definitions.

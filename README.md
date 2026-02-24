@@ -144,13 +144,29 @@ Adapter lifecycle note:
 ## Testing
 
 ```bash
-uv run ruff check src tests
-uv run pytest
+uv run ruff format
+uv run ruff check --fix src/ tests/ scripts/
+uv run ty check src
+uv run pytest tests/ -v
 ```
 
 Postgres integration tests are env-gated:
 - set `LLM_POOL_TEST_DATABASE_URL` (or `LLM_POOL_DATABASE_URL`)
-- run `uv run pytest -m integration`
+- run `uv run pytest tests/ -v -m integration`
+
+## CI
+
+GitHub Actions workflows:
+- `ci`: runs on PRs to `main` and pushes to `main`
+  - `quality-unit` job: format check, lint, type-check, non-integration tests
+  - `security` job: `uv lock --check` and `uvx pip-audit`
+- `integration`: runs on pushes to `main`, manual dispatch, and PRs to `main` only when label `run-integration` is present
+  - starts `postgres:16` service and runs `pytest -m integration`
+
+Branch protection recommendation:
+- require `ci / quality-unit`
+- require `ci / security`
+- keep `integration / postgres-integration` non-required for all PRs (opt-in via label, always on `main`)
 
 ## Milestone Closeout Artifacts
 
