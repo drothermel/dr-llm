@@ -67,7 +67,13 @@ llm-pool query \
 
 llm-pool run start --run-type benchmark
 llm-pool run finish --run-id <run_id> --status success
-llm-pool run benchmark --workers 128 --operations-per-worker 200
+llm-pool run benchmark \
+  --workers 128 \
+  --total-operations 200000 \
+  --warmup-operations 10000 \
+  --max-in-flight 128 \
+  --operation-mix-json '{"record_call":2,"session_roundtrip":1,"read_calls":1}' \
+  --artifact-path .llm_pool/benchmarks/release-baseline.json
 
 llm-pool session start \
   --provider openai \
@@ -85,6 +91,19 @@ llm-pool tool worker run --tool-loader mypkg.tools:register_tools
 llm-pool session step --session-id <session_id> --inline-tool-execution
 
 llm-pool replay session --session-id <session_id>
+```
+
+Benchmark command output:
+```json
+{
+  "artifact_path": ".llm_pool/benchmarks/release-baseline.json",
+  "failed_operations": 0,
+  "operations_per_second": 4231.8,
+  "p50_latency_ms": 20.0,
+  "p95_latency_ms": 200.0,
+  "run_id": "run_abc123",
+  "status": "success"
+}
 ```
 
 Reasoning + cost notes:

@@ -8,6 +8,7 @@ import pytest
 import psycopg
 from psycopg import sql
 
+from llm_pool.benchmark import BenchmarkConfig, run_repository_benchmark
 from llm_pool.errors import SessionConflictError
 from llm_pool.storage.repository import PostgresRepository, StorageConfig
 from llm_pool.types import SessionTurnStatus, ToolPolicy
@@ -143,3 +144,38 @@ def test_tool_claim_parallel_without_duplicates(repository: PostgresRepository) 
     flattened = [item for sublist in results for item in sublist]
     assert len(flattened) == 24
     assert len(set(flattened)) == 24
+
+
+@pytest.mark.integration
+def test_benchmark_persists_artifact_record(
+    repository: PostgresRepository, tmp_path
+) -> None:
+    artifact_path = tmp_path / "benchmark-report.json"
+
+    report = run_repository_benchmark(
+        repository=repository,
+        config=BenchmarkConfig(
+            workers=4,
+            total_operations=120,
+            warmup_operations=12,
+            max_in_flight=4,
+            artifact_path=str(artifact_path),
+        ),
+    )
+
+    assert report.run_id
+    assert artifact_path.exists()
+    with psycopg.connect(repository.config.dsn) as conn:
+        row = conn.execute(
+            """
+            SELECT artifact_type, artifact_path
+            FROM artifacts
+            WHERE run_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            [report.run_id],
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "benchmark_report"
+    assert str(row[1]) == str(artifact_path)

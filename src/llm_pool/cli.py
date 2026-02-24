@@ -9,7 +9,7 @@ from uuid import uuid4
 import typer
 from pydantic import ValidationError
 
-from llm_pool.benchmark import RepositoryBenchmarkConfig, run_repository_benchmark
+from llm_pool.benchmark import BenchmarkConfig, OperationMix, run_repository_benchmark
 from llm_pool.client import LlmClient
 from llm_pool.providers import build_default_registry
 from llm_pool.session import SessionClient, run_tool_worker
@@ -417,22 +417,61 @@ def run_finish(
 @run_app.command("benchmark")
 def run_benchmark(
     workers: int = typer.Option(64, help="Parallel worker threads."),
-    operations_per_worker: int = typer.Option(100, help="Operations per worker."),
+    total_operations: int = typer.Option(20000, help="Measured operations to execute."),
+    warmup_operations: int | None = typer.Option(
+        None, help="Warmup operations before measured phase."
+    ),
+    max_in_flight: int = typer.Option(
+        64, help="Maximum in-flight operations across all workers."
+    ),
     run_type: str = typer.Option("benchmark"),
+    operation_mix_json: str | None = typer.Option(
+        None,
+        help='JSON operation mix object (e.g. {"record_call":1,"session_roundtrip":1,"read_calls":1}).',
+    ),
+    artifact_path: Path | None = typer.Option(
+        None, help="Path to write benchmark artifact JSON."
+    ),
     dsn: str | None = typer.Option(None, envvar="LLM_POOL_DATABASE_URL"),
     min_pool_size: int = typer.Option(4),
     max_pool_size: int = typer.Option(64),
 ) -> None:
     """Run a DB-backed mixed read/write concurrency benchmark."""
+    operation_mix_payload = _parse_json(
+        operation_mix_json, arg_name="operation_mix_json", expected=dict
+    )
+    try:
+        operation_mix = (
+            OperationMix(**operation_mix_payload)
+            if isinstance(operation_mix_payload, dict)
+            else OperationMix()
+        )
+        config = BenchmarkConfig(
+            workers=workers,
+            total_operations=total_operations,
+            warmup_operations=warmup_operations,
+            max_in_flight=max_in_flight,
+            run_type=run_type,
+            operation_mix=operation_mix,
+            artifact_path=str(artifact_path) if artifact_path is not None else None,
+        )
+    except ValidationError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
     repository = _repo(dsn, min_pool_size, max_pool_size)
     try:
-        config = RepositoryBenchmarkConfig(
-            workers=workers,
-            operations_per_worker=operations_per_worker,
-            run_type=run_type,
+        report = run_repository_benchmark(repository=repository, config=config)
+        _emit(
+            {
+                "run_id": report.run_id,
+                "status": report.status.value,
+                "operations_per_second": report.measured.operations_per_second,
+                "p50_latency_ms": report.measured.p50_latency_ms,
+                "p95_latency_ms": report.measured.p95_latency_ms,
+                "failed_operations": report.measured.failed_operations,
+                "artifact_path": report.artifact_path,
+            }
         )
-        stats = run_repository_benchmark(repository=repository, config=config)
-        _emit(stats.model_dump(mode="json", exclude_computed_fields=True))
     finally:
         repository.close()
 

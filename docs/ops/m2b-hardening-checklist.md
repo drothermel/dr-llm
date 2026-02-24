@@ -6,7 +6,11 @@ Run on staging-like infrastructure before release:
 ```bash
 llm-pool run benchmark \
   --workers 128 \
-  --operations-per-worker 200 \
+  --total-operations 200000 \
+  --warmup-operations 10000 \
+  --max-in-flight 128 \
+  --operation-mix-json '{"record_call":2,"session_roundtrip":1,"read_calls":1}' \
+  --artifact-path .llm_pool/benchmarks/staging-baseline.json \
   --min-pool-size 8 \
   --max-pool-size 128
 ```
@@ -17,6 +21,7 @@ Record and compare:
 3. `p95_latency_ms`
 4. `failed_operations`
 5. failure distribution by operation type
+6. artifact report path and persistence in `artifacts`
 
 ## 2) Database Tuning
 1. Set `max_pool_size` based on DB `max_connections` budget.
