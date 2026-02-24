@@ -154,6 +154,37 @@ Postgres integration tests are env-gated:
 - set `LLM_POOL_TEST_DATABASE_URL` (or `LLM_POOL_DATABASE_URL`)
 - run `uv run pytest tests/ -v -m integration`
 
+Local integration recommendation (test-only DSN):
+
+1. Start a dedicated Postgres test container on `5433`:
+```bash
+docker run -d \
+  --name llm-pool-pg-test \
+  -e POSTGRES_DB=llm_pool_test \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 5433:5432 \
+  postgres:16
+```
+2. Set a test-only URL (avoid using your app/runtime DB URL):
+```bash
+export LLM_POOL_TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5433/llm_pool_test'
+```
+3. Run the helper:
+```bash
+./scripts/run-integration-local.sh
+```
+
+Preflight check (recommended before running integration tests):
+```bash
+psql "$LLM_POOL_TEST_DATABASE_URL" -c "select current_user, current_database();"
+```
+
+If integration tests are skipped unexpectedly, include skip reasons:
+```bash
+uv run pytest tests/ -v -m integration -rs
+```
+
 ## CI
 
 GitHub Actions workflows:
