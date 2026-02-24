@@ -5,8 +5,10 @@
 Before completing any coding task in this repository, always run:
 
 1. `uv run ruff format`
-2. `uv run ruff check .`
-3. `uv run ty check`
+2. `uv run ruff check --fix src/ tests/ scripts/`
+3. Manually fix any remaining lint issues in `src/` only.
+4. `uv run ty check src`
+5. `uv run pytest tests/ -v`
 
 Fix all issues reported by these commands before considering the task complete.
 

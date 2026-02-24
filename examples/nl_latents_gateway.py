@@ -27,19 +27,22 @@ class NlLatentsGateway:
         client = LlmClient(repository=repository)
         return cls(repository=repository, client=client)
 
-    def query(self, input: NlLatentsQueryInput) -> str:
+    def query(self, query_input: NlLatentsQueryInput) -> str:
         request = LlmRequest(
-            provider=input.provider,
-            model=input.model,
-            messages=[Message(role="user", content=input.prompt)],
+            provider=query_input.provider,
+            model=query_input.model,
+            messages=[Message(role="user", content=query_input.prompt)],
             metadata={
                 "consumer": "nl_latents",
-                "task_id": input.task_id,
-                "pool_name": input.pool_name,
+                "task_id": query_input.task_id,
+                "latent_pool": query_input.pool_name,
             },
         )
-        response = self._client.query(request, run_id=input.run_id)
+        response = self._client.query(request, run_id=query_input.run_id)
         return response.text
 
     def close(self) -> None:
+        close_client = getattr(self._client, "close", None)
+        if callable(close_client):
+            close_client()
         self._repository.close()

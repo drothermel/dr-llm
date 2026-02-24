@@ -23,8 +23,10 @@ class FakeRepository:
         self,
         *,
         fail_operation: str | None = None,
+        fail_upsert_run_parameters: bool = False,
     ) -> None:
         self._fail_operation = fail_operation
+        self._fail_upsert_run_parameters = fail_upsert_run_parameters
         self._calls: list[str] = []
         self._runs: dict[str, RunStatus] = {}
         self._artifacts: list[dict[str, Any]] = []
@@ -56,6 +58,8 @@ class FakeRepository:
         return rid
 
     def upsert_run_parameters(self, *, run_id: str, parameters: dict[str, Any]) -> int:
+        if self._fail_upsert_run_parameters:
+            raise RuntimeError("upsert failure")
         self._parameters[run_id] = parameters
         return len(parameters)
 
@@ -213,6 +217,26 @@ def test_benchmark_phase_and_operation_distribution(tmp_path: Path) -> None:
     assert artifact_path.exists()
 
 
+def test_benchmark_allows_max_in_flight_lower_than_workers(tmp_path: Path) -> None:
+    repository = FakeRepository()
+    artifact_path = tmp_path / "throttled-report.json"
+
+    report = run_repository_benchmark(
+        repository=repository,
+        config=BenchmarkConfig(
+            workers=8,
+            total_operations=120,
+            warmup_operations=12,
+            max_in_flight=2,
+            artifact_path=str(artifact_path),
+        ),
+    )
+
+    assert report.status == RunStatus.success
+    assert report.measured.total_operations == 120
+    assert artifact_path.exists()
+
+
 def test_benchmark_failure_ratio_marks_run_failed(tmp_path: Path) -> None:
     repository = FakeRepository(fail_operation="read_calls")
     artifact_path = tmp_path / "bench-failed.json"
@@ -234,6 +258,27 @@ def test_benchmark_failure_ratio_marks_run_failed(tmp_path: Path) -> None:
     assert report.status == RunStatus.failed
     assert report.measured.failed_operations == 50
     assert len(report.errors_sampled) == 5
+    assert artifact_path.exists()
+
+
+def test_benchmark_fatal_error_uses_unknown_operation_sentinel(tmp_path: Path) -> None:
+    repository = FakeRepository(fail_upsert_run_parameters=True)
+    artifact_path = tmp_path / "fatal-report.json"
+
+    report = run_repository_benchmark(
+        repository=repository,
+        config=BenchmarkConfig(
+            workers=2,
+            total_operations=10,
+            warmup_operations=0,
+            max_in_flight=1,
+            artifact_path=str(artifact_path),
+        ),
+    )
+
+    assert report.status == RunStatus.failed
+    assert report.errors_sampled[0].phase == "unknown_phase"
+    assert report.errors_sampled[0].operation == "unknown_operation"
     assert artifact_path.exists()
 
 

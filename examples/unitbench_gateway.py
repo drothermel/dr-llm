@@ -27,19 +27,22 @@ class UnitBenchGateway:
         client = LlmClient(repository=repository)
         return cls(repository=repository, client=client)
 
-    def run_case(self, input: UnitBenchCaseInput) -> str:
+    def run_case(self, case_input: UnitBenchCaseInput) -> str:
         request = LlmRequest(
-            provider=input.provider,
-            model=input.model,
-            messages=[Message(role="user", content=input.prompt)],
+            provider=case_input.provider,
+            model=case_input.model,
+            messages=[Message(role="user", content=case_input.prompt)],
             metadata={
                 "consumer": "unitbench",
-                "suite": input.suite,
-                "case_id": input.case_id,
+                "suite": case_input.suite,
+                "case_id": case_input.case_id,
             },
         )
-        response = self._client.query(request, run_id=input.run_id)
+        response = self._client.query(request, run_id=case_input.run_id)
         return response.text
 
     def close(self) -> None:
+        close_client = getattr(self._client, "close", None)
+        if callable(close_client):
+            close_client()
         self._repository.close()

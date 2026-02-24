@@ -79,13 +79,26 @@ def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:
     assert response.cost.completion_cost_usd == 0.002
 
 
-def test_openai_compat_close_closes_underlying_client() -> None:
+def test_openai_compat_close_does_not_close_injected_client() -> None:
     client = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
     adapter = OpenAICompatAdapter(
         name="openrouter",
         config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
         client=client,
     )
+    assert not client.is_closed
+    adapter.close()
+    assert not client.is_closed
+    client.close()
+
+
+def test_openai_compat_close_closes_adapter_owned_client() -> None:
+    adapter = OpenAICompatAdapter(
+        name="openrouter",
+        config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
+    )
+    client = adapter._client
+    assert client is not None
     assert not client.is_closed
     adapter.close()
     assert client.is_closed
@@ -100,10 +113,12 @@ def test_openai_compat_set_client_closes_previous_client() -> None:
         client=first,
     )
     adapter.set_client(second)
-    assert first.is_closed
+    assert not first.is_closed
     assert not second.is_closed
     adapter.close()
-    assert second.is_closed
+    assert not second.is_closed
+    first.close()
+    second.close()
 
 
 def test_openai_compat_request_payload_serializes_tools() -> None:

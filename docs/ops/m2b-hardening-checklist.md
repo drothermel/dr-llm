@@ -3,6 +3,8 @@
 ## 1) Benchmark Baseline
 Run on staging-like infrastructure before release:
 
+> **Note:** `--workers` and `--max-pool-size` in the sample below can exceed Postgres `max_connections` (default 100). Adjust `--max-pool-size` to fit your DB budget, or reduce `--workers` to avoid exhausting connections.
+
 ```bash
 llm-pool run benchmark \
   --workers 128 \
@@ -12,7 +14,7 @@ llm-pool run benchmark \
   --operation-mix-json '{"record_call":2,"session_roundtrip":1,"read_calls":1}' \
   --artifact-path .llm_pool/benchmarks/staging-baseline.json \
   --min-pool-size 8 \
-  --max-pool-size 128
+  --max-pool-size 128  # adjust to fit Postgres max_connections (default 100); reduce --workers if needed
 ```
 
 Record and compare:

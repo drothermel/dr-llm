@@ -23,8 +23,12 @@ from llm_pool.types import (
     ToolPolicy,
 )
 
-OperationName = Literal["record_call", "session_roundtrip", "read_calls"]
-PhaseName = Literal["warmup", "measured"]
+KnownOperationName = Literal["record_call", "session_roundtrip", "read_calls"]
+OperationName = Literal[
+    "record_call", "session_roundtrip", "read_calls", "unknown_operation"
+]
+KnownPhaseName = Literal["warmup", "measured"]
+PhaseName = Literal["warmup", "measured", "unknown_phase"]
 
 _LATENCY_BINS_MS = (
     1.0,
@@ -72,12 +76,6 @@ class BenchmarkConfig(BaseModel):
     max_error_samples: int = Field(default=100, ge=1, le=1000)
     max_failure_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
 
-    @model_validator(mode="after")
-    def _validate_limits(self) -> BenchmarkConfig:
-        if self.max_in_flight < self.workers:
-            raise ValueError("max_in_flight must be >= workers")
-        return self
-
     @property
     def resolved_warmup_operations(self) -> int:
         if self.warmup_operations is not None:
@@ -96,7 +94,7 @@ class OperationStats(BaseModel):
 class PhaseStats(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    phase: PhaseName
+    phase: KnownPhaseName
     total_operations: int
     successful_operations: int
     failed_operations: int
@@ -104,7 +102,7 @@ class PhaseStats(BaseModel):
     operations_per_second: float
     p50_latency_ms: float
     p95_latency_ms: float
-    by_operation: dict[OperationName, OperationStats]
+    by_operation: dict[KnownOperationName, OperationStats]
 
 
 class BenchmarkErrorSample(BaseModel):
@@ -227,11 +225,15 @@ class RepositoryBenchmarkTarget(Protocol):
 
 
 class _LatencyHistogram:
+    """Histogram of latencies in ms. Percentiles return bin upper-bounds (approximate)."""
+
     def __init__(self) -> None:
         self._counts = [0] * (len(_LATENCY_BINS_MS) + 1)
         self._total = 0
+        self._max_ms: float = float("-inf")
 
     def observe(self, latency_ms: float) -> None:
+        self._max_ms = max(self._max_ms, latency_ms)
         for idx, upper_bound in enumerate(_LATENCY_BINS_MS):
             if latency_ms <= upper_bound:
                 self._counts[idx] += 1
@@ -243,8 +245,10 @@ class _LatencyHistogram:
     def merge(self, other: _LatencyHistogram) -> None:
         self._counts = [a + b for a, b in zip(self._counts, other._counts, strict=True)]
         self._total += other._total
+        self._max_ms = max(self._max_ms, other._max_ms)
 
     def percentile(self, pct: float) -> float:
+        # Percentiles return bin upper-bounds (approximate); overflow bucket uses actual max.
         if self._total == 0:
             return 0.0
         target = max(1, math.ceil((pct / 100.0) * self._total))
@@ -254,8 +258,8 @@ class _LatencyHistogram:
             if running >= target:
                 if idx < len(_LATENCY_BINS_MS):
                     return float(_LATENCY_BINS_MS[idx])
-                return float(_LATENCY_BINS_MS[-1])
-        return float(_LATENCY_BINS_MS[-1])
+                return float(max(self._max_ms, _LATENCY_BINS_MS[-1]))
+        return float(max(self._max_ms, _LATENCY_BINS_MS[-1]))
 
 
 class _MutablePhaseStats:
@@ -263,7 +267,7 @@ class _MutablePhaseStats:
         self._max_error_samples = max_error_samples
         self.total_operations = 0
         self.failed_operations = 0
-        self.by_operation: dict[OperationName, list[int]] = {
+        self.by_operation: dict[KnownOperationName, list[int]] = {
             "record_call": [0, 0],
             "session_roundtrip": [0, 0],
             "read_calls": [0, 0],
@@ -274,8 +278,8 @@ class _MutablePhaseStats:
     def record(
         self,
         *,
-        phase: PhaseName,
-        operation: OperationName,
+        phase: KnownPhaseName,
+        operation: KnownOperationName,
         elapsed_ms: float,
         failed: bool,
         error_text: str | None,
@@ -307,14 +311,14 @@ class _MutablePhaseStats:
         if remaining > 0:
             self.errors_sampled.extend(other.errors_sampled[:remaining])
 
-    def finalize(self, *, phase: PhaseName, elapsed_ms: int) -> PhaseStats:
+    def finalize(self, *, phase: KnownPhaseName, elapsed_ms: int) -> PhaseStats:
         successful_operations = self.total_operations - self.failed_operations
         ops_per_second = (
             self.total_operations / max(elapsed_ms / 1000.0, 0.001)
             if self.total_operations > 0
             else 0.0
         )
-        by_operation: dict[OperationName, OperationStats] = {
+        by_operation: dict[KnownOperationName, OperationStats] = {
             operation: OperationStats(executed=counts[0], failed=counts[1])
             for operation, counts in self.by_operation.items()
         }
@@ -333,7 +337,7 @@ class _MutablePhaseStats:
 
 class _OperationPlanner:
     def __init__(self, mix: OperationMix) -> None:
-        self._thresholds: list[tuple[int, OperationName]] = []
+        self._thresholds: list[tuple[int, KnownOperationName]] = []
         running_total = 0
         for operation, weight in (
             ("record_call", mix.record_call),
@@ -346,7 +350,7 @@ class _OperationPlanner:
             self._thresholds.append((running_total, operation))
         self._period = running_total
 
-    def operation_for(self, index: int) -> OperationName:
+    def operation_for(self, index: int) -> KnownOperationName:
         slot = index % self._period
         for threshold, operation in self._thresholds:
             if slot < threshold:
@@ -371,6 +375,7 @@ def run_repository_benchmark(
     measured_phase = _empty_phase("measured")
     errors_sampled: list[BenchmarkErrorSample] = []
     status = RunStatus.failed
+    current_phase: PhaseName = "unknown_phase"
 
     artifact_path = _resolve_artifact_path(
         configured_path=config.artifact_path,
@@ -392,6 +397,7 @@ def run_repository_benchmark(
             },
         )
 
+        current_phase = "warmup"
         warmup_phase, warmup_errors = _run_phase(
             repository=repository,
             run_id=run_id,
@@ -403,6 +409,7 @@ def run_repository_benchmark(
             max_in_flight=config.max_in_flight,
             max_error_samples=config.max_error_samples,
         )
+        current_phase = "measured"
         measured_phase, measured_errors = _run_phase(
             repository=repository,
             run_id=run_id,
@@ -427,10 +434,12 @@ def run_repository_benchmark(
             else RunStatus.success
         )
     except Exception as exc:  # noqa: BLE001
+        # The fatal exception may occur outside an operation context, so use a
+        # sentinel operation value.
         errors_sampled = [
             BenchmarkErrorSample(
-                phase="measured",
-                operation="read_calls",
+                phase=current_phase,
+                operation="unknown_operation",
                 message=f"fatal benchmark harness error: {type(exc).__name__}: {exc}",
             )
         ]
@@ -490,7 +499,7 @@ def _run_phase(
     repository: RepositoryBenchmarkTarget,
     run_id: str,
     planner: _OperationPlanner,
-    phase: PhaseName,
+    phase: KnownPhaseName,
     total_operations: int,
     index_offset: int,
     workers: int,
@@ -517,11 +526,11 @@ def _run_phase(
                 op_index = next_index
                 next_index += 1
             operation = planner.operation_for(index_offset + op_index)
-            started = time.perf_counter()
             failed = False
             error_text: str | None = None
             try:
                 with semaphore:
+                    started = time.perf_counter()
                     _execute_operation(
                         repository=repository,
                         run_id=run_id,
@@ -566,7 +575,7 @@ def _execute_operation(
     *,
     repository: RepositoryBenchmarkTarget,
     run_id: str,
-    operation: OperationName,
+    operation: KnownOperationName,
     worker_id: int,
     op_index: int,
 ) -> None:
@@ -676,8 +685,8 @@ def _write_report(*, report: BenchmarkReport, artifact_path: Path) -> None:
     )
 
 
-def _empty_phase(phase: PhaseName) -> PhaseStats:
-    by_operation: dict[OperationName, OperationStats] = {
+def _empty_phase(phase: KnownPhaseName) -> PhaseStats:
+    by_operation: dict[KnownOperationName, OperationStats] = {
         "record_call": OperationStats(executed=0, failed=0),
         "session_roundtrip": OperationStats(executed=0, failed=0),
         "read_calls": OperationStats(executed=0, failed=0),

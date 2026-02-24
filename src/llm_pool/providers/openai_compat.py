@@ -105,6 +105,12 @@ class OpenAICompatAdapter(ProviderAdapter):
         config: OpenAICompatConfig,
         client: httpx.Client | None = None,
     ) -> None:
+        """Create adapter with optional injected client.
+
+        If no client is injected, the adapter owns the internally created client and
+        closes it on replacement/close. Injected clients are treated as externally
+        owned and are not closed by this adapter.
+        """
         self.name = name
         self._config = config
         self._client: httpx.Client | None = None
@@ -119,7 +125,11 @@ class OpenAICompatAdapter(ProviderAdapter):
         return self._config
 
     def _set_client(self, client: httpx.Client, *, owns_client: bool) -> None:
-        if self._client is not None and self._client is not client:
+        if (
+            self._client is not None
+            and self._client is not client
+            and self._owns_client
+        ):
             self._client.close()
         self._client = client
         self._owns_client = owns_client
@@ -128,7 +138,7 @@ class OpenAICompatAdapter(ProviderAdapter):
         self._set_client(client, owns_client=False)
 
     def close(self) -> None:
-        if self._client is not None:
+        if self._client is not None and self._owns_client:
             self._client.close()
         self._client = None
         self._owns_client = False

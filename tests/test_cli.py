@@ -1,9 +1,17 @@
 import json
+from datetime import datetime, timezone
 
 from typer.testing import CliRunner
 
 import llm_pool.cli as cli_module
-from llm_pool.benchmark import BenchmarkConfig, OperationMix
+from llm_pool.benchmark import (
+    BenchmarkConfig,
+    BenchmarkReport,
+    OperationMix,
+    OperationStats,
+    OperationName,
+    PhaseStats,
+)
 from llm_pool.cli import app
 from llm_pool.types import RunStatus
 
@@ -31,7 +39,9 @@ class _CliFakeRepository:
     def start_run(self, **_: object) -> str:
         return "run_cli"
 
-    def upsert_run_parameters(self, *, run_id: str, parameters: dict[str, object]) -> int:
+    def upsert_run_parameters(
+        self, *, run_id: str, parameters: dict[str, object]
+    ) -> int:
         _ = run_id, parameters
         return 1
 
@@ -80,23 +90,56 @@ def test_run_benchmark_outputs_summary(monkeypatch) -> None:
         _ = dsn, min_pool_size, max_pool_size
         return fake_repo
 
-    def fake_run_benchmark(*, repository: object, config: BenchmarkConfig) -> object:
+    def fake_run_benchmark(
+        *, repository: object, config: BenchmarkConfig
+    ) -> BenchmarkReport:
         _ = repository
         captured["config"] = config
 
-        class _Measured:
-            operations_per_second = 123.0
-            p50_latency_ms = 10.0
-            p95_latency_ms = 50.0
-            failed_operations = 0
-
-        class _Report:
-            run_id = "run_cli"
-            status = RunStatus.success
-            measured = _Measured()
-            artifact_path = "/tmp/report.json"
-
-        return _Report()
+        by_op: dict[OperationName, OperationStats] = {
+            "record_call": OperationStats(executed=1350, failed=0),
+            "session_roundtrip": OperationStats(executed=675, failed=0),
+            "read_calls": OperationStats(executed=675, failed=0),
+        }
+        measured = PhaseStats(
+            phase="measured",
+            total_operations=2700,
+            successful_operations=2700,
+            failed_operations=0,
+            elapsed_ms=21951,
+            operations_per_second=123.0,
+            p50_latency_ms=10.0,
+            p95_latency_ms=50.0,
+            by_operation=by_op,
+        )
+        warmup_by_op: dict[OperationName, OperationStats] = {
+            "record_call": OperationStats(executed=100, failed=0),
+            "session_roundtrip": OperationStats(executed=50, failed=0),
+            "read_calls": OperationStats(executed=50, failed=0),
+        }
+        warmup = PhaseStats(
+            phase="warmup",
+            total_operations=300,
+            successful_operations=300,
+            failed_operations=0,
+            elapsed_ms=1000,
+            operations_per_second=0.0,
+            p50_latency_ms=0.0,
+            p95_latency_ms=0.0,
+            by_operation=warmup_by_op,
+        )
+        now = datetime.now(timezone.utc)
+        return BenchmarkReport(
+            run_id="run_cli",
+            status=RunStatus.success,
+            started_at=now,
+            finished_at=now,
+            config=config,
+            warmup=warmup,
+            measured=measured,
+            errors_sampled=[],
+            artifact_path="/tmp/report.json",
+        )
 
     monkeypatch.setattr(cli_module, "_repo", fake_repo_builder)
     monkeypatch.setattr(cli_module, "run_repository_benchmark", fake_run_benchmark)
