@@ -132,6 +132,8 @@ class SessionsStore:
                     )
                 conn.commit()
                 return int(row[0])
+            except SessionConflictError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 conn.rollback()
                 raise PersistenceError(
