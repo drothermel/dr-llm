@@ -97,6 +97,8 @@ def test_openai_compat_close_closes_adapter_owned_client() -> None:
         name="openrouter",
         config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
     )
+    # Intentional private access: there is no public accessor for the internally
+    # created client, and this test must verify adapter-owned client shutdown.
     client = adapter._client
     assert client is not None
     assert not client.is_closed
@@ -104,7 +106,7 @@ def test_openai_compat_close_closes_adapter_owned_client() -> None:
     assert client.is_closed
 
 
-def test_openai_compat_set_client_closes_previous_client() -> None:
+def test_openai_compat_set_client_does_not_close_injected_clients() -> None:
     first = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
     second = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
     adapter = OpenAICompatAdapter(

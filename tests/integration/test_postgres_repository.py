@@ -7,6 +7,7 @@ from collections.abc import Generator
 import pytest
 import psycopg
 from psycopg import sql
+from psycopg.rows import dict_row
 
 from llm_pool.benchmark import BenchmarkConfig, run_repository_benchmark
 from llm_pool.errors import SessionConflictError
@@ -165,7 +166,7 @@ def test_benchmark_persists_artifact_record(
 
     assert report.run_id
     assert artifact_path.exists()
-    with psycopg.connect(repository.config.dsn) as conn:
+    with psycopg.connect(repository.config.dsn, row_factory=dict_row) as conn:
         row = conn.execute(
             """
             SELECT artifact_type, artifact_path
@@ -177,5 +178,5 @@ def test_benchmark_persists_artifact_record(
             [report.run_id],
         ).fetchone()
     assert row is not None
-    assert row[0] == "benchmark_report"
-    assert str(row[1]) == str(artifact_path)
+    assert row["artifact_type"] == "benchmark_report"
+    assert str(row["artifact_path"]) == str(artifact_path)

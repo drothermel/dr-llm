@@ -43,6 +43,8 @@ class NlLatentsGateway:
 
     def close(self) -> None:
         close_client = getattr(self._client, "close", None)
-        if callable(close_client):
-            close_client()
-        self._repository.close()
+        try:
+            if callable(close_client):
+                close_client()
+        finally:
+            self._repository.close()

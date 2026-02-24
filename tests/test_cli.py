@@ -79,10 +79,11 @@ class _CliFakeRepository:
         return None
 
 
-def test_run_benchmark_outputs_summary(monkeypatch) -> None:
+def test_run_benchmark_outputs_summary(monkeypatch, tmp_path) -> None:
     runner = CliRunner()
     fake_repo = _CliFakeRepository()
     captured: dict[str, BenchmarkConfig] = {}
+    artifact_path = str(tmp_path / "report.json")
 
     def fake_repo_builder(
         dsn: str | None, min_pool_size: int, max_pool_size: int
@@ -138,7 +139,7 @@ def test_run_benchmark_outputs_summary(monkeypatch) -> None:
             warmup=warmup,
             measured=measured,
             errors_sampled=[],
-            artifact_path="/tmp/report.json",
+            artifact_path=artifact_path,
         )
 
     monkeypatch.setattr(cli_module, "_repo", fake_repo_builder)
@@ -160,7 +161,11 @@ def test_run_benchmark_outputs_summary(monkeypatch) -> None:
             "--operation-mix-json",
             '{"record_call":2,"session_roundtrip":1,"read_calls":1}',
             "--artifact-path",
-            "/tmp/report.json",
+            artifact_path,
+            "--max-failure-ratio",
+            "0.25",
+            "--max-error-samples",
+            "17",
         ],
     )
 
@@ -170,11 +175,13 @@ def test_run_benchmark_outputs_summary(monkeypatch) -> None:
     assert payload["status"] == "success"
     assert payload["operations_per_second"] == 123.0
     assert payload["failed_operations"] == 0
-    assert payload["artifact_path"] == "/tmp/report.json"
+    assert payload["artifact_path"] == artifact_path
     config = captured["config"]
     assert config.total_operations == 3000
     assert config.warmup_operations == 300
     assert config.max_in_flight == 12
+    assert config.max_failure_ratio == 0.25
+    assert config.max_error_samples == 17
     assert config.operation_mix == OperationMix(
         record_call=2, session_roundtrip=1, read_calls=1
     )

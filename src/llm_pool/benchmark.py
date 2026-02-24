@@ -17,6 +17,7 @@ from llm_pool.types import (
     LlmResponse,
     Message,
     RunStatus,
+    SessionHandle,
     SessionStatus,
     SessionTurnStatus,
     TokenUsage,
@@ -188,7 +189,7 @@ class RepositoryBenchmarkTarget(Protocol):
         strategy_mode: ToolPolicy = ToolPolicy.native_preferred,
         metadata: dict[str, Any] | None = None,
         session_id: str | None = None,
-    ) -> Any: ...
+    ) -> SessionHandle: ...
 
     def create_session_turn(
         self,
@@ -528,6 +529,7 @@ def _run_phase(
             operation = planner.operation_for(index_offset + op_index)
             failed = False
             error_text: str | None = None
+            started = time.perf_counter()
             try:
                 with semaphore:
                     started = time.perf_counter()

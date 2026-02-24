@@ -432,6 +432,10 @@ def run_benchmark(
     artifact_path: Path | None = typer.Option(
         None, help="Path to write benchmark artifact JSON."
     ),
+    max_failure_ratio: float = typer.Option(
+        0.0, help="Maximum allowed failure ratio (0.0-1.0)."
+    ),
+    max_error_samples: int = typer.Option(100, help="Max error samples to record."),
     dsn: str | None = typer.Option(None, envvar="LLM_POOL_DATABASE_URL"),
     min_pool_size: int = typer.Option(4),
     max_pool_size: int = typer.Option(64),
@@ -454,6 +458,8 @@ def run_benchmark(
             run_type=run_type,
             operation_mix=operation_mix,
             artifact_path=str(artifact_path) if artifact_path is not None else None,
+            max_failure_ratio=max_failure_ratio,
+            max_error_samples=max_error_samples,
         )
     except ValidationError as exc:
         raise typer.BadParameter(str(exc)) from exc
