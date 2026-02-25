@@ -1,4 +1,4 @@
-from llm_pool.session.models import parse_brokered_tool_calls
+from dr_llm.session.models import parse_brokered_tool_calls
 
 
 def test_parse_brokered_tool_calls_from_text_json() -> None:

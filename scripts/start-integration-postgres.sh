@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONTAINER_NAME="${CONTAINER_NAME:-llm-pool-pg-test}"
+CONTAINER_NAME="${CONTAINER_NAME:-dr-llm-pg-test}"
 PORT="${PORT:-5433}"
-DB_NAME="${DB_NAME:-llm_pool_test}"
+DB_NAME="${DB_NAME:-dr_llm_test}"
 DB_USER="${DB_USER:-postgres}"
 DB_PASSWORD="${DB_PASSWORD:-postgres}"
 IMAGE="${IMAGE:-postgres:16}"
@@ -42,4 +42,4 @@ fi
 
 echo "Started container '${CONTAINER_NAME}' on localhost:${PORT}"
 echo "Export this for integration tests:"
-echo "export LLM_POOL_TEST_DATABASE_URL='postgresql://${DB_USER}:<password>@localhost:${PORT}/${DB_NAME}'"
+echo "export DR_LLM_TEST_DATABASE_URL='postgresql://${DB_USER}:<password>@localhost:${PORT}/${DB_NAME}'"

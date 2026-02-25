@@ -1,6 +1,6 @@
-# llm-pool
+# dr-llm
 
-`llm-pool` is a shared primitive for:
+`dr-llm` is a shared primitive for:
 - provider-agnostic LLM calls (API and headless)
 - canonical PostgreSQL recording/query storage
 - event-sourced multistep sessions with tool-calling
@@ -26,20 +26,20 @@ It is intentionally domain-neutral so repos like `nl_latents` and `unitbench` ca
 ## Install
 
 ```bash
-uv add llm-pool
+uv add dr-llm
 ```
 
 Quick verification:
 
 ```bash
-uv run python -c "import llm_pool"
+uv run python -c "import dr_llm"
 ```
 
 For maintainers, see the release runbook: `docs/releasing.md`.
 
 ## Configuration
 
-- Required for DB-backed workflows: `LLM_POOL_DATABASE_URL`
+- Required for DB-backed workflows: `DR_LLM_DATABASE_URL`
 - Optional provider keys:
   - `OPENAI_API_KEY`
   - `OPENROUTER_API_KEY`
@@ -61,50 +61,50 @@ For maintainers, see the release runbook: `docs/releasing.md`.
 ## CLI
 
 ```bash
-llm-pool providers
+dr-llm providers
 
-llm-pool models sync
-llm-pool models list --supports-reasoning --json
-llm-pool models show --provider openrouter --model openai/o3-mini
+dr-llm models sync
+dr-llm models list --supports-reasoning --json
+dr-llm models show --provider openrouter --model openai/o3-mini
 
-llm-pool query \
+dr-llm query \
   --provider openai \
   --model gpt-4.1 \
   --reasoning-json '{"effort":"high"}' \
   --message "hello"
 
-llm-pool run start --run-type benchmark
-llm-pool run finish --run-id <run_id> --status success
-llm-pool run benchmark \
+dr-llm run start --run-type benchmark
+dr-llm run finish --run-id <run_id> --status success
+dr-llm run benchmark \
   --workers 128 \
   --total-operations 200000 \
   --warmup-operations 10000 \
   --max-in-flight 128 \
   --operation-mix-json '{"record_call":2,"session_roundtrip":1,"read_calls":1}' \
-  --artifact-path .llm_pool/benchmarks/release-baseline.json
+  --artifact-path .dr_llm/benchmarks/release-baseline.json
 
-llm-pool session start \
+dr-llm session start \
   --provider openai \
   --model gpt-4.1 \
   --message "You are helpful" \
   --message "Solve this task"
 
-llm-pool session step --session-id <session_id> --message "next"
-llm-pool session resume --session-id <session_id>
-llm-pool session cancel --session-id <session_id> --reason "stopped"
+dr-llm session step --session-id <session_id> --message "next"
+dr-llm session resume --session-id <session_id>
+dr-llm session cancel --session-id <session_id> --reason "stopped"
 
 # brokered tool calls are queued by default; use workers
-llm-pool tool worker run --tool-loader mypkg.tools:register_tools
+dr-llm tool worker run --tool-loader mypkg.tools:register_tools
 # optional synchronous override for a single step:
-llm-pool session step --session-id <session_id> --inline-tool-execution
+dr-llm session step --session-id <session_id> --inline-tool-execution
 
-llm-pool replay session --session-id <session_id>
+dr-llm replay session --session-id <session_id>
 ```
 
 Benchmark command output:
 ```json
 {
-  "artifact_path": ".llm_pool/benchmarks/release-baseline.json",
+  "artifact_path": ".dr_llm/benchmarks/release-baseline.json",
   "failed_operations": 0,
   "operations_per_second": 4231.8,
   "p50_latency_ms": 20.0,
@@ -121,17 +121,17 @@ Reasoning + cost notes:
 - These are persisted in `llm_call_responses` alongside standard token usage.
 
 Generation transcript logging (default on):
-- `LLM_POOL_GENERATION_LOG_ENABLED=true`
-- `LLM_POOL_GENERATION_LOG_DIR=.llm_pool/generation_logs`
-- `LLM_POOL_GENERATION_LOG_ROTATE_BYTES=104857600`
-- `LLM_POOL_GENERATION_LOG_BACKUPS=10`
-- `LLM_POOL_GENERATION_LOG_REDACT_SECRETS=true`
-- `LLM_POOL_GENERATION_LOG_MAX_EVENT_BYTES=10485760`
+- `DR_LLM_GENERATION_LOG_ENABLED=true`
+- `DR_LLM_GENERATION_LOG_DIR=.dr_llm/generation_logs`
+- `DR_LLM_GENERATION_LOG_ROTATE_BYTES=104857600`
+- `DR_LLM_GENERATION_LOG_BACKUPS=10`
+- `DR_LLM_GENERATION_LOG_REDACT_SECRETS=true`
+- `DR_LLM_GENERATION_LOG_MAX_EVENT_BYTES=10485760`
 
 ## Python Example
 
 ```python
-from llm_pool import LlmClient, LlmRequest, Message, PostgresRepository, ToolRegistry
+from dr_llm import LlmClient, LlmRequest, Message, PostgresRepository, ToolRegistry
 
 repo = PostgresRepository()
 client = LlmClient(repository=repo)
@@ -159,7 +159,7 @@ uv run pytest tests/ -v
 ```
 
 Postgres integration tests are env-gated:
-- set `LLM_POOL_TEST_DATABASE_URL` (or `LLM_POOL_DATABASE_URL`)
+- set `DR_LLM_TEST_DATABASE_URL` (or `DR_LLM_DATABASE_URL`)
 - run `uv run pytest tests/ -v -m integration`
 
 Local integration recommendation (test-only DSN):
@@ -167,8 +167,8 @@ Local integration recommendation (test-only DSN):
 1. Start a dedicated Postgres test container on `5433`:
 ```bash
 docker run -d \
-  --name llm-pool-pg-test \
-  -e POSTGRES_DB=llm_pool_test \
+  --name dr-llm-pg-test \
+  -e POSTGRES_DB=dr_llm_test \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -p 5433:5432 \
@@ -176,7 +176,7 @@ docker run -d \
 ```
 2. Set a test-only URL (avoid using your app/runtime DB URL):
 ```bash
-export LLM_POOL_TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5433/llm_pool_test'
+export DR_LLM_TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5433/dr_llm_test'
 ```
 3. Run the helper:
 ```bash
@@ -185,7 +185,7 @@ export LLM_POOL_TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5433
 
 Preflight check (recommended before running integration tests):
 ```bash
-psql "$LLM_POOL_TEST_DATABASE_URL" -c "select current_user, current_database();"
+psql "$DR_LLM_TEST_DATABASE_URL" -c "select current_user, current_database();"
 ```
 
 If integration tests are skipped unexpectedly, include skip reasons:

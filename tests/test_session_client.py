@@ -5,11 +5,11 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
-from llm_pool.errors import SessionConflictError
-from llm_pool.providers.base import ProviderCapabilities
-from llm_pool.session.client import SessionClient
-from llm_pool.tools.registry import ToolRegistry
-from llm_pool.types import (
+from dr_llm.errors import SessionConflictError
+from dr_llm.providers.base import ProviderCapabilities
+from dr_llm.session.client import SessionClient
+from dr_llm.tools.registry import ToolRegistry
+from dr_llm.types import (
     CallMode,
     LlmResponse,
     Message,

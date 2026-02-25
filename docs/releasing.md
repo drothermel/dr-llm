@@ -1,10 +1,10 @@
-# Releasing `llm-pool` to PyPI
+# Releasing `dr-llm` to PyPI
 
-This runbook documents the manual local release process for publishing `llm-pool` to public PyPI.
+This runbook documents the manual local release process for publishing `dr-llm` to public PyPI.
 
 ## Prerequisites
 
-- You have maintainer access to the `llm-pool` project on PyPI.
+- You have maintainer access to the `dr-llm` project on PyPI.
 - `UV_PUBLISH_TOKEN` is set with a valid PyPI API token.
 - You are on the intended release commit.
 
@@ -35,11 +35,11 @@ uvx twine check dist/*
 5. Preflight package name and version against PyPI:
 
 ```bash
-curl -s -o /tmp/pypi_llm_pool.json -w '%{http_code}\n' https://pypi.org/pypi/llm-pool/json
+curl -s -o /tmp/pypi_dr_llm.json -w '%{http_code}\n' https://pypi.org/pypi/dr-llm/json
 ```
 
 - `404` means the distribution name is currently available.
-- `200` means the name already exists. Inspect `/tmp/pypi_llm_pool.json` for current versions.
+- `200` means the name already exists. Inspect `/tmp/pypi_dr_llm.json` for current versions.
 
 6. Publish to PyPI:
 
@@ -50,19 +50,19 @@ uv publish --token "$UV_PUBLISH_TOKEN"
 7. Post-publish smoke test from a clean temp project:
 
 ```bash
-mkdir -p /tmp/llm-pool-smoke && cd /tmp/llm-pool-smoke
+mkdir -p /tmp/dr-llm-smoke && cd /tmp/dr-llm-smoke
 uv init
-uv add llm-pool==<version>
-uv run python -c "import llm_pool; print(llm_pool.__all__[:3])"
-uv run llm-pool --help
+uv add dr-llm==<version>
+uv run python -c "import dr_llm; print(dr_llm.__all__[:3])"
+uv run dr-llm --help
 ```
 
 ## Name Collision Contingency
 
-If the `llm-pool` distribution name is taken at publish time:
+If the `dr-llm` distribution name is taken at publish time:
 
-1. Update `[project].name` in `pyproject.toml` to `dr-llm-pool`.
-2. Update install docs and examples that reference `llm-pool` as a distribution name.
+1. Update `[project].name` in `pyproject.toml` to another available name (for example, `dr-llm-core`).
+2. Update install docs and examples that reference `dr-llm` as a distribution name.
 3. Rebuild and re-validate:
 
 ```bash
@@ -76,4 +76,4 @@ uvx twine check dist/*
 uv publish --token "$UV_PUBLISH_TOKEN"
 ```
 
-Note: the Python import path remains `llm_pool`.
+Note: the Python import path remains `dr_llm`.

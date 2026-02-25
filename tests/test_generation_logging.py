@@ -4,9 +4,9 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from llm_pool.logging.config import GenerationLogConfig
-from llm_pool.logging.events import GenerationLogEvent
-from llm_pool.logging.sinks import GenerationLogSink
+from dr_llm.logging.config import GenerationLogConfig
+from dr_llm.logging.events import GenerationLogEvent
+from dr_llm.logging.sinks import GenerationLogSink
 
 
 def test_generation_log_sink_writes_redacted_jsonl(tmp_path: Path) -> None:

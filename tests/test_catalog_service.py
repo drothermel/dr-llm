@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from llm_pool.catalog.service import ModelCatalogService, merge_overlay_entries
-from llm_pool.providers.base import ProviderAdapter
-from llm_pool.providers.registry import ProviderRegistry
-from llm_pool.types import (
+from dr_llm.catalog.service import ModelCatalogService, merge_overlay_entries
+from dr_llm.providers.base import ProviderAdapter
+from dr_llm.providers.registry import ProviderRegistry
+from dr_llm.types import (
     CallMode,
     LlmRequest,
     LlmResponse,
@@ -119,13 +119,13 @@ def test_catalog_service_sync_writes_snapshots(monkeypatch) -> None:  # noqa: AN
             {"data": [{"id": "dummy-model"}]},
         )
 
-    monkeypatch.setattr("llm_pool.catalog.service.fetch_models_for_adapter", fake_fetch)
+    monkeypatch.setattr("dr_llm.catalog.service.fetch_models_for_adapter", fake_fetch)
     monkeypatch.setattr(
-        "llm_pool.catalog.service.fetch_out_of_registry_provider_models",
+        "dr_llm.catalog.service.fetch_out_of_registry_provider_models",
         lambda provider: ([], {"data": []}),
     )
     monkeypatch.setattr(
-        "llm_pool.catalog.service.ModelCatalogService._load_overrides",
+        "dr_llm.catalog.service.ModelCatalogService._load_overrides",
         lambda self: [],
     )
 

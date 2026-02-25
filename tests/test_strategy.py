@@ -1,6 +1,6 @@
-from llm_pool.providers.base import ProviderCapabilities
-from llm_pool.session.strategy import resolve_tool_strategy
-from llm_pool.types import ToolPolicy
+from dr_llm.providers.base import ProviderCapabilities
+from dr_llm.session.strategy import resolve_tool_strategy
+from dr_llm.types import ToolPolicy
 
 
 def test_strategy_native_preferred_with_native_capability() -> None:

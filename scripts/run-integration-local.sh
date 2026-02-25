@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_TEST_DSN="postgresql://postgres:postgres@localhost:5433/llm_pool_test"
-if [ -n "${LLM_POOL_DATABASE_URL:-}" ] && [ -z "${LLM_POOL_TEST_DATABASE_URL:-}" ]; then
-  echo "Refusing to run integration tests with only LLM_POOL_DATABASE_URL set."
-  echo "Set LLM_POOL_TEST_DATABASE_URL explicitly to a test database DSN."
+DEFAULT_TEST_DSN="postgresql://postgres:postgres@localhost:5433/dr_llm_test"
+if [ -n "${DR_LLM_DATABASE_URL:-}" ] && [ -z "${DR_LLM_TEST_DATABASE_URL:-}" ]; then
+  echo "Refusing to run integration tests with only DR_LLM_DATABASE_URL set."
+  echo "Set DR_LLM_TEST_DATABASE_URL explicitly to a test database DSN."
   exit 1
 fi
 
-TEST_DSN="${LLM_POOL_TEST_DATABASE_URL:-$DEFAULT_TEST_DSN}"
+TEST_DSN="${DR_LLM_TEST_DATABASE_URL:-$DEFAULT_TEST_DSN}"
 
 if ! command -v psql >/dev/null 2>&1; then
   echo "psql is required for preflight checks. Install PostgreSQL client tools and retry."
@@ -32,4 +32,4 @@ for attempt in $(seq 1 "${MAX_RETRIES}"); do
 done
 
 echo "Running integration tests..."
-LLM_POOL_TEST_DATABASE_URL="${TEST_DSN}" uv run pytest tests/ -v -m integration
+DR_LLM_TEST_DATABASE_URL="${TEST_DSN}" uv run pytest tests/ -v -m integration

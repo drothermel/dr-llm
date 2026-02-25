@@ -3,11 +3,11 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from llm_pool.errors import ProviderTransportError
-from llm_pool.providers.anthropic import AnthropicAdapter, AnthropicConfig
-from llm_pool.providers.google import GoogleAdapter, GoogleConfig
-from llm_pool.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
-from llm_pool.types import LlmRequest, Message
+from dr_llm.errors import ProviderTransportError
+from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
+from dr_llm.providers.google import GoogleAdapter, GoogleConfig
+from dr_llm.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
+from dr_llm.types import LlmRequest, Message
 
 
 def _invalid_json_transport() -> httpx.MockTransport:

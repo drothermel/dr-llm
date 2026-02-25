@@ -5,10 +5,10 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel, Field
 
-from llm_pool.client import LlmClient
-from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
-from llm_pool.providers.registry import ProviderRegistry
-from llm_pool.types import LlmRequest, Message
+from dr_llm.client import LlmClient
+from dr_llm.providers.base import ProviderAdapter, ProviderCapabilities
+from dr_llm.providers.registry import ProviderRegistry
+from dr_llm.types import LlmRequest, Message
 
 
 class CapturingRepository(BaseModel):

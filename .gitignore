@@ -191,7 +191,8 @@ cython_debug/
 # Ruff stuff:
 .ruff_cache/
 
-# llm-pool runtime artifacts
+# dr-llm runtime artifacts
+.dr_llm/
 .llm_pool/
 
 # PyPI configuration file

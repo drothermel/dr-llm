@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from llm_pool.providers.base import ProviderAdapter, ProviderCapabilities
-from llm_pool.providers.registry import ProviderRegistry
-from llm_pool.types import CallMode, LlmRequest, LlmResponse, TokenUsage
+from dr_llm.providers.base import ProviderAdapter, ProviderCapabilities
+from dr_llm.providers.registry import ProviderRegistry
+from dr_llm.types import CallMode, LlmRequest, LlmResponse, TokenUsage
 
 
 class _FakeAdapter(ProviderAdapter):
