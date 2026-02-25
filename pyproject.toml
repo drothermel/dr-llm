@@ -3,10 +3,20 @@ name = "llm-pool"
 version = "0.1.0"
 description = "Shared LLM calling and event-sourced storage primitive for benchmark systems."
 readme = "README.md"
+keywords = ["llm", "benchmark", "tool-calling", "postgres", "ai"]
 authors = [
     { name = "Danielle Rothermel", email = "danielle.rothermel@gmail.com" }
 ]
 requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "httpx>=0.28.1",
     "pyyaml>=6.0.2",
@@ -17,12 +27,21 @@ dependencies = [
     "typer>=0.17.4",
 ]
 
+[project.urls]
+Homepage = "https://github.com/drothermel/llm-pool"
+Repository = "https://github.com/drothermel/llm-pool"
+Issues = "https://github.com/drothermel/llm-pool/issues"
+Changelog = "https://github.com/drothermel/llm-pool/releases"
+
 [project.scripts]
 llm-pool = "llm_pool.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm_pool"]
 
 [dependency-groups]
 dev = [
