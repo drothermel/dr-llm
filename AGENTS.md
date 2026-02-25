@@ -5,10 +5,25 @@
 Before completing any coding task in this repository, always run:
 
 1. `uv run ruff format`
-2. `uv run ruff check .`
-3. `uv run ty check`
+2. `uv run ruff check --fix .`
+3. Manually fix any remaining lint issues in the repository.
+4. `uv run ty check`
+5. `uv run pytest tests/ -v`
 
 Fix all issues reported by these commands before considering the task complete.
+
+## CI Parity
+
+CI mirrors the local quality gate by splitting test scope across workflows:
+
+1. Local quality gate runs `pytest tests/ -v`.
+2. `.github/workflows/ci.yml`:
+- `quality-unit`: `ruff format --check`, `ruff check .`, `ty check`, `pytest -m "not integration"` for fast PR feedback.
+- `security`: `uv lock --check`, `uvx pip-audit`.
+3. `.github/workflows/integration.yml`:
+- Postgres-backed `pytest -m integration` on `main`, manual dispatch, and PRs labeled `run-integration`.
+
+Together, CI runs the same overall test categories as local `pytest tests/ -v`, but in separate jobs.
 
 ## Modeling Standard
 

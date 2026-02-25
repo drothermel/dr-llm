@@ -105,6 +105,12 @@ class OpenAICompatAdapter(ProviderAdapter):
         config: OpenAICompatConfig,
         client: httpx.Client | None = None,
     ) -> None:
+        """Create adapter with optional injected client.
+
+        If no client is injected, the adapter owns the internally created client and
+        closes it on replacement/close. Injected clients are treated as externally
+        owned and are not closed by this adapter.
+        """
         self.name = name
         self._config = config
         self._client: httpx.Client | None = None

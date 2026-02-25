@@ -67,6 +67,13 @@ llm-pool query \
 
 llm-pool run start --run-type benchmark
 llm-pool run finish --run-id <run_id> --status success
+llm-pool run benchmark \
+  --workers 128 \
+  --total-operations 200000 \
+  --warmup-operations 10000 \
+  --max-in-flight 128 \
+  --operation-mix-json '{"record_call":2,"session_roundtrip":1,"read_calls":1}' \
+  --artifact-path .llm_pool/benchmarks/release-baseline.json
 
 llm-pool session start \
   --provider openai \
@@ -84,6 +91,19 @@ llm-pool tool worker run --tool-loader mypkg.tools:register_tools
 llm-pool session step --session-id <session_id> --inline-tool-execution
 
 llm-pool replay session --session-id <session_id>
+```
+
+Benchmark command output:
+```json
+{
+  "artifact_path": ".llm_pool/benchmarks/release-baseline.json",
+  "failed_operations": 0,
+  "operations_per_second": 4231.8,
+  "p50_latency_ms": 20.0,
+  "p95_latency_ms": 200.0,
+  "run_id": "run_abc123",
+  "status": "success"
+}
 ```
 
 Reasoning + cost notes:
@@ -124,10 +144,70 @@ Adapter lifecycle note:
 ## Testing
 
 ```bash
-uv run ruff check src tests
-uv run pytest
+uv run ruff format
+uv run ruff check --fix src/ tests/ scripts/
+uv run ty check src
+uv run pytest tests/ -v
 ```
 
 Postgres integration tests are env-gated:
 - set `LLM_POOL_TEST_DATABASE_URL` (or `LLM_POOL_DATABASE_URL`)
-- run `uv run pytest -m integration`
+- run `uv run pytest tests/ -v -m integration`
+
+Local integration recommendation (test-only DSN):
+
+1. Start a dedicated Postgres test container on `5433`:
+```bash
+docker run -d \
+  --name llm-pool-pg-test \
+  -e POSTGRES_DB=llm_pool_test \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 5433:5432 \
+  postgres:16
+```
+2. Set a test-only URL (avoid using your app/runtime DB URL):
+```bash
+export LLM_POOL_TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5433/llm_pool_test'
+```
+3. Run the helper:
+```bash
+./scripts/run-integration-local.sh
+```
+
+Preflight check (recommended before running integration tests):
+```bash
+psql "$LLM_POOL_TEST_DATABASE_URL" -c "select current_user, current_database();"
+```
+
+If integration tests are skipped unexpectedly, include skip reasons:
+```bash
+uv run pytest tests/ -v -m integration -rs
+```
+
+## CI
+
+GitHub Actions workflows:
+- `ci`: runs on PRs to `main` and pushes to `main`
+  - `quality-unit` job: format check, lint, type-check, non-integration tests
+  - `security` job: `uv lock --check` and `uvx pip-audit`
+- `integration`: runs on pushes to `main`, manual dispatch, and PRs to `main` only when label `run-integration` is present
+  - starts `postgres:16` service and runs `pytest -m integration`
+
+Branch protection recommendation:
+- require `ci / quality-unit`
+- require `ci / security`
+- keep `integration / postgres-integration` non-required for all PRs (opt-in via label, always on `main`)
+
+## Milestone Closeout Artifacts
+
+- Milestone status: `docs/milestones.md`
+- M2b operations checklist: `docs/ops/m2b-hardening-checklist.md`
+- Compatibility contract: `docs/compatibility-contract.md`
+- Migration guide: `docs/migration-guide.md`
+- Integration notes:
+  - `docs/integrations/nl_latents.md`
+  - `docs/integrations/unitbench.md`
+- Example gateways:
+  - `examples/nl_latents_gateway.py`
+  - `examples/unitbench_gateway.py`
