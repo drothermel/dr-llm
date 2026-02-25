@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Generator
+from typing import Any, cast
 
 import pytest
 import psycopg
@@ -166,7 +167,9 @@ def test_benchmark_persists_artifact_record(
 
     assert report.run_id
     assert artifact_path.exists()
-    with psycopg.connect(repository.config.dsn, row_factory=dict_row) as conn:
+    with psycopg.connect(
+        repository.config.dsn, row_factory=cast(Any, dict_row)
+    ) as conn:
         row = conn.execute(
             """
             SELECT artifact_type, artifact_path
@@ -178,5 +181,6 @@ def test_benchmark_persists_artifact_record(
             [report.run_id],
         ).fetchone()
     assert row is not None
-    assert row["artifact_type"] == "benchmark_report"
-    assert str(row["artifact_path"]) == str(artifact_path)
+    row_dict = cast(dict[str, Any], row)
+    assert row_dict["artifact_type"] == "benchmark_report"
+    assert str(row_dict["artifact_path"]) == str(artifact_path)

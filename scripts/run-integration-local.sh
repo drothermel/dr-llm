@@ -9,7 +9,8 @@ if ! command -v psql >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Using integration DB: ${TEST_DSN}"
+SAFE_DSN="$(printf '%s' "${TEST_DSN}" | sed -E 's#(postgres(ql)?://)[^@/]+@#\1****:****@#')"
+echo "Using integration DB: ${SAFE_DSN}"
 echo "Running DB preflight query..."
 MAX_RETRIES="${DB_READY_RETRIES:-15}"
 SLEEP_SECONDS="${DB_READY_SLEEP_SECONDS:-1}"

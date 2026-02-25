@@ -7,9 +7,9 @@ import llm_pool.cli as cli_module
 from llm_pool.benchmark import (
     BenchmarkConfig,
     BenchmarkReport,
+    KnownOperationName,
     OperationMix,
     OperationStats,
-    OperationName,
     PhaseStats,
 )
 from llm_pool.cli import app
@@ -97,7 +97,7 @@ def test_run_benchmark_outputs_summary(monkeypatch, tmp_path) -> None:
         _ = repository
         captured["config"] = config
 
-        by_op: dict[OperationName, OperationStats] = {
+        by_op: dict[KnownOperationName, OperationStats] = {
             "record_call": OperationStats(executed=1350, failed=0),
             "session_roundtrip": OperationStats(executed=675, failed=0),
             "read_calls": OperationStats(executed=675, failed=0),
@@ -113,7 +113,7 @@ def test_run_benchmark_outputs_summary(monkeypatch, tmp_path) -> None:
             p95_latency_ms=50.0,
             by_operation=by_op,
         )
-        warmup_by_op: dict[OperationName, OperationStats] = {
+        warmup_by_op: dict[KnownOperationName, OperationStats] = {
             "record_call": OperationStats(executed=100, failed=0),
             "session_roundtrip": OperationStats(executed=50, failed=0),
             "read_calls": OperationStats(executed=50, failed=0),

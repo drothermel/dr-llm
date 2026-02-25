@@ -514,7 +514,8 @@ def _run_phase(
     next_index = 0
     index_lock = threading.Lock()
     semaphore = threading.Semaphore(max_in_flight)
-    worker_results: list[_MutablePhaseStats | None] = [None] * workers
+    effective_workers = min(workers, total_operations)
+    worker_results: list[_MutablePhaseStats | None] = [None] * effective_workers
     phase_started = time.perf_counter()
 
     def worker_loop(worker_id: int) -> None:
@@ -555,7 +556,7 @@ def _run_phase(
 
     threads = [
         threading.Thread(target=worker_loop, args=(worker_id,))
-        for worker_id in range(workers)
+        for worker_id in range(effective_workers)
     ]
     for thread in threads:
         thread.start()

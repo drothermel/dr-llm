@@ -42,4 +42,4 @@ fi
 
 echo "Started container '${CONTAINER_NAME}' on localhost:${PORT}"
 echo "Export this for integration tests:"
-echo "export LLM_POOL_TEST_DATABASE_URL='postgresql://${DB_USER}:${DB_PASSWORD}@localhost:${PORT}/${DB_NAME}'"
+echo "export LLM_POOL_TEST_DATABASE_URL='postgresql://${DB_USER}:<password>@localhost:${PORT}/${DB_NAME}'"
