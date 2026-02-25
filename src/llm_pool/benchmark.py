@@ -476,6 +476,20 @@ def run_repository_benchmark(
         artifact_error = f"{type(exc).__name__}: {exc}"
         status = RunStatus.failed
 
+    if status != report.status:
+        report = report.model_copy(update={"status": status})
+        # Keep on-disk JSON aligned with terminal status when artifact handling
+        # flips the run from success to failed.
+        try:
+            _write_report(report=report, artifact_path=artifact_path)
+        except Exception as exc:  # noqa: BLE001
+            rewrite_error = f"{type(exc).__name__}: {exc}"
+            artifact_error = (
+                rewrite_error
+                if artifact_error is None
+                else f"{artifact_error}; rewrite_failed={rewrite_error}"
+            )
+
     repository.finish_run(
         run_id=run_id,
         status=status,
@@ -490,8 +504,6 @@ def run_repository_benchmark(
             "artifact_error": artifact_error,
         },
     )
-    if status != report.status:
-        report = report.model_copy(update={"status": status})
     return report
 
 

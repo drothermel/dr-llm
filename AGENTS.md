@@ -14,13 +14,16 @@ Fix all issues reported by these commands before considering the task complete.
 
 ## CI Parity
 
-CI mirrors the local quality gate with split jobs:
+CI mirrors the local quality gate by splitting test scope across workflows:
 
-1. `.github/workflows/ci.yml`:
-- `quality-unit`: `ruff format --check`, `ruff check .`, `ty check`, `pytest -m "not integration"`
-- `security`: `uv lock --check`, `uvx pip-audit`
-2. `.github/workflows/integration.yml`:
+1. Local quality gate runs `pytest tests/ -v`.
+2. `.github/workflows/ci.yml`:
+- `quality-unit`: `ruff format --check`, `ruff check .`, `ty check`, `pytest -m "not integration"` for fast PR feedback.
+- `security`: `uv lock --check`, `uvx pip-audit`.
+3. `.github/workflows/integration.yml`:
 - Postgres-backed `pytest -m integration` on `main`, manual dispatch, and PRs labeled `run-integration`.
+
+Together, CI runs the same overall test categories as local `pytest tests/ -v`, but in separate jobs.
 
 ## Modeling Standard
 

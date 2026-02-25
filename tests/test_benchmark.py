@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -24,9 +25,11 @@ class FakeRepository:
         *,
         fail_operation: str | None = None,
         fail_upsert_run_parameters: bool = False,
+        fail_record_artifact: bool = False,
     ) -> None:
         self._fail_operation = fail_operation
         self._fail_upsert_run_parameters = fail_upsert_run_parameters
+        self._fail_record_artifact = fail_record_artifact
         self._calls: list[str] = []
         self._runs: dict[str, RunStatus] = {}
         self._artifacts: list[dict[str, Any]] = []
@@ -124,6 +127,8 @@ class FakeRepository:
         artifact_path: str,
         metadata: dict[str, Any] | None = None,
     ) -> str:
+        if self._fail_record_artifact:
+            raise RuntimeError("record_artifact failure")
         self._artifacts.append(
             {
                 "run_id": run_id,
@@ -302,6 +307,28 @@ def test_benchmark_records_artifact_and_parameters(tmp_path: Path) -> None:
     assert repository.artifacts[0]["artifact_type"] == "benchmark_report"
     assert repository.artifacts[0]["artifact_path"] == str(artifact_path)
     assert report.run_id in repository.run_parameters
+
+
+def test_benchmark_report_file_reflects_failed_status_after_artifact_error(
+    tmp_path: Path,
+) -> None:
+    repository = FakeRepository(fail_record_artifact=True)
+    artifact_path = tmp_path / "artifact-error-report.json"
+
+    report = run_repository_benchmark(
+        repository=repository,
+        config=BenchmarkConfig(
+            workers=3,
+            total_operations=12,
+            warmup_operations=0,
+            max_in_flight=3,
+            artifact_path=str(artifact_path),
+        ),
+    )
+
+    assert report.status == RunStatus.failed
+    persisted = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert persisted["status"] == RunStatus.failed.value
 
 
 def test_benchmark_large_operation_count_completes(tmp_path: Path) -> None:
