@@ -26,8 +26,16 @@ It is intentionally domain-neutral so repos like `nl_latents` and `unitbench` ca
 ## Install
 
 ```bash
-uv sync
+uv add llm-pool
 ```
+
+Quick verification:
+
+```bash
+uv run python -c "import llm_pool"
+```
+
+For maintainers, see the release runbook: `docs/releasing.md`.
 
 ## Configuration
 
@@ -202,6 +210,7 @@ Branch protection recommendation:
 ## Milestone Closeout Artifacts
 
 - Milestone status: `docs/milestones.md`
+- Consumer rollout checklist: `docs/consumer-rollout-checklist.md`
 - M2b operations checklist: `docs/ops/m2b-hardening-checklist.md`
 - Compatibility contract: `docs/compatibility-contract.md`
 - Migration guide: `docs/migration-guide.md`
