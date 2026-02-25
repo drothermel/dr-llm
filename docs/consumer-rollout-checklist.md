@@ -32,7 +32,7 @@ Use this checklist when rolling `llm-pool` into consumer repos (`nl_latents`, `u
 ## 5) Performance Gate
 1. Run benchmark in staging-like environment:
 ```bash
-llm-pool run benchmark --workers 128 --operations-per-worker 200
+llm-pool run benchmark --workers 128 --total-operations 200
 ```
 2. Capture baseline: throughput, p50/p95 latency, failure counts.
 3. Block rollout if throughput regresses materially or failure rate increases.
