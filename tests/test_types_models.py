@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from llm_pool.types import Message, ModelToolCall, ReasoningConfig, TokenUsage
+from dr_llm.types import Message, ModelToolCall, ReasoningConfig, TokenUsage
 
 
 def test_tool_message_requires_tool_call_id() -> None:

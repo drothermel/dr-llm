@@ -2,9 +2,9 @@ import asyncio
 
 import pytest
 
-from llm_pool.tools.executor import ToolExecutor
-from llm_pool.tools.registry import ToolDefinition, ToolRegistry
-from llm_pool.types import ProviderToolSpec, ToolErrorCode, ToolInvocation
+from dr_llm.tools.executor import ToolExecutor
+from dr_llm.tools.registry import ToolDefinition, ToolRegistry
+from dr_llm.types import ProviderToolSpec, ToolErrorCode, ToolInvocation
 
 
 def test_tool_executor_sync_handler() -> None:

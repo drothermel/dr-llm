@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONTAINER_NAME="${CONTAINER_NAME:-llm-pool-pg-test}"
+CONTAINER_NAME="${CONTAINER_NAME:-dr-llm-pg-test}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required to stop local integration postgres."

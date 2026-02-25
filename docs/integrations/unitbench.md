@@ -1,13 +1,13 @@
 # Integration Example: unitbench
 
 ## Goal
-Keep UnitBench case generation/scoring in `unitbench`, while using `llm-pool` for provider abstraction, recording, and session/tool runtime.
+Keep UnitBench case generation/scoring in `unitbench`, while using `dr-llm` for provider abstraction, recording, and session/tool runtime.
 
 ## Pattern
 1. `unitbench` assembles benchmark case inputs.
-2. `unitbench` calls shared `llm-pool` client/session APIs.
+2. `unitbench` calls shared `dr-llm` client/session APIs.
 3. `unitbench` computes benchmark metrics from normalized response fields.
-4. `llm-pool` remains domain-neutral.
+4. `dr-llm` remains domain-neutral.
 
 ## Minimal shape
 ```python

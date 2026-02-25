@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 
 from typer.testing import CliRunner
 
-import llm_pool.cli as cli_module
-from llm_pool.benchmark import (
+import dr_llm.cli as cli_module
+from dr_llm.benchmark import (
     BenchmarkConfig,
     BenchmarkReport,
     KnownOperationName,
@@ -12,8 +12,8 @@ from llm_pool.benchmark import (
     OperationStats,
     PhaseStats,
 )
-from llm_pool.cli import app
-from llm_pool.types import RunStatus
+from dr_llm.cli import app
+from dr_llm.types import RunStatus
 
 
 def test_providers_command_lists_known_providers() -> None:

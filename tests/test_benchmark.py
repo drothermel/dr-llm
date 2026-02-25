@@ -6,8 +6,8 @@ from threading import Lock
 from typing import Any
 from uuid import uuid4
 
-from llm_pool.benchmark import BenchmarkConfig, OperationMix, run_repository_benchmark
-from llm_pool.types import (
+from dr_llm.benchmark import BenchmarkConfig, OperationMix, run_repository_benchmark
+from dr_llm.types import (
     CallMode,
     LlmRequest,
     LlmResponse,

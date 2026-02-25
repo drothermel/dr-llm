@@ -33,18 +33,18 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: llm_pool_test
+          POSTGRES_DB: dr_llm_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d llm_pool_test"
+          --health-cmd "pg_isready -U postgres -d dr_llm_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
-      LLM_POOL_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/llm_pool_test
+      DR_LLM_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dr_llm_test
     steps:
       - name: Checkout
         uses: actions/checkout@v5

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from llm_pool import LlmClient, LlmRequest, Message, PostgresRepository, StorageConfig
+from dr_llm import LlmClient, LlmRequest, Message, PostgresRepository, StorageConfig
 
 
 class UnitBenchCaseInput(BaseModel):

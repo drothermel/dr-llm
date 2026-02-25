@@ -5,12 +5,12 @@ from typing import Any, cast
 
 import httpx
 
-from llm_pool.providers.openai_compat import (
+from dr_llm.providers.openai_compat import (
     OpenAICompatAdapter,
     OpenAICompatConfig,
     _OpenAICompatRequestPayload,
 )
-from llm_pool.types import (
+from dr_llm.types import (
     LlmRequest,
     Message,
     ProviderToolSpec,

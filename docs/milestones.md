@@ -10,8 +10,8 @@ Status: complete.
 Status: complete with benchmark + runbook artifacts.
 
 Implemented artifacts:
-1. `llm-pool run benchmark`
-2. `src/llm_pool/benchmark.py`
+1. `dr-llm run benchmark`
+2. `src/dr_llm/benchmark.py`
 3. `docs/ops/m2b-hardening-checklist.md`
 
 ## M3: Ecosystem Integration

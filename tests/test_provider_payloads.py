@@ -7,15 +7,15 @@ from typing import Any, cast
 
 import httpx
 
-from llm_pool.providers.anthropic import AnthropicAdapter, AnthropicConfig
-from llm_pool.providers.google import GoogleAdapter, GoogleConfig
-from llm_pool.providers.headless import (
+from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
+from dr_llm.providers.google import GoogleAdapter, GoogleConfig
+from dr_llm.providers.headless import (
     ClaudeHeadlessAdapter,
     ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
     CodexHeadlessAdapter,
 )
-from llm_pool.types import (
+from dr_llm.types import (
     LlmRequest,
     Message,
     ModelToolCall,

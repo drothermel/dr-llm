@@ -5,8 +5,8 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
-from llm_pool.session.worker import run_tool_worker
-from llm_pool.types import ToolError, ToolErrorCode, ToolResult
+from dr_llm.session.worker import run_tool_worker
+from dr_llm.types import ToolError, ToolErrorCode, ToolResult
 
 
 class FakeRepository(BaseModel):

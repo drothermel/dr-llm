@@ -1,6 +1,6 @@
 # Compatibility Contract
 
-`llm-pool` is a shared infrastructure package. Domain logic must remain outside this repo.
+`dr-llm` is a shared infrastructure package. Domain logic must remain outside this repo.
 
 ## Stable Contracts (Post-M1)
 1. Core call API:
@@ -27,6 +27,6 @@
 - downstream compatibility validation (`nl_latents`, `unitbench`)
 
 ## Consumer Guidance
-1. Depend on public types in `llm_pool.types`.
+1. Depend on public types in `dr_llm.types`.
 2. Do not read private storage modules (`_runtime.py`, `_runs_calls_store.py`) directly.
 3. Use repository/query APIs instead of handwritten SQL in consuming repos.

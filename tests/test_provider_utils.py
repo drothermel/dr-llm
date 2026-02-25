@@ -1,11 +1,11 @@
-from llm_pool.providers.utils import (
+from dr_llm.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
     parse_tool_calls,
     to_openai_messages,
 )
-from llm_pool.types import Message, ModelToolCall, TokenUsage
+from dr_llm.types import Message, ModelToolCall, TokenUsage
 
 
 def test_token_usage_defaults_total() -> None:

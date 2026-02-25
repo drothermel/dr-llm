@@ -8,7 +8,7 @@ Close the remaining milestones by adding:
 
 ## Recommended Approach
 1. Add a benchmark primitive in core (`run_repository_benchmark`) that executes a deterministic operation mix under configurable thread count.
-2. Expose that primitive through CLI as `llm-pool run benchmark` so performance checks are easy in CI or local staging.
+2. Expose that primitive through CLI as `dr-llm run benchmark` so performance checks are easy in CI or local staging.
 3. Define M2b runbook expectations (pool sizing, retries, leases, indexes, partition readiness) in a single ops checklist.
 4. Define an M3 compatibility contract that locks stable API/storage expectations for downstream repos.
 5. Add focused integration example docs and minimal code skeletons for `nl_latents` and `unitbench`.
@@ -16,8 +16,8 @@ Close the remaining milestones by adding:
 ## Success Criteria
 1. Team can execute a standard benchmark command and compare throughput/latency before releases.
 2. Ops checklist is explicit enough to run production readiness reviews without tribal knowledge.
-3. Downstream repos can adopt `llm-pool` using stable interfaces without introducing domain logic into this repo.
-4. Migration steps from direct provider usage to `llm-pool` are documented and reusable.
+3. Downstream repos can adopt `dr-llm` using stable interfaces without introducing domain logic into this repo.
+4. Migration steps from direct provider usage to `dr-llm` are documented and reusable.
 
 ## Tradeoffs
 1. Benchmark focuses on storage and orchestration paths, not provider network latency realism.

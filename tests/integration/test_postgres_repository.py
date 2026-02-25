@@ -10,10 +10,10 @@ import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
 
-from llm_pool.benchmark import BenchmarkConfig, run_repository_benchmark
-from llm_pool.errors import SessionConflictError
-from llm_pool.storage.repository import PostgresRepository, StorageConfig
-from llm_pool.types import SessionTurnStatus, ToolPolicy
+from dr_llm.benchmark import BenchmarkConfig, run_repository_benchmark
+from dr_llm.errors import SessionConflictError
+from dr_llm.storage.repository import PostgresRepository, StorageConfig
+from dr_llm.types import SessionTurnStatus, ToolPolicy
 
 _TEST_TABLES = (
     "tool_call_dead_letters",
@@ -44,17 +44,17 @@ def _truncate_test_tables(dsn: str) -> None:
 
 @pytest.fixture(scope="module")
 def repository() -> Generator[PostgresRepository, None, None]:
-    dsn = os.getenv("LLM_POOL_TEST_DATABASE_URL") or os.getenv("LLM_POOL_DATABASE_URL")
+    dsn = os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv("DR_LLM_DATABASE_URL")
     if not dsn:
         pytest.skip(
-            "Set LLM_POOL_TEST_DATABASE_URL (or LLM_POOL_DATABASE_URL) to run integration tests"
+            "Set DR_LLM_TEST_DATABASE_URL (or DR_LLM_DATABASE_URL) to run integration tests"
         )
     repo = PostgresRepository(
         StorageConfig(
             dsn=dsn,
             min_pool_size=1,
             max_pool_size=16,
-            application_name="llm_pool_tests",
+            application_name="dr_llm_tests",
         )
     )
     repo.init_schema()
