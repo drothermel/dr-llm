@@ -50,11 +50,8 @@ MINIMAX_DOCS_URL = "https://platform.minimax.io/docs/guides/models-intro"
 
 MINIMAX_TEXT_MODELS = [
     ("MiniMax-M2.7", "MiniMax M2.7"),
-    ("MiniMax-M2.7-highspeed", "MiniMax M2.7 Highspeed"),
     ("MiniMax-M2.5", "MiniMax M2.5"),
-    ("MiniMax-M2.5-highspeed", "MiniMax M2.5 Highspeed"),
     ("MiniMax-M2.1", "MiniMax M2.1 (legacy)"),
-    ("MiniMax-M2.1-highspeed", "MiniMax M2.1 Highspeed (legacy)"),
     ("MiniMax-M2", "MiniMax M2 (legacy)"),
 ]
 

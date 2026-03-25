@@ -69,7 +69,7 @@ PROVIDERS: list[ProviderSpec] = [
     ProviderSpec(
         name="minimax",
         env_var="MINIMAX_API_KEY",
-        default_model="MiniMax-M2.5-highspeed",
+        default_model="MiniMax-M2",
     ),
     # Headless providers — detected by CLI tool presence (own OAuth/auth)
     ProviderSpec(name="claude-code", cli_tool="claude", default_model="sonnet"),
@@ -79,7 +79,7 @@ PROVIDERS: list[ProviderSpec] = [
         name="claude-code-minimax",
         cli_tool="claude",
         env_var="MINIMAX_API_KEY",
-        default_model="MiniMax-M2.5-highspeed",
+        default_model="MiniMax-M2",
     ),
     ProviderSpec(
         name="claude-code-kimi",
