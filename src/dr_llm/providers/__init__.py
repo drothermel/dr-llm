@@ -25,12 +25,6 @@ def build_default_registry() -> ProviderRegistry:
     )
     registry.register(
         OpenAICompatAdapter(
-            name="openai-compatible",
-            config=openai_config,
-        )
-    )
-    registry.register(
-        OpenAICompatAdapter(
             name="openrouter",
             config=OpenAICompatConfig(
                 base_url="https://openrouter.ai/api/v1",

@@ -37,35 +37,82 @@ uv run python -c "import dr_llm"
 
 For maintainers, see the release runbook: `docs/releasing.md`.
 
+## Quick Start
+
+### 1. Query a provider (no database required)
+
+```bash
+uv run dr-llm query \
+  --provider openai \
+  --model gpt-4.1 \
+  --message "Hello, what's 2+2?" \
+  --no-record
+```
+
+The `--no-record` flag skips database recording, so you can test providers without Postgres.
+
+### 2. Start Postgres (for catalog and recording)
+
+```bash
+source ./scripts/start-integration-postgres.sh
+```
+
+This starts a local Postgres container, applies schema migrations, and exports `DR_LLM_DATABASE_URL` and `DR_LLM_TEST_DATABASE_URL` into your shell. Use `source` (not `./`) so the env vars persist.
+
+### 3. Sync and list models
+
+```bash
+uv run dr-llm models sync --provider openai
+uv run dr-llm models list --provider openai
+```
+
+Use `--json` on `models list` for full metadata output.
+
+### Available Providers
+
+| Provider | Aliases | Type | API Key Env |
+|---|---|---|---|
+| `openai` | — | OpenAI API | `OPENAI_API_KEY` |
+| `openrouter` | — | OpenRouter API | `OPENROUTER_API_KEY` |
+| `minimax` | — | MiniMax OpenAI-compat API | `MINIMAX_API_KEY` |
+| `anthropic` | — | Anthropic API | `ANTHROPIC_API_KEY` |
+| `google` | — | Google Gemini API | `GOOGLE_API_KEY` |
+| `glm` | — | GLM (ZAI) API | `ZAI_API_KEY` |
+| `codex` | `codex-cli` | Codex CLI (headless) | `OPENAI_API_KEY` |
+| `claude-code` | `claude` | Claude Code CLI (headless) | `ANTHROPIC_API_KEY` |
+| `claude-code-minimax` | `claude-minimax` | Claude Code via MiniMax | `MINIMAX_API_KEY` |
+| `claude-code-kimi` | `claude-kimi` | Claude Code via Kimi | `KIMI_API_KEY` |
+
+Headless providers shell out to CLI tools (`codex`, `claude`) and redirect API traffic via environment variables. The MiniMax and Kimi variants point Claude Code at third-party Anthropic-compatible endpoints.
+
+Some providers (MiniMax, Codex, Claude Code, Kimi) use static model lists for `models sync` since they don't expose a `/models` endpoint. The CLI will note when a list may be out of date and link to the provider's docs.
+
 ## Configuration
 
 - Required for DB-backed workflows: `DR_LLM_DATABASE_URL`
-- Optional provider keys:
-  - `OPENAI_API_KEY`
-  - `OPENROUTER_API_KEY`
-  - `ANTHROPIC_API_KEY`
-  - `GOOGLE_API_KEY`
-  - `ZAI_API_KEY`
-  - `MINIMAX_API_KEY`
-  - `KIMI_API_KEY`
-- GLM provider defaults to the international Coding Plan endpoint:
-  - `https://api.z.ai/api/coding/paas/v4`
-- MiniMax API provider defaults to:
-  - `https://api.minimax.io/v1`
+- Provider API keys: see the table above
+- GLM provider defaults to: `https://api.z.ai/api/coding/paas/v4`
+- MiniMax API provider defaults to: `https://api.minimax.io/v1`
 - Claude headless coding-plan presets:
-  - `claude-code-minimax`: routes Claude Code via `https://api.minimax.io/anthropic` and maps `MINIMAX_API_KEY` to Anthropic auth envs
-  - `claude-code-kimi`: routes Claude Code via `https://api.kimi.com/coding/` and maps `KIMI_API_KEY` to Anthropic auth envs
-- Model catalog overrides default file: `config/model_overrides.json`
-- YAML override parsing is supported and requires `PyYAML` (included as a core dependency).
+  - `claude-code-minimax`: routes via `https://api.minimax.io/anthropic`
+  - `claude-code-kimi`: routes via `https://api.kimi.com/coding/`
+- Model catalog overrides: `config/model_overrides.json` (YAML also supported)
 
-## CLI
+## CLI Reference
 
 ```bash
 dr-llm providers
 
 dr-llm models sync
+dr-llm models list --provider openai
 dr-llm models list --supports-reasoning --json
 dr-llm models show --provider openrouter --model openai/o3-mini
+
+dr-llm query \
+  --provider openai \
+  --model gpt-4.1 \
+  --message "hello" \
+  --no-record
 
 dr-llm query \
   --provider openai \
@@ -158,35 +205,14 @@ uv run ty check src
 uv run pytest tests/ -v
 ```
 
-Postgres integration tests are env-gated:
-- set `DR_LLM_TEST_DATABASE_URL` (or `DR_LLM_DATABASE_URL`)
-- run `uv run pytest tests/ -v -m integration`
+Postgres integration tests are env-gated. Start the local test database and run:
 
-Local integration recommendation (test-only DSN):
-
-1. Start a dedicated Postgres test container on `5433`:
 ```bash
-docker run -d \
-  --name dr-llm-pg-test \
-  -e POSTGRES_DB=dr_llm_test \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5433:5432 \
-  postgres:16
-```
-2. Set a test-only URL (avoid using your app/runtime DB URL):
-```bash
-export DR_LLM_TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5433/dr_llm_test'
-```
-3. Run the helper:
-```bash
-./scripts/run-integration-local.sh
+source ./scripts/start-integration-postgres.sh
+uv run pytest tests/ -v -m integration
 ```
 
-Preflight check (recommended before running integration tests):
-```bash
-psql "$DR_LLM_TEST_DATABASE_URL" -c "select current_user, current_database();"
-```
+The script starts a Postgres container on port 5433, applies migrations, and exports the required env vars.
 
 If integration tests are skipped unexpectedly, include skip reasons:
 ```bash
