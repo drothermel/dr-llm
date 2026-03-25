@@ -4,11 +4,20 @@ import gzip
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from dr_llm.project.docker import get_project
 from dr_llm.project.models import DB_NAME, DB_USER, container_name
 
 DEFAULT_BACKUP_DIR = Path.home() / ".dr-llm" / "backups"
+
+
+def _psql(cname: str, db: str, *args: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ["docker", "exec", cname, "psql", "-U", DB_USER, db, *args],
+        capture_output=True,
+        check=True,
+    )
 
 
 def backup_project(name: str, output_dir: Path | None = None) -> Path:
@@ -53,22 +62,22 @@ def restore_project(name: str, backup_file: Path) -> None:
         sql_bytes = backup_file.read_bytes()
 
     cname = container_name(name)
+    tmp_db = f"dr_llm_restore_{uuid4().hex[:8]}"
 
-    # Drop and recreate the database so the restore starts clean.
-    # Connect to the 'postgres' maintenance db to avoid "in use" errors.
-    subprocess.run(
-        [
-            "docker", "exec", cname, "psql", "-U", DB_USER, "postgres",
-            "-c", f"DROP DATABASE IF EXISTS {DB_NAME};",
-            "-c", f"CREATE DATABASE {DB_NAME};",
-        ],
-        capture_output=True,
-        check=True,
-    )
+    # Restore into a temp database first so the original is untouched on failure.
+    _psql(cname, "postgres", "-c", f"CREATE DATABASE {tmp_db};")
+    try:
+        subprocess.run(
+            ["docker", "exec", "-i", cname, "psql", "-U", DB_USER, tmp_db],
+            input=sql_bytes,
+            capture_output=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        _psql(cname, "postgres", "-c", f"DROP DATABASE IF EXISTS {tmp_db};")
+        raise
 
-    subprocess.run(
-        ["docker", "exec", "-i", cname, "psql", "-U", DB_USER, DB_NAME],
-        input=sql_bytes,
-        capture_output=True,
-        check=True,
-    )
+    # Swap: drop original, rename temp to original.
+    _psql(cname, "postgres",
+          "-c", f"DROP DATABASE IF EXISTS {DB_NAME};",
+          "-c", f"ALTER DATABASE {tmp_db} RENAME TO {DB_NAME};")

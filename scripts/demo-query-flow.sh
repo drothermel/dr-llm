@@ -19,10 +19,15 @@ step() { echo -e "\n${BOLD}${CYAN}── $1${RESET}\n"; }
 ok()   { echo -e "${GREEN}✓ $1${RESET}"; }
 fail() { echo -e "${RED}✗ $1${RESET}"; exit 1; }
 
+DEMO_SUCCEEDED=false
 cleanup() {
-  echo -e "\n${BOLD}Cleaning up demo project...${RESET}"
+  if [[ "$DEMO_SUCCEEDED" == "true" ]]; then
+    return
+  fi
+  echo -e "\n${BOLD}Cleaning up demo project after failure...${RESET}"
   uv run dr-llm project destroy "$PROJECT_NAME" --yes-really-delete-everything 2>/dev/null || true
 }
+trap cleanup EXIT INT TERM
 
 # Pick a provider based on available API keys.
 PROVIDER=""
@@ -100,7 +105,7 @@ uv run dr-llm --project "$PROJECT_NAME" run list-calls --run-id "$RUN_ID" | pyth
 step "7. Backing up project"
 
 BACKUP_OUTPUT=$(uv run dr-llm project backup "$PROJECT_NAME")
-BACKUP_PATH=$(echo "$BACKUP_OUTPUT" | sed 's/Backup saved to //')
+BACKUP_PATH=${BACKUP_OUTPUT#Backup saved to }
 ok "$BACKUP_OUTPUT"
 
 # ── 7. Destroy and restore ──────────────────────────────────────────────────
@@ -120,7 +125,11 @@ step "10. Verifying restored data"
 
 RESTORED_CALLS=$(uv run dr-llm --project "$PROJECT_NAME" run list-calls --run-id "$RUN_ID")
 RESTORED_COUNT=$(echo "$RESTORED_CALLS" | python3 -c "import sys,json; print(json.load(sys.stdin)['count'])")
-ok "Found ${RESTORED_COUNT} calls after restore (expected 2)"
+if [[ "$RESTORED_COUNT" -eq 2 ]]; then
+  ok "Found ${RESTORED_COUNT} calls after restore"
+else
+  fail "Expected 2 calls after restore, got ${RESTORED_COUNT}"
+fi
 
 # ── 8. Show all projects ────────────────────────────────────────────────────
 
@@ -129,6 +138,8 @@ step "11. Listing all projects"
 uv run dr-llm project list
 
 # ── Done ────────────────────────────────────────────────────────────────────
+
+DEMO_SUCCEEDED=true
 
 echo ""
 echo -e "${BOLD}${GREEN}Demo complete!${RESET}"

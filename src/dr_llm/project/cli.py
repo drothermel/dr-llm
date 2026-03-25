@@ -107,7 +107,11 @@ def project_destroy(
             f"This will permanently delete ALL data for project '{name}'. Continue?",
             abort=True,
         )
-    destroy_project(name)
+    try:
+        destroy_project(name)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
     typer.secho(
         f"Project '{name}' destroyed (container + volume removed).",
         fg=typer.colors.RED,

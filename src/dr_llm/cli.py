@@ -12,6 +12,8 @@ from pydantic import ValidationError
 
 from dr_llm.benchmark import BenchmarkConfig, OperationMix, run_repository_benchmark
 from dr_llm.client import LlmClient
+from dr_llm.project.cli import project_app
+from dr_llm.project.docker import get_project
 from dr_llm.providers import build_default_registry
 from dr_llm.session import SessionClient, run_tool_worker
 from dr_llm.storage import PostgresRepository, StorageConfig
@@ -35,9 +37,6 @@ tool_app = typer.Typer(help="Tool worker commands")
 worker_app = typer.Typer(help="Tool queue worker commands")
 replay_app = typer.Typer(help="Replay and audit commands")
 models_app = typer.Typer(help="Model catalog commands")
-
-from dr_llm.project.cli import project_app
-from dr_llm.project.docker import get_project
 
 app.add_typer(run_app, name="run")
 app.add_typer(session_app, name="session")

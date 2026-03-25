@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 import socket
 import subprocess
 
-from dr_llm.project.models import LABEL_PREFIX
+from dr_llm.project.models import LABEL_PREFIX, parse_docker_labels
 
 BASE_PORT = 5500
 
@@ -32,26 +31,18 @@ def _claimed_ports() -> set[int]:
         capture_output=True,
         text=True,
     )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to list Docker containers: {result.stderr.strip()}")
     ports: set[int] = set()
     for line in result.stdout.strip().splitlines():
-        labels = _parse_label_string(line)
+        labels = parse_docker_labels(line)
         port_str = labels.get(f"{LABEL_PREFIX}.port")
         if port_str is not None:
-            ports.add(int(port_str))
+            try:
+                ports.add(int(port_str))
+            except ValueError:
+                continue
     return ports
-
-
-def _parse_label_string(raw: str) -> dict[str, str]:
-    raw = raw.strip()
-    if raw.startswith("{"):
-        return json.loads(raw)
-    if raw.startswith('"'):
-        raw = json.loads(raw)
-    labels: dict[str, str] = {}
-    for pair in raw.split(","):
-        k, _, v = pair.partition("=")
-        labels[k.strip()] = v.strip()
-    return labels
 
 
 def find_available_port(base: int = BASE_PORT, max_attempts: int = 100) -> int:

@@ -14,6 +14,7 @@ from dr_llm.project.models import (
     ProjectInfo,
     container_name,
     dsn_for_port,
+    parse_docker_labels,
     volume_name,
 )
 from dr_llm.project.ports import find_available_port
@@ -179,11 +180,7 @@ def list_projects() -> list[ProjectInfo]:
         if not line:
             continue
         data = json.loads(line)
-        raw_labels = data.get("Labels", "")
-        labels: dict[str, str] = {}
-        for pair in raw_labels.split(","):
-            k, _, v = pair.partition("=")
-            labels[k.strip()] = v.strip()
+        labels = parse_docker_labels(data.get("Labels", ""))
         pname = labels.get(f"{LABEL_PREFIX}.name")
         if pname is None:
             continue
