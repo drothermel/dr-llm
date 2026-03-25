@@ -54,7 +54,7 @@ The `--no-record` flag skips database recording, so you can test providers witho
 ### 2. Start Postgres (for catalog and recording)
 
 ```bash
-source ./scripts/start-integration-postgres.sh
+source ./scripts/start-test-postgres.sh
 ```
 
 This starts a local Postgres container, applies schema migrations, and exports `DR_LLM_DATABASE_URL` and `DR_LLM_TEST_DATABASE_URL` into your shell. Use `source` (not `./`) so the env vars persist.
@@ -208,7 +208,7 @@ uv run pytest tests/ -v
 Postgres integration tests are env-gated. Start the local test database and run:
 
 ```bash
-source ./scripts/start-integration-postgres.sh
+source ./scripts/start-test-postgres.sh
 uv run pytest tests/ -v -m integration
 ```
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -11,6 +12,8 @@ from pydantic import ValidationError
 
 from dr_llm.benchmark import BenchmarkConfig, OperationMix, run_repository_benchmark
 from dr_llm.client import LlmClient
+from dr_llm.project.cli import project_app
+from dr_llm.project.docker import get_project
 from dr_llm.providers import build_default_registry
 from dr_llm.session import SessionClient, run_tool_worker
 from dr_llm.storage import PostgresRepository, StorageConfig
@@ -27,7 +30,7 @@ from dr_llm.types import (
     ToolPolicy,
 )
 
-app = typer.Typer(help="dr-llm CLI")
+app = typer.Typer()
 run_app = typer.Typer(help="Run lifecycle commands")
 session_app = typer.Typer(help="Session lifecycle commands")
 tool_app = typer.Typer(help="Tool worker commands")
@@ -40,7 +43,30 @@ app.add_typer(session_app, name="session")
 app.add_typer(tool_app, name="tool")
 app.add_typer(replay_app, name="replay")
 app.add_typer(models_app, name="models")
+app.add_typer(project_app, name="project")
 tool_app.add_typer(worker_app, name="worker")
+
+
+@app.callback()
+def main(
+    project: str | None = typer.Option(
+        None, help="Use a named project's database."
+    ),
+) -> None:
+    """dr-llm CLI"""
+    if project is not None:
+        info = get_project(project)
+        if info is None:
+            typer.secho(f"Project '{project}' not found", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+        if info.status != "running":
+            typer.secho(
+                f"Project '{project}' is {info.status} — start it first",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(1)
+        os.environ["DR_LLM_DATABASE_URL"] = info.dsn
 
 
 def _emit(payload: Any) -> None:
@@ -420,6 +446,36 @@ def run_finish(
     try:
         repository.finish_run(run_id=run_id, status=status, metadata=metadata)
         _emit({"run_id": run_id, "status": status.value})
+    finally:
+        repository.close()
+
+
+@run_app.command("list-calls")
+def run_list_calls(
+    run_id: str | None = typer.Option(None, help="Filter by run ID."),
+    limit: int = typer.Option(100),
+    offset: int = typer.Option(0),
+    dsn: str | None = typer.Option(None, envvar="DR_LLM_DATABASE_URL"),
+    min_pool_size: int = typer.Option(4),
+    max_pool_size: int = typer.Option(64),
+) -> None:
+    """List recorded LLM calls, optionally filtered by run."""
+    repository = _repo(dsn, min_pool_size, max_pool_size)
+    try:
+        calls = repository.list_calls(run_id=run_id, limit=limit, offset=offset)
+        _emit(
+            {
+                "calls": [
+                    call.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                        exclude_computed_fields=True,
+                    )
+                    for call in calls
+                ],
+                "count": len(calls),
+            }
+        )
     finally:
         repository.close()
 
