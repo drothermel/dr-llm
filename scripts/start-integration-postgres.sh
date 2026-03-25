@@ -54,6 +54,6 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 STORAGE_DIR="${REPO_ROOT}/src/dr_llm/storage"
 
 echo "Applying schema migrations..."
-psql "${DATABASE_URL}" -f "${STORAGE_DIR}/schema_bootstrap_pg.sql"
-psql "${DATABASE_URL}" -f "${STORAGE_DIR}/schema_migration_20260224_llm_call_response_columns.sql"
+psql -v ON_ERROR_STOP=1 "${DATABASE_URL}" -f "${STORAGE_DIR}/schema_bootstrap_pg.sql" || { echo "Migration failed: schema_bootstrap_pg.sql"; return 1 2>/dev/null || exit 1; }
+psql -v ON_ERROR_STOP=1 "${DATABASE_URL}" -f "${STORAGE_DIR}/schema_migration_20260224_llm_call_response_columns.sql" || { echo "Migration failed: schema_migration_20260224_llm_call_response_columns.sql"; return 1 2>/dev/null || exit 1; }
 echo "Schema migrations applied."
