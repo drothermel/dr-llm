@@ -104,7 +104,11 @@ class PoolService:
     def _wait_and_reacquire(
         self, query: AcquireQuery, partial: AcquireResult
     ) -> AcquireResult:
-        """Poll for pending samples to be promoted, then re-acquire."""
+        """Poll for pending samples to be promoted, then re-acquire.
+
+        Note: blocks the calling thread with time.sleep. Use from sync contexts
+        only; an async variant would be needed for asyncio callers.
+        """
         deadline = time.monotonic() + self._pending_poll_timeout_s
         deficit = partial.deficit(query.n)
 

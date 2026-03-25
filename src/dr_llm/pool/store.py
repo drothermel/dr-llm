@@ -23,21 +23,16 @@ from dr_llm.pool.models import (
     PendingStatus,
     PoolSample,
 )
-from dr_llm.pool.schema import ColumnType, PoolSchema
+from dr_llm.pool.schema import PoolSchema
 from dr_llm.storage._runtime import StorageRuntime
 
 logger = logging.getLogger(__name__)
 
 _SAMPLE_IDX_RETRY_ATTEMPTS = 5
 
-
-def _pg_type_for(ct: ColumnType) -> str:
-    return {
-        ColumnType.text: "TEXT",
-        ColumnType.integer: "INTEGER",
-        ColumnType.boolean: "BOOLEAN",
-        ColumnType.float_: "DOUBLE PRECISION",
-    }[ct]
+# Safety note: table and column names used in f-string SQL interpolation are
+# validated by PoolSchema/KeyColumn to match ^[a-z][a-z0-9_]*$ — no user input
+# reaches these identifiers without passing that regex gate.
 
 
 def _is_constraint_error(exc: BaseException) -> bool:
@@ -83,7 +78,7 @@ class PoolStore:
             )
 
     def _key_where_clause(
-        self, key_values: dict[str, Any], param_offset: int = 0
+        self, key_values: dict[str, Any]
     ) -> tuple[str, list[Any]]:
         """Build WHERE clause for key column matching."""
         conditions: list[str] = []
@@ -186,16 +181,17 @@ class PoolStore:
     def _insert_sample_auto_idx(
         self, sample: PoolSample, *, ignore_conflicts: bool = True
     ) -> bool:
-        """Insert with auto-incrementing sample_idx via subquery."""
+        """Insert with auto-incrementing sample_idx via CTE."""
         tbl = self._schema.samples_table
         key_names = self._schema.key_column_names
 
         key_where, key_params = self._key_where_clause(sample.key_values)
 
-        non_idx_cols = (
+        cols = (
             ["sample_id"]
             + key_names
             + [
+                "sample_idx",
                 "payload_json",
                 "source_run_id",
                 "call_id",
@@ -203,32 +199,34 @@ class PoolStore:
                 "status",
             ]
         )
-        col_list = ", ".join(
-            non_idx_cols[:1]
-            + key_names
-            + ["sample_idx"]
-            + non_idx_cols[1 + len(key_names) :]
-        )
-
-        select_values = ["%s"] * 1  # sample_id
-        for _ in key_names:
-            select_values.append("%s")
-        select_values.append("COALESCE(MAX(s.sample_idx), -1) + 1")
-        for _ in range(len(non_idx_cols) - 1 - len(key_names)):
-            select_values.append("%s")
-
-        select_str = ", ".join(select_values)
+        col_list = ", ".join(cols)
         conflict = " ON CONFLICT DO NOTHING" if ignore_conflicts else ""
 
+        # Build SELECT values: literals for all columns except sample_idx which
+        # comes from the CTE.
+        select_parts: list[str] = ["%s"]  # sample_id
+        for _ in key_names:
+            select_parts.append("%s")
+        select_parts.append("next_idx.idx")  # sample_idx from CTE
+        select_parts.append("%s")  # payload_json
+        select_parts.append("%s")  # source_run_id
+        select_parts.append("%s")  # call_id
+        select_parts.append("%s")  # metadata_json
+        select_parts.append("%s")  # status
+
         insert_sql = (
+            f"WITH next_idx AS ("
+            f"  SELECT COALESCE(MAX(sample_idx), -1) + 1 AS idx"
+            f"  FROM {tbl} WHERE {key_where}"
+            f") "
             f"INSERT INTO {tbl} ({col_list}) "
-            f"SELECT {select_str} "
-            f"FROM (SELECT 1) AS _dummy "
-            f"LEFT JOIN {tbl} s ON {' AND '.join(f's.{n} = %s' for n in key_names)} "
-            f"GROUP BY 1{conflict}"
+            f"SELECT {', '.join(select_parts)} "
+            f"FROM next_idx{conflict}"
         )
 
-        values: list[Any] = [sample.sample_id]
+        # CTE params (key_where), then SELECT params (everything except sample_idx)
+        values: list[Any] = list(key_params)
+        values.append(sample.sample_id)
         for name in key_names:
             values.append(sample.key_values[name])
         values.extend(
@@ -240,9 +238,6 @@ class PoolStore:
                 sample.status.value,
             ]
         )
-        # Key params for the LEFT JOIN condition
-        for name in key_names:
-            values.append(sample.key_values[name])
 
         with self._runtime.conn() as conn:
             try:
@@ -258,7 +253,8 @@ class PoolStore:
     def insert_samples(
         self, samples: Iterable[PoolSample], *, ignore_conflicts: bool = True
     ) -> InsertResult:
-        """Bulk insert samples."""
+        """Bulk insert samples. Each sample may require its own statement (for
+        auto-idx allocation), but all run within a single connection checkout."""
         inserted = 0
         skipped = 0
         failed = 0
@@ -294,6 +290,7 @@ class PoolStore:
             + ", ".join(key_names)
             + f" FROM {samples_tbl} "
             f"WHERE {key_where} "
+            f"AND status = 'active' "
             f"AND NOT EXISTS ("
             f"  SELECT 1 FROM {claims_tbl} c "
             f"  WHERE c.run_id = %s AND c.sample_id = {samples_tbl}.sample_id"
@@ -385,6 +382,7 @@ class PoolStore:
         count_sql = (
             f"SELECT COUNT(*) FROM {samples_tbl} "
             f"WHERE {key_where} "
+            f"AND status = 'active' "
             f"AND NOT EXISTS ("
             f"  SELECT 1 FROM {claims_tbl} c "
             f"  WHERE c.run_id = %s AND c.sample_id = {samples_tbl}.sample_id"
