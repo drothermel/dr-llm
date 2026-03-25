@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -27,7 +28,7 @@ from dr_llm.types import (
     ToolPolicy,
 )
 
-app = typer.Typer(help="dr-llm CLI")
+app = typer.Typer()
 run_app = typer.Typer(help="Run lifecycle commands")
 session_app = typer.Typer(help="Session lifecycle commands")
 tool_app = typer.Typer(help="Tool worker commands")
@@ -35,12 +36,38 @@ worker_app = typer.Typer(help="Tool queue worker commands")
 replay_app = typer.Typer(help="Replay and audit commands")
 models_app = typer.Typer(help="Model catalog commands")
 
+from dr_llm.project.cli import project_app
+from dr_llm.project.docker import get_project
+
 app.add_typer(run_app, name="run")
 app.add_typer(session_app, name="session")
 app.add_typer(tool_app, name="tool")
 app.add_typer(replay_app, name="replay")
 app.add_typer(models_app, name="models")
+app.add_typer(project_app, name="project")
 tool_app.add_typer(worker_app, name="worker")
+
+
+@app.callback()
+def main(
+    project: str | None = typer.Option(
+        None, help="Use a named project's database."
+    ),
+) -> None:
+    """dr-llm CLI"""
+    if project is not None:
+        info = get_project(project)
+        if info is None:
+            typer.secho(f"Project '{project}' not found", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+        if info.status != "running":
+            typer.secho(
+                f"Project '{project}' is {info.status} — start it first",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(1)
+        os.environ["DR_LLM_DATABASE_URL"] = info.dsn
 
 
 def _emit(payload: Any) -> None:
