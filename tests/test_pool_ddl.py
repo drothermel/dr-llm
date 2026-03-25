@@ -54,6 +54,11 @@ def test_key_column_name_validation() -> None:
         KeyColumn(name="BadCol")
 
 
+def test_schema_empty_key_columns_rejected() -> None:
+    with pytest.raises(ValueError, match="at least one KeyColumn"):
+        PoolSchema(name="empty", key_columns=[])
+
+
 def test_schema_table_names() -> None:
     s = _simple_schema()
     assert s.samples_table == "pool_test_samples"
