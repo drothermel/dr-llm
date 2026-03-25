@@ -204,7 +204,7 @@ def models_list(
     limit: int = typer.Option(200),
     offset: int = typer.Option(0),
     json_output: bool = typer.Option(
-        True,
+        False,
         "--json/--no-json",
         help="Emit JSON output.",
     ),
@@ -239,17 +239,21 @@ def models_list(
                 }
             )
         else:
+            static_providers: set[str] = set()
             for item in items:
-                typer.echo(
-                    "\t".join(
-                        [
-                            item.provider,
-                            item.model,
-                            item.display_name or "",
-                            item.source_quality,
-                        ]
-                    )
-                )
+                typer.echo(item.model)
+                if item.source_quality == "static":
+                    static_providers.add(item.provider)
+            for sp in sorted(static_providers):
+                docs_url = ""
+                for item in items:
+                    if item.provider == sp and item.metadata.get("docs_url"):
+                        docs_url = item.metadata["docs_url"]
+                        break
+                msg = f"\nNote: {sp} models are from a static list and may be out of date."
+                if docs_url:
+                    msg += f"\nSee {docs_url} for the latest models."
+                typer.echo(msg, err=True)
     finally:
         repository.close()
 

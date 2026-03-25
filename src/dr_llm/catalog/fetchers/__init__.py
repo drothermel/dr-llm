@@ -6,7 +6,10 @@ from dr_llm.catalog.fetchers.anthropic import fetch_anthropic_models
 from dr_llm.catalog.fetchers.google import fetch_google_models
 from dr_llm.catalog.fetchers.kimi import KIMI_PROVIDER_NAME, fetch_kimi_models
 from dr_llm.catalog.fetchers.openai_compat import fetch_openai_compat_models
-from dr_llm.catalog.fetchers.static import fetch_static_headless_models
+from dr_llm.catalog.fetchers.static import (
+    fetch_static_headless_models,
+    fetch_static_minimax_models,
+)
 from dr_llm.providers.anthropic import AnthropicAdapter
 from dr_llm.providers.base import ProviderAdapter
 from dr_llm.providers.google import GoogleAdapter
@@ -24,6 +27,8 @@ def fetch_models_for_adapter(
     adapter: ProviderAdapter,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     if isinstance(adapter, OpenAICompatAdapter):
+        if adapter.name == "minimax":
+            return fetch_static_minimax_models(adapter)
         return fetch_openai_compat_models(adapter)
     if isinstance(adapter, AnthropicAdapter):
         return fetch_anthropic_models(adapter)

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-set -euo pipefail
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  set -euo pipefail
+fi
 
 CONTAINER_NAME="${CONTAINER_NAME:-dr-llm-pg-test}"
 PORT="${PORT:-5433}"
@@ -30,6 +32,7 @@ echo "Waiting for Postgres readiness (up to ${MAX_WAIT_SECONDS}s)..."
 for _ in $(seq 1 "${MAX_WAIT_SECONDS}"); do
   if docker exec "${CONTAINER_NAME}" pg_isready -U "${DB_USER}" -d "${DB_NAME}" >/dev/null 2>&1; then
     echo "Postgres is ready."
+    sleep 2
     break
   fi
   sleep 1
@@ -41,5 +44,16 @@ if ! docker exec "${CONTAINER_NAME}" pg_isready -U "${DB_USER}" -d "${DB_NAME}" 
 fi
 
 echo "Started container '${CONTAINER_NAME}' on localhost:${PORT}"
-echo "Export this for integration tests:"
-echo "export DR_LLM_TEST_DATABASE_URL='postgresql://${DB_USER}:<password>@localhost:${PORT}/${DB_NAME}'"
+
+DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@localhost:${PORT}/${DB_NAME}"
+export DR_LLM_DATABASE_URL="${DATABASE_URL}"
+export DR_LLM_TEST_DATABASE_URL="${DATABASE_URL}"
+echo "Exported DR_LLM_DATABASE_URL and DR_LLM_TEST_DATABASE_URL"
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+STORAGE_DIR="${REPO_ROOT}/src/dr_llm/storage"
+
+echo "Applying schema migrations..."
+psql "${DATABASE_URL}" -f "${STORAGE_DIR}/schema_bootstrap_pg.sql"
+psql "${DATABASE_URL}" -f "${STORAGE_DIR}/schema_migration_20260224_llm_call_response_columns.sql"
+echo "Schema migrations applied."
