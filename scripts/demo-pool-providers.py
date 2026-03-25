@@ -58,14 +58,14 @@ PROVIDERS: list[ProviderSpec] = [
         default_model="claude-sonnet-4-20250514",
     ),
     ProviderSpec(
-        name="google", env_var="GOOGLE_API_KEY", default_model="gemini-2.0-flash"
+        name="google", env_var="GOOGLE_API_KEY", default_model="gemini-2.5-flash"
     ),
     ProviderSpec(
         name="openrouter",
         env_var="OPENROUTER_API_KEY",
         default_model="openai/gpt-4o-mini",
     ),
-    ProviderSpec(name="glm", env_var="ZAI_API_KEY", default_model="glm-4-flash"),
+    ProviderSpec(name="glm", env_var="ZAI_API_KEY", default_model="glm-4.5"),
     ProviderSpec(
         name="minimax",
         env_var="MINIMAX_API_KEY",
