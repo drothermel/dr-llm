@@ -213,7 +213,7 @@ def test_pending_fail(pool_store: PoolStore) -> None:
         worker_id="w1", limit=1, lease_seconds=60,
         key_filter={"dim_a": "fail", "dim_b": 1},
     )
-    pool_store.fail_pending(pending_id=claimed[0].pending_id, reason="docker timeout")
+    pool_store.fail_pending(pending_id=claimed[0].pending_id, worker_id="w1", reason="docker timeout")
 
     # Failed samples should not be counted as pending
     assert pool_store.pending_counts(key_values={"dim_a": "fail", "dim_b": 1}) == 0

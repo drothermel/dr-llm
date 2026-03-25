@@ -92,6 +92,11 @@ class PoolStore:
             raise PoolSchemaError(
                 f"Missing key columns: {missing}. Expected: {expected}"
             )
+        extra = provided - expected
+        if extra:
+            raise PoolSchemaError(
+                f"Unexpected key columns: {extra}. Expected: {expected}"
+            )
 
     def _key_where_clause(self, key_values: dict[str, Any]) -> tuple[str, list[Any]]:
         """Build WHERE clause for key column matching."""
@@ -683,7 +688,7 @@ class PoolStore:
                     row = cur.execute(
                         _q(
                             f"SELECT {', '.join(all_cols)} FROM {pending_tbl} "
-                            f"WHERE pending_id = %s"
+                            f"WHERE pending_id = %s FOR UPDATE"
                         ),
                         [pending_id],
                     ).fetchone()
@@ -723,13 +728,21 @@ class PoolStore:
                     ]
                 )
 
-                conn.execute(
+                insert_cur = conn.execute(
                     _q(
                         f"INSERT INTO {samples_tbl} ({', '.join(sample_cols)}) "
                         f"VALUES ({placeholders}) ON CONFLICT DO NOTHING"
                     ),
                     values,
                 )
+
+                if (insert_cur.rowcount or 0) == 0:
+                    conn.rollback()
+                    logger.warning(
+                        "promote_pending: sample insert conflict for pending_id=%s",
+                        pending_id,
+                    )
+                    return None
 
                 conn.execute(
                     _q(f"UPDATE {pending_tbl} SET status = %s WHERE pending_id = %s"),
@@ -750,8 +763,8 @@ class PoolStore:
                 conn.rollback()
                 raise
 
-    def fail_pending(self, *, pending_id: str, reason: str) -> None:
-        """Mark pending sample as failed."""
+    def fail_pending(self, *, pending_id: str, worker_id: str, reason: str) -> None:
+        """Mark a leased pending sample as failed. Only the lease holder can fail it."""
         self.init_schema()
         tbl = self._schema.pending_table
         with self._runtime.conn() as conn:
@@ -759,36 +772,50 @@ class PoolStore:
                 _q(
                     f"UPDATE {tbl} SET status = %s, "
                     f"metadata_json = jsonb_set(COALESCE(metadata_json, '{{}}'), '{{fail_reason}}', %s::jsonb) "
-                    f"WHERE pending_id = %s"
+                    f"WHERE pending_id = %s AND worker_id = %s AND status = %s"
                 ),
-                [PendingStatus.failed.value, json.dumps(reason), pending_id],
+                [
+                    PendingStatus.failed.value,
+                    json.dumps(reason),
+                    pending_id,
+                    worker_id,
+                    PendingStatus.leased.value,
+                ],
             )
             conn.commit()
 
     def release_pending_lease(self, *, pending_id: str, worker_id: str) -> None:
-        """Release a lease, returning sample to pending status."""
+        """Release a lease, returning sample to pending status. Only the lease holder can release."""
         self.init_schema()
         tbl = self._schema.pending_table
         with self._runtime.conn() as conn:
             conn.execute(
                 _q(
                     f"UPDATE {tbl} SET status = %s, worker_id = NULL, lease_expires_at = NULL "
-                    f"WHERE pending_id = %s AND worker_id = %s"
+                    f"WHERE pending_id = %s AND worker_id = %s AND status = %s"
                 ),
-                [PendingStatus.pending.value, pending_id, worker_id],
+                [
+                    PendingStatus.pending.value,
+                    pending_id,
+                    worker_id,
+                    PendingStatus.leased.value,
+                ],
             )
             conn.commit()
 
     def pending_counts(self, *, key_values: dict[str, Any]) -> int:
-        """Count pending samples for given key dimensions."""
+        """Count in-flight pending samples (pending + leased) for given key dimensions."""
         self.init_schema()
         self._validate_key_values(key_values)
         tbl = self._schema.pending_table
         key_where, key_params = self._key_where_clause(key_values)
         with self._runtime.conn() as conn:
             row = conn.execute(
-                _q(f"SELECT COUNT(*) FROM {tbl} WHERE {key_where} AND status = %s"),
-                key_params + [PendingStatus.pending.value],
+                _q(
+                    f"SELECT COUNT(*) FROM {tbl} "
+                    f"WHERE {key_where} AND status IN (%s, %s)"
+                ),
+                key_params + [PendingStatus.pending.value, PendingStatus.leased.value],
             ).fetchone()
             return row[0] if row else 0
 
