@@ -1,6 +1,6 @@
 [project]
 name = "dr-llm"
-version = "0.1.0"
+version = "0.2.0"
 description = "Shared LLM calling and event-sourced storage primitive for benchmark systems."
 readme = "README.md"
 keywords = ["llm", "benchmark", "tool-calling", "postgres", "ai"]

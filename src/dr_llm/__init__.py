@@ -1,4 +1,13 @@
 from dr_llm.client import LlmClient
+from dr_llm.pool import (
+    AcquireQuery as PoolAcquireQuery,
+    AcquireResult as PoolAcquireResult,
+    ColumnType,
+    KeyColumn,
+    PoolSchema,
+    PoolService,
+    PoolStore,
+)
 from dr_llm.session.client import SessionClient
 from dr_llm.session.worker import run_tool_worker
 from dr_llm.storage.repository import PostgresRepository, StorageConfig
@@ -33,7 +42,9 @@ from dr_llm.types import (
 
 __all__ = [
     "CallMode",
+    "ColumnType",
     "CostInfo",
+    "KeyColumn",
     "LlmClient",
     "LlmRequest",
     "LlmResponse",
@@ -43,6 +54,11 @@ __all__ = [
     "ModelCatalogQuery",
     "ModelCatalogRateLimit",
     "ModelToolCall",
+    "PoolAcquireQuery",
+    "PoolAcquireResult",
+    "PoolSchema",
+    "PoolService",
+    "PoolStore",
     "PostgresRepository",
     "ReasoningConfig",
     "ReasoningWarning",

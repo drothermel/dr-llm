@@ -34,7 +34,9 @@ def _require_docker() -> None:
         ["docker", "info"], capture_output=True, text=True, check=False
     )
     if result.returncode != 0:
-        raise RuntimeError("Docker is not available. Install Docker or start the daemon.")
+        raise RuntimeError(
+            "Docker is not available. Install Docker or start the daemon."
+        )
 
 
 def _wait_ready(cname: str, timeout_seconds: int = 30) -> None:
@@ -49,7 +51,9 @@ def _wait_ready(cname: str, timeout_seconds: int = 30) -> None:
             sleep(1)
             return
         sleep(1)
-    raise RuntimeError(f"Postgres in {cname} did not become ready within {timeout_seconds}s")
+    raise RuntimeError(
+        f"Postgres in {cname} did not become ready within {timeout_seconds}s"
+    )
 
 
 def _apply_schema(port: int) -> None:
@@ -108,16 +112,26 @@ def create_project(name: str) -> ProjectInfo:
 
     _docker("volume", "create", vname)
     _docker(
-        "run", "-d",
-        "--name", cname,
-        "-v", f"{vname}:/var/lib/postgresql/data",
-        "-e", f"POSTGRES_DB={DB_NAME}",
-        "-e", f"POSTGRES_USER={DB_USER}",
-        "-e", f"POSTGRES_PASSWORD={DB_PASSWORD}",
-        "-p", f"{port}:5432",
-        "--label", f"{LABEL_PREFIX}.name={name}",
-        "--label", f"{LABEL_PREFIX}.port={port}",
-        "--label", f"{LABEL_PREFIX}.created-at={now}",
+        "run",
+        "-d",
+        "--name",
+        cname,
+        "-v",
+        f"{vname}:/var/lib/postgresql/data",
+        "-e",
+        f"POSTGRES_DB={DB_NAME}",
+        "-e",
+        f"POSTGRES_USER={DB_USER}",
+        "-e",
+        f"POSTGRES_PASSWORD={DB_PASSWORD}",
+        "-p",
+        f"{port}:5432",
+        "--label",
+        f"{LABEL_PREFIX}.name={name}",
+        "--label",
+        f"{LABEL_PREFIX}.port={port}",
+        "--label",
+        f"{LABEL_PREFIX}.created-at={now}",
         DOCKER_IMAGE,
     )
 
@@ -170,9 +184,12 @@ def destroy_project(name: str) -> None:
 def list_projects() -> list[ProjectInfo]:
     _require_docker()
     result = _docker(
-        "ps", "-a",
-        "--filter", f"label={LABEL_PREFIX}.name",
-        "--format", "{{json .}}",
+        "ps",
+        "-a",
+        "--filter",
+        f"label={LABEL_PREFIX}.name",
+        "--format",
+        "{{json .}}",
         check=False,
     )
     projects: list[ProjectInfo] = []

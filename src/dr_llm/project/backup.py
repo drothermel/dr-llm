@@ -25,7 +25,9 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
     if info is None:
         raise RuntimeError(f"Project '{name}' not found")
     if info.status != "running":
-        raise RuntimeError(f"Project '{name}' is {info.status} — start it before backing up")
+        raise RuntimeError(
+            f"Project '{name}' is {info.status} — start it before backing up"
+        )
 
     backup_dir = (output_dir or DEFAULT_BACKUP_DIR) / name
     backup_dir.mkdir(parents=True, exist_ok=True)
@@ -50,7 +52,9 @@ def restore_project(name: str, backup_file: Path) -> None:
     if info is None:
         raise RuntimeError(f"Project '{name}' not found")
     if info.status != "running":
-        raise RuntimeError(f"Project '{name}' is {info.status} — start it before restoring")
+        raise RuntimeError(
+            f"Project '{name}' is {info.status} — start it before restoring"
+        )
 
     if not backup_file.exists():
         raise FileNotFoundError(f"Backup file not found: {backup_file}")
@@ -78,6 +82,11 @@ def restore_project(name: str, backup_file: Path) -> None:
         raise
 
     # Swap: drop original, rename temp to original.
-    _psql(cname, "postgres",
-          "-c", f"DROP DATABASE IF EXISTS {DB_NAME};",
-          "-c", f"ALTER DATABASE {tmp_db} RENAME TO {DB_NAME};")
+    _psql(
+        cname,
+        "postgres",
+        "-c",
+        f"DROP DATABASE IF EXISTS {DB_NAME};",
+        "-c",
+        f"ALTER DATABASE {tmp_db} RENAME TO {DB_NAME};",
+    )
