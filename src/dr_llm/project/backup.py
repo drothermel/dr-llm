@@ -52,8 +52,22 @@ def restore_project(name: str, backup_file: Path) -> None:
     else:
         sql_bytes = backup_file.read_bytes()
 
+    cname = container_name(name)
+
+    # Drop and recreate the database so the restore starts clean.
+    # Connect to the 'postgres' maintenance db to avoid "in use" errors.
     subprocess.run(
-        ["docker", "exec", "-i", container_name(name), "psql", "-U", DB_USER, DB_NAME],
+        [
+            "docker", "exec", cname, "psql", "-U", DB_USER, "postgres",
+            "-c", f"DROP DATABASE IF EXISTS {DB_NAME};",
+            "-c", f"CREATE DATABASE {DB_NAME};",
+        ],
+        capture_output=True,
+        check=True,
+    )
+
+    subprocess.run(
+        ["docker", "exec", "-i", cname, "psql", "-U", DB_USER, DB_NAME],
         input=sql_bytes,
         capture_output=True,
         check=True,

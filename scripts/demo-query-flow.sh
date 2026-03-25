@@ -95,9 +95,36 @@ step "6. Listing recorded calls for this run"
 
 uv run dr-llm --project "$PROJECT_NAME" run list-calls --run-id "$RUN_ID" | python3 -m json.tool
 
-# ── 6. Show all projects ────────────────────────────────────────────────────
+# ── 6. Backup the project ────────────────────────────────────────────────────
 
-step "7. Listing all projects"
+step "7. Backing up project"
+
+BACKUP_OUTPUT=$(uv run dr-llm project backup "$PROJECT_NAME")
+BACKUP_PATH=$(echo "$BACKUP_OUTPUT" | sed 's/Backup saved to //')
+ok "$BACKUP_OUTPUT"
+
+# ── 7. Destroy and restore ──────────────────────────────────────────────────
+
+step "8. Destroying project to test restore"
+
+uv run dr-llm project destroy "$PROJECT_NAME" --yes-really-delete-everything
+ok "Project destroyed"
+
+step "9. Recreating project and restoring from backup"
+
+uv run dr-llm project create "$PROJECT_NAME" > /dev/null
+uv run dr-llm project restore "$PROJECT_NAME" "$BACKUP_PATH"
+ok "Restored from backup"
+
+step "10. Verifying restored data"
+
+RESTORED_CALLS=$(uv run dr-llm --project "$PROJECT_NAME" run list-calls --run-id "$RUN_ID")
+RESTORED_COUNT=$(echo "$RESTORED_CALLS" | python3 -c "import sys,json; print(json.load(sys.stdin)['count'])")
+ok "Found ${RESTORED_COUNT} calls after restore (expected 2)"
+
+# ── 8. Show all projects ────────────────────────────────────────────────────
+
+step "11. Listing all projects"
 
 uv run dr-llm project list
 
