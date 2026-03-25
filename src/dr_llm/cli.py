@@ -215,7 +215,13 @@ def models_list(
     """List models from stored catalog."""
     repository = _repo(dsn, min_pool_size, max_pool_size)
     try:
-        client = LlmClient(registry=build_default_registry(), repository=repository)
+        registry = build_default_registry()
+        if provider is not None:
+            try:
+                provider = registry.get(provider).name
+            except KeyError:
+                pass
+        client = LlmClient(registry=registry, repository=repository)
         items = client.list_models(
             ModelCatalogQuery(
                 provider=provider,

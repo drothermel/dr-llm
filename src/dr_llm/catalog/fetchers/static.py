@@ -29,6 +29,23 @@ CODEX_MODELS = [
     ("gpt-5", "GPT-5"),
 ]
 
+CLAUDE_CODE_DOCS_URL = "https://code.claude.com/docs/en/model-config"
+
+CLAUDE_CODE_MODELS = [
+    ("claude-opus-4-6", "Claude Opus 4.6"),
+    ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
+    ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
+    ("opus", "Claude Opus 4.6 (alias)"),
+    ("sonnet", "Claude Sonnet 4.6 (alias)"),
+    ("haiku", "Claude Haiku 4.5 (alias)"),
+]
+
+KIMI_CODING_DOCS_URL = "https://www.kimi.com/code/docs/en/more/third-party-agents.html"
+
+KIMI_CODING_MODELS = [
+    ("kimi-for-coding", "Kimi For Coding"),
+]
+
 MINIMAX_DOCS_URL = "https://platform.minimax.io/docs/guides/models-intro"
 
 MINIMAX_TEXT_MODELS = [
@@ -67,55 +84,56 @@ def fetch_static_headless_models(
         ]
         return entries, source_meta
     if isinstance(adapter, ClaudeHeadlessMiniMaxAdapter):
-        return (
-            [
-                ModelCatalogEntry(
-                    provider=adapter.name,
-                    model="MiniMax-M2.1",
-                    display_name="MiniMax M2.1 (Claude headless preset)",
-                    supports_reasoning=True,
-                    supports_tools=True,
-                    supports_vision=None,
-                    source_quality="static",
-                    fetched_at=now,
-                    metadata={"source": "static_default"},
-                )
-            ],
-            {"source": "static_default"},
-        )
-    if isinstance(adapter, ClaudeHeadlessKimiAdapter):
-        return (
-            [
-                ModelCatalogEntry(
-                    provider=adapter.name,
-                    model="kimi-for-coding",
-                    display_name="Kimi For Coding (Claude headless preset)",
-                    supports_reasoning=True,
-                    supports_tools=True,
-                    supports_vision=True,
-                    source_quality="static",
-                    fetched_at=now,
-                    metadata={"source": "static_default"},
-                )
-            ],
-            {"source": "static_default"},
-        )
-    return (
-        [
+        source_meta = {"source": "static", "docs_url": MINIMAX_DOCS_URL}
+        entries = [
             ModelCatalogEntry(
                 provider=adapter.name,
-                model="claude-sonnet-4-6",
-                display_name="Claude Sonnet 4.6",
+                model=model_id,
+                display_name=display_name,
+                supports_reasoning=True,
+                supports_tools=True,
+                supports_vision=None,
+                source_quality="static",
+                fetched_at=now,
+                metadata=source_meta,
+            )
+            for model_id, display_name in MINIMAX_TEXT_MODELS
+        ]
+        return entries, source_meta
+    if isinstance(adapter, ClaudeHeadlessKimiAdapter):
+        source_meta = {"source": "static", "docs_url": KIMI_CODING_DOCS_URL}
+        entries = [
+            ModelCatalogEntry(
+                provider=adapter.name,
+                model=model_id,
+                display_name=display_name,
                 supports_reasoning=True,
                 supports_tools=True,
                 supports_vision=True,
                 source_quality="static",
                 fetched_at=now,
-                metadata={"source": "static_default"},
+                metadata=source_meta,
             )
-        ],
-        {"source": "static_default"},
-    )
+            for model_id, display_name in KIMI_CODING_MODELS
+        ]
+        return entries, source_meta
+    # Default: ClaudeHeadlessAdapter (native Anthropic)
+    source_meta = {"source": "static", "docs_url": CLAUDE_CODE_DOCS_URL}
+    entries = [
+        ModelCatalogEntry(
+            provider=adapter.name,
+            model=model_id,
+            display_name=display_name,
+            supports_reasoning=True,
+            supports_tools=True,
+            supports_vision=True,
+            source_quality="static",
+            fetched_at=now,
+            metadata=source_meta,
+        )
+        for model_id, display_name in CLAUDE_CODE_MODELS
+    ]
+    return entries, source_meta
 
 
 def fetch_static_minimax_models(
