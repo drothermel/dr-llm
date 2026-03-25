@@ -10,7 +10,7 @@ import psycopg
 import pytest
 from psycopg import sql
 
-from dr_llm.pool.errors import PoolSchemaError
+from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
 from dr_llm.pool.models import (
     AcquireQuery,
     PendingSample,
@@ -32,14 +32,14 @@ _TEST_SCHEMA = PoolSchema(
 )
 
 _POOL_TABLES = (
-    "pool_itest_metadata",
-    "pool_itest_claims",
-    "pool_itest_pending",
-    "pool_itest_samples",
+    _TEST_SCHEMA.metadata_table,
+    _TEST_SCHEMA.claims_table,
+    _TEST_SCHEMA.pending_table,
+    _TEST_SCHEMA.samples_table,
 )
 
 
-def _truncate(dsn: str) -> None:
+def _drop_tables(dsn: str) -> None:
     with psycopg.connect(dsn) as conn:
         for tbl in _POOL_TABLES:
             conn.execute(
@@ -54,17 +54,19 @@ def _get_dsn() -> str | None:
 
 @pytest.fixture(scope="module")
 def pool_store() -> Generator[PoolStore, None, None]:
+    """Module-scoped store shared across tests. Tests MUST use unique dim_a
+    values to avoid cross-test interference."""
     dsn = _get_dsn()
     if not dsn:
         pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
-    _truncate(dsn)
+    _drop_tables(dsn)
     runtime = StorageRuntime(
         StorageConfig(dsn=dsn, min_pool_size=1, max_pool_size=4, application_name="pool_tests")
     )
     store = PoolStore(_TEST_SCHEMA, runtime)
     store.init_schema()
     yield store
-    _truncate(dsn)
+    _drop_tables(dsn)
     runtime.close()
 
 
@@ -313,3 +315,19 @@ def test_service_acquire_or_generate(pool_store: PoolStore) -> None:
     # Samples should now be in the pool for future runs
     depth = pool_store.cell_depth(key_values={"dim_a": "svc", "dim_b": 42})
     assert depth >= 3
+
+
+@pytest.mark.integration
+def test_service_generator_error_wraps_as_topup_error(pool_store: PoolStore) -> None:
+    service = PoolService(pool_store)
+
+    def failing_generator(key_values: dict[str, Any], deficit: int) -> list[PoolSample]:
+        raise RuntimeError("LLM call timed out")
+
+    q = AcquireQuery(
+        run_id="svc_fail",
+        key_values={"dim_a": "svc_err", "dim_b": 99},
+        n=3,
+    )
+    with pytest.raises(PoolTopupError, match="Top-up generation failed"):
+        service.acquire_or_generate(q, generator_fn=failing_generator)

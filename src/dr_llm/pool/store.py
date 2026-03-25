@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from psycopg import errors as pg_errors
 from psycopg import sql
+from psycopg.rows import dict_row
 
 from dr_llm.pool.ddl import generate_ddl
 from dr_llm.pool.errors import PoolSchemaError
@@ -39,6 +40,12 @@ def _is_constraint_error(exc: BaseException) -> bool:
     return isinstance(
         exc, (pg_errors.UniqueViolation, pg_errors.IntegrityConstraintViolation)
     )
+
+
+def _parse_json_field(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    return json.loads(raw or "{}")
 
 
 class PoolStore:
@@ -88,6 +95,16 @@ class PoolStore:
 
     def _key_values_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
         return {name: row[name] for name in self._schema.key_column_names}
+
+    def _validate_key_filter(self, key_filter: dict[str, Any]) -> None:
+        """Warn on unknown keys in a partial key filter."""
+        unknown = set(key_filter.keys()) - set(self._schema.key_column_names)
+        if unknown:
+            logger.warning(
+                "key_filter contains unknown columns %s (valid: %s)",
+                unknown,
+                self._schema.key_column_names,
+            )
 
     # --- Sample CRUD ---
 
@@ -251,12 +268,37 @@ class PoolStore:
     def insert_samples(
         self, samples: Iterable[PoolSample], *, ignore_conflicts: bool = True
     ) -> InsertResult:
-        """Bulk insert samples. Each sample may require its own statement (for
-        auto-idx allocation), but all run within a single connection checkout."""
+        """Bulk insert samples.
+
+        Samples with an explicit sample_idx are batched into a single INSERT
+        statement. Samples without sample_idx require serial auto-idx allocation
+        and fall back to per-row inserts.
+        """
+        self.init_schema()
+        explicit: list[PoolSample] = []
+        auto_idx: list[PoolSample] = []
+        for s in samples:
+            self._validate_key_values(s.key_values)
+            if s.sample_idx is not None:
+                explicit.append(s)
+            else:
+                auto_idx.append(s)
+
         inserted = 0
         skipped = 0
         failed = 0
-        for sample in samples:
+
+        # Batch insert for explicit-idx samples
+        if explicit:
+            result = self._batch_insert_explicit(
+                explicit, ignore_conflicts=ignore_conflicts
+            )
+            inserted += result.inserted
+            skipped += result.skipped
+            failed += result.failed
+
+        # Per-row insert for auto-idx samples (each needs MAX+1 query)
+        for sample in auto_idx:
             try:
                 if self.insert_sample(sample, ignore_conflicts=ignore_conflicts):
                     inserted += 1
@@ -266,7 +308,68 @@ class PoolStore:
                 if not ignore_conflicts:
                     raise
                 failed += 1
+
         return InsertResult(inserted=inserted, skipped=skipped, failed=failed)
+
+    def _batch_insert_explicit(
+        self, samples: list[PoolSample], *, ignore_conflicts: bool = True
+    ) -> InsertResult:
+        """Batch insert samples that have explicit sample_idx values."""
+        tbl = self._schema.samples_table
+        key_names = self._schema.key_column_names
+        cols = (
+            ["sample_id"]
+            + key_names
+            + [
+                "sample_idx",
+                "payload_json",
+                "source_run_id",
+                "call_id",
+                "metadata_json",
+                "status",
+            ]
+        )
+        placeholders = ", ".join(["%s"] * len(cols))
+        col_list = ", ".join(cols)
+        conflict = " ON CONFLICT DO NOTHING" if ignore_conflicts else ""
+
+        all_values: list[list[Any]] = []
+        for sample in samples:
+            values: list[Any] = [sample.sample_id]
+            for name in key_names:
+                values.append(sample.key_values[name])
+            values.extend(
+                [
+                    sample.sample_idx,
+                    json.dumps(sample.payload, default=str),
+                    sample.source_run_id,
+                    sample.call_id,
+                    json.dumps(sample.metadata, default=str),
+                    sample.status.value,
+                ]
+            )
+            all_values.append(values)
+
+        values_clause = ", ".join(f"({placeholders})" for _ in all_values)
+        flat_params = [v for row in all_values for v in row]
+
+        with self._runtime.conn() as conn:
+            try:
+                cur = conn.execute(
+                    f"INSERT INTO {tbl} ({col_list}) VALUES {values_clause}{conflict}",
+                    flat_params,
+                )
+                conn.commit()
+                row_count = cur.rowcount or 0
+                return InsertResult(
+                    inserted=row_count,
+                    skipped=len(samples) - row_count,
+                )
+            except Exception as exc:
+                conn.rollback()
+                if ignore_conflicts and _is_constraint_error(exc):
+                    return InsertResult(skipped=len(samples))
+                raise
 
     # --- No-Replacement Acquisition ---
 
@@ -300,40 +403,23 @@ class PoolStore:
 
         with self._runtime.conn() as conn:
             try:
-                rows = conn.execute(select_sql, select_params).fetchall()
+                with conn.cursor(row_factory=dict_row) as cur:
+                    rows = cur.execute(select_sql, select_params).fetchall()
                 samples: list[PoolSample] = []
                 claimed = 0
 
                 for idx, row in enumerate(rows):
-                    sample_id = row[0]
-                    key_vals = {}
-                    key_start = 8
-                    for i, name in enumerate(key_names):
-                        key_vals[name] = row[key_start + i]
-
-                    payload_raw = row[2]
-                    payload = (
-                        payload_raw
-                        if isinstance(payload_raw, dict)
-                        else json.loads(payload_raw or "{}")
-                    )
-                    metadata_raw = row[5]
-                    meta = (
-                        metadata_raw
-                        if isinstance(metadata_raw, dict)
-                        else json.loads(metadata_raw or "{}")
-                    )
-
+                    key_vals = {name: row[name] for name in key_names}
                     sample = PoolSample(
-                        sample_id=sample_id,
-                        sample_idx=row[1],
+                        sample_id=row["sample_id"],
+                        sample_idx=row["sample_idx"],
                         key_values=key_vals,
-                        payload=payload,
-                        source_run_id=row[3],
-                        call_id=row[4],
-                        metadata=meta,
-                        status=row[6],
-                        created_at=row[7],
+                        payload=_parse_json_field(row["payload_json"]),
+                        source_run_id=row["source_run_id"],
+                        call_id=row["call_id"],
+                        metadata=_parse_json_field(row["metadata_json"]),
+                        status=row["status"],
+                        created_at=row["created_at"],
                     )
 
                     claim_id = uuid4().hex
@@ -347,7 +433,7 @@ class PoolStore:
                                 query.run_id,
                                 query.request_id,
                                 query.consumer_tag,
-                                sample_id,
+                                row["sample_id"],
                                 idx,
                             ],
                         )
@@ -357,7 +443,7 @@ class PoolStore:
                         if _is_constraint_error(exc):
                             logger.debug(
                                 "Claim conflict for sample %s in run %s",
-                                sample_id,
+                                row["sample_id"],
                                 query.run_id,
                             )
                             continue
@@ -475,6 +561,7 @@ class PoolStore:
         params: list[Any] = [PendingStatus.pending.value, PendingStatus.leased.value]
 
         if key_filter:
+            self._validate_key_filter(key_filter)
             for k, v in key_filter.items():
                 if k in self._schema.key_column_names:
                     where_parts.append(f"{k} = %s")
@@ -521,41 +608,27 @@ class PoolStore:
 
         with self._runtime.conn() as conn:
             try:
-                rows = conn.execute(claim_sql, update_params).fetchall()
+                with conn.cursor(row_factory=dict_row) as cur:
+                    rows = cur.execute(claim_sql, update_params).fetchall()
                 conn.commit()
                 results: list[PendingSample] = []
                 for row in rows:
-                    key_vals = {}
-                    for i, name in enumerate(key_names):
-                        key_vals[name] = row[1 + i]
-                    offset = 1 + len(key_names)
-                    payload_raw = row[offset + 1]
-                    payload = (
-                        payload_raw
-                        if isinstance(payload_raw, dict)
-                        else json.loads(payload_raw or "{}")
-                    )
-                    meta_raw = row[offset + 4]
-                    meta = (
-                        meta_raw
-                        if isinstance(meta_raw, dict)
-                        else json.loads(meta_raw or "{}")
-                    )
+                    key_vals = {name: row[name] for name in key_names}
                     results.append(
                         PendingSample(
-                            pending_id=row[0],
+                            pending_id=row["pending_id"],
                             key_values=key_vals,
-                            sample_idx=row[offset],
-                            payload=payload,
-                            source_run_id=row[offset + 2],
-                            call_id=row[offset + 3],
-                            metadata=meta,
-                            priority=row[offset + 5],
+                            sample_idx=row["sample_idx"],
+                            payload=_parse_json_field(row["payload_json"]),
+                            source_run_id=row["source_run_id"],
+                            call_id=row["call_id"],
+                            metadata=_parse_json_field(row["metadata_json"]),
+                            priority=row["priority"],
                             status=PendingStatus.leased,
                             worker_id=worker_id,
-                            lease_expires_at=row[offset + 8],
-                            attempt_count=row[offset + 9],
-                            created_at=row[offset + 10],
+                            lease_expires_at=row["lease_expires_at"],
+                            attempt_count=row["attempt_count"],
+                            created_at=row["created_at"],
                         )
                     )
                 return results
@@ -566,54 +639,44 @@ class PoolStore:
     def promote_pending(
         self, *, pending_id: str, payload: dict[str, Any] | None = None
     ) -> PoolSample | None:
-        """Promote pending sample to finalized. Inserts into samples, marks pending as promoted."""
+        """Promote a leased pending sample to finalized.
+
+        Returns None if the pending_id doesn't exist or is not in 'leased' status.
+        Inserts into samples table and marks the pending row as promoted.
+        """
         self.init_schema()
         pending_tbl = self._schema.pending_table
         samples_tbl = self._schema.samples_table
         key_names = self._schema.key_column_names
 
+        all_cols = (
+            ["pending_id", "status"]
+            + key_names
+            + [
+                "sample_idx",
+                "payload_json",
+                "source_run_id",
+                "call_id",
+                "metadata_json",
+            ]
+        )
+
         with self._runtime.conn() as conn:
             try:
-                all_cols = (
-                    ["pending_id"]
-                    + key_names
-                    + [
-                        "sample_idx",
-                        "payload_json",
-                        "source_run_id",
-                        "call_id",
-                        "metadata_json",
-                    ]
-                )
-                row = conn.execute(
-                    f"SELECT {', '.join(all_cols)} FROM {pending_tbl} WHERE pending_id = %s",
-                    [pending_id],
-                ).fetchone()
+                with conn.cursor(row_factory=dict_row) as cur:
+                    row = cur.execute(
+                        f"SELECT {', '.join(all_cols)} FROM {pending_tbl} "
+                        f"WHERE pending_id = %s",
+                        [pending_id],
+                    ).fetchone()
 
-                if row is None:
+                if row is None or row["status"] != PendingStatus.leased.value:
                     conn.rollback()
                     return None
 
-                key_vals: dict[str, Any] = {}
-                for i, name in enumerate(key_names):
-                    key_vals[name] = row[1 + i]
-                offset = 1 + len(key_names)
-                sample_idx = row[offset]
-                pending_payload_raw = row[offset + 1]
-                pending_payload = (
-                    pending_payload_raw
-                    if isinstance(pending_payload_raw, dict)
-                    else json.loads(pending_payload_raw or "{}")
-                )
-                source_run_id = row[offset + 2]
-                call_id = row[offset + 3]
-                meta_raw = row[offset + 4]
-                meta = (
-                    meta_raw
-                    if isinstance(meta_raw, dict)
-                    else json.loads(meta_raw or "{}")
-                )
-
+                key_vals = {name: row[name] for name in key_names}
+                pending_payload = _parse_json_field(row["payload_json"])
+                meta = _parse_json_field(row["metadata_json"])
                 final_payload = payload if payload is not None else pending_payload
                 sample_id = uuid4().hex
 
@@ -634,10 +697,10 @@ class PoolStore:
                     values.append(key_vals[name])
                 values.extend(
                     [
-                        sample_idx,
+                        row["sample_idx"],
                         json.dumps(final_payload, default=str),
-                        source_run_id,
-                        call_id,
+                        row["source_run_id"],
+                        row["call_id"],
                         json.dumps(meta, default=str),
                     ]
                 )
@@ -656,11 +719,11 @@ class PoolStore:
                 conn.commit()
                 return PoolSample(
                     sample_id=sample_id,
-                    sample_idx=sample_idx,
+                    sample_idx=row["sample_idx"],
                     key_values=key_vals,
                     payload=final_payload,
-                    source_run_id=source_run_id,
-                    call_id=call_id,
+                    source_run_id=row["source_run_id"],
+                    call_id=row["call_id"],
                     metadata=meta,
                 )
             except Exception:
@@ -774,18 +837,17 @@ class PoolStore:
         key_names = self._schema.key_column_names
         key_list = ", ".join(key_names)
         with self._runtime.conn() as conn:
-            rows = conn.execute(
-                f"SELECT {key_list}, COUNT(*) as cnt FROM {tbl} GROUP BY {key_list}"
-            ).fetchall()
-            result: list[CoverageRow] = []
-            for row in rows:
-                key_vals = {}
-                for i, name in enumerate(key_names):
-                    key_vals[name] = row[i]
-                result.append(
-                    CoverageRow(key_values=key_vals, count=row[len(key_names)])
+            with conn.cursor(row_factory=dict_row) as cur:
+                rows = cur.execute(
+                    f"SELECT {key_list}, COUNT(*) as cnt FROM {tbl} GROUP BY {key_list}"
+                ).fetchall()
+            return [
+                CoverageRow(
+                    key_values={name: row[name] for name in key_names},
+                    count=row["cnt"],
                 )
-            return result
+                for row in rows
+            ]
 
     def cell_depth(self, *, key_values: dict[str, Any]) -> int:
         """Count total samples for a specific cell."""
@@ -857,6 +919,7 @@ class PoolStore:
         where_parts: list[str] = []
         params: list[Any] = []
         if key_filter:
+            self._validate_key_filter(key_filter)
             for k, v in key_filter.items():
                 if k in self._schema.key_column_names:
                     where_parts.append(f"{k} = %s")
@@ -865,41 +928,26 @@ class PoolStore:
         where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
 
         with self._runtime.conn() as conn:
-            rows = conn.execute(
-                f"SELECT {col_list} FROM {tbl} {where_clause} ORDER BY sample_idx ASC",
-                params,
-            ).fetchall()
+            with conn.cursor(row_factory=dict_row) as cur:
+                rows = cur.execute(
+                    f"SELECT {col_list} FROM {tbl} {where_clause} ORDER BY sample_idx ASC",
+                    params,
+                ).fetchall()
 
             results: list[PoolSample] = []
             for row in rows:
-                key_vals = {}
-                for i, name in enumerate(key_names):
-                    key_vals[name] = row[1 + i]
-                offset = 1 + len(key_names)
-                payload_raw = row[offset + 1]
-                payload = (
-                    payload_raw
-                    if isinstance(payload_raw, dict)
-                    else json.loads(payload_raw or "{}")
-                )
-                meta_raw = row[offset + 4]
-                meta = (
-                    meta_raw
-                    if isinstance(meta_raw, dict)
-                    else json.loads(meta_raw or "{}")
-                )
-
+                key_vals = {name: row[name] for name in key_names}
                 results.append(
                     PoolSample(
-                        sample_id=row[0],
-                        sample_idx=row[offset],
+                        sample_id=row["sample_id"],
+                        sample_idx=row["sample_idx"],
                         key_values=key_vals,
-                        payload=payload,
-                        source_run_id=row[offset + 2],
-                        call_id=row[offset + 3],
-                        metadata=meta,
-                        status=row[offset + 5],
-                        created_at=row[offset + 6],
+                        payload=_parse_json_field(row["payload_json"]),
+                        source_run_id=row["source_run_id"],
+                        call_id=row["call_id"],
+                        metadata=_parse_json_field(row["metadata_json"]),
+                        status=row["status"],
+                        created_at=row["created_at"],
                     )
                 )
             return results
