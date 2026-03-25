@@ -424,6 +424,36 @@ def run_finish(
         repository.close()
 
 
+@run_app.command("list-calls")
+def run_list_calls(
+    run_id: str | None = typer.Option(None, help="Filter by run ID."),
+    limit: int = typer.Option(100),
+    offset: int = typer.Option(0),
+    dsn: str | None = typer.Option(None, envvar="DR_LLM_DATABASE_URL"),
+    min_pool_size: int = typer.Option(4),
+    max_pool_size: int = typer.Option(64),
+) -> None:
+    """List recorded LLM calls, optionally filtered by run."""
+    repository = _repo(dsn, min_pool_size, max_pool_size)
+    try:
+        calls = repository.list_calls(run_id=run_id, limit=limit, offset=offset)
+        _emit(
+            {
+                "calls": [
+                    call.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                        exclude_computed_fields=True,
+                    )
+                    for call in calls
+                ],
+                "count": len(calls),
+            }
+        )
+    finally:
+        repository.close()
+
+
 @run_app.command("benchmark")
 def run_benchmark(
     workers: int = typer.Option(64, help="Parallel worker threads."),
