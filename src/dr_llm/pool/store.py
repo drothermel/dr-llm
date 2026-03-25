@@ -471,10 +471,9 @@ class PoolStore:
                 raise
 
     def acquire_batch(self, queries: list[AcquireQuery]) -> dict[str, AcquireResult]:
-        """Acquire samples for multiple key-value sets in a single connection.
+        """Convenience wrapper: acquire() for each query, returning results by request_id.
 
-        Returns a dict keyed by each query's request_id → AcquireResult.
-        More efficient than calling acquire() in a loop.
+        No SQL-level batching — each query runs a separate acquire() call.
         """
         results: dict[str, AcquireResult] = {}
         for query in queries:
