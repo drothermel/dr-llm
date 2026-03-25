@@ -309,6 +309,35 @@ If integration tests are skipped unexpectedly, include skip reasons:
 uv run pytest tests/ -v -m integration -rs
 ```
 
+## Demo Scripts
+
+### End-to-end query flow
+
+Creates a project, records queries, verifies backup/restore:
+
+```bash
+./scripts/demo-query-flow.sh
+```
+
+Requires Docker and at least one of `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
+
+### Pool provider demo
+
+Queries all available LLM providers (API and headless) and stores results in a typed pool:
+
+```bash
+uv run python scripts/demo-pool-providers.py
+```
+
+Auto-detects available providers by checking API key env vars and CLI tool availability (`claude`, `codex`). For each provider: syncs the model catalog, selects a model, sends a query, and inserts the result into a pool. Prints a summary table at the end.
+
+Options:
+```bash
+uv run python scripts/demo-pool-providers.py --project-name my-demo --prompt "Explain gravity in one sentence."
+```
+
+Requires Docker. Works with any combination of providers — set API keys and/or install CLI tools for the providers you want to test.
+
 ## Milestone Closeout Artifacts
 
 - Milestone status: `docs/milestones.md`
