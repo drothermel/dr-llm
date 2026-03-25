@@ -5,6 +5,8 @@
 - canonical PostgreSQL recording/query storage
 - event-sourced multistep sessions with tool-calling
 - worker-safe parallel tool execution with queue claiming
+- generic typed sample pools for benchmark storage
+- isolated per-project databases with backup/restore
 
 It is intentionally domain-neutral so repos like `nl_latents` and `unitbench` can reuse it.
 
@@ -22,6 +24,14 @@ It is intentionally domain-neutral so repos like `nl_latents` and `unitbench` ca
   - concurrent worker claims via `FOR UPDATE SKIP LOCKED`
 - Replay:
   - reconstruct message history from `session_events`
+- Sample pools:
+  - schema-driven typed key dimensions with auto-generated DDL
+  - no-replacement acquisition via claims table
+  - pending sample lifecycle (claim/promote/fail with `FOR UPDATE SKIP LOCKED`)
+  - top-up orchestration: acquire, wait for pending, generate, re-acquire
+- Project management:
+  - isolated per-project Postgres containers via Docker
+  - backup/restore with atomic swap
 
 ## Install
 
@@ -146,6 +156,15 @@ dr-llm tool worker run --tool-loader mypkg.tools:register_tools
 dr-llm session step --session-id <session_id> --inline-tool-execution
 
 dr-llm replay session --session-id <session_id>
+
+dr-llm project create my-experiment
+dr-llm project list
+dr-llm project use my-experiment    # prints export DR_LLM_DATABASE_URL=...
+dr-llm project start my-experiment
+dr-llm project stop my-experiment
+dr-llm project backup my-experiment
+dr-llm project restore my-experiment backups/my-experiment-20260325.sql.gz
+dr-llm project destroy my-experiment --yes-really-delete-everything
 ```
 
 Benchmark command output:
@@ -196,6 +215,70 @@ print(response.text)
 Adapter lifecycle note:
 - If you instantiate provider adapters directly, call `adapter.close()` when done (or use context manager form `with ... as adapter:`) to release underlying HTTP connections.
 
+## Pool Example
+
+Pools provide schema-driven sample storage with no-replacement acquisition for benchmarks.
+
+```python
+from dr_llm import (
+    ColumnType, KeyColumn, PoolSchema, PoolStore, PoolService,
+    PoolAcquireQuery, PoolAcquireResult,
+)
+from dr_llm.pool.models import PoolSample
+from dr_llm.storage._runtime import StorageConfig, StorageRuntime
+
+# 1. Declare a pool schema with typed key dimensions
+schema = PoolSchema(
+    name="my_benchmark",
+    key_columns=[
+        KeyColumn(name="provider"),
+        KeyColumn(name="difficulty", type=ColumnType.integer),
+    ],
+)
+
+# 2. Connect and create tables
+runtime = StorageRuntime(StorageConfig(dsn="postgresql://..."))
+store = PoolStore(schema, runtime)
+store.init_schema()  # idempotent CREATE TABLE IF NOT EXISTS
+
+# 3. Insert samples
+store.insert_samples([
+    PoolSample(
+        key_values={"provider": "openai", "difficulty": 1},
+        sample_idx=0,
+        payload={"prompt": "What is 2+2?", "expected": "4"},
+    ),
+    PoolSample(
+        key_values={"provider": "openai", "difficulty": 1},
+        sample_idx=1,
+        payload={"prompt": "What is 3+3?", "expected": "6"},
+    ),
+])
+
+# 4. Acquire samples (no-replacement within a run)
+result = store.acquire(PoolAcquireQuery(
+    run_id="run_001",
+    key_values={"provider": "openai", "difficulty": 1},
+    n=2,
+))
+for sample in result.samples:
+    print(sample.payload)
+
+# 5. Or use PoolService for automatic top-up generation
+service = PoolService(store)
+result = service.acquire_or_generate(
+    PoolAcquireQuery(
+        run_id="run_002",
+        key_values={"provider": "openai", "difficulty": 2},
+        n=5,
+    ),
+    generator_fn=lambda key_values, deficit: [
+        PoolSample(key_values=key_values, payload={"generated": True})
+        for _ in range(deficit)
+    ],
+)
+```
+
 ## Testing
 
 ```bash
@@ -205,33 +288,26 @@ uv run ty check src
 uv run pytest tests/ -v
 ```
 
-Postgres integration tests are env-gated. Start the local test database and run:
+### Integration tests
+
+Integration tests require a running Postgres instance. If the test container (`dr-llm-pg-test` on port 5433) is already running, tests work automatically — `conftest.py` sets the default `DR_LLM_TEST_DATABASE_URL`.
+
+To start the test container from scratch:
 
 ```bash
 source ./scripts/start-test-postgres.sh
-uv run pytest tests/ -v -m integration
 ```
 
-The script starts a Postgres container on port 5433, applies migrations, and exports the required env vars.
+Then run integration tests:
+
+```bash
+uv run pytest tests/ -v -m integration
+```
 
 If integration tests are skipped unexpectedly, include skip reasons:
 ```bash
 uv run pytest tests/ -v -m integration -rs
 ```
-
-## CI
-
-GitHub Actions workflows:
-- `ci`: runs on PRs to `main` and pushes to `main`
-  - `quality-unit` job: format check, lint, type-check, non-integration tests
-  - `security` job: `uv lock --check` and `uvx pip-audit`
-- `integration`: runs on pushes to `main`, manual dispatch, and PRs to `main` only when label `run-integration` is present
-  - starts `postgres:16` service and runs `pytest -m integration`
-
-Branch protection recommendation:
-- require `ci / quality-unit`
-- require `ci / security`
-- keep `integration / postgres-integration` non-required for all PRs (opt-in via label, always on `main`)
 
 ## Milestone Closeout Artifacts
 
