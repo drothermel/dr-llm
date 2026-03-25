@@ -1010,3 +1010,76 @@ class PoolStore:
                     )
                 )
             return results
+
+    def bulk_load_pending(
+        self, *, key_filter: dict[str, Any] | None = None
+    ) -> list[PendingSample]:
+        """Load in-flight pending samples, optionally filtered by partial key match.
+
+        Returns only samples with status 'pending' or 'leased'.
+        """
+        self.init_schema()
+        tbl = self._schema.pending_table
+        key_names = self._schema.key_column_names
+
+        all_cols = (
+            ["pending_id"]
+            + key_names
+            + [
+                "sample_idx",
+                "payload_json",
+                "source_run_id",
+                "call_id",
+                "metadata_json",
+                "priority",
+                "status",
+                "worker_id",
+                "lease_expires_at",
+                "attempt_count",
+                "created_at",
+            ]
+        )
+        col_list = ", ".join(all_cols)
+
+        where_parts: list[str] = ["status IN (%s, %s)"]
+        params: list[Any] = [PendingStatus.pending.value, PendingStatus.leased.value]
+        if key_filter:
+            self._validate_key_filter(key_filter)
+            for k, v in key_filter.items():
+                if k in self._schema.key_column_names:
+                    where_parts.append(f"{k} = %s")
+                    params.append(v)
+
+        where_clause = f"WHERE {' AND '.join(where_parts)}"
+
+        with self._runtime.conn() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                rows = cur.execute(
+                    _q(
+                        f"SELECT {col_list} FROM {tbl} {where_clause} "
+                        f"ORDER BY priority DESC, created_at ASC"
+                    ),
+                    params,
+                ).fetchall()
+
+            results: list[PendingSample] = []
+            for row in rows:
+                key_vals = {name: row[name] for name in key_names}
+                results.append(
+                    PendingSample(
+                        pending_id=row["pending_id"],
+                        key_values=key_vals,
+                        sample_idx=row["sample_idx"],
+                        payload=_parse_json_field(row["payload_json"]),
+                        source_run_id=row["source_run_id"],
+                        call_id=row["call_id"],
+                        metadata=_parse_json_field(row["metadata_json"]),
+                        priority=row["priority"],
+                        status=row["status"],
+                        worker_id=row["worker_id"],
+                        lease_expires_at=row["lease_expires_at"],
+                        attempt_count=row["attempt_count"],
+                        created_at=row["created_at"],
+                    )
+                )
+            return results

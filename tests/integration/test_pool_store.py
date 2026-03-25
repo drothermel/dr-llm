@@ -282,6 +282,46 @@ def test_bulk_load_with_filter(pool_store: PoolStore) -> None:
     assert all(s.key_values["dim_a"] == "bload" for s in filtered)
 
 
+@pytest.mark.integration
+def test_bulk_load_pending(pool_store: PoolStore) -> None:
+    pool_store.insert_pending(_pending(dim_a="blp", dim_b=70, sample_idx=0))
+    pool_store.insert_pending(_pending(dim_a="blp", dim_b=70, sample_idx=1))
+
+    results = pool_store.bulk_load_pending(key_filter={"dim_a": "blp", "dim_b": 70})
+    assert len(results) == 2
+    assert all(isinstance(r, PendingSample) for r in results)
+    assert all(r.key_values["dim_a"] == "blp" for r in results)
+
+
+@pytest.mark.integration
+def test_bulk_load_pending_with_filter(pool_store: PoolStore) -> None:
+    pool_store.insert_pending(_pending(dim_a="blpf_a", dim_b=71, sample_idx=0))
+    pool_store.insert_pending(_pending(dim_a="blpf_b", dim_b=71, sample_idx=0))
+
+    filtered = pool_store.bulk_load_pending(key_filter={"dim_a": "blpf_a"})
+    assert len(filtered) == 1
+    assert filtered[0].key_values["dim_a"] == "blpf_a"
+
+
+@pytest.mark.integration
+def test_bulk_load_pending_excludes_promoted(pool_store: PoolStore) -> None:
+    # Insert a pending sample and promote it
+    pool_store.insert_pending(_pending(dim_a="blpe", dim_b=72, sample_idx=0))
+    claimed = pool_store.claim_pending(
+        worker_id="w1", limit=1, lease_seconds=300,
+        key_filter={"dim_a": "blpe", "dim_b": 72},
+    )
+    assert len(claimed) == 1
+    pool_store.promote_pending(pending_id=claimed[0].pending_id)
+
+    # Insert another that stays pending
+    pool_store.insert_pending(_pending(dim_a="blpe", dim_b=72, sample_idx=1))
+
+    results = pool_store.bulk_load_pending(key_filter={"dim_a": "blpe", "dim_b": 72})
+    assert len(results) == 1
+    assert results[0].sample_idx == 1
+
+
 # --- Validation ---
 
 
