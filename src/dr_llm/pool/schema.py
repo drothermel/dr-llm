@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 
 class ColumnType(StrEnum):
@@ -54,6 +54,12 @@ class PoolSchema(BaseModel):
             )
             raise ValueError(msg)
         return v
+
+    @model_validator(mode="after")
+    def _validate_key_columns_nonempty(self) -> PoolSchema:
+        if not self.key_columns:
+            raise ValueError("PoolSchema requires at least one KeyColumn")
+        return self
 
     @property
     def samples_table(self) -> str:

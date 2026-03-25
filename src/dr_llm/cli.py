@@ -49,9 +49,7 @@ tool_app.add_typer(worker_app, name="worker")
 
 @app.callback()
 def main(
-    project: str | None = typer.Option(
-        None, help="Use a named project's database."
-    ),
+    project: str | None = typer.Option(None, help="Use a named project's database."),
 ) -> None:
     """dr-llm CLI"""
     if project is not None:

@@ -77,9 +77,7 @@ class PoolStore:
                 f"Missing key columns: {missing}. Expected: {expected}"
             )
 
-    def _key_where_clause(
-        self, key_values: dict[str, Any]
-    ) -> tuple[str, list[Any]]:
+    def _key_where_clause(self, key_values: dict[str, Any]) -> tuple[str, list[Any]]:
         """Build WHERE clause for key column matching."""
         conditions: list[str] = []
         params: list[Any] = []
@@ -370,6 +368,17 @@ class PoolStore:
             except Exception:
                 conn.rollback()
                 raise
+
+    def acquire_batch(self, queries: list[AcquireQuery]) -> dict[str, AcquireResult]:
+        """Acquire samples for multiple key-value sets in a single connection.
+
+        Returns a dict keyed by each query's request_id → AcquireResult.
+        More efficient than calling acquire() in a loop.
+        """
+        results: dict[str, AcquireResult] = {}
+        for query in queries:
+            results[query.request_id] = self.acquire(query)
+        return results
 
     def remaining(self, *, run_id: str, key_values: dict[str, Any]) -> int:
         """Count unclaimed samples for given key dimensions and run."""
@@ -695,6 +704,49 @@ class PoolStore:
                 key_params + [PendingStatus.pending.value],
             ).fetchone()
             return row[0] if row else 0
+
+    def pending_counts_grouped(
+        self,
+        *,
+        base_key_values: dict[str, Any],
+        group_column: str,
+        group_values: list[Any],
+    ) -> dict[str, int]:
+        """Count pending samples grouped by one varying key dimension.
+
+        Returns {group_value: count} for values with count > 0.
+        Single query instead of N queries.
+        """
+        self.init_schema()
+        if group_column not in self._schema.key_column_names:
+            raise PoolSchemaError(f"group_column {group_column!r} not in schema")
+        tbl = self._schema.pending_table
+
+        where_parts: list[str] = []
+        params: list[Any] = []
+        for kc in self._schema.key_columns:
+            if kc.name == group_column:
+                continue
+            if kc.name in base_key_values:
+                where_parts.append(f"{kc.name} = %s")
+                params.append(base_key_values[kc.name])
+
+        if group_values:
+            placeholders = ",".join(["%s"] * len(group_values))
+            where_parts.append(f"{group_column} IN ({placeholders})")
+            params.extend(group_values)
+
+        where_parts.append("status = %s")
+        params.append(PendingStatus.pending.value)
+
+        where_clause = " AND ".join(where_parts)
+        sql_str = (
+            f"SELECT {group_column}, COUNT(*) FROM {tbl} "
+            f"WHERE {where_clause} GROUP BY {group_column}"
+        )
+        with self._runtime.conn() as conn:
+            rows = conn.execute(sql_str, params).fetchall()
+            return {str(r[0]): int(r[1]) for r in rows if int(r[1]) > 0}
 
     def bump_pending_priority(
         self, *, key_values: dict[str, Any], priority: int

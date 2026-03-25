@@ -21,7 +21,9 @@ project_app = typer.Typer(help="Manage isolated dr-llm project databases")
 
 @project_app.command("create")
 def project_create(
-    name: str = typer.Argument(..., help="Project name (used in container/volume naming)"),
+    name: str = typer.Argument(
+        ..., help="Project name (used in container/volume naming)"
+    ),
 ) -> None:
     """Create a new project with its own Postgres container and persistent volume."""
     try:
@@ -58,7 +60,9 @@ def project_start(
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
-    typer.secho(f"Project '{name}' is running on port {info.port}", fg=typer.colors.GREEN)
+    typer.secho(
+        f"Project '{name}' is running on port {info.port}", fg=typer.colors.GREEN
+    )
 
 
 @project_app.command("stop")
@@ -135,7 +139,9 @@ def project_backup(
 @project_app.command("restore")
 def project_restore(
     name: str = typer.Argument(..., help="Project name"),
-    backup_file: Path = typer.Argument(..., help="Path to backup file (.sql or .sql.gz)"),
+    backup_file: Path = typer.Argument(
+        ..., help="Path to backup file (.sql or .sql.gz)"
+    ),
 ) -> None:
     """Restore a project's database from a backup file."""
     try:

@@ -125,8 +125,6 @@ def _metadata_ddl(schema: PoolSchema) -> str:
     key TEXT NOT NULL,
     value_json JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_{tbl}_pool_key
-    ON {tbl} (pool_name, key);"""
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (pool_name, key)
+);"""

@@ -21,13 +21,11 @@ class PoolService:
         self,
         store: PoolStore,
         *,
-        max_parallel_topup: int = 16,
         pending_poll_interval_s: float = 2.0,
         pending_poll_timeout_s: float = 120.0,
         pending_priority_bump: int = 100,
     ) -> None:
         self._store = store
-        self._max_parallel_topup = max_parallel_topup
         self._pending_poll_interval_s = pending_poll_interval_s
         self._pending_poll_timeout_s = pending_poll_timeout_s
         self._pending_priority_bump = pending_priority_bump
@@ -141,6 +139,6 @@ class PoolService:
         deficit: int,
         generator_fn: Callable[[dict[str, Any], int], list[PoolSample]],
     ) -> list[PoolSample]:
-        """Generate top-up samples, potentially in parallel."""
+        """Generate top-up samples via the caller-provided function."""
         logger.info("Generating %d top-up samples for %s", deficit, key_values)
         return generator_fn(key_values, deficit)
