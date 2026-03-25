@@ -6,7 +6,7 @@ import json
 import logging
 import threading
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, LiteralString, cast
 from uuid import uuid4
 
 from psycopg import errors as pg_errors
@@ -34,6 +34,15 @@ _SAMPLE_IDX_RETRY_ATTEMPTS = 5
 # Safety note: table and column names used in f-string SQL interpolation are
 # validated by PoolSchema/KeyColumn to match ^[a-z][a-z0-9_]*$ — no user input
 # reaches these identifiers without passing that regex gate.
+
+
+def _q(query: str) -> sql.SQL:
+    """Wrap a dynamically built query string as sql.SQL for psycopg's type checker.
+
+    Safe because all interpolated identifiers (table/column names) are validated
+    against ^[a-z][a-z0-9_]*$ by PoolSchema/KeyColumn before reaching here.
+    """
+    return sql.SQL(cast(LiteralString, query))
 
 
 def _is_constraint_error(exc: BaseException) -> bool:
@@ -71,7 +80,7 @@ class PoolStore:
             self._runtime.open_pool()
             ddl = generate_ddl(self._schema)
             with self._runtime.conn() as conn:
-                conn.execute(sql.SQL(ddl))
+                conn.execute(_q(ddl))
                 conn.commit()
             self._schema_initialized = True
 
@@ -182,7 +191,9 @@ class PoolStore:
         with self._runtime.conn() as conn:
             try:
                 cur = conn.execute(
-                    f"INSERT INTO {tbl} ({col_list}) VALUES ({placeholders}){conflict}",
+                    _q(
+                        f"INSERT INTO {tbl} ({col_list}) VALUES ({placeholders}){conflict}"
+                    ),
                     values,
                 )
                 conn.commit()
@@ -256,7 +267,7 @@ class PoolStore:
 
         with self._runtime.conn() as conn:
             try:
-                cur = conn.execute(insert_sql, values)
+                cur = conn.execute(_q(insert_sql), values)
                 conn.commit()
                 return (cur.rowcount or 0) > 0
             except Exception as exc:
@@ -356,7 +367,9 @@ class PoolStore:
         with self._runtime.conn() as conn:
             try:
                 cur = conn.execute(
-                    f"INSERT INTO {tbl} ({col_list}) VALUES {values_clause}{conflict}",
+                    _q(
+                        f"INSERT INTO {tbl} ({col_list}) VALUES {values_clause}{conflict}"
+                    ),
                     flat_params,
                 )
                 conn.commit()
@@ -404,7 +417,7 @@ class PoolStore:
         with self._runtime.conn() as conn:
             try:
                 with conn.cursor(row_factory=dict_row) as cur:
-                    rows = cur.execute(select_sql, select_params).fetchall()
+                    rows = cur.execute(_q(select_sql), select_params).fetchall()
                 samples: list[PoolSample] = []
                 claimed = 0
 
@@ -425,9 +438,11 @@ class PoolStore:
                     claim_id = uuid4().hex
                     try:
                         conn.execute(
-                            f"INSERT INTO {claims_tbl} "
-                            f"(claim_id, run_id, request_id, consumer_tag, sample_id, claim_idx) "
-                            f"VALUES (%s, %s, %s, %s, %s, %s)",
+                            _q(
+                                f"INSERT INTO {claims_tbl} "
+                                f"(claim_id, run_id, request_id, consumer_tag, sample_id, claim_idx) "
+                                f"VALUES (%s, %s, %s, %s, %s, %s)"
+                            ),
                             [
                                 claim_id,
                                 query.run_id,
@@ -484,7 +499,7 @@ class PoolStore:
             f")"
         )
         with self._runtime.conn() as conn:
-            row = conn.execute(count_sql, key_params + [run_id]).fetchone()
+            row = conn.execute(_q(count_sql), key_params + [run_id]).fetchone()
             return row[0] if row else 0
 
     # --- Pending Samples ---
@@ -533,7 +548,9 @@ class PoolStore:
         with self._runtime.conn() as conn:
             try:
                 cur = conn.execute(
-                    f"INSERT INTO {tbl} ({col_list}) VALUES ({placeholders}){conflict}",
+                    _q(
+                        f"INSERT INTO {tbl} ({col_list}) VALUES ({placeholders}){conflict}"
+                    ),
                     values,
                 )
                 conn.commit()
@@ -609,7 +626,7 @@ class PoolStore:
         with self._runtime.conn() as conn:
             try:
                 with conn.cursor(row_factory=dict_row) as cur:
-                    rows = cur.execute(claim_sql, update_params).fetchall()
+                    rows = cur.execute(_q(claim_sql), update_params).fetchall()
                 conn.commit()
                 results: list[PendingSample] = []
                 for row in rows:
@@ -665,8 +682,10 @@ class PoolStore:
             try:
                 with conn.cursor(row_factory=dict_row) as cur:
                     row = cur.execute(
-                        f"SELECT {', '.join(all_cols)} FROM {pending_tbl} "
-                        f"WHERE pending_id = %s",
+                        _q(
+                            f"SELECT {', '.join(all_cols)} FROM {pending_tbl} "
+                            f"WHERE pending_id = %s"
+                        ),
                         [pending_id],
                     ).fetchone()
 
@@ -706,13 +725,15 @@ class PoolStore:
                 )
 
                 conn.execute(
-                    f"INSERT INTO {samples_tbl} ({', '.join(sample_cols)}) "
-                    f"VALUES ({placeholders}) ON CONFLICT DO NOTHING",
+                    _q(
+                        f"INSERT INTO {samples_tbl} ({', '.join(sample_cols)}) "
+                        f"VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+                    ),
                     values,
                 )
 
                 conn.execute(
-                    f"UPDATE {pending_tbl} SET status = %s WHERE pending_id = %s",
+                    _q(f"UPDATE {pending_tbl} SET status = %s WHERE pending_id = %s"),
                     [PendingStatus.promoted.value, pending_id],
                 )
 
@@ -736,9 +757,11 @@ class PoolStore:
         tbl = self._schema.pending_table
         with self._runtime.conn() as conn:
             conn.execute(
-                f"UPDATE {tbl} SET status = %s, "
-                f"metadata_json = jsonb_set(COALESCE(metadata_json, '{{}}'), '{{fail_reason}}', %s::jsonb) "
-                f"WHERE pending_id = %s",
+                _q(
+                    f"UPDATE {tbl} SET status = %s, "
+                    f"metadata_json = jsonb_set(COALESCE(metadata_json, '{{}}'), '{{fail_reason}}', %s::jsonb) "
+                    f"WHERE pending_id = %s"
+                ),
                 [PendingStatus.failed.value, json.dumps(reason), pending_id],
             )
             conn.commit()
@@ -749,8 +772,10 @@ class PoolStore:
         tbl = self._schema.pending_table
         with self._runtime.conn() as conn:
             conn.execute(
-                f"UPDATE {tbl} SET status = %s, worker_id = NULL, lease_expires_at = NULL "
-                f"WHERE pending_id = %s AND worker_id = %s",
+                _q(
+                    f"UPDATE {tbl} SET status = %s, worker_id = NULL, lease_expires_at = NULL "
+                    f"WHERE pending_id = %s AND worker_id = %s"
+                ),
                 [PendingStatus.pending.value, pending_id, worker_id],
             )
             conn.commit()
@@ -763,7 +788,7 @@ class PoolStore:
         key_where, key_params = self._key_where_clause(key_values)
         with self._runtime.conn() as conn:
             row = conn.execute(
-                f"SELECT COUNT(*) FROM {tbl} WHERE {key_where} AND status = %s",
+                _q(f"SELECT COUNT(*) FROM {tbl} WHERE {key_where} AND status = %s"),
                 key_params + [PendingStatus.pending.value],
             ).fetchone()
             return row[0] if row else 0
@@ -808,7 +833,7 @@ class PoolStore:
             f"WHERE {where_clause} GROUP BY {group_column}"
         )
         with self._runtime.conn() as conn:
-            rows = conn.execute(sql_str, params).fetchall()
+            rows = conn.execute(_q(sql_str), params).fetchall()
             return {str(r[0]): int(r[1]) for r in rows if int(r[1]) > 0}
 
     def bump_pending_priority(
@@ -821,8 +846,10 @@ class PoolStore:
         key_where, key_params = self._key_where_clause(key_values)
         with self._runtime.conn() as conn:
             cur = conn.execute(
-                f"UPDATE {tbl} SET priority = GREATEST(priority, %s) "
-                f"WHERE {key_where} AND status = %s",
+                _q(
+                    f"UPDATE {tbl} SET priority = GREATEST(priority, %s) "
+                    f"WHERE {key_where} AND status = %s"
+                ),
                 [priority] + key_params + [PendingStatus.pending.value],
             )
             conn.commit()
@@ -839,7 +866,9 @@ class PoolStore:
         with self._runtime.conn() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 rows = cur.execute(
-                    f"SELECT {key_list}, COUNT(*) as cnt FROM {tbl} GROUP BY {key_list}"
+                    _q(
+                        f"SELECT {key_list}, COUNT(*) as cnt FROM {tbl} GROUP BY {key_list}"
+                    )
                 ).fetchall()
             return [
                 CoverageRow(
@@ -857,7 +886,7 @@ class PoolStore:
         key_where, key_params = self._key_where_clause(key_values)
         with self._runtime.conn() as conn:
             row = conn.execute(
-                f"SELECT COUNT(*) FROM {tbl} WHERE {key_where}", key_params
+                _q(f"SELECT COUNT(*) FROM {tbl} WHERE {key_where}"), key_params
             ).fetchone()
             return row[0] if row else 0
 
@@ -869,10 +898,12 @@ class PoolStore:
         tbl = self._schema.metadata_table
         with self._runtime.conn() as conn:
             conn.execute(
-                f"INSERT INTO {tbl} (pool_name, key, value_json) "
-                f"VALUES (%s, %s, %s) "
-                f"ON CONFLICT (pool_name, key) DO UPDATE SET "
-                f"value_json = EXCLUDED.value_json, updated_at = now()",
+                _q(
+                    f"INSERT INTO {tbl} (pool_name, key, value_json) "
+                    f"VALUES (%s, %s, %s) "
+                    f"ON CONFLICT (pool_name, key) DO UPDATE SET "
+                    f"value_json = EXCLUDED.value_json, updated_at = now()"
+                ),
                 [self._schema.name, key, json.dumps(value_json, default=str)],
             )
             conn.commit()
@@ -883,7 +914,7 @@ class PoolStore:
         tbl = self._schema.metadata_table
         with self._runtime.conn() as conn:
             row = conn.execute(
-                f"SELECT value_json FROM {tbl} WHERE pool_name = %s AND key = %s",
+                _q(f"SELECT value_json FROM {tbl} WHERE pool_name = %s AND key = %s"),
                 [self._schema.name, key],
             ).fetchone()
             if row is None:
@@ -930,7 +961,9 @@ class PoolStore:
         with self._runtime.conn() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 rows = cur.execute(
-                    f"SELECT {col_list} FROM {tbl} {where_clause} ORDER BY sample_idx ASC",
+                    _q(
+                        f"SELECT {col_list} FROM {tbl} {where_clause} ORDER BY sample_idx ASC"
+                    ),
                     params,
                 ).fetchall()
 
