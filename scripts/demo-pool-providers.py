@@ -148,10 +148,13 @@ def resolve_model(project: str, provider: str) -> str:
         raise RuntimeError(f"No models found for {provider}")
 
     model_ids = [m["model"] for m in models]
-    default_model = DEFAULT_MODELS[provider]
-    if default_model in model_ids:
+    default_model = DEFAULT_MODELS.get(provider)
+    if default_model and default_model in model_ids:
         return default_model
-    print(f"  default model '{default_model}' not found, using '{model_ids[0]}'")
+    if default_model:
+        print(f"  default model '{default_model}' not found, using '{model_ids[0]}'")
+    else:
+        print(f"  no default model configured for {provider}, using '{model_ids[0]}'")
     return model_ids[0]
 
 

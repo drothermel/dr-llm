@@ -275,10 +275,7 @@ def _row_to_entry(row: dict[str, Any]) -> ModelCatalogEntry:
         if row.get("source_quality") is not None
         else "live"
     )
-    if source_quality_raw == "static":
-        source_quality = "static"
-    else:
-        source_quality = "live"
+    source_quality = "static" if source_quality_raw == "static" else "live"
     display_name_raw = row.get("display_name")
     context_window_raw = row.get("context_window")
     max_output_tokens_raw = row.get("max_output_tokens")

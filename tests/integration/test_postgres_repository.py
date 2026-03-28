@@ -133,30 +133,29 @@ def test_schema_migration_removes_legacy_model_overrides(
     finally:
         migrated_repository.close()
 
-    with psycopg.connect(dsn) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            row = cur.execute(
-                """
-                SELECT source_quality
-                FROM provider_models_current
-                WHERE provider = %s AND model = %s
-                """,
-                ["legacy", "legacy-model"],
-            ).fetchone()
-            assert row is not None
-            assert row["source_quality"] == "live"
+    with psycopg.connect(dsn) as conn, conn.cursor(row_factory=dict_row) as cur:
+        row = cur.execute(
+            """
+            SELECT source_quality
+            FROM provider_models_current
+            WHERE provider = %s AND model = %s
+            """,
+            ["legacy", "legacy-model"],
+        ).fetchone()
+        assert row is not None
+        assert row["source_quality"] == "live"
 
-            exists = cur.execute(
-                """
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM information_schema.tables
-                    WHERE table_schema = 'public' AND table_name = 'provider_model_overrides'
-                ) AS exists
-                """
-            ).fetchone()
-            assert exists is not None
-            assert exists["exists"] is False
+        exists = cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'provider_model_overrides'
+            ) AS exists
+            """
+        ).fetchone()
+        assert exists is not None
+        assert exists["exists"] is False
 
 
 @pytest.mark.integration

@@ -14,7 +14,7 @@ from dr_llm.benchmark import (
 )
 from dr_llm.cli import app
 from dr_llm.catalog.models import ModelCatalogSyncResult
-from dr_llm.types import ModelCatalogEntry, RunStatus
+from dr_llm.types import ModelCatalogEntry, ModelCatalogQuery, RunStatus
 
 
 def test_providers_command_is_human_readable_by_default() -> None:
@@ -212,9 +212,9 @@ def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None
         def __init__(self, *, registry: object, repository: object) -> None:
             _ = registry, repository
 
-        def list_models(self, query: object) -> list[ModelCatalogEntry]:
-            assert getattr(query, "provider") == "openai"
-            assert getattr(query, "limit") == 20
+        def list_models(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
+            assert query.provider == "openai"
+            assert query.limit == 20
             return [
                 ModelCatalogEntry(
                     provider="openai",
@@ -227,8 +227,8 @@ def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None
                 ),
             ]
 
-        def count_models(self, query: object) -> int:
-            assert getattr(query, "provider") == "openai"
+        def count_models(self, query: ModelCatalogQuery) -> int:
+            assert query.provider == "openai"
             return 347
 
     monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
@@ -252,9 +252,9 @@ def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> N
         def __init__(self, *, registry: object, repository: object) -> None:
             _ = registry, repository
 
-        def list_models(self, query: object) -> list[ModelCatalogEntry]:
-            assert getattr(query, "provider") is None
-            assert getattr(query, "limit") == 20
+        def list_models(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
+            assert query.provider is None
+            assert query.limit == 20
             return [
                 ModelCatalogEntry(
                     provider="anthropic",
@@ -266,8 +266,8 @@ def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> N
                 ),
             ]
 
-        def count_models(self, query: object) -> int:
-            assert getattr(query, "provider") is None
+        def count_models(self, query: ModelCatalogQuery) -> int:
+            assert query.provider is None
             return 347
 
     monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
