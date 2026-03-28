@@ -159,9 +159,6 @@ class PostgresRepository:
     ) -> int:
         return self._catalog.replace_provider_models(provider=provider, entries=entries)
 
-    def upsert_model_overrides(self, *, entries: list[ModelCatalogEntry]) -> int:
-        return self._catalog.upsert_model_overrides(entries=entries)
-
     def list_models(self, *, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
         return self._catalog.list_models(query=query)
 

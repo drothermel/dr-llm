@@ -20,6 +20,7 @@ from dr_llm.errors import TransientPersistenceError
 _SCHEMA_PATH = Path(__file__).with_name("schema_bootstrap_pg.sql")
 _MIGRATION_PATHS = [
     Path(__file__).with_name("schema_migration_20260224_llm_call_response_columns.sql"),
+    Path(__file__).with_name("schema_migration_20260328_remove_model_overrides.sql"),
 ]
 
 

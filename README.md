@@ -106,7 +106,6 @@ Some providers (MiniMax, Codex, Claude Code, Kimi) use static model lists for `m
 - Claude headless coding-plan presets:
   - `claude-code-minimax`: routes via `https://api.minimax.io/anthropic`
   - `claude-code-kimi`: routes via `https://api.kimi.com/coding/`
-- Model catalog overrides: `config/model_overrides.json` (YAML also supported)
 
 ## CLI Reference
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Literal
+from typing import Any
 from uuid import uuid4
 
 from psycopg.rows import dict_row
@@ -158,74 +158,6 @@ class CatalogStore:
                     f"Failed to replace provider models: {exc}"
                 ) from exc
 
-    def upsert_model_overrides(
-        self,
-        *,
-        entries: list[ModelCatalogEntry],
-    ) -> int:
-        self._runtime.init_schema()
-        with self._runtime.conn() as conn:
-            count = 0
-            try:
-                for entry in entries:
-                    if entry.pricing is None and entry.rate_limits is None:
-                        continue
-                    conn.execute(
-                        """
-                        INSERT INTO provider_model_overrides (
-                            provider,
-                            model,
-                            pricing_json,
-                            rate_limits_json,
-                            notes,
-                            updated_at
-                        ) VALUES (%s, %s, %s::jsonb, %s::jsonb, %s, now())
-                        ON CONFLICT (provider, model)
-                        DO UPDATE SET
-                            pricing_json = excluded.pricing_json,
-                            rate_limits_json = excluded.rate_limits_json,
-                            notes = excluded.notes,
-                            updated_at = excluded.updated_at
-                        """,
-                        [
-                            entry.provider,
-                            entry.model,
-                            json.dumps(
-                                (
-                                    entry.pricing.model_dump(
-                                        mode="json",
-                                        exclude_none=True,
-                                        exclude_computed_fields=True,
-                                    )
-                                    if entry.pricing is not None
-                                    else {}
-                                ),
-                                ensure_ascii=True,
-                            ),
-                            json.dumps(
-                                (
-                                    entry.rate_limits.model_dump(
-                                        mode="json",
-                                        exclude_none=True,
-                                        exclude_computed_fields=True,
-                                    )
-                                    if entry.rate_limits is not None
-                                    else {}
-                                ),
-                                ensure_ascii=True,
-                            ),
-                            str(entry.metadata.get("notes") or ""),
-                        ],
-                    )
-                    count += 1
-                conn.commit()
-                return count
-            except Exception as exc:  # noqa: BLE001
-                conn.rollback()
-                raise PersistenceError(
-                    f"Failed to upsert model overrides: {exc}"
-                ) from exc
-
     def list_models(self, *, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
         self._runtime.init_schema()
         with self._runtime.conn() as conn:
@@ -316,9 +248,7 @@ def _row_to_entry(row: dict[str, Any]) -> ModelCatalogEntry:
         if row.get("source_quality") is not None
         else "live"
     )
-    if source_quality_raw == "overlay":
-        source_quality: Literal["live", "overlay", "static"] = "overlay"
-    elif source_quality_raw == "static":
+    if source_quality_raw == "static":
         source_quality = "static"
     else:
         source_quality = "live"
