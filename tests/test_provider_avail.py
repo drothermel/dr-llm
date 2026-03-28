@@ -82,8 +82,8 @@ def test_supported_provider_statuses_report_missing_requirements(
     assert len(statuses) == 1
     assert statuses[0].provider == "fake-provider"
     assert statuses[0].available is False
-    assert statuses[0].missing_env_vars == ["FAKE_ENV"]
-    assert statuses[0].missing_executables == ["fake-cli"]
+    assert statuses[0].missing_env_vars == ("FAKE_ENV",)
+    assert statuses[0].missing_executables == ("fake-cli",)
     assert statuses[0].supports_structured_output is False
 
 

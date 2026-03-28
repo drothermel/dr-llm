@@ -58,9 +58,10 @@ The `--no-record` flag skips database recording, so you can test providers witho
 
 ```bash
 uv run dr-llm providers
+uv run dr-llm providers --json
 ```
 
-`dr-llm providers` emits JSON showing canonical provider names, whether each provider is currently available on this machine, and any missing local requirements.
+`dr-llm providers` renders a human-readable table by default. Use `--json` for machine-readable provider availability and local-requirement details.
 
 ### 3. Start Postgres (for catalog and recording)
 
@@ -77,7 +78,7 @@ uv run dr-llm models sync --provider openai
 uv run dr-llm models list --provider openai
 ```
 
-`models sync` emits JSON with per-provider sync results. `models list` prints model ids by default and supports `--json` for full metadata output.
+`models sync` prints a concise summary by default. Use `--verbose` for full JSON sync results. `models list` prints model ids by default and supports `--json` for full metadata output.
 
 ### Available Providers
 

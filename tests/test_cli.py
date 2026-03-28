@@ -68,8 +68,8 @@ def test_providers_command_json_lists_known_providers() -> None:
     assert "claude-code-kimi" in providers
     for item in payload["providers"]:
         assert isinstance(item["available"], bool)
-        assert isinstance(item["missing_env_vars"], list)
-        assert isinstance(item["missing_executables"], list)
+        assert isinstance(item["missing_env_vars"], list | tuple)
+        assert isinstance(item["missing_executables"], list | tuple)
 
 
 def test_models_sync_is_concise_by_default(monkeypatch) -> None:
