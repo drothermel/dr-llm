@@ -85,7 +85,7 @@ uv run dr-llm models sync --provider openai
 uv run dr-llm models list --provider openai
 ```
 
-Use `--json` on `models list` for full metadata output.
+`models sync` now prints a single concise success line by default. Use `--verbose` when you want the full per-provider JSON sync payload. `models list` prints a human-readable header plus bulleted model names by default, and shows 20 results unless you override `--limit`; use `--json` for full metadata output.
 
 ### Available Providers
 
@@ -125,6 +125,7 @@ dr-llm providers
 dr-llm providers --json
 
 dr-llm models sync
+dr-llm models sync --provider openai --verbose
 dr-llm models list --provider openai
 dr-llm models list --supports-reasoning --json
 dr-llm models show --provider openrouter --model openai/o3-mini

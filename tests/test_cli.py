@@ -13,7 +13,8 @@ from dr_llm.benchmark import (
     PhaseStats,
 )
 from dr_llm.cli import app
-from dr_llm.types import RunStatus
+from dr_llm.catalog.models import ModelCatalogSyncResult
+from dr_llm.types import ModelCatalogEntry, RunStatus
 
 
 def test_providers_command_is_human_readable_by_default() -> None:
@@ -98,6 +99,187 @@ class _CliFakeRepository:
 
     def close(self) -> None:
         return None
+
+
+def test_models_sync_is_concise_by_default(monkeypatch) -> None:
+    runner = CliRunner()
+
+    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+
+    class _FakeClient:
+        def __init__(self, *, registry: object, repository: object) -> None:
+            _ = registry, repository
+
+        def sync_models_detailed(
+            self, provider: str | None = None
+        ) -> list[ModelCatalogSyncResult]:
+            assert provider == "openai"
+            return [
+                ModelCatalogSyncResult(
+                    provider="openai",
+                    success=True,
+                    entry_count=42,
+                )
+            ]
+
+    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+
+    result = runner.invoke(app, ["models", "sync", "--provider", "openai"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "Synced 42 models for openai."
+
+
+def test_models_sync_verbose_emits_json(monkeypatch) -> None:
+    runner = CliRunner()
+
+    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+
+    class _FakeClient:
+        def __init__(self, *, registry: object, repository: object) -> None:
+            _ = registry, repository
+
+        def sync_models_detailed(
+            self, provider: str | None = None
+        ) -> list[ModelCatalogSyncResult]:
+            assert provider == "openai"
+            return [
+                ModelCatalogSyncResult(
+                    provider="openai",
+                    success=True,
+                    entry_count=42,
+                    snapshot_id="snap_123",
+                )
+            ]
+
+    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+
+    result = runner.invoke(
+        app, ["models", "sync", "--provider", "openai", "--verbose"]
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "results": [
+            {
+                "entry_count": 42,
+                "provider": "openai",
+                "raw_payload": {},
+                "snapshot_id": "snap_123",
+                "success": True,
+            }
+        ]
+    }
+
+
+def test_models_sync_failure_is_concise_and_nonzero(monkeypatch) -> None:
+    runner = CliRunner()
+
+    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+
+    class _FakeClient:
+        def __init__(self, *, registry: object, repository: object) -> None:
+            _ = registry, repository
+
+        def sync_models_detailed(
+            self, provider: str | None = None
+        ) -> list[ModelCatalogSyncResult]:
+            assert provider == "openai"
+            return [
+                ModelCatalogSyncResult(
+                    provider="openai",
+                    success=False,
+                    error="boom\ntraceback details",
+                )
+            ]
+
+    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+
+    result = runner.invoke(app, ["models", "sync", "--provider", "openai"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert result.stderr.strip() == "Model sync failed for openai: boom"
+
+
+def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None:
+    runner = CliRunner()
+
+    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+
+    class _FakeClient:
+        def __init__(self, *, registry: object, repository: object) -> None:
+            _ = registry, repository
+
+        def list_models(self, query: object) -> list[ModelCatalogEntry]:
+            assert getattr(query, "provider") == "openai"
+            assert getattr(query, "limit") == 20
+            return [
+                ModelCatalogEntry(
+                    provider="openai",
+                    model="gpt-4o-mini",
+                    display_name="GPT-4o mini",
+                ),
+                ModelCatalogEntry(
+                    provider="openai",
+                    model="gpt-4.1",
+                ),
+            ]
+
+        def count_models(self, query: object) -> int:
+            assert getattr(query, "provider") == "openai"
+            return 347
+
+    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+
+    result = runner.invoke(app, ["models", "list", "--provider", "openai"])
+
+    assert result.exit_code == 0
+    assert result.stdout == (
+        "openai Models (Showing 2 out of 347)\n"
+        "- gpt-4o-mini (GPT-4o mini)\n"
+        "- gpt-4.1\n"
+    )
+
+
+def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> None:
+    runner = CliRunner()
+
+    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+
+    class _FakeClient:
+        def __init__(self, *, registry: object, repository: object) -> None:
+            _ = registry, repository
+
+        def list_models(self, query: object) -> list[ModelCatalogEntry]:
+            assert getattr(query, "provider") is None
+            assert getattr(query, "limit") == 20
+            return [
+                ModelCatalogEntry(
+                    provider="anthropic",
+                    model="claude-sonnet-4",
+                ),
+                ModelCatalogEntry(
+                    provider="openai",
+                    model="gpt-4o-mini",
+                ),
+            ]
+
+        def count_models(self, query: object) -> int:
+            assert getattr(query, "provider") is None
+            return 347
+
+    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+
+    result = runner.invoke(app, ["models", "list"])
+
+    assert result.exit_code == 0
+    assert result.stdout == (
+        "Models (Showing 2 out of 347 across 2 providers)\n"
+        "- anthropic: claude-sonnet-4\n"
+        "- openai: gpt-4o-mini\n"
+    )
 
 
 def test_run_benchmark_outputs_summary(monkeypatch, tmp_path) -> None:

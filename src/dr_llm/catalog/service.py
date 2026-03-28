@@ -35,6 +35,8 @@ class ModelCatalogRepository(Protocol):
 
     def list_models(self, *, query: ModelCatalogQuery) -> list[ModelCatalogEntry]: ...
 
+    def count_models(self, *, query: ModelCatalogQuery) -> int: ...
+
     def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None: ...
 
 
@@ -110,6 +112,11 @@ class ModelCatalogService:
         if self._repository is None:
             return []
         return self._repository.list_models(query=query)
+
+    def count_models(self, query: ModelCatalogQuery) -> int:
+        if self._repository is None:
+            return 0
+        return self._repository.count_models(query=query)
 
     def show_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
         if self._repository is None:

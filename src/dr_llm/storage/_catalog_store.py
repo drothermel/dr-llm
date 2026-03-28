@@ -202,6 +202,33 @@ class CatalogStore:
                 ).fetchall()
         return [_row_to_entry(row) for row in rows]
 
+    def count_models(self, *, query: ModelCatalogQuery) -> int:
+        self._runtime.init_schema()
+        with self._runtime.conn() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                row = cur.execute(
+                    """
+                SELECT COUNT(*) AS total_count
+                FROM provider_models_current
+                WHERE (%s::text IS NULL OR provider = %s)
+                  AND (%s::boolean IS NULL OR supports_reasoning = %s)
+                  AND (%s::text IS NULL OR model ILIKE %s)
+                    """,
+                    [
+                        query.provider,
+                        query.provider,
+                        query.supports_reasoning,
+                        query.supports_reasoning,
+                        query.model_contains,
+                        (
+                            f"%{query.model_contains}%"
+                            if query.model_contains is not None
+                            else None
+                        ),
+                    ],
+                ).fetchone()
+        return int(row["total_count"]) if row is not None else 0
+
     def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
         self._runtime.init_schema()
         with self._runtime.conn() as conn:

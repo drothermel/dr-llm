@@ -66,6 +66,10 @@ class _FakeRepo:
         _ = query
         return []
 
+    def count_models(self, *, query) -> int:  # noqa: ANN001
+        _ = query
+        return 0
+
     def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
         _ = (provider, model)
         return None

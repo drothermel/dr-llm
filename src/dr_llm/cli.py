@@ -28,6 +28,7 @@ from dr_llm.tools.registry import ToolDefinition
 from dr_llm.types import (
     LlmRequest,
     Message,
+    ModelCatalogEntry,
     ModelCatalogQuery,
     ReasoningConfig,
     RunStatus,
@@ -35,6 +36,7 @@ from dr_llm.types import (
     SessionStepInput,
     ToolPolicy,
 )
+from dr_llm.catalog.models import ModelCatalogSyncResult
 
 app = typer.Typer()
 run_app = typer.Typer(help="Run lifecycle commands")
@@ -119,6 +121,74 @@ def _render_providers_table(statuses: list[ProviderAvailabilityStatus]) -> None:
     console.print(
         f"Available: {available_count}/{len(statuses)} supported providers are ready."
     )
+
+
+def _sync_failure_summary(result: ModelCatalogSyncResult) -> str:
+    error = result.error.splitlines()[0] if result.error else "unknown error"
+    return f"{result.provider} ({error})"
+
+
+def _sync_failure_message(result: ModelCatalogSyncResult) -> str:
+    return result.error.splitlines()[0] if result.error else "unknown error"
+
+
+def _render_models_sync_summary(results: list[ModelCatalogSyncResult]) -> None:
+    failures = [result for result in results if not result.success]
+    successes = [result for result in results if result.success]
+
+    if failures:
+        if len(failures) == 1 and not successes:
+            typer.secho(
+                f"Model sync failed for {failures[0].provider}: {_sync_failure_message(failures[0])}",
+                fg=typer.colors.RED,
+                err=True,
+            )
+        else:
+            failure_text = ", ".join(
+                _sync_failure_summary(result) for result in failures
+            )
+            typer.secho(
+                f"Model sync failed for {len(failures)}/{len(results)} providers: {failure_text}",
+                fg=typer.colors.RED,
+                err=True,
+            )
+        raise typer.Exit(code=1)
+
+    total_entries = sum(result.entry_count for result in successes)
+    if len(successes) == 1:
+        result = successes[0]
+        typer.echo(f"Synced {result.entry_count} models for {result.provider}.")
+        return
+    typer.echo(f"Synced {total_entries} models across {len(successes)} providers.")
+
+
+def _models_list_header(items: list[ModelCatalogEntry], provider: str | None) -> str:
+    count = len(items)
+    if provider is not None:
+        return f"{provider} Models (Showing {count} out of {{total_count}})"
+    providers = {item.provider for item in items}
+    if len(providers) <= 1:
+        return f"Models (Showing {count} out of {{total_count}})"
+    return f"Models (Showing {count} out of {{total_count}} across {len(providers)} providers)"
+
+
+def _render_models_list(
+    items: list[ModelCatalogEntry], provider: str | None, total_count: int
+) -> None:
+    if not items:
+        if provider is not None:
+            typer.echo(f"No models found for {provider}.")
+            return
+        typer.echo("No models found.")
+        return
+
+    typer.echo(_models_list_header(items, provider).format(total_count=total_count))
+    include_provider = provider is None and len({item.provider for item in items}) > 1
+    for item in items:
+        label = f"{item.provider}: {item.model}" if include_provider else item.model
+        if item.display_name and item.display_name != item.model:
+            label = f"{label} ({item.display_name})"
+        typer.echo(f"- {label}")
 
 
 def _parse_json(
@@ -260,6 +330,11 @@ def providers(
 @models_app.command("sync")
 def models_sync(
     provider: str | None = typer.Option(None, help="Optional provider key."),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose/--no-verbose",
+        help="Emit detailed per-provider JSON results.",
+    ),
     dsn: str | None = typer.Option(None, envvar="DR_LLM_DATABASE_URL"),
     min_pool_size: int = typer.Option(4),
     max_pool_size: int = typer.Option(64),
@@ -269,18 +344,21 @@ def models_sync(
     try:
         client = LlmClient(registry=build_default_registry(), repository=repository)
         results = client.sync_models_detailed(provider=provider)
-        _emit(
-            {
-                "results": [
-                    result.model_dump(
-                        mode="json",
-                        exclude_none=True,
-                        exclude_computed_fields=True,
-                    )
-                    for result in results
-                ]
-            }
-        )
+        if verbose:
+            _emit(
+                {
+                    "results": [
+                        result.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                            exclude_computed_fields=True,
+                        )
+                        for result in results
+                    ]
+                }
+            )
+            return
+        _render_models_sync_summary(results)
     finally:
         repository.close()
 
@@ -292,7 +370,7 @@ def models_list(
         None, help="Optional reasoning support filter."
     ),
     model_contains: str | None = typer.Option(None, help="Substring model filter."),
-    limit: int = typer.Option(200),
+    limit: int = typer.Option(20),
     offset: int = typer.Option(0),
     json_output: bool = typer.Option(
         False,
@@ -313,15 +391,14 @@ def models_list(
             except KeyError:
                 pass
         client = LlmClient(registry=registry, repository=repository)
-        items = client.list_models(
-            ModelCatalogQuery(
-                provider=provider,
-                supports_reasoning=supports_reasoning,
-                model_contains=model_contains,
-                limit=limit,
-                offset=offset,
-            )
+        query = ModelCatalogQuery(
+            provider=provider,
+            supports_reasoning=supports_reasoning,
+            model_contains=model_contains,
+            limit=limit,
+            offset=offset,
         )
+        items = client.list_models(query)
         if json_output:
             _emit(
                 {
@@ -336,11 +413,11 @@ def models_list(
                 }
             )
         else:
-            static_providers: set[str] = set()
-            for item in items:
-                typer.echo(item.model)
-                if item.source_quality == "static":
-                    static_providers.add(item.provider)
+            total_count = client.count_models(query)
+            _render_models_list(items, provider, total_count)
+            static_providers = {
+                item.provider for item in items if item.source_quality == "static"
+            }
             for sp in sorted(static_providers):
                 docs_url = ""
                 for item in items:
