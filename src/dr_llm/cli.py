@@ -116,7 +116,7 @@ def _render_providers_table(statuses: list[ProviderAvailabilityStatus]) -> None:
         )
 
     available_count = sum(1 for status in statuses if status.available)
-    console = Console(force_terminal=False, color_system=None)
+    console = Console(force_terminal=False)
     console.print(table)
     console.print(
         f"Available: {available_count}/{len(statuses)} supported providers are ready."
@@ -176,6 +176,16 @@ def _render_models_list(
     items: list[ModelCatalogEntry], provider: str | None, total_count: int
 ) -> None:
     if not items:
+        if total_count > 0:
+            if provider is not None:
+                typer.echo(
+                    f"No models found on this page for {provider}. {total_count} matching models exist."
+                )
+                return
+            typer.echo(
+                f"No models found on this page. {total_count} matching models exist."
+            )
+            return
         if provider is not None:
             typer.echo(f"No models found for {provider}.")
             return
@@ -344,6 +354,7 @@ def models_sync(
     try:
         client = LlmClient(registry=build_default_registry(), repository=repository)
         results = client.sync_models_detailed(provider=provider)
+        exit_code = 1 if any(not result.success for result in results) else 0
         if verbose:
             _emit(
                 {
@@ -357,7 +368,7 @@ def models_sync(
                     ]
                 }
             )
-            return
+            raise typer.Exit(exit_code)
         _render_models_sync_summary(results)
     finally:
         repository.close()

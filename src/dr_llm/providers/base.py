@@ -33,8 +33,9 @@ class ProviderAdapter(ABC):
         return ProviderCapabilities()
 
     @property
+    @abstractmethod
     def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        return ProviderRuntimeRequirements()
+        raise NotImplementedError
 
     @abstractmethod
     def generate(self, request: LlmRequest) -> LlmResponse:

@@ -173,6 +173,39 @@ def test_models_sync_verbose_emits_json(monkeypatch) -> None:
     }
 
 
+def test_models_sync_verbose_preserves_failure_exit_code(monkeypatch) -> None:
+    runner = CliRunner()
+
+    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+
+    class _FakeClient:
+        def __init__(self, *, registry: object, repository: object) -> None:
+            _ = registry, repository
+
+        def sync_models_detailed(
+            self, provider: str | None = None
+        ) -> list[ModelCatalogSyncResult]:
+            assert provider == "openai"
+            return [
+                ModelCatalogSyncResult(
+                    provider="openai",
+                    success=False,
+                    error="boom",
+                )
+            ]
+
+    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+
+    result = runner.invoke(
+        app, ["models", "sync", "--provider", "openai", "--verbose"]
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["results"][0]["provider"] == "openai"
+    assert payload["results"][0]["success"] is False
+
+
 def test_models_sync_failure_is_concise_and_nonzero(monkeypatch) -> None:
     runner = CliRunner()
 
@@ -279,6 +312,37 @@ def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> N
         "Models (Showing 2 out of 347 across 2 providers)\n"
         "- anthropic: claude-sonnet-4\n"
         "- openai: gpt-4o-mini\n"
+    )
+
+
+def test_models_list_empty_page_mentions_matching_total(monkeypatch) -> None:
+    runner = CliRunner()
+
+    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+
+    class _FakeClient:
+        def __init__(self, *, registry: object, repository: object) -> None:
+            _ = registry, repository
+
+        def list_models(self, query: object) -> list[ModelCatalogEntry]:
+            assert getattr(query, "provider") == "openai"
+            assert getattr(query, "offset") == 40
+            return []
+
+        def count_models(self, query: object) -> int:
+            assert getattr(query, "provider") == "openai"
+            return 347
+
+    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+
+    result = runner.invoke(
+        app, ["models", "list", "--provider", "openai", "--offset", "40"]
+    )
+
+    assert result.exit_code == 0
+    assert (
+        result.stdout.strip()
+        == "No models found on this page for openai. 347 matching models exist."
     )
 
 

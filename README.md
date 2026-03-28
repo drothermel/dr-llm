@@ -338,8 +338,11 @@ Requires Docker and at least one of `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 Shows all supported canonical providers and which of them are currently available on this machine:
 
 ```bash
+source ./scripts/start-test-postgres.sh
 uv run python scripts/demo-providers.py
 ```
+
+`scripts/demo-providers.py` exits early if `DR_LLM_DATABASE_URL` is unset, so start the local test Postgres first with `source ./scripts/start-test-postgres.sh` or otherwise export `DR_LLM_DATABASE_URL` before running the demo.
 
 ### Pool provider demo
 

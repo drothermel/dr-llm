@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from dr_llm.catalog.service import ModelCatalogService
-from dr_llm.providers.base import ProviderAdapter
+from dr_llm.providers.base import ProviderAdapter, ProviderRuntimeRequirements
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.types import (
     CallMode,
@@ -19,6 +19,10 @@ class _DummyAdapter(ProviderAdapter):
 
     def __init__(self, name: str) -> None:
         self.name = name
+
+    @property
+    def runtime_requirements(self) -> ProviderRuntimeRequirements:
+        return ProviderRuntimeRequirements()
 
     def generate(self, request: LlmRequest) -> LlmResponse:  # pragma: no cover - unused
         return LlmResponse(

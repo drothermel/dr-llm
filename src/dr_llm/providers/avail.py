@@ -13,8 +13,8 @@ class ProviderAvailabilityStatus(BaseModel):
 
     provider: str
     available: bool
-    missing_env_vars: list[str] = Field(default_factory=list)
-    missing_executables: list[str] = Field(default_factory=list)
+    missing_env_vars: tuple[str, ...] = Field(default_factory=tuple)
+    missing_executables: tuple[str, ...] = Field(default_factory=tuple)
     supports_native_tools: bool = False
     supports_structured_output: bool = False
 
@@ -45,8 +45,8 @@ def supported_provider_statuses(
             ProviderAvailabilityStatus(
                 provider=provider,
                 available=not missing_env_vars and not missing_executables,
-                missing_env_vars=missing_env_vars,
-                missing_executables=missing_executables,
+                missing_env_vars=tuple(missing_env_vars),
+                missing_executables=tuple(missing_executables),
                 supports_native_tools=capabilities.supports_native_tools,
                 supports_structured_output=capabilities.supports_structured_output,
             )
@@ -54,9 +54,10 @@ def supported_provider_statuses(
     return statuses
 
 
-def available_provider_names(registry: ProviderRegistry) -> list[str]:
-    return [
-        status.provider
-        for status in supported_provider_statuses(registry)
-        if status.available
-    ]
+def available_provider_names(
+    registry: ProviderRegistry,
+    *,
+    statuses: list[ProviderAvailabilityStatus] | None = None,
+) -> list[str]:
+    statuses = statuses or supported_provider_statuses(registry)
+    return [status.provider for status in statuses if status.available]

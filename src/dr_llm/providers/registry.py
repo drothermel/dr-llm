@@ -21,7 +21,13 @@ class ProviderRegistry:
             )
 
         with self._lock:
-            self._adapters[primary.lower()] = adapter
+            normalized_primary = primary.lower()
+            existing = self._adapters.get(normalized_primary)
+            if existing is not None:
+                raise ValueError(
+                    f"register conflict for provider {primary!r}: {existing!r} is already registered"
+                )
+            self._adapters[normalized_primary] = adapter
 
     def get(self, provider_name: str) -> ProviderAdapter:
         key = provider_name.strip().lower()

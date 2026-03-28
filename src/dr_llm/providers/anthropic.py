@@ -152,8 +152,9 @@ class AnthropicAdapter(ProviderAdapter):
 
     @property
     def runtime_requirements(self) -> ProviderRuntimeRequirements:
+        required_env_vars = [] if self._config.api_key else [self._config.api_key_env]
         return ProviderRuntimeRequirements(
-            required_env_vars=[self._config.api_key_env],
+            required_env_vars=required_env_vars,
         )
 
     def _headers(self) -> dict[str, str]:

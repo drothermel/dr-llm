@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from dr_llm.providers.base import ProviderAdapter, ProviderCapabilities
+from dr_llm.providers.base import (
+    ProviderAdapter,
+    ProviderCapabilities,
+    ProviderRuntimeRequirements,
+)
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.types import CallMode, LlmRequest, LlmResponse, TokenUsage
 
@@ -16,6 +20,10 @@ class _FakeAdapter(ProviderAdapter):
     @property
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities()
+
+    @property
+    def runtime_requirements(self) -> ProviderRuntimeRequirements:
+        return ProviderRuntimeRequirements()
 
     def generate(self, request: LlmRequest) -> LlmResponse:  # noqa: ARG002
         return LlmResponse(
@@ -49,6 +57,16 @@ def test_register_normalizes_keys_to_lowercase() -> None:
 
     assert registry.get("fakeprovider") is adapter
     assert registry.names() == {"fakeprovider"}
+
+
+def test_register_rejects_duplicate_normalized_name() -> None:
+    registry = ProviderRegistry()
+    registry.register(_FakeAdapter(name="FakeProvider"))
+
+    with pytest.raises(
+        ValueError, match=r"register conflict for provider 'fakeprovider'"
+    ):
+        registry.register(_FakeAdapter(name="fakeprovider"))
 
 
 def test_alias_lookup_is_not_supported() -> None:

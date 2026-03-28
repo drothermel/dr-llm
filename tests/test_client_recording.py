@@ -6,7 +6,11 @@ import pytest
 from pydantic import BaseModel, Field
 
 from dr_llm.client import LlmClient
-from dr_llm.providers.base import ProviderAdapter, ProviderCapabilities
+from dr_llm.providers.base import (
+    ProviderAdapter,
+    ProviderCapabilities,
+    ProviderRuntimeRequirements,
+)
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.types import LlmRequest, Message
 
@@ -27,6 +31,10 @@ class FailingHeadlessAdapter(ProviderAdapter):
         return ProviderCapabilities(
             supports_native_tools=False, supports_structured_output=True
         )
+
+    @property
+    def runtime_requirements(self) -> ProviderRuntimeRequirements:
+        return ProviderRuntimeRequirements()
 
     def generate(self, request: Any) -> Any:
         _ = request

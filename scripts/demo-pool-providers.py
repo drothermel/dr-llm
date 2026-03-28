@@ -139,7 +139,7 @@ def create_demo_project(project_name: str) -> str:
 
 def resolve_model(project: str, provider: str) -> str:
     """Sync catalog, list models, pick default or first available."""
-    run_cli("--project", project, "models", "sync", "--provider", provider)
+    run_cli("--project", project, "models", "sync", "--provider", provider, "--verbose")
     result = run_cli(
         "--project", project, "models", "list", "--provider", provider, "--json"
     )

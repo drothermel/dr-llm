@@ -40,9 +40,14 @@ def fail(msg: str) -> None:
 def run_cli_streaming(*args: str) -> None:
     cmd = ["uv", "run", "dr-llm", *args]
     print(f"{BOLD}$ {' '.join(cmd)}{RESET}")
-    result = subprocess.run(cmd, check=False)
-    if result.returncode != 0:
-        raise RuntimeError(f"command exited with status {result.returncode}")
+    try:
+        subprocess.run(cmd, check=True, text=True, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").strip()
+        detail = f": {stderr}" if stderr else ""
+        raise RuntimeError(
+            f"command {' '.join(exc.cmd)} exited with status {exc.returncode}{detail}"
+        ) from exc
 
 
 @app.command()
@@ -64,13 +69,12 @@ def main() -> None:
         print(f"  - {provider}")
 
     step("2. Available providers")
-    available = available_provider_names(registry)
+    available = available_provider_names(registry, statuses=statuses)
     if available:
         for provider in available:
             print(f"  - {provider}")
     else:
         print("  none")
-        raise typer.Exit(1)
 
     unavailable = [status for status in statuses if not status.available]
     if unavailable:
@@ -82,6 +86,9 @@ def main() -> None:
                 for executable in status.missing_executables
             )
             print(f"{YELLOW}  - {status.provider}: {', '.join(reasons)}{RESET}")
+
+    if not available:
+        raise typer.Exit(1)
 
     failed_providers: list[str] = []
     for idx, provider in enumerate(available, start=1):

@@ -260,7 +260,7 @@ class ModelCatalogQuery(BaseModel):
     provider: str | None = None
     supports_reasoning: bool | None = None
     model_contains: str | None = None
-    limit: int = 20
+    limit: int = 200
     offset: int = 0
 
 

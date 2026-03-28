@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
+from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
 from dr_llm.providers.avail import (
+    ProviderAvailabilityStatus,
     available_provider_names,
     supported_provider_names,
     supported_provider_statuses,
@@ -12,6 +14,8 @@ from dr_llm.providers.base import (
     ProviderCapabilities,
     ProviderRuntimeRequirements,
 )
+from dr_llm.providers.google import GoogleAdapter, GoogleConfig
+from dr_llm.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.types import CallMode, LlmRequest, LlmResponse, TokenUsage
 
@@ -81,8 +85,8 @@ def test_supported_provider_statuses_report_missing_requirements(
     assert len(statuses) == 1
     assert statuses[0].provider == "fake-provider"
     assert statuses[0].available is False
-    assert statuses[0].missing_env_vars == ["FAKE_ENV"]
-    assert statuses[0].missing_executables == ["fake-cli"]
+    assert statuses[0].missing_env_vars == ("FAKE_ENV",)
+    assert statuses[0].missing_executables == ("fake-cli",)
     assert statuses[0].supports_native_tools is True
     assert statuses[0].supports_structured_output is False
 
@@ -116,3 +120,50 @@ def test_available_provider_names_filter_to_available_only(
     )
 
     assert available_provider_names(registry) == ["ready-provider"]
+
+
+def test_available_provider_names_uses_precomputed_statuses() -> None:
+    registry = ProviderRegistry()
+    statuses = [
+        ProviderAvailabilityStatus(provider="ready-provider", available=True),
+        ProviderAvailabilityStatus(provider="missing-provider", available=False),
+    ]
+
+    assert available_provider_names(registry, statuses=statuses) == ["ready-provider"]
+
+
+
+def test_openai_compat_inline_api_key_suppresses_env_requirement() -> None:
+    adapter = OpenAICompatAdapter(
+        name="openai",
+        config=OpenAICompatConfig(
+            base_url="https://api.example.com/v1",
+            api_key_env="OPENAI_API_KEY",
+            api_key="inline-key",
+        ),
+    )
+
+    assert adapter.runtime_requirements.required_env_vars == []
+
+
+def test_anthropic_inline_api_key_suppresses_env_requirement() -> None:
+    adapter = AnthropicAdapter(
+        config=AnthropicConfig(
+            api_key_env="ANTHROPIC_API_KEY",
+            api_key="inline-key",
+        )
+    )
+
+    assert adapter.runtime_requirements.required_env_vars == []
+    adapter.close()
+
+
+def test_google_inline_api_key_suppresses_env_requirement() -> None:
+    adapter = GoogleAdapter(
+        config=GoogleConfig(
+            api_key_env="GOOGLE_API_KEY",
+            api_key="inline-key",
+        )
+    )
+
+    assert adapter.runtime_requirements.required_env_vars == []
