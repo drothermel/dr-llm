@@ -5,6 +5,7 @@ import subprocess
 from enum import StrEnum
 from time import sleep
 from typing import Any
+from uuid import uuid4
 
 
 class ContainerStatus(StrEnum):
@@ -135,6 +136,137 @@ def call_docker_stop(container_name: str) -> None:
 def call_docker_destroy(container_name: str, volume_name: str) -> None:
     call_docker("rm", "-f", container_name, check=False)
     call_docker("volume", "rm", volume_name, check=False)
+
+
+def call_docker_psql(
+    container_name: str,
+    db_user: str,
+    db_name: str,
+    *args: str,
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        [
+            "docker",
+            "exec",
+            container_name,
+            "psql",
+            "-U",
+            db_user,
+            db_name,
+            *args,
+        ],
+        capture_output=True,
+        check=True,
+    )
+
+
+def call_docker_psql_input(
+    container_name: str,
+    db_user: str,
+    db_name: str,
+    sql_bytes: bytes,
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        [
+            "docker",
+            "exec",
+            "-i",
+            container_name,
+            "psql",
+            "-U",
+            db_user,
+            db_name,
+        ],
+        input=sql_bytes,
+        capture_output=True,
+        check=True,
+    )
+
+
+def call_docker_psql_create_db(
+    container_name: str,
+    db_user: str,
+    db_name: str,
+) -> subprocess.CompletedProcess[bytes]:
+    return call_docker_psql(
+        container_name,
+        db_user,
+        "postgres",
+        "-c",
+        f"CREATE DATABASE {db_name};",
+    )
+
+
+def call_docker_psql_drop_db(
+    container_name: str,
+    db_user: str,
+    db_name: str,
+) -> subprocess.CompletedProcess[bytes]:
+    return call_docker_psql(
+        container_name,
+        db_user,
+        "postgres",
+        "-c",
+        f"DROP DATABASE IF EXISTS {db_name};",
+    )
+
+
+def call_docker_psql_swap_in_db(
+    container_name: str,
+    db_user: str,
+    target_db_name: str,
+    swap_in_db: str,
+) -> subprocess.CompletedProcess[bytes]:
+    return call_docker_psql(
+        container_name,
+        db_user,
+        "postgres",
+        "-c",
+        f"DROP DATABASE IF EXISTS {target_db_name};",
+        "-c",
+        f"ALTER DATABASE {swap_in_db} RENAME TO {target_db_name};",
+    )
+
+
+def docker_swap_in_db(
+    sql_bytes: bytes,
+    container_name: str,
+    db_user: str,
+    target_db_name: str,
+) -> None:
+    swap_in_db = f"dr_llm_restore_{uuid4().hex[:8]}"
+    call_docker_psql_create_db(container_name, db_user, swap_in_db)
+    try:
+        call_docker_psql_input(container_name, db_user, swap_in_db, sql_bytes)
+    except subprocess.CalledProcessError:
+        call_docker_psql_drop_db(container_name, db_user, swap_in_db)
+        raise
+    call_docker_psql_swap_in_db(
+        container_name,
+        db_user,
+        target_db_name,
+        swap_in_db,
+    )
+
+
+def call_docker_pg_dump(
+    container_name: str,
+    db_user: str,
+    db_name: str,
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        [
+            "docker",
+            "exec",
+            container_name,
+            "pg_dump",
+            "-U",
+            db_user,
+            db_name,
+        ],
+        capture_output=True,
+        check=True,
+    )
 
 
 def parse_docker_labels(raw: str) -> dict[str, str]:

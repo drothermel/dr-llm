@@ -5,7 +5,7 @@ import json
 from typer.testing import CliRunner
 
 import dr_llm.cli.common as cli_common
-import dr_llm.cli.project_info as models_cli
+import dr_llm.cli.models as models_cli
 import dr_llm.cli.query as query_cli
 from dr_llm.catalog.models import (
     ModelCatalogEntry,

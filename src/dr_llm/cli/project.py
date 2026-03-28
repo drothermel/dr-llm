@@ -6,12 +6,11 @@ from pathlib import Path
 
 import typer
 
-from dr_llm.project.backup import backup_project, restore_project
 from dr_llm.project.docker import (
     get_all_docker_names_labels_status,
     require_docker,
 )
-from dr_llm.project.models import ProjectInfo
+from dr_llm.project.project_info import ProjectInfo
 
 project_app = typer.Typer(help="Manage isolated dr-llm project databases")
 
@@ -61,8 +60,12 @@ def project_start(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
     require_docker()
-    project_info = ProjectInfo.get_by_name(name)
-    project_info.start()
+    try:
+        project_info = ProjectInfo.get_by_name(name)
+        project_info.start()
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
     typer.secho(
         f"Project '{name}' is running on port {project_info.port}",
         fg=typer.colors.GREEN,
@@ -74,8 +77,8 @@ def project_stop(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
     require_docker()
-    project_info = ProjectInfo.get_by_name(name)
     try:
+        project_info = ProjectInfo.get_by_name(name)
         project_info.stop()
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
@@ -89,10 +92,11 @@ def project_use(
 ) -> None:
     """Print the export command to set DR_LLM_DATABASE_URL for a project."""
     require_docker()
-    project_info = ProjectInfo.get_by_name(name)
-    if project_info is None:
-        typer.secho(f"Project '{name}' not found", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
+    try:
+        project_info = ProjectInfo.get_by_name(name)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
     if not project_info.running:
         typer.secho(
             f"Project '{name}' is {project_info.status} — start it first",
@@ -118,8 +122,8 @@ def project_destroy(
             abort=True,
         )
 
-    project_info = ProjectInfo.get_by_name(name)
     try:
+        project_info = ProjectInfo.get_by_name(name)
         project_info.destroy()
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
@@ -137,7 +141,8 @@ def project_backup(
 ) -> None:
     require_docker()
     try:
-        path = backup_project(name, output_dir=output_dir)
+        project_info = ProjectInfo.get_by_name(name)
+        path = project_info.backup(output_dir)
     except (RuntimeError, FileNotFoundError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
@@ -153,7 +158,8 @@ def project_restore(
 ) -> None:
     require_docker()
     try:
-        restore_project(name, backup_file)
+        project_info = ProjectInfo.get_by_name(name)
+        project_info.restore(backup_file)
     except (RuntimeError, FileNotFoundError, subprocess.CalledProcessError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc

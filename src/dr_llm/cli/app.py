@@ -4,10 +4,10 @@ import os
 
 import typer
 
-from dr_llm.project.models import ProjectInfo
+from dr_llm.project.project_info import ProjectInfo
 
+from .models import models_app
 from .project import project_app
-from .project_info import models_app
 from .providers import register as register_providers
 from .query import register as register_query
 from .run import run_app
@@ -27,10 +27,11 @@ def main(
 ) -> None:
     """dr-llm CLI"""
     if project is not None:
-        project_info = ProjectInfo.get_by_name(project)
-        if project_info is None:
-            typer.secho(f"Project '{project}' not found", fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
+        try:
+            project_info = ProjectInfo.get_by_name(project)
+        except RuntimeError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from exc
         if project_info.status != "running":
             typer.secho(
                 f"Project '{project}' is {project_info.status} - start it first",
