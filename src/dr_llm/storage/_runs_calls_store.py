@@ -431,7 +431,7 @@ class RunsCallsStore:
                     provider=str(row[2]),
                     model=str(row[3]),
                     mode=row[4],
-                    status=str(row[5]),
+                    status=RunStatus(str(row[5])),
                     created_at=row[6],
                     latency_ms=int(row[7]) if row[7] is not None else None,
                     error_text=str(row[8]) if row[8] is not None else None,

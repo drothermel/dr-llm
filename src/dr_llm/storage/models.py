@@ -24,7 +24,7 @@ class RecordedCall(BaseModel):
     provider: str
     model: str
     mode: CallMode
-    status: str
+    status: RunStatus
     created_at: datetime
     latency_ms: int | None
     error_text: str | None

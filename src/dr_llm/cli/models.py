@@ -81,7 +81,13 @@ def models_list(
             supports_reasoning=supports_reasoning,
             model_contains=model_contains,
         )
-        list_query = base_query.model_copy(update={"limit": limit, "offset": offset})
+        list_query = ModelCatalogQuery(
+            provider=base_query.provider,
+            supports_reasoning=base_query.supports_reasoning,
+            model_contains=base_query.model_contains,
+            limit=limit,
+            offset=offset,
+        )
         items = client.list_models(list_query)
         if json_output:
             common._emit(

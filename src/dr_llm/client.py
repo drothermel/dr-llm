@@ -3,8 +3,11 @@ from __future__ import annotations
 from uuid import uuid4
 from typing import Any
 
-from dr_llm.catalog.models import ModelCatalogSyncResult
-from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
+from dr_llm.catalog.models import (
+    ModelCatalogEntry,
+    ModelCatalogQuery,
+    ModelCatalogSyncResult,
+)
 from dr_llm.catalog.service import ModelCatalogService
 from dr_llm.generation.models import LlmRequest, LlmResponse
 from dr_llm.logging import emit_generation_event, generation_log_context
