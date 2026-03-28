@@ -5,7 +5,7 @@ from typing import Any
 
 from dr_llm.catalog.fetchers.common import api_key_from_env, as_int, get_json
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.types import ModelCatalogEntry
+from dr_llm.catalog.models import ModelCatalogEntry
 
 
 KIMI_CATALOG_URL = "https://api.kimi.com/coding/v1/models"

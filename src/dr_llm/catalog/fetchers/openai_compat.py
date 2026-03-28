@@ -5,7 +5,7 @@ from typing import Any
 
 from dr_llm.catalog.fetchers.common import api_key_from_env, get_json
 from dr_llm.providers.openai_compat import OpenAICompatAdapter
-from dr_llm.types import ModelCatalogEntry, ModelCatalogPricing
+from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogPricing
 
 
 def fetch_openai_compat_models(

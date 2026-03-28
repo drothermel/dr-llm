@@ -12,7 +12,7 @@ from dr_llm.providers.base import (
     ProviderRuntimeRequirements,
 )
 from dr_llm.providers.registry import ProviderRegistry
-from dr_llm.types import LlmRequest, Message
+from dr_llm.generation.models import LlmRequest, Message
 
 
 class CapturingRepository(BaseModel):

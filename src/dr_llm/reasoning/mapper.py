@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from dr_llm.types import (
+from dr_llm.generation.models import (
     CallMode,
     ReasoningConfig,
     ReasoningWarning,
     ReasoningWarningCode,
 )
+from pydantic import BaseModel, ConfigDict, Field
 
 
 _EFFORT_RATIO = {

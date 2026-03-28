@@ -41,13 +41,15 @@ def project_list() -> None:
     if not projects:
         typer.echo("No projects found.")
         return
-    name_w = max(len(p.name) for p in projects)
-    port_w = max(len(str(p.port)) for p in projects)
+    name_w = max(len(project.name) for project in projects)
+    port_w = max(len(str(project.port)) for project in projects)
     header = f"{'NAME':<{name_w}}  {'PORT':<{port_w}}  STATUS"
     typer.echo(header)
     typer.echo("-" * len(header))
-    for p in projects:
-        typer.echo(f"{p.name:<{name_w}}  {p.port:<{port_w}}  {p.status}")
+    for project in projects:
+        typer.echo(
+            f"{project.name:<{name_w}}  {project.port:<{port_w}}  {project.status}"
+        )
 
 
 @project_app.command("start")

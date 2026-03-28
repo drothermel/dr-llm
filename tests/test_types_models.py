@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from dr_llm.types import Message, ModelCatalogQuery, ReasoningConfig, TokenUsage
+from dr_llm.catalog.models import ModelCatalogQuery
+from dr_llm.generation.models import Message, ReasoningConfig, TokenUsage
 
 
 def test_message_rejects_unknown_role() -> None:

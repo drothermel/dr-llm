@@ -5,7 +5,7 @@ from dr_llm.reasoning import (
     map_reasoning_for_codex_headless,
     map_reasoning_for_google,
 )
-from dr_llm.types import CallMode, ReasoningConfig, ReasoningWarningCode
+from dr_llm.generation.models import CallMode, ReasoningConfig, ReasoningWarningCode
 
 
 def test_codex_headless_reasoning_emits_unsupported_warning() -> None:

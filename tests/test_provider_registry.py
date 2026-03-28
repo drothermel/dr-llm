@@ -8,7 +8,7 @@ from dr_llm.providers.base import (
     ProviderRuntimeRequirements,
 )
 from dr_llm.providers.registry import ProviderRegistry
-from dr_llm.types import CallMode, LlmRequest, LlmResponse, TokenUsage
+from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsage
 
 
 class _FakeAdapter(ProviderAdapter):

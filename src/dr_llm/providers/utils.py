@@ -4,9 +4,8 @@ import json
 from hashlib import sha256
 from typing import Any, Literal
 
+from dr_llm.generation.models import CostInfo, Message
 from pydantic import BaseModel
-
-from dr_llm.types import CostInfo, Message
 
 KEY_USAGE = "usage"
 KEY_REASONING = "reasoning"

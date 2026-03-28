@@ -6,7 +6,7 @@ from typing import Any
 from dr_llm.catalog.fetchers.common import api_key_from_env, get_json
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.google import GoogleAdapter
-from dr_llm.types import ModelCatalogEntry
+from dr_llm.catalog.models import ModelCatalogEntry
 
 
 def fetch_google_models(

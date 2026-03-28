@@ -3,9 +3,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Protocol
 
+from dr_llm.catalog.models import ModelCatalogEntry
+from dr_llm.generation.models import LlmRequest, LlmResponse
 from pydantic import BaseModel, ConfigDict, Field
-
-from dr_llm.types import LlmRequest, LlmResponse, ModelCatalogEntry
 
 
 class ProviderCapabilities(BaseModel):

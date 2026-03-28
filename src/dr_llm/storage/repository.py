@@ -2,18 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
+from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse
 from dr_llm.storage._catalog_store import CatalogStore
 from dr_llm.storage._runs_calls_store import RunsCallsStore
+from dr_llm.storage.models import RecordedCall, RunStatus
 from dr_llm.storage._runtime import StorageConfig, StorageRuntime
-from dr_llm.types import (
-    CallMode,
-    LlmRequest,
-    LlmResponse,
-    ModelCatalogEntry,
-    ModelCatalogQuery,
-    RecordedCall,
-    RunStatus,
-)
 
 
 class PostgresRepository:

@@ -10,11 +10,7 @@ from dr_llm.providers.openai_compat import (
     OpenAICompatConfig,
     _OpenAICompatRequestPayload,
 )
-from dr_llm.types import (
-    LlmRequest,
-    Message,
-    ReasoningConfig,
-)
+from dr_llm.generation.models import LlmRequest, Message, ReasoningConfig
 
 
 def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:

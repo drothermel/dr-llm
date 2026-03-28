@@ -4,7 +4,7 @@ from dr_llm.providers.utils import (
     parse_reasoning_tokens,
     to_openai_messages,
 )
-from dr_llm.types import Message, TokenUsage
+from dr_llm.generation.models import Message, TokenUsage
 
 
 def test_token_usage_defaults_total() -> None:

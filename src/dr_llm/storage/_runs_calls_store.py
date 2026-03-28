@@ -13,12 +13,13 @@ from tenacity import (
 )
 
 from dr_llm.errors import PersistenceError, TransientPersistenceError
+from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse
 from dr_llm.storage._runtime import (
     StorageRuntime,
     hash_payload,
     is_retryable_db_error,
 )
-from dr_llm.types import CallMode, LlmRequest, LlmResponse, RecordedCall, RunStatus
+from dr_llm.storage.models import RecordedCall, RunStatus
 
 
 class RunsCallsStore:

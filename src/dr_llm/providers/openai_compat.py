@@ -29,7 +29,7 @@ from dr_llm.providers.utils import (
     to_openai_messages,
 )
 from dr_llm.reasoning import map_reasoning_for_openai_compat
-from dr_llm.types import (
+from dr_llm.generation.models import (
     CallMode,
     LlmRequest,
     LlmResponse,

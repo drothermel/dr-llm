@@ -17,7 +17,7 @@ from dr_llm.providers.base import (
 from dr_llm.providers.google import GoogleAdapter, GoogleConfig
 from dr_llm.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
 from dr_llm.providers.registry import ProviderRegistry
-from dr_llm.types import CallMode, LlmRequest, LlmResponse, TokenUsage
+from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsage
 
 
 class _FakeAdapter(ProviderAdapter):

@@ -27,7 +27,7 @@ from dr_llm.providers.utils import (
     parse_reasoning_tokens,
 )
 from dr_llm.reasoning import map_reasoning_for_anthropic
-from dr_llm.types import (
+from dr_llm.generation.models import (
     CallMode,
     LlmRequest,
     LlmResponse,

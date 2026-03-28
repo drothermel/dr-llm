@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -17,13 +16,6 @@ from pydantic import (
 class CallMode(StrEnum):
     api = "api"
     headless = "headless"
-
-
-class RunStatus(StrEnum):
-    running = "running"
-    success = "success"
-    failed = "failed"
-    canceled = "canceled"
 
 
 class Message(BaseModel):
@@ -169,52 +161,6 @@ class ReasoningWarning(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
-class ModelCatalogPricing(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    currency: str | None = "USD"
-    input_cost_per_1m: float | None = None
-    output_cost_per_1m: float | None = None
-    reasoning_cost_per_1m: float | None = None
-    raw: dict[str, Any] = Field(default_factory=dict)
-
-
-class ModelCatalogRateLimit(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    requests_per_minute: int | None = None
-    tokens_per_minute: int | None = None
-    concurrency_limit: int | None = None
-    raw: dict[str, Any] = Field(default_factory=dict)
-
-
-class ModelCatalogEntry(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    provider: str
-    model: str
-    display_name: str | None = None
-    context_window: int | None = None
-    max_output_tokens: int | None = None
-    supports_reasoning: bool | None = None
-    supports_vision: bool | None = None
-    pricing: ModelCatalogPricing | None = None
-    rate_limits: ModelCatalogRateLimit | None = None
-    source_quality: Literal["live", "static"] = "live"
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    fetched_at: datetime | None = None
-
-
-class ModelCatalogQuery(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    provider: str | None = None
-    supports_reasoning: bool | None = None
-    model_contains: str | None = None
-    limit: int = 200
-    offset: int = 0
-
-
 class LlmRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -252,30 +198,3 @@ class CallError(BaseModel):
     message: str
     retryable: bool = False
     raw_json: dict[str, Any] | None = None
-
-
-class RecordedCall(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    call_id: str
-    run_id: str | None
-    provider: str
-    model: str
-    mode: CallMode
-    status: str
-    created_at: datetime
-    latency_ms: int | None
-    error_text: str | None
-    reasoning_tokens: int = 0
-    reasoning_text: str | None = None
-    cost_total_usd: float | None = None
-    cost_prompt_usd: float | None = None
-    cost_completion_usd: float | None = None
-    cost_reasoning_usd: float | None = None
-    warnings: list[ReasoningWarning] = Field(default_factory=list)
-    request: dict[str, Any]
-    response: dict[str, Any] | None
-
-
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
