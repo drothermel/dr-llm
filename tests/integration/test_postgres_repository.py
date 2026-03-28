@@ -65,21 +65,25 @@ def test_schema_migration_removes_legacy_tables_and_supports_tools_column(
     repository: PostgresRepository,
 ) -> None:
     dsn = repository.config.dsn
+    legacy_table_names = [
+        "sessions",
+        "session_turns",
+        "session_events",
+        "tool_calls",
+        "tool_results",
+        "tool_call_dead_letters",
+    ]
     with psycopg.connect(dsn) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS sessions (
-                session_id TEXT PRIMARY KEY
+        for table_name in legacy_table_names:
+            conn.execute(
+                sql.SQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS {} (
+                        id TEXT PRIMARY KEY
+                    )
+                    """
+                ).format(sql.Identifier(table_name))
             )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS tool_calls (
-                tool_call_id TEXT PRIMARY KEY
-            )
-            """
-        )
         conn.execute(
             """
             ALTER TABLE provider_models_current
@@ -102,29 +106,19 @@ def test_schema_migration_removes_legacy_tables_and_supports_tools_column(
         migrated_repository.close()
 
     with psycopg.connect(dsn) as conn:
-        sessions_exists = conn.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'sessions'
-            ) AS exists
-            """
-        ).fetchone()
-        assert sessions_exists is not None
-        assert sessions_exists[0] is False
-
-        tool_calls_exists = conn.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'tool_calls'
-            ) AS exists
-            """
-        ).fetchone()
-        assert tool_calls_exists is not None
-        assert tool_calls_exists[0] is False
+        for table_name in legacy_table_names:
+            table_exists = conn.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = %s
+                ) AS exists
+                """,
+                (table_name,),
+            ).fetchone()
+            assert table_exists is not None
+            assert table_exists[0] is False
 
         supports_tools_exists = conn.execute(
             """

@@ -71,6 +71,19 @@ def test_parse_cost_info_missing_keys_returns_none() -> None:
     assert parse_cost_info({"usage": {"prompt_tokens": 1}}) is None
 
 
+def test_parse_cost_info_ignores_non_string_currency_values() -> None:
+    cost = parse_cost_info(
+        {
+            "usage": {
+                "cost": 0.25,
+                "currency": 0,
+            }
+        }
+    )
+    assert cost is not None
+    assert cost.currency == "USD"
+
+
 def test_to_openai_messages_serializes_plain_messages() -> None:
     payload = to_openai_messages(
         [

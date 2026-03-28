@@ -339,15 +339,13 @@ def models_list(
             except KeyError:
                 pass
         client = LlmClient(registry=registry, repository=repository)
-        items = client.list_models(
-            ModelCatalogQuery(
-                provider=provider,
-                supports_reasoning=supports_reasoning,
-                model_contains=model_contains,
-                limit=limit,
-                offset=offset,
-            )
+        base_query = ModelCatalogQuery(
+            provider=provider,
+            supports_reasoning=supports_reasoning,
+            model_contains=model_contains,
         )
+        list_query = base_query.model_copy(update={"limit": limit, "offset": offset})
+        items = client.list_models(list_query)
         if json_output:
             _emit(
                 {
@@ -362,13 +360,7 @@ def models_list(
                 }
             )
         else:
-            total_count = client.count_models(
-                ModelCatalogQuery(
-                    provider=provider,
-                    supports_reasoning=supports_reasoning,
-                    model_contains=model_contains,
-                )
-            )
+            total_count = client.count_models(base_query)
             _render_models_list(items, provider, total_count)
             static_providers: set[str] = set()
             for item in items:

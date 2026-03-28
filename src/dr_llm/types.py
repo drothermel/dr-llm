@@ -27,7 +27,7 @@ class RunStatus(StrEnum):
 
 
 class Message(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     role: Literal["system", "user", "assistant"]
     content: str

@@ -9,6 +9,7 @@ from dr_llm.catalog.models import ModelCatalogSyncResult
 from dr_llm.cli import app
 from dr_llm.types import (
     CallMode,
+    LlmRequest,
     LlmResponse,
     Message,
     ModelCatalogEntry,
@@ -321,7 +322,7 @@ def test_query_emits_response_json(monkeypatch) -> None:
         def __init__(self, *, registry: object, repository: object | None) -> None:
             _ = registry, repository
 
-        def query(self, request, **kwargs):  # noqa: ANN001, ARG002
+        def query(self, request: LlmRequest, **_: object) -> LlmResponse:
             assert request.provider == "openai"
             assert request.model == "gpt-4.1"
             assert request.messages == [Message(role="user", content="hello")]
