@@ -3,14 +3,18 @@ from __future__ import annotations
 from uuid import uuid4
 from typing import Any
 
-from dr_llm.catalog.models import ModelCatalogSyncResult
+from dr_llm.catalog.models import (
+    ModelCatalogEntry,
+    ModelCatalogQuery,
+    ModelCatalogSyncResult,
+)
 from dr_llm.catalog.service import ModelCatalogService
+from dr_llm.generation.models import LlmRequest, LlmResponse
 from dr_llm.logging import emit_generation_event, generation_log_context
 from dr_llm.providers import build_default_registry
 from dr_llm.providers.base import ProviderAdapter
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.storage.repository import PostgresRepository
-from dr_llm.types import LlmRequest, LlmResponse, ModelCatalogEntry, ModelCatalogQuery
 
 
 class LlmClient:

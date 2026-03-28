@@ -27,7 +27,7 @@ from dr_llm.reasoning import (
     map_reasoning_for_claude_headless,
     map_reasoning_for_codex_headless,
 )
-from dr_llm.types import (
+from dr_llm.generation.models import (
     CallMode,
     LlmRequest,
     LlmResponse,

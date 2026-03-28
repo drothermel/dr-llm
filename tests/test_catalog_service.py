@@ -2,16 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from dr_llm.catalog.models import ModelCatalogEntry
 from dr_llm.catalog.service import ModelCatalogService
+from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsage
 from dr_llm.providers.base import ProviderAdapter, ProviderRuntimeRequirements
 from dr_llm.providers.registry import ProviderRegistry
-from dr_llm.types import (
-    CallMode,
-    LlmRequest,
-    LlmResponse,
-    ModelCatalogEntry,
-    TokenUsage,
-)
 
 
 class _DummyAdapter(ProviderAdapter):

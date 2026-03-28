@@ -4,14 +4,17 @@ import logging
 import traceback
 from typing import Any, Protocol
 
+from dr_llm.catalog.models import (
+    ModelCatalogEntry,
+    ModelCatalogQuery,
+    ModelCatalogSyncResult,
+)
 from dr_llm.catalog.fetchers import (
     fetch_models_for_adapter,
     fetch_out_of_registry_provider_models,
 )
 from dr_llm.catalog.fetchers.kimi import KIMI_PROVIDER_NAME
-from dr_llm.catalog.models import ModelCatalogSyncResult
 from dr_llm.providers.registry import ProviderRegistry
-from dr_llm.types import ModelCatalogEntry, ModelCatalogQuery
 
 logger = logging.getLogger(__name__)
 

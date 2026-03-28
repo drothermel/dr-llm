@@ -4,16 +4,20 @@ import json
 
 from typer.testing import CliRunner
 
-import dr_llm.cli as cli_module
-from dr_llm.catalog.models import ModelCatalogSyncResult
+import dr_llm.cli.common as cli_common
+import dr_llm.cli.models as models_cli
+import dr_llm.cli.query as query_cli
+from dr_llm.catalog.models import (
+    ModelCatalogEntry,
+    ModelCatalogQuery,
+    ModelCatalogSyncResult,
+)
 from dr_llm.cli import app
-from dr_llm.types import (
+from dr_llm.generation.models import (
     CallMode,
     LlmRequest,
     LlmResponse,
     Message,
-    ModelCatalogEntry,
-    ModelCatalogQuery,
     TokenUsage,
 )
 
@@ -74,7 +78,7 @@ def test_providers_command_json_lists_known_providers() -> None:
 
 def test_models_sync_is_concise_by_default(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
         def __init__(self, *, registry: object, repository: object) -> None:
@@ -92,7 +96,7 @@ def test_models_sync_is_concise_by_default(monkeypatch) -> None:
                 )
             ]
 
-    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
 
     result = runner.invoke(app, ["models", "sync", "--provider", "openai"])
 
@@ -102,7 +106,7 @@ def test_models_sync_is_concise_by_default(monkeypatch) -> None:
 
 def test_models_sync_verbose_emits_json(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
         def __init__(self, *, registry: object, repository: object) -> None:
@@ -121,7 +125,7 @@ def test_models_sync_verbose_emits_json(monkeypatch) -> None:
                 )
             ]
 
-    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
 
     result = runner.invoke(
         app, ["models", "sync", "--provider", "openai", "--verbose"]
@@ -144,7 +148,7 @@ def test_models_sync_verbose_emits_json(monkeypatch) -> None:
 
 def test_models_sync_failure_is_concise_and_nonzero(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
         def __init__(self, *, registry: object, repository: object) -> None:
@@ -162,7 +166,7 @@ def test_models_sync_failure_is_concise_and_nonzero(monkeypatch) -> None:
                 )
             ]
 
-    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
 
     result = runner.invoke(app, ["models", "sync", "--provider", "openai"])
 
@@ -173,7 +177,7 @@ def test_models_sync_failure_is_concise_and_nonzero(monkeypatch) -> None:
 
 def test_models_list_json_emits_models(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
         def __init__(self, *, registry: object, repository: object) -> None:
@@ -189,7 +193,7 @@ def test_models_list_json_emits_models(monkeypatch) -> None:
                 )
             ]
 
-    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
 
     result = runner.invoke(app, ["models", "list", "--provider", "openai", "--json"])
 
@@ -210,7 +214,7 @@ def test_models_list_json_emits_models(monkeypatch) -> None:
 
 def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
         def __init__(self, *, registry: object, repository: object) -> None:
@@ -235,7 +239,7 @@ def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None
             assert query.provider == "openai"
             return 347
 
-    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
 
     result = runner.invoke(app, ["models", "list", "--provider", "openai"])
 
@@ -249,7 +253,7 @@ def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None
 
 def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
         def __init__(self, *, registry: object, repository: object) -> None:
@@ -273,7 +277,7 @@ def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> N
             assert query.provider is None
             return 347
 
-    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
 
     result = runner.invoke(app, ["models", "list"])
 
@@ -287,7 +291,7 @@ def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> N
 
 def test_models_list_empty_page_mentions_matching_total(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
         def __init__(self, *, registry: object, repository: object) -> None:
@@ -302,7 +306,7 @@ def test_models_list_empty_page_mentions_matching_total(monkeypatch) -> None:
             assert query.provider == "openai"
             return 347
 
-    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
 
     result = runner.invoke(
         app, ["models", "list", "--provider", "openai", "--offset", "40"]
@@ -334,7 +338,7 @@ def test_query_emits_response_json(monkeypatch) -> None:
                 mode=CallMode.api,
             )
 
-    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+    monkeypatch.setattr(query_cli, "LlmClient", _FakeClient)
 
     result = runner.invoke(
         app,
@@ -358,7 +362,7 @@ def test_query_emits_response_json(monkeypatch) -> None:
 
 def test_run_start_and_finish_emit_json(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
     start_result = runner.invoke(app, ["run", "start"])
     finish_result = runner.invoke(

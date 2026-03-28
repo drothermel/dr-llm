@@ -10,7 +10,7 @@ from dr_llm.providers.headless import (
     ClaudeHeadlessMiniMaxAdapter,
     CodexHeadlessAdapter,
 )
-from dr_llm.types import ModelCatalogEntry
+from dr_llm.catalog.models import ModelCatalogEntry
 
 CODEX_DOCS_URL = "https://developers.openai.com/codex/models"
 

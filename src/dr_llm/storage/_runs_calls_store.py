@@ -13,12 +13,13 @@ from tenacity import (
 )
 
 from dr_llm.errors import PersistenceError, TransientPersistenceError
+from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse
 from dr_llm.storage._runtime import (
     StorageRuntime,
     hash_payload,
     is_retryable_db_error,
 )
-from dr_llm.types import CallMode, LlmRequest, LlmResponse, RecordedCall, RunStatus
+from dr_llm.storage.models import RecordedCall, RunStatus
 
 
 class RunsCallsStore:
@@ -430,7 +431,7 @@ class RunsCallsStore:
                     provider=str(row[2]),
                     model=str(row[3]),
                     mode=row[4],
-                    status=str(row[5]),
+                    status=RunStatus(str(row[5])),
                     created_at=row[6],
                     latency_ms=int(row[7]) if row[7] is not None else None,
                     error_text=str(row[8]) if row[8] is not None else None,

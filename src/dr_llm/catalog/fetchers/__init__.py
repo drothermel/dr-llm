@@ -20,7 +20,7 @@ from dr_llm.providers.headless import (
     CodexHeadlessAdapter,
 )
 from dr_llm.providers.openai_compat import OpenAICompatAdapter
-from dr_llm.types import ModelCatalogEntry
+from dr_llm.catalog.models import ModelCatalogEntry
 
 
 def fetch_models_for_adapter(

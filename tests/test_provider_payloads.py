@@ -14,7 +14,7 @@ from dr_llm.providers.headless import (
     ClaudeHeadlessMiniMaxAdapter,
     CodexHeadlessAdapter,
 )
-from dr_llm.types import LlmRequest, Message
+from dr_llm.generation.models import LlmRequest, Message
 
 
 def test_anthropic_payload_serializes_plain_messages() -> None:

@@ -4,17 +4,17 @@ import json
 from typing import Any, Literal
 from uuid import uuid4
 
-from psycopg.rows import dict_row
-from psycopg.sql import SQL
-
-from dr_llm.errors import PersistenceError
-from dr_llm.storage._runtime import StorageRuntime
-from dr_llm.types import (
+from dr_llm.catalog.models import (
     ModelCatalogEntry,
     ModelCatalogPricing,
     ModelCatalogQuery,
     ModelCatalogRateLimit,
 )
+from psycopg.rows import dict_row
+from psycopg.sql import SQL
+
+from dr_llm.errors import PersistenceError
+from dr_llm.storage._runtime import StorageRuntime
 
 
 class CatalogStore:
