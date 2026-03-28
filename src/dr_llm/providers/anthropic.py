@@ -32,16 +32,8 @@ from dr_llm.types import (
     LlmRequest,
     LlmResponse,
     Message,
-    ModelToolCall,
-    ProviderToolSpec,
     TokenUsage,
 )
-
-
-class _AnthropicToolSpec(BaseModel):
-    name: str
-    description: str
-    input_schema: dict[str, Any]
 
 
 class _AnthropicRequestTextBlock(BaseModel):
@@ -49,27 +41,9 @@ class _AnthropicRequestTextBlock(BaseModel):
     text: str
 
 
-class _AnthropicRequestToolUseBlock(BaseModel):
-    type: Literal["tool_use"] = "tool_use"
-    id: str
-    name: str
-    input: dict[str, Any]
-
-
-class _AnthropicRequestToolResultBlock(BaseModel):
-    type: Literal["tool_result"] = "tool_result"
-    tool_use_id: str
-    content: str
-    is_error: bool | None = None
-
-
 class _AnthropicRequestMessage(BaseModel):
     role: Literal["user", "assistant"]
-    content: list[
-        _AnthropicRequestTextBlock
-        | _AnthropicRequestToolUseBlock
-        | _AnthropicRequestToolResultBlock
-    ] = Field(default_factory=list)
+    content: list[_AnthropicRequestTextBlock] = Field(default_factory=list)
 
 
 class _AnthropicRequestPayload(BaseModel):
@@ -79,7 +53,6 @@ class _AnthropicRequestPayload(BaseModel):
     system: str | None = None
     temperature: float | None = None
     top_p: float | None = None
-    tools: list[_AnthropicToolSpec] | None = None
     thinking: dict[str, Any] | None = None
 
 
@@ -96,9 +69,6 @@ class _AnthropicContentItem(BaseModel):
 
     type: str
     text: str | None = None
-    id: str | None = None
-    name: str | None = None
-    input: dict[str, Any] | None = None
 
 
 class _AnthropicResponse(BaseModel):
@@ -146,9 +116,7 @@ class AnthropicAdapter(ProviderAdapter):
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(
-            supports_native_tools=True, supports_structured_output=True
-        )
+        return ProviderCapabilities(supports_structured_output=True)
 
     @property
     def runtime_requirements(self) -> ProviderRuntimeRequirements:
@@ -197,9 +165,6 @@ class AnthropicAdapter(ProviderAdapter):
             top_p=request.top_p,
             thinking=reasoning_mapping.payload or None,
         )
-        normalized_tools = _to_anthropic_tools(request.tools)
-        if normalized_tools:
-            payload.tools = normalized_tools
         started = time.perf_counter()
         resp = self._client.post(
             self._config.base_url,
@@ -249,19 +214,10 @@ class AnthropicAdapter(ProviderAdapter):
             ) from exc
 
         text_chunks: list[str] = []
-        tool_calls: list[ModelToolCall] = []
-        for idx, item in enumerate(body.content):
+        for item in body.content:
             item_type = item.type
             if item_type == "text":
                 text_chunks.append(item.text or "")
-            elif item_type == "tool_use":
-                tool_calls.append(
-                    ModelToolCall(
-                        tool_call_id=str(item.id or f"call_{idx + 1}"),
-                        name=str(item.name or ""),
-                        arguments=item.input if isinstance(item.input, dict) else {},
-                    )
-                )
 
         usage_raw = (
             body.usage.model_dump(mode="json", exclude_none=True) if body.usage else {}
@@ -293,24 +249,8 @@ class AnthropicAdapter(ProviderAdapter):
             provider=request.provider,
             model=request.model,
             mode=CallMode.api,
-            tool_calls=[tc for tc in tool_calls if tc.name],
             warnings=reasoning_mapping.warnings,
         )
-
-
-def _to_anthropic_tools(
-    tools: list[ProviderToolSpec] | None,
-) -> list[_AnthropicToolSpec] | None:
-    if not tools:
-        return None
-    return [
-        _AnthropicToolSpec(
-            name=tool.function.name,
-            description=tool.function.description,
-            input_schema=tool.function.parameters,
-        )
-        for tool in tools
-    ] or None
 
 
 def _to_anthropic_messages(messages: list[Message]) -> list[_AnthropicRequestMessage]:
@@ -319,53 +259,13 @@ def _to_anthropic_messages(messages: list[Message]) -> list[_AnthropicRequestMes
         if msg.role == "system":
             continue
 
-        if msg.role == "tool":
-            if msg.tool_call_id:
-                content = msg.content or "{}"
-                block = _AnthropicRequestToolResultBlock(
-                    tool_use_id=msg.tool_call_id,
-                    content=content,
-                )
-                try:
-                    parsed = json.loads(content)
-                except json.JSONDecodeError:
-                    parsed = None
-                if isinstance(parsed, dict) and "error" in parsed:
-                    block = _AnthropicRequestToolResultBlock(
-                        tool_use_id=msg.tool_call_id,
-                        content=content,
-                        is_error=True,
-                    )
-                payload.append(_AnthropicRequestMessage(role="user", content=[block]))
-            elif msg.content:
+        if msg.role == "assistant":
+            if msg.content:
                 payload.append(
                     _AnthropicRequestMessage(
-                        role="user",
+                        role="assistant",
                         content=[_AnthropicRequestTextBlock(text=msg.content)],
                     )
-                )
-            continue
-
-        if msg.role == "assistant":
-            blocks: list[
-                _AnthropicRequestTextBlock
-                | _AnthropicRequestToolUseBlock
-                | _AnthropicRequestToolResultBlock
-            ] = []
-            if msg.content:
-                blocks.append(_AnthropicRequestTextBlock(text=msg.content))
-            if msg.tool_calls:
-                for call in msg.tool_calls:
-                    blocks.append(
-                        _AnthropicRequestToolUseBlock(
-                            id=call.tool_call_id,
-                            name=call.name,
-                            input=call.arguments,
-                        )
-                    )
-            if blocks:
-                payload.append(
-                    _AnthropicRequestMessage(role="assistant", content=blocks)
                 )
             continue
 

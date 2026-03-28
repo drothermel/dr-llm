@@ -11,7 +11,6 @@ from dr_llm.types import LlmRequest, LlmResponse, ModelCatalogEntry
 class ProviderCapabilities(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    supports_native_tools: bool = False
     supports_structured_output: bool = False
 
 

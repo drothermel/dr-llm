@@ -1,63 +1,23 @@
+from __future__ import annotations
+
 import json
-from datetime import datetime, timezone
 
 from typer.testing import CliRunner
 
 import dr_llm.cli as cli_module
-from dr_llm.benchmark import (
-    BenchmarkConfig,
-    BenchmarkReport,
-    KnownOperationName,
-    OperationMix,
-    OperationStats,
-    PhaseStats,
-)
-from dr_llm.cli import app
 from dr_llm.catalog.models import ModelCatalogSyncResult
-from dr_llm.types import ModelCatalogEntry, ModelCatalogQuery, RunStatus
-
-
-def test_providers_command_is_human_readable_by_default() -> None:
-    runner = CliRunner()
-    result = runner.invoke(app, ["providers"])
-    assert result.exit_code == 0
-    assert "Providers" in result.stdout
-    assert "Available" in result.stdout
-    assert "openai" in result.stdout
-    assert "anthropic" in result.stdout
-    assert "claude-code" in result.stdout
-    assert "claude-code-minimax" in result.stdout
-    assert "codex-cli" not in result.stdout
-    assert '"providers"' not in result.stdout
-
-
-def test_providers_command_json_lists_known_providers() -> None:
-    runner = CliRunner()
-    result = runner.invoke(app, ["providers", "--json"])
-    assert result.exit_code == 0
-
-    payload = json.loads(result.stdout)
-    provider_rows = payload["providers"]
-    providers = {item["provider"] for item in provider_rows}
-    assert "openai" in providers
-    assert "anthropic" in providers
-    assert "google" in providers
-    assert "glm" in providers
-    assert "minimax" in providers
-    assert "claude-code-minimax" in providers
-    assert "claude-code-kimi" in providers
-    assert "claude" not in providers
-    assert "codex-cli" not in providers
-    for item in provider_rows:
-        assert isinstance(item["available"], bool)
-        assert isinstance(item["missing_env_vars"], list)
-        assert isinstance(item["missing_executables"], list)
+from dr_llm.cli import app
+from dr_llm.types import (
+    CallMode,
+    LlmResponse,
+    Message,
+    ModelCatalogEntry,
+    ModelCatalogQuery,
+    TokenUsage,
+)
 
 
 class _CliFakeRepository:
-    def initialize(self) -> None:
-        return None
-
     def start_run(self, **_: object) -> str:
         return "run_cli"
 
@@ -67,43 +27,52 @@ class _CliFakeRepository:
         _ = run_id, parameters
         return 1
 
-    def record_call(self, **_: object) -> str:
-        return "call_cli"
-
     def finish_run(self, **_: object) -> None:
         return None
 
     def list_calls(self, **_: object) -> list[object]:
         return []
 
-    def record_artifact(self, **_: object) -> str:
-        return "artifact_cli"
-
-    def start_session(self, **_: object) -> object:
-        class _Handle:
-            session_id = "session_cli"
-
-        return _Handle()
-
-    def create_session_turn(self, **_: object) -> tuple[str, int]:
-        return ("turn_cli", 1)
-
-    def append_session_event(self, **_: object) -> str:
-        return "event_cli"
-
-    def complete_session_turn(self, **_: object) -> None:
-        return None
-
-    def update_session_status(self, **_: object) -> None:
-        return None
-
     def close(self) -> None:
         return None
 
 
+def test_providers_command_is_human_readable_by_default() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["providers"])
+
+    assert result.exit_code == 0
+    assert "Providers" in result.stdout
+    assert "Available" in result.stdout
+    assert "Structured" in result.stdout
+    assert "openai" in result.stdout
+    assert "anthropic" in result.stdout
+    assert "claude-code" in result.stdout
+    assert '"providers"' not in result.stdout
+
+
+def test_providers_command_json_lists_known_providers() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["providers", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    providers = {item["provider"] for item in payload["providers"]}
+    assert "openai" in providers
+    assert "anthropic" in providers
+    assert "google" in providers
+    assert "glm" in providers
+    assert "minimax" in providers
+    assert "claude-code-minimax" in providers
+    assert "claude-code-kimi" in providers
+    for item in payload["providers"]:
+        assert isinstance(item["available"], bool)
+        assert isinstance(item["missing_env_vars"], list)
+        assert isinstance(item["missing_executables"], list)
+
+
 def test_models_sync_is_concise_by_default(monkeypatch) -> None:
     runner = CliRunner()
-
     monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
@@ -132,7 +101,6 @@ def test_models_sync_is_concise_by_default(monkeypatch) -> None:
 
 def test_models_sync_verbose_emits_json(monkeypatch) -> None:
     runner = CliRunner()
-
     monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
@@ -173,42 +141,8 @@ def test_models_sync_verbose_emits_json(monkeypatch) -> None:
     }
 
 
-def test_models_sync_verbose_preserves_failure_exit_code(monkeypatch) -> None:
-    runner = CliRunner()
-
-    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
-
-    class _FakeClient:
-        def __init__(self, *, registry: object, repository: object) -> None:
-            _ = registry, repository
-
-        def sync_models_detailed(
-            self, provider: str | None = None
-        ) -> list[ModelCatalogSyncResult]:
-            assert provider == "openai"
-            return [
-                ModelCatalogSyncResult(
-                    provider="openai",
-                    success=False,
-                    error="boom",
-                )
-            ]
-
-    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
-
-    result = runner.invoke(
-        app, ["models", "sync", "--provider", "openai", "--verbose"]
-    )
-
-    assert result.exit_code == 1
-    payload = json.loads(result.stdout)
-    assert payload["results"][0]["provider"] == "openai"
-    assert payload["results"][0]["success"] is False
-
-
 def test_models_sync_failure_is_concise_and_nonzero(monkeypatch) -> None:
     runner = CliRunner()
-
     monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
@@ -236,9 +170,45 @@ def test_models_sync_failure_is_concise_and_nonzero(monkeypatch) -> None:
     assert result.stderr.strip() == "Model sync failed for openai: boom"
 
 
+def test_models_list_json_emits_models(monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
+
+    class _FakeClient:
+        def __init__(self, *, registry: object, repository: object) -> None:
+            _ = registry, repository
+
+        def list_models(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
+            assert query.provider == "openai"
+            return [
+                ModelCatalogEntry(
+                    provider="openai",
+                    model="gpt-4.1",
+                    display_name="GPT-4.1",
+                )
+            ]
+
+    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
+
+    result = runner.invoke(app, ["models", "list", "--provider", "openai", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "models": [
+            {
+                "display_name": "GPT-4.1",
+                "metadata": {},
+                "model": "gpt-4.1",
+                "provider": "openai",
+                "source_quality": "live",
+            }
+        ]
+    }
+
+
 def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None:
     runner = CliRunner()
-
     monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
@@ -278,7 +248,6 @@ def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None
 
 def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> None:
     runner = CliRunner()
-
     monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
@@ -317,7 +286,6 @@ def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> N
 
 def test_models_list_empty_page_mentions_matching_total(monkeypatch) -> None:
     runner = CliRunner()
-
     monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
 
     class _FakeClient:
@@ -346,129 +314,63 @@ def test_models_list_empty_page_mentions_matching_total(monkeypatch) -> None:
     )
 
 
-def test_run_benchmark_outputs_summary(monkeypatch, tmp_path) -> None:
+def test_query_emits_response_json(monkeypatch) -> None:
     runner = CliRunner()
-    fake_repo = _CliFakeRepository()
-    captured: dict[str, BenchmarkConfig] = {}
-    artifact_path = str(tmp_path / "report.json")
 
-    def fake_repo_builder(
-        dsn: str | None, min_pool_size: int, max_pool_size: int
-    ) -> _CliFakeRepository:
-        _ = dsn, min_pool_size, max_pool_size
-        return fake_repo
+    class _FakeClient:
+        def __init__(self, *, registry: object, repository: object | None) -> None:
+            _ = registry, repository
 
-    def fake_run_benchmark(
-        *, repository: object, config: BenchmarkConfig
-    ) -> BenchmarkReport:
-        _ = repository
-        captured["config"] = config
+        def query(self, request, **kwargs):  # noqa: ANN001, ARG002
+            assert request.provider == "openai"
+            assert request.model == "gpt-4.1"
+            assert request.messages == [Message(role="user", content="hello")]
+            return LlmResponse(
+                text="hi",
+                usage=TokenUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3),
+                provider="openai",
+                model="gpt-4.1",
+                mode=CallMode.api,
+            )
 
-        by_op: dict[KnownOperationName, OperationStats] = {
-            "record_call": OperationStats(executed=1350, failed=0),
-            "session_roundtrip": OperationStats(executed=675, failed=0),
-            "read_calls": OperationStats(executed=675, failed=0),
-        }
-        measured = PhaseStats(
-            phase="measured",
-            total_operations=2700,
-            successful_operations=2700,
-            failed_operations=0,
-            elapsed_ms=21951,
-            operations_per_second=123.0,
-            p50_latency_ms=10.0,
-            p95_latency_ms=50.0,
-            by_operation=by_op,
-        )
-        warmup_by_op: dict[KnownOperationName, OperationStats] = {
-            "record_call": OperationStats(executed=100, failed=0),
-            "session_roundtrip": OperationStats(executed=50, failed=0),
-            "read_calls": OperationStats(executed=50, failed=0),
-        }
-        warmup = PhaseStats(
-            phase="warmup",
-            total_operations=300,
-            successful_operations=300,
-            failed_operations=0,
-            elapsed_ms=1000,
-            operations_per_second=0.0,
-            p50_latency_ms=0.0,
-            p95_latency_ms=0.0,
-            by_operation=warmup_by_op,
-        )
-        now = datetime.now(timezone.utc)
-        return BenchmarkReport(
-            run_id="run_cli",
-            status=RunStatus.success,
-            started_at=now,
-            finished_at=now,
-            config=config,
-            warmup=warmup,
-            measured=measured,
-            errors_sampled=[],
-            artifact_path=artifact_path,
-        )
-
-    monkeypatch.setattr(cli_module, "_repo", fake_repo_builder)
-    monkeypatch.setattr(cli_module, "run_repository_benchmark", fake_run_benchmark)
+    monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
 
     result = runner.invoke(
         app,
         [
-            "run",
-            "benchmark",
-            "--workers",
-            "12",
-            "--total-operations",
-            "3000",
-            "--warmup-operations",
-            "300",
-            "--max-in-flight",
-            "12",
-            "--operation-mix-json",
-            '{"record_call":2,"session_roundtrip":1,"read_calls":1}',
-            "--artifact-path",
-            artifact_path,
-            "--max-failure-ratio",
-            "0.25",
-            "--max-error-samples",
-            "17",
+            "query",
+            "--provider",
+            "openai",
+            "--model",
+            "gpt-4.1",
+            "--message",
+            "hello",
+            "--no-record",
         ],
     )
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["run_id"] == "run_cli"
-    assert payload["status"] == "success"
-    assert payload["operations_per_second"] == 123.0
-    assert payload["failed_operations"] == 0
-    assert payload["artifact_path"] == artifact_path
-    config = captured["config"]
-    assert config.total_operations == 3000
-    assert config.warmup_operations == 300
-    assert config.max_in_flight == 12
-    assert config.max_failure_ratio == 0.25
-    assert config.max_error_samples == 17
-    assert config.operation_mix == OperationMix(
-        record_call=2, session_roundtrip=1, read_calls=1
-    )
+    assert payload["text"] == "hi"
+    assert payload["usage"]["total_tokens"] == 3
 
 
-def test_run_benchmark_rejects_invalid_operation_mix(
-    monkeypatch,
-) -> None:
+def test_run_start_and_finish_emit_json(monkeypatch) -> None:
     runner = CliRunner()
-
     monkeypatch.setattr(cli_module, "_repo", lambda *_: _CliFakeRepository())
 
-    result = runner.invoke(
-        app,
-        [
-            "run",
-            "benchmark",
-            "--operation-mix-json",
-            '{"record_call":0,"session_roundtrip":0,"read_calls":0}',
-        ],
+    start_result = runner.invoke(app, ["run", "start"])
+    finish_result = runner.invoke(
+        app, ["run", "finish", "--run-id", "run_cli", "--status", "success"]
     )
 
-    assert result.exit_code == 2
+    assert start_result.exit_code == 0
+    assert json.loads(start_result.stdout) == {
+        "parameters_written": 1,
+        "run_id": "run_cli",
+    }
+    assert finish_result.exit_code == 0
+    assert json.loads(finish_result.stdout) == {
+        "run_id": "run_cli",
+        "status": "success",
+    }

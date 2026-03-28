@@ -101,7 +101,6 @@ class CatalogStore:
                             entry.context_window,
                             entry.max_output_tokens,
                             entry.supports_reasoning,
-                            entry.supports_tools,
                             entry.supports_vision,
                             json.dumps(
                                 (
@@ -142,7 +141,6 @@ class CatalogStore:
                                 context_window,
                                 max_output_tokens,
                                 supports_reasoning,
-                                supports_tools,
                                 supports_vision,
                                 pricing_json,
                                 rate_limits_json,
@@ -150,7 +148,7 @@ class CatalogStore:
                                 metadata_json,
                                 updated_at
                             ) VALUES (
-                                %s, %s, %s, %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s, %s, %s,
                                 %s::jsonb, %s::jsonb, %s, %s::jsonb, now()
                             )
                             ON CONFLICT (provider, model)
@@ -159,7 +157,6 @@ class CatalogStore:
                                 context_window = excluded.context_window,
                                 max_output_tokens = excluded.max_output_tokens,
                                 supports_reasoning = excluded.supports_reasoning,
-                                supports_tools = excluded.supports_tools,
                                 supports_vision = excluded.supports_vision,
                                 pricing_json = excluded.pricing_json,
                                 rate_limits_json = excluded.rate_limits_json,
@@ -192,7 +189,6 @@ class CatalogStore:
                     context_window,
                     max_output_tokens,
                     supports_reasoning,
-                    supports_tools,
                     supports_vision,
                     pricing_json,
                     rate_limits_json,
@@ -239,7 +235,6 @@ class CatalogStore:
                         context_window,
                         max_output_tokens,
                         supports_reasoning,
-                        supports_tools,
                         supports_vision,
                         pricing_json,
                         rate_limits_json,
@@ -284,7 +279,6 @@ def _row_to_entry(row: dict[str, Any]) -> ModelCatalogEntry:
     context_window_raw = row.get("context_window")
     max_output_tokens_raw = row.get("max_output_tokens")
     supports_reasoning_raw = row.get("supports_reasoning")
-    supports_tools_raw = row.get("supports_tools")
     supports_vision_raw = row.get("supports_vision")
     metadata_raw = row.get("metadata_json")
 
@@ -296,9 +290,6 @@ def _row_to_entry(row: dict[str, Any]) -> ModelCatalogEntry:
         max_output_tokens=_as_optional_int(max_output_tokens_raw),
         supports_reasoning=(
             bool(supports_reasoning_raw) if supports_reasoning_raw is not None else None
-        ),
-        supports_tools=(
-            bool(supports_tools_raw) if supports_tools_raw is not None else None
         ),
         supports_vision=(
             bool(supports_vision_raw) if supports_vision_raw is not None else None

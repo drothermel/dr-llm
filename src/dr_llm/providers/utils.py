@@ -5,18 +5,8 @@ from hashlib import sha256
 from typing import Any, Literal
 
 from pydantic import BaseModel
-from dr_llm.types import CostInfo, Message, ModelToolCall
 
-KEY_NAME = "name"
-KEY_TOOL_CALL_ID = "tool_call_id"
-KEY_ID = "id"
-KEY_FUNCTION = "function"
-KEY_ARGUMENTS = "arguments"
-
-TOOL_TYPE_FUNCTION = "function"
-TOOL_CALL_ID_PREFIX = "call_"
-FALLBACK_RAW_ARGUMENT_KEY = "_raw"
-FALLBACK_VALUE_ARGUMENT_KEY = "_value"
+from dr_llm.types import CostInfo, Message
 
 KEY_USAGE = "usage"
 KEY_REASONING = "reasoning"
@@ -45,23 +35,9 @@ USAGE_PREFIX = "usage."
 BODY_PREFIX = "body."
 
 
-class _OpenAIWireToolFunction(BaseModel):
-    name: str
-    arguments: str
-
-
-class _OpenAIWireToolCall(BaseModel):
-    id: str
-    type: Literal["function"] = "function"
-    function: _OpenAIWireToolFunction
-
-
 class _OpenAIWireMessage(BaseModel):
-    role: Literal["system", "user", "assistant", "tool"]
+    role: Literal["system", "user", "assistant"]
     content: str
-    name: str | None = None
-    tool_call_id: str | None = None
-    tool_calls: list[_OpenAIWireToolCall] | None = None
 
 
 def stable_json_dumps(payload: dict[str, Any]) -> str:
@@ -73,30 +49,10 @@ def payload_hash(payload: dict[str, Any]) -> str:
 
 
 def to_openai_messages(messages: list[Message]) -> list[dict[str, Any]]:
-    payloads: list[_OpenAIWireMessage] = []
-    for message in messages:
-        payloads.append(
-            _OpenAIWireMessage(
-                role=message.role,
-                content=message.content,
-                name=message.name,
-                tool_call_id=message.tool_call_id,
-                tool_calls=[
-                    _OpenAIWireToolCall(
-                        id=call.tool_call_id,
-                        type=TOOL_TYPE_FUNCTION,
-                        function=_OpenAIWireToolFunction(
-                            name=call.name,
-                            arguments=json.dumps(
-                                call.arguments, ensure_ascii=True, sort_keys=True
-                            ),
-                        ),
-                    )
-                    for call in (message.tool_calls or [])
-                ]
-                or None,
-            )
-        )
+    payloads = [
+        _OpenAIWireMessage(role=message.role, content=message.content)
+        for message in messages
+    ]
     return [
         message.model_dump(
             mode="json",
@@ -199,48 +155,6 @@ def parse_cost_info(body_raw: dict[str, Any] | None) -> CostInfo | None:
     )
 
 
-def parse_tool_calls(raw: list[Any] | None) -> list[ModelToolCall]:
-    if not raw:
-        return []
-    parsed: list[ModelToolCall] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        call_id = str(item.get(KEY_ID) or item.get(KEY_TOOL_CALL_ID) or "")
-        fn = item.get(KEY_FUNCTION) or {}
-        name = str(fn.get(KEY_NAME) or item.get(KEY_NAME) or "")
-        args_raw = (
-            fn.get(KEY_ARGUMENTS) if isinstance(fn, dict) else item.get(KEY_ARGUMENTS)
-        )
-        args: dict[str, Any]
-        if isinstance(args_raw, str):
-            try:
-                loaded = json.loads(args_raw)
-            except json.JSONDecodeError:
-                loaded = {FALLBACK_RAW_ARGUMENT_KEY: args_raw}
-            args = (
-                loaded
-                if isinstance(loaded, dict)
-                else {FALLBACK_VALUE_ARGUMENT_KEY: loaded}
-            )
-        elif isinstance(args_raw, dict):
-            args = args_raw
-        elif args_raw is None:
-            args = {}
-        else:
-            args = {FALLBACK_VALUE_ARGUMENT_KEY: args_raw}
-        if not name:
-            continue
-        parsed.append(
-            ModelToolCall(
-                tool_call_id=call_id or f"{TOOL_CALL_ID_PREFIX}{len(parsed) + 1}",
-                name=name,
-                arguments=args,
-            )
-        )
-    return parsed
-
-
 def _as_int(value: Any) -> int | None:
     if value is None:
         return None
@@ -259,6 +173,12 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
+def _as_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
 def _first_float(*values: Any) -> float | None:
     for value in values:
         parsed = _as_float(value)
@@ -269,6 +189,7 @@ def _first_float(*values: Any) -> float | None:
 
 def _first_str(*values: Any) -> str | None:
     for value in values:
-        if isinstance(value, str) and value:
-            return value
+        parsed = _as_str(value)
+        if parsed:
+            return parsed
     return None

@@ -49,7 +49,6 @@ def fetch_anthropic_models(
                 context_window=as_int(item.get("context_window")),
                 max_output_tokens=as_int(item.get("max_output_tokens")),
                 supports_reasoning=True,
-                supports_tools=True,
                 supports_vision=None,
                 metadata=item,
                 fetched_at=now,

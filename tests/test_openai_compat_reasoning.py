@@ -13,9 +13,7 @@ from dr_llm.providers.openai_compat import (
 from dr_llm.types import (
     LlmRequest,
     Message,
-    ProviderToolSpec,
     ReasoningConfig,
-    ToolFunctionSpec,
 )
 
 
@@ -123,35 +121,13 @@ def test_openai_compat_set_client_does_not_close_injected_clients() -> None:
     second.close()
 
 
-def test_openai_compat_request_payload_serializes_tools() -> None:
-    tool = ProviderToolSpec(
-        function=ToolFunctionSpec(
-            name="lookup",
-            description="Lookup a value",
-            parameters={
-                "type": "object",
-                "properties": {"q": {"type": "string"}},
-                "required": ["q"],
-            },
-        )
-    )
+def test_openai_compat_request_payload_omits_optional_fields() -> None:
     payload = _OpenAICompatRequestPayload(
         model="openai/gpt-4o-mini",
         messages=[{"role": "user", "content": "hi"}],
-        tools=[tool],
     ).model_dump(mode="json", exclude_none=True)
 
-    assert payload["tools"] == [
-        {
-            "type": "function",
-            "function": {
-                "name": "lookup",
-                "description": "Lookup a value",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"q": {"type": "string"}},
-                    "required": ["q"],
-                },
-            },
-        }
-    ]
+    assert payload == {
+        "model": "openai/gpt-4o-mini",
+        "messages": [{"role": "user", "content": "hi"}],
+    }

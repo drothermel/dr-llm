@@ -26,57 +26,11 @@ class RunStatus(StrEnum):
     canceled = "canceled"
 
 
-class SessionStatus(StrEnum):
-    active = "active"
-    completed = "completed"
-    failed = "failed"
-    canceled = "canceled"
-
-
-class SessionTurnStatus(StrEnum):
-    active = "active"
-    completed = "completed"
-    failed = "failed"
-
-
-class ToolPolicy(StrEnum):
-    native_preferred = "native_preferred"
-    brokered_only = "brokered_only"
-    native_only = "native_only"
-
-
-class ToolCallStatus(StrEnum):
-    pending = "pending"
-    claimed = "claimed"
-    succeeded = "succeeded"
-    failed = "failed"
-    dead_letter = "dead_letter"
-
-
-class ToolErrorCode(StrEnum):
-    unknown_tool = "unknown_tool"
-    tool_execution_failed = "tool_execution_failed"
-    tool_async_in_running_loop = "tool_async_in_running_loop"
-
-
 class Message(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    role: Literal["system", "user", "assistant", "tool"]
+    role: Literal["system", "user", "assistant"]
     content: str
-    name: str | None = None
-    tool_call_id: str | None = None
-    tool_calls: list[ModelToolCall] | None = None
-
-    @model_validator(mode="after")
-    def _validate_role_fields(self) -> Message:
-        if self.role == "tool" and not self.tool_call_id:
-            raise ValueError("tool messages must include tool_call_id")
-        if self.role != "tool" and self.tool_call_id is not None:
-            raise ValueError("tool_call_id is only valid for tool messages")
-        if self.role != "assistant" and self.tool_calls is not None:
-            raise ValueError("tool_calls are only valid for assistant messages")
-        return self
 
 
 class ReasoningConfig(BaseModel):
@@ -121,7 +75,6 @@ class TokenUsage(BaseModel):
 
     prompt_tokens: int = Field(default=0)
     completion_tokens: int = Field(default=0)
-    # Provider-reported total when available; defaults to prompt+completion on input.
     total_tokens: int = Field(default=0)
     reasoning_tokens: int = Field(default=0)
 
@@ -186,7 +139,6 @@ class TokenUsage(BaseModel):
     @computed_field
     @property
     def computed_total_tokens(self) -> int:
-        # Always prompt+completion. This may differ from provider-reported total_tokens.
         return self.prompt_tokens + self.completion_tokens
 
 
@@ -245,7 +197,6 @@ class ModelCatalogEntry(BaseModel):
     context_window: int | None = None
     max_output_tokens: int | None = None
     supports_reasoning: bool | None = None
-    supports_tools: bool | None = None
     supports_vision: bool | None = None
     pricing: ModelCatalogPricing | None = None
     rate_limits: ModelCatalogRateLimit | None = None
@@ -264,29 +215,6 @@ class ModelCatalogQuery(BaseModel):
     offset: int = 0
 
 
-class ModelToolCall(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    tool_call_id: str
-    name: str
-    arguments: dict[str, Any] = Field(default_factory=dict)
-
-
-class ToolFunctionSpec(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    name: str
-    description: str
-    parameters: dict[str, Any]
-
-
-class ProviderToolSpec(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    type: Literal["function"] = "function"
-    function: ToolFunctionSpec
-
-
 class LlmRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -298,8 +226,6 @@ class LlmRequest(BaseModel):
     max_tokens: int | None = None
     reasoning: ReasoningConfig | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-    tools: list[ProviderToolSpec] | None = None
-    tool_policy: ToolPolicy = ToolPolicy.native_preferred
 
 
 class LlmResponse(BaseModel):
@@ -316,7 +242,6 @@ class LlmResponse(BaseModel):
     provider: str
     model: str
     mode: CallMode
-    tool_calls: list[ModelToolCall] = Field(default_factory=list)
     warnings: list[ReasoningWarning] = Field(default_factory=list)
 
 
@@ -327,117 +252,6 @@ class CallError(BaseModel):
     message: str
     retryable: bool = False
     raw_json: dict[str, Any] | None = None
-
-
-class SessionEvent(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    event_id: str
-    session_id: str
-    turn_id: str | None = None
-    event_type: str
-    payload: dict[str, Any]
-    created_at: datetime
-
-
-class SessionState(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    session_id: str
-    status: SessionStatus
-    version: int
-    strategy_mode: ToolPolicy
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime
-    updated_at: datetime
-    last_error_text: str | None = None
-
-
-class SessionHandle(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    session_id: str
-    status: SessionStatus
-    version: int
-    strategy_mode: ToolPolicy
-
-
-class SessionStartInput(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    provider: str
-    model: str
-    messages: list[Message]
-    reasoning: ReasoningConfig | None = None
-    strategy_mode: ToolPolicy = ToolPolicy.native_preferred
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    run_id: str | None = None
-
-
-class SessionStepInput(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    session_id: str
-    messages: list[Message]
-    expected_version: int | None = None
-    inline_tool_execution: bool = False
-    reasoning: ReasoningConfig | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class SessionStepResult(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    session_id: str
-    turn_id: str
-    status: SessionTurnStatus
-    version: int
-    output: Message | None = None
-    tool_calls: list[ModelToolCall] = Field(default_factory=list)
-
-
-class ToolInvocation(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    tool_call_id: str
-    name: str
-    arguments: dict[str, Any] = Field(default_factory=dict)
-    session_id: str
-    turn_id: str | None = None
-
-
-class ToolError(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    error_code: ToolErrorCode
-    message: str
-    exception_type: str | None = None
-
-
-class ToolResult(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    tool_call_id: str
-    ok: bool
-    result: dict[str, Any] | None = None
-    error: ToolError | None = None
-
-
-class ToolCallRecord(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    tool_call_id: str
-    session_id: str
-    turn_id: str | None
-    idempotency_key: str
-    tool_name: str
-    status: ToolCallStatus
-    args: dict[str, Any]
-    attempt_count: int
-    worker_id: str | None
-    created_at: datetime
-    claimed_at: datetime | None
-    lease_expires_at: datetime | None
 
 
 class RecordedCall(BaseModel):

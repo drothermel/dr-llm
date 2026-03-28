@@ -27,15 +27,3 @@ class PersistenceError(LlmPoolError):
 
 class TransientPersistenceError(PersistenceError):
     pass
-
-
-class SessionConflictError(LlmPoolError):
-    pass
-
-
-class ToolExecutionError(LlmPoolError):
-    pass
-
-
-class ReplayError(LlmPoolError):
-    pass

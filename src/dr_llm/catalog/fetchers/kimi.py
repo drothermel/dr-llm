@@ -42,7 +42,6 @@ def fetch_kimi_models() -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
                     if item.get("supports_reasoning") is not None
                     else None
                 ),
-                supports_tools=True,
                 supports_vision=True,
                 metadata=item,
                 fetched_at=now,

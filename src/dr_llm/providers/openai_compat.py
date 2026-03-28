@@ -26,7 +26,6 @@ from dr_llm.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
-    parse_tool_calls,
     to_openai_messages,
 )
 from dr_llm.reasoning import map_reasoning_for_openai_compat
@@ -34,7 +33,6 @@ from dr_llm.types import (
     CallMode,
     LlmRequest,
     LlmResponse,
-    ProviderToolSpec,
     TokenUsage,
 )
 
@@ -46,7 +44,6 @@ class _OpenAICompatRequestPayload(BaseModel):
     top_p: float | None = None
     max_tokens: int | None = None
     reasoning: dict[str, Any] | None = None
-    tools: list[ProviderToolSpec] | None = None
 
 
 class _OpenAICompatUsageDetails(BaseModel):
@@ -70,7 +67,6 @@ class _OpenAICompatMessage(BaseModel):
     reasoning: str | int | float | None = None
     reasoning_content: str | int | float | None = None
     reasoning_details: list[dict[str, Any]] | None = None
-    tool_calls: list[dict[str, Any]] | None = None
 
 
 class _OpenAICompatChoice(BaseModel):
@@ -94,7 +90,6 @@ class OpenAICompatConfig(BaseModel):
     timeout_seconds: float = 120.0
     chat_path: str = "/chat/completions"
     capabilities: ProviderCapabilities = ProviderCapabilities(
-        supports_native_tools=True,
         supports_structured_output=True,
     )
 
@@ -201,7 +196,6 @@ class OpenAICompatAdapter(ProviderAdapter):
             top_p=request.top_p,
             max_tokens=request.max_tokens,
             reasoning=reasoning_mapping.payload or None,
-            tools=request.tools,
         ).model_dump(mode="json", exclude_none=True)
         request_idempotency_key = request.metadata.get("idempotency_key")
         idempotency_key = (
@@ -235,7 +229,6 @@ class OpenAICompatAdapter(ProviderAdapter):
                 "request_shape": {
                     "model": payload.get("model"),
                     "message_count": len(payload.get("messages", [])),
-                    "tool_count": len(payload.get("tools") or []),
                 },
             },
         )
@@ -284,7 +277,6 @@ class OpenAICompatAdapter(ProviderAdapter):
             message.model_dump(mode="json", exclude_none=True)
         )
         cost = parse_cost_info(body_raw if isinstance(body_raw, dict) else {})
-        tool_calls = parse_tool_calls(message.tool_calls)
         return LlmResponse(
             text=text,
             finish_reason=choice.finish_reason,
@@ -297,6 +289,5 @@ class OpenAICompatAdapter(ProviderAdapter):
             provider=request.provider,
             model=request.model,
             mode=CallMode.api,
-            tool_calls=tool_calls,
             warnings=reasoning_mapping.warnings,
         )
