@@ -53,7 +53,7 @@ class ProjectInfo(BaseModel):
     @computed_field
     @property
     def container_name(self) -> str:
-        return self.get_containter_name(self.name)
+        return self.get_container_name(self.name)
 
     @computed_field
     @property
@@ -73,7 +73,7 @@ class ProjectInfo(BaseModel):
         return f"{cls.volume_prefix}{name}"
 
     @classmethod
-    def get_containter_name(cls, name: str) -> str:
+    def get_container_name(cls, name: str) -> str:
         return f"{cls.container_prefix}{name}"
 
     @classmethod
@@ -97,7 +97,7 @@ class ProjectInfo(BaseModel):
 
     @classmethod
     def maybe_from_existing(cls, name: str) -> ProjectInfo | None:
-        container_name = cls.get_containter_name(name)
+        container_name = cls.get_container_name(name)
         raw_labels_status = call_docker_get_labels_status(container_name)
         if raw_labels_status is None:
             return None

@@ -6,10 +6,7 @@ from pathlib import Path
 
 import typer
 
-from dr_llm.project.docker import (
-    get_all_docker_names_labels_status,
-    require_docker,
-)
+from dr_llm.project.docker import get_all_docker_names_labels_status
 from dr_llm.project.project_info import ProjectInfo
 
 project_app = typer.Typer(help="Manage isolated dr-llm project databases")
@@ -22,7 +19,6 @@ def project_create(
     ),
 ) -> None:
     """Create a new project with its own Postgres container and persistent volume."""
-    require_docker()
     try:
         project_info = ProjectInfo.create_new(name)
     except RuntimeError as exc:
@@ -36,7 +32,6 @@ def project_create(
 @project_app.command("list")
 def project_list() -> None:
     """List all dr-llm projects."""
-    require_docker()
     names_labels_status = get_all_docker_names_labels_status(
         ProjectInfo.label_prefix,
     )
@@ -59,7 +54,6 @@ def project_list() -> None:
 def project_start(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
-    require_docker()
     try:
         project_info = ProjectInfo.get_by_name(name)
         project_info.start()
@@ -76,7 +70,6 @@ def project_start(
 def project_stop(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
-    require_docker()
     try:
         project_info = ProjectInfo.get_by_name(name)
         project_info.stop()
@@ -91,7 +84,6 @@ def project_use(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
     """Print the export command to set DR_LLM_DATABASE_URL for a project."""
-    require_docker()
     try:
         project_info = ProjectInfo.get_by_name(name)
     except RuntimeError as exc:
@@ -115,7 +107,6 @@ def project_destroy(
         help="Skip confirmation prompt.",
     ),
 ) -> None:
-    require_docker()
     if not yes_really_delete_everything:
         typer.confirm(
             f"This will permanently delete ALL data for project '{name}'. Continue?",
@@ -139,7 +130,6 @@ def project_backup(
     name: str = typer.Argument(..., help="Project name"),
     output_dir: Path | None = typer.Option(None, help="Custom backup directory."),
 ) -> None:
-    require_docker()
     try:
         project_info = ProjectInfo.get_by_name(name)
         path = project_info.backup(output_dir)
@@ -156,7 +146,6 @@ def project_restore(
         ..., help="Path to backup file (.sql or .sql.gz)"
     ),
 ) -> None:
-    require_docker()
     try:
         project_info = ProjectInfo.get_by_name(name)
         project_info.restore(backup_file)

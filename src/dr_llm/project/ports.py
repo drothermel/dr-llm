@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import socket
-import subprocess
 
-from dr_llm.project.docker import parse_docker_labels
+from dr_llm.project.docker import call_docker, parse_docker_labels
 
 BASE_PORT = 5500
 LABEL_PREFIX = "dr-llm.project"
@@ -19,21 +18,14 @@ def _port_is_free(port: int) -> bool:
 
 
 def _claimed_ports() -> set[int]:
-    result = subprocess.run(
-        [
-            "docker",
-            "ps",
-            "-a",
-            "--filter",
-            f"label={LABEL_PREFIX}.name",
-            "--format",
-            "{{json .Labels}}",
-        ],
-        capture_output=True,
-        text=True,
+    result = call_docker(
+        "ps",
+        "-a",
+        "--filter",
+        f"label={LABEL_PREFIX}.name",
+        "--format",
+        "{{json .Labels}}",
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to list Docker containers: {result.stderr.strip()}")
     ports: set[int] = set()
     for line in result.stdout.strip().splitlines():
         labels = parse_docker_labels(line)

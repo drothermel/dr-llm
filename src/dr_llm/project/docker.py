@@ -18,14 +18,18 @@ class ContainerStatus(StrEnum):
         return cls.UNKNOWN
 
 
-def require_docker() -> None:
-    result = subprocess.run(
-        ["docker", "info"], capture_output=True, text=True, check=False
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
+def _docker_error(args: tuple[str, ...], stderr: str) -> RuntimeError:
+    lowered = stderr.lower()
+    if (
+        "cannot connect to the docker daemon" in lowered
+        or "error during connect" in lowered
+    ):
+        return RuntimeError(
             "Docker is not available. Install Docker or start the daemon."
         )
+    command = " ".join(["docker", *args])
+    detail = stderr or "unknown docker error"
+    return RuntimeError(f"Docker command failed: {command}\n{detail}")
 
 
 def wait_docker_ready(
@@ -35,19 +39,14 @@ def wait_docker_ready(
     timeout_seconds: int = 30,
 ) -> ContainerStatus:
     for _ in range(timeout_seconds):
-        result = subprocess.run(
-            [
-                "docker",
-                "exec",
-                container_name,
-                "pg_isready",
-                "-U",
-                db_user,
-                "-d",
-                db_name,
-            ],
-            capture_output=True,
-            text=True,
+        result = call_docker(
+            "exec",
+            container_name,
+            "pg_isready",
+            "-U",
+            db_user,
+            "-d",
+            db_name,
             check=False,
         )
         if result.returncode == 0:
@@ -60,12 +59,42 @@ def wait_docker_ready(
 
 
 def call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["docker", *args],
-        capture_output=True,
-        text=True,
-        check=check,
-    )
+    try:
+        result = subprocess.run(
+            ["docker", *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Docker is not available. Install Docker or start the daemon."
+        ) from exc
+    if check and result.returncode != 0:
+        raise _docker_error(args, result.stderr.strip())
+    return result
+
+
+def call_docker_bytes(
+    *args: str,
+    check: bool = True,
+    input: bytes | None = None,
+) -> subprocess.CompletedProcess[bytes]:
+    try:
+        result = subprocess.run(
+            ["docker", *args],
+            input=input,
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Docker is not available. Install Docker or start the daemon."
+        ) from exc
+    if check and result.returncode != 0:
+        stderr = result.stderr.decode(errors="replace").strip()
+        raise _docker_error(args, stderr)
+    return result
 
 
 def call_docker_get_labels_status(container_name: str) -> str | None:
@@ -144,19 +173,14 @@ def call_docker_psql(
     db_name: str,
     *args: str,
 ) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        [
-            "docker",
-            "exec",
-            container_name,
-            "psql",
-            "-U",
-            db_user,
-            db_name,
-            *args,
-        ],
-        capture_output=True,
-        check=True,
+    return call_docker_bytes(
+        "exec",
+        container_name,
+        "psql",
+        "-U",
+        db_user,
+        db_name,
+        *args,
     )
 
 
@@ -166,20 +190,15 @@ def call_docker_psql_input(
     db_name: str,
     sql_bytes: bytes,
 ) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        [
-            "docker",
-            "exec",
-            "-i",
-            container_name,
-            "psql",
-            "-U",
-            db_user,
-            db_name,
-        ],
+    return call_docker_bytes(
+        "exec",
+        "-i",
+        container_name,
+        "psql",
+        "-U",
+        db_user,
+        db_name,
         input=sql_bytes,
-        capture_output=True,
-        check=True,
     )
 
 
@@ -254,18 +273,13 @@ def call_docker_pg_dump(
     db_user: str,
     db_name: str,
 ) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        [
-            "docker",
-            "exec",
-            container_name,
-            "pg_dump",
-            "-U",
-            db_user,
-            db_name,
-        ],
-        capture_output=True,
-        check=True,
+    return call_docker_bytes(
+        "exec",
+        container_name,
+        "pg_dump",
+        "-U",
+        db_user,
+        db_name,
     )
 
 
