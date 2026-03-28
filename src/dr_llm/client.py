@@ -38,9 +38,8 @@ class LlmClient:
 
     def provider_capabilities(self, provider_name: str) -> dict[str, bool]:
         adapter = self.get_adapter(provider_name)
-        caps = adapter.capabilities
         return {
-            "supports_structured_output": caps.supports_structured_output,
+            "supports_structured_output": adapter.config.supports_structured_output,
         }
 
     def known_providers(self) -> list[str]:

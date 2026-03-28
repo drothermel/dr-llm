@@ -64,7 +64,9 @@ def test_schema_bootstrap_idempotent(repository: PostgresRepository) -> None:
 def test_schema_migration_removes_legacy_tables_and_supports_tools_column(
     repository: PostgresRepository,
 ) -> None:
+    assert repository.config is not None
     dsn = repository.config.dsn
+    assert dsn is not None
     legacy_table_names = [
         "sessions",
         "session_turns",

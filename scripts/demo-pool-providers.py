@@ -23,7 +23,7 @@ from dr_llm.pool.schema import KeyColumn, PoolSchema
 from dr_llm.pool.store import PoolStore
 from dr_llm.providers import build_default_registry
 from dr_llm.providers.base import ProviderAvailabilityStatus
-from dr_llm.project.docker import destroy_project
+from dr_llm.project.project_info import ProjectInfo
 from dr_llm.storage._runtime import StorageConfig, StorageRuntime
 
 app = typer.Typer()
@@ -354,7 +354,9 @@ def main(
         if not demo_succeeded:
             print(f"\n{BOLD}Cleaning up after failure...{RESET}")
             try:
-                destroy_project(project_name)
+                project_info = ProjectInfo.maybe_from_existing(project_name)
+                if project_info is not None:
+                    project_info.destroy()
             except Exception:
                 pass
 

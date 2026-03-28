@@ -3,9 +3,10 @@ from __future__ import annotations
 import socket
 import subprocess
 
-from dr_llm.project.project_info import LABEL_PREFIX, parse_docker_labels
+from dr_llm.project.docker import parse_docker_labels
 
 BASE_PORT = 5500
+LABEL_PREFIX = "dr-llm.project"
 
 
 def _port_is_free(port: int) -> bool:
