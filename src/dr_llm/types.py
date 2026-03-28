@@ -216,7 +216,7 @@ class ModelCatalogQuery(BaseModel):
 
 
 class LlmRequest(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     provider: str
     model: str
@@ -229,7 +229,7 @@ class LlmRequest(BaseModel):
 
 
 class LlmResponse(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     text: str
     finish_reason: str | None = None

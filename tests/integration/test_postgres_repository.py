@@ -157,4 +157,11 @@ def test_record_call_and_list_calls_round_trip(repository: PostgresRepository) -
     )
 
     calls = repository.list_calls(limit=10)
-    assert any(call.call_id == call_id for call in calls)
+    matching_call = next((call for call in calls if call.call_id == call_id), None)
+    assert matching_call is not None
+    assert matching_call.provider == "openai"
+    assert matching_call.model == "gpt-4.1"
+    assert matching_call.request is not None
+    assert matching_call.request["metadata"]["purpose"] == "test"
+    assert matching_call.response is not None
+    assert matching_call.response["usage"]["total_tokens"] == 3

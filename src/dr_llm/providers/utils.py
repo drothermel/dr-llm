@@ -173,7 +173,7 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-def _as_str(value: Any) -> str | None:
+def _as_str(value: object) -> str | None:
     if not isinstance(value, str):
         return None
     stripped = value.strip()
@@ -182,7 +182,7 @@ def _as_str(value: Any) -> str | None:
     return stripped
 
 
-def _first_float(*values: Any) -> float | None:
+def _first_float(*values: object) -> float | None:
     for value in values:
         parsed = _as_float(value)
         if parsed is not None:
@@ -190,7 +190,7 @@ def _first_float(*values: Any) -> float | None:
     return None
 
 
-def _first_str(*values: Any) -> str | None:
+def _first_str(*values: object) -> str | None:
     for value in values:
         parsed = _as_str(value)
         if parsed is not None:

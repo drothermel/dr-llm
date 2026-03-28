@@ -8,18 +8,12 @@ from dr_llm.types import Message, ModelCatalogQuery, ReasoningConfig, TokenUsage
 
 def test_message_rejects_unknown_role() -> None:
     with pytest.raises(ValidationError):
-        Message.model_validate({"role": "tool", "content": "nope"})
+        Message(role="tool", content="nope")  # type: ignore[arg-type]
 
 
 def test_message_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError):
-        Message.model_validate(
-            {
-                "role": "assistant",
-                "content": "hi",
-                "tool_calls": [],
-            }
-        )
+        Message(role="assistant", content="hi", tool_calls=[])  # type: ignore[call-arg]
 
 
 def test_reasoning_config_rejects_effort_with_max_tokens() -> None:
