@@ -3,9 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import os
 import shutil
-from typing import Protocol
 
-from dr_llm.catalog.models import ModelCatalogEntry
 from dr_llm.generation.models import LlmRequest, LlmResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -81,9 +79,3 @@ class ProviderAdapter(ABC):
 
     def close(self) -> None:
         """Release any provider-owned resources."""
-
-
-class ProviderModelCatalogAdapter(Protocol):
-    name: str
-
-    def list_models(self) -> list[ModelCatalogEntry]: ...
