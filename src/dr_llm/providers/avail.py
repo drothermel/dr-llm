@@ -59,5 +59,6 @@ def available_provider_names(
     *,
     statuses: list[ProviderAvailabilityStatus] | None = None,
 ) -> list[str]:
-    statuses = statuses or supported_provider_statuses(registry)
+    if statuses is None:
+        statuses = supported_provider_statuses(registry)
     return [status.provider for status in statuses if status.available]

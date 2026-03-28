@@ -116,7 +116,7 @@ def _render_providers_table(statuses: list[ProviderAvailabilityStatus]) -> None:
         )
 
     available_count = sum(1 for status in statuses if status.available)
-    console = Console(force_terminal=False)
+    console = Console()
     console.print(table)
     console.print(
         f"Available: {available_count}/{len(statuses)} supported providers are ready."

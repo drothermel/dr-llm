@@ -324,13 +324,13 @@ def test_models_list_empty_page_mentions_matching_total(monkeypatch) -> None:
         def __init__(self, *, registry: object, repository: object) -> None:
             _ = registry, repository
 
-        def list_models(self, query: object) -> list[ModelCatalogEntry]:
-            assert getattr(query, "provider") == "openai"
-            assert getattr(query, "offset") == 40
+        def list_models(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
+            assert query.provider == "openai"
+            assert query.offset == 40
             return []
 
-        def count_models(self, query: object) -> int:
-            assert getattr(query, "provider") == "openai"
+        def count_models(self, query: ModelCatalogQuery) -> int:
+            assert query.provider == "openai"
             return 347
 
     monkeypatch.setattr(cli_module, "LlmClient", _FakeClient)
