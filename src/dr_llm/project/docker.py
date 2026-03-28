@@ -309,6 +309,23 @@ def call_docker_list_labels(label_prefix: str) -> str:
     return result.stdout.strip()
 
 
+def get_claimed_project_ports(label_prefix: str) -> set[int]:
+    ports: set[int] = set()
+    for line in call_docker_list_labels(label_prefix).splitlines():
+        if not line:
+            continue
+        data = json.loads(line)
+        parsed = parse_docker_labels(data.get("Labels", ""))
+        port_str = parsed.get(f"{label_prefix}.port")
+        if port_str is None:
+            continue
+        try:
+            ports.add(int(port_str))
+        except ValueError:
+            continue
+    return ports
+
+
 def get_all_docker_names_labels_status(label_prefix: str) -> list[dict[str, Any]]:
     names_labels_status = []
     for line in call_docker_list_labels(label_prefix).splitlines():

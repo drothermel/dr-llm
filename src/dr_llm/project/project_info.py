@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import ClassVar
@@ -17,10 +18,35 @@ from dr_llm.project.docker import (
     call_docker_start,
     call_docker_stop,
     docker_swap_in_db,
+    get_claimed_project_ports,
     wait_docker_ready,
 )
-from dr_llm.project.ports import find_available_port
 from dr_llm.storage.repository import try_init_repo_from_dsn
+
+BASE_PORT = 5500
+
+
+def _port_is_free(port: int) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", port))
+            return True
+    except OSError:
+        return False
+
+
+def _find_available_port(
+    claimed_ports: set[int],
+    base: int = BASE_PORT,
+    max_attempts: int = 100,
+) -> int:
+    for offset in range(max_attempts):
+        port = base + offset
+        if port not in claimed_ports and _port_is_free(port):
+            return port
+    raise RuntimeError(
+        f"No available port found in range {base}–{base + max_attempts - 1}"
+    )
 
 
 class ProjectInfo(BaseModel):
@@ -121,9 +147,10 @@ class ProjectInfo(BaseModel):
 
     @classmethod
     def create_new(cls, name: str) -> ProjectInfo:
+        claimed_ports = get_claimed_project_ports(cls.label_prefix)
         project_info = cls(
             name=name,
-            port=find_available_port(),
+            port=_find_available_port(claimed_ports),
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         project_info.verify_not_exists()
