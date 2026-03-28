@@ -8,12 +8,7 @@ import subprocess
 
 import typer
 
-from dr_llm.providers import (
-    available_provider_names,
-    build_default_registry,
-    supported_provider_names,
-    supported_provider_statuses,
-)
+from dr_llm.providers import build_default_registry
 
 app = typer.Typer()
 
@@ -62,14 +57,14 @@ def main() -> None:
         raise typer.Exit(1)
 
     registry = build_default_registry()
-    statuses = supported_provider_statuses(registry)
+    statuses = registry.availability_statuses()
 
     step("1. Supported providers")
-    for provider in supported_provider_names(registry):
+    for provider in registry.sorted_names():
         print(f"  - {provider}")
 
     step("2. Available providers")
-    available = available_provider_names(registry, statuses=statuses)
+    available = registry.available_names(statuses=statuses)
     if available:
         for provider in available:
             print(f"  - {provider}")

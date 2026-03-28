@@ -18,10 +18,7 @@ from dr_llm.catalog.fetchers.static import (
 )
 from dr_llm.catalog.models import ModelCatalogEntry
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
-from dr_llm.providers import (
-    build_default_registry,
-    supported_provider_statuses,
-)
+from dr_llm.providers import build_default_registry
 from dr_llm.providers.registry import ProviderRegistry
 
 # ---------------------------------------------------------------------------
@@ -202,7 +199,7 @@ app.add_middleware(
 def list_providers(request: Request) -> list[ProviderStatusResponse]:
     """List all supported providers with availability status."""
     registry = _get_registry(request.app)
-    statuses = supported_provider_statuses(registry)
+    statuses = registry.availability_statuses()
     return [
         ProviderStatusResponse(
             provider=s.provider,
@@ -225,7 +222,7 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
         raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
 
     # Check if provider is available (has required env vars / executables)
-    statuses = supported_provider_statuses(registry)
+    statuses = registry.availability_statuses()
     status = next((s for s in statuses if s.provider == provider), None)
     is_available = status.available if status else False
 

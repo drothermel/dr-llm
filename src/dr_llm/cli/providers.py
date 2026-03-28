@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typer
 
-from dr_llm.providers import build_default_registry, supported_provider_statuses
+from dr_llm.providers import build_default_registry
 
 from . import common
 
@@ -20,7 +20,7 @@ def providers(
 ) -> None:
     """List supported providers and whether they are available locally."""
     registry = build_default_registry()
-    statuses = supported_provider_statuses(registry)
+    statuses = registry.availability_statuses()
     if json_output:
         common._emit(
             {

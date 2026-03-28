@@ -3,14 +3,9 @@ from __future__ import annotations
 import pytest
 
 from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
-from dr_llm.providers.avail import (
-    ProviderAvailabilityStatus,
-    available_provider_names,
-    supported_provider_names,
-    supported_provider_statuses,
-)
 from dr_llm.providers.base import (
     ProviderAdapter,
+    ProviderAvailabilityStatus,
     ProviderCapabilities,
     ProviderRuntimeRequirements,
 )
@@ -55,15 +50,40 @@ def test_supported_provider_names_are_sorted_and_canonical() -> None:
     registry.register(_FakeAdapter("b-provider"))
     registry.register(_FakeAdapter("A-Provider"))
 
-    assert supported_provider_names(registry) == ["a-provider", "b-provider"]
+    assert registry.sorted_names() == ["a-provider", "b-provider"]
 
 
-def test_supported_provider_statuses_report_missing_requirements(
+def test_adapter_availability_status_reports_missing_requirements(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("FAKE_ENV", raising=False)
     monkeypatch.setattr(
-        "dr_llm.providers.avail.shutil.which",
+        "dr_llm.providers.base.shutil.which",
+        lambda executable: None if executable == "fake-cli" else "/usr/bin/ok",
+    )
+
+    adapter = _FakeAdapter(
+        "fake-provider",
+        requirements=ProviderRuntimeRequirements(
+            required_env_vars=["FAKE_ENV"],
+            required_executables=["fake-cli"],
+        ),
+    )
+
+    status = adapter.availability_status()
+    assert status.provider == "fake-provider"
+    assert status.available is False
+    assert status.missing_env_vars == ("FAKE_ENV",)
+    assert status.missing_executables == ("fake-cli",)
+    assert status.supports_structured_output is False
+
+
+def test_registry_availability_statuses_report_missing_requirements(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("FAKE_ENV", raising=False)
+    monkeypatch.setattr(
+        "dr_llm.providers.base.shutil.which",
         lambda executable: None if executable == "fake-cli" else "/usr/bin/ok",
     )
 
@@ -78,7 +98,7 @@ def test_supported_provider_statuses_report_missing_requirements(
         )
     )
 
-    statuses = supported_provider_statuses(registry)
+    statuses = registry.availability_statuses()
     assert len(statuses) == 1
     assert statuses[0].provider == "fake-provider"
     assert statuses[0].available is False
@@ -87,12 +107,12 @@ def test_supported_provider_statuses_report_missing_requirements(
     assert statuses[0].supports_structured_output is False
 
 
-def test_available_provider_names_filter_to_available_only(
+def test_registry_available_names_filter_to_available_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("READY_ENV", "present")
     monkeypatch.setattr(
-        "dr_llm.providers.avail.shutil.which",
+        "dr_llm.providers.base.shutil.which",
         lambda executable: "/usr/bin/ready" if executable == "ready-cli" else None,
     )
 
@@ -115,17 +135,18 @@ def test_available_provider_names_filter_to_available_only(
         )
     )
 
-    assert available_provider_names(registry) == ["ready-provider"]
+    assert registry.available_names() == ["ready-provider"]
 
 
-def test_available_provider_names_uses_precomputed_statuses() -> None:
+def test_registry_available_names_uses_precomputed_statuses() -> None:
     registry = ProviderRegistry()
     statuses = [
         ProviderAvailabilityStatus(provider="ready-provider", available=True),
         ProviderAvailabilityStatus(provider="missing-provider", available=False),
     ]
 
-    assert available_provider_names(registry, statuses=statuses) == ["ready-provider"]
+    assert registry.available_names(statuses=statuses) == ["ready-provider"]
+
 
 def test_openai_compat_inline_api_key_suppresses_env_requirement() -> None:
     adapter = OpenAICompatAdapter(

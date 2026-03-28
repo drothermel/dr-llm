@@ -21,8 +21,8 @@ import typer
 from dr_llm.pool.models import PoolSample
 from dr_llm.pool.schema import KeyColumn, PoolSchema
 from dr_llm.pool.store import PoolStore
-from dr_llm.providers import build_default_registry, supported_provider_statuses
-from dr_llm.providers.avail import ProviderAvailabilityStatus
+from dr_llm.providers import build_default_registry
+from dr_llm.providers.base import ProviderAvailabilityStatus
 from dr_llm.project.docker import destroy_project
 from dr_llm.storage._runtime import StorageConfig, StorageRuntime
 
@@ -274,7 +274,7 @@ def main(
 
     step("1. Detecting available providers")
     registry = build_default_registry()
-    available = detect_providers(supported_provider_statuses(registry))
+    available = detect_providers(registry.availability_statuses())
     if not available:
         print(
             f"\n{RED}No providers available. Set API keys or install CLI tools.{RESET}"

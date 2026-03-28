@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from threading import RLock
 
-from dr_llm.providers.base import ProviderAdapter
+from dr_llm.providers.base import ProviderAdapter, ProviderAvailabilityStatus
 
 
 class ProviderRegistry:
@@ -43,6 +43,24 @@ class ProviderRegistry:
     def names(self) -> set[str]:
         with self._lock:
             return set(self._adapters.keys())
+
+    def sorted_names(self) -> list[str]:
+        return sorted(self.names())
+
+    def availability_statuses(self) -> list[ProviderAvailabilityStatus]:
+        return [
+            self.get(provider_name).availability_status()
+            for provider_name in self.sorted_names()
+        ]
+
+    def available_names(
+        self,
+        *,
+        statuses: list[ProviderAvailabilityStatus] | None = None,
+    ) -> list[str]:
+        if statuses is None:
+            statuses = self.availability_statuses()
+        return [status.provider for status in statuses if status.available]
 
     def close(self) -> None:
         with self._lock:
