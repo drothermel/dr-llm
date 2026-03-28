@@ -2,15 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from dr_llm.catalog.service import ModelCatalogService, merge_overlay_entries
-from dr_llm.providers.base import ProviderAdapter
+from dr_llm.catalog.service import ModelCatalogService
+from dr_llm.providers.base import ProviderAdapter, ProviderRuntimeRequirements
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.types import (
     CallMode,
     LlmRequest,
     LlmResponse,
     ModelCatalogEntry,
-    ModelCatalogPricing,
     TokenUsage,
 )
 
@@ -20,6 +19,10 @@ class _DummyAdapter(ProviderAdapter):
 
     def __init__(self, name: str) -> None:
         self.name = name
+
+    @property
+    def runtime_requirements(self) -> ProviderRuntimeRequirements:
+        return ProviderRuntimeRequirements()
 
     def generate(self, request: LlmRequest) -> LlmResponse:  # pragma: no cover - unused
         return LlmResponse(
@@ -35,7 +38,6 @@ class _FakeRepo:
     def __init__(self) -> None:
         self.snapshots: list[dict[str, Any]] = []
         self.replaced: dict[str, list[ModelCatalogEntry]] = {}
-        self.overrides: list[ModelCatalogEntry] = []
 
     def record_model_catalog_snapshot(
         self,
@@ -64,41 +66,17 @@ class _FakeRepo:
         self.replaced[provider] = entries
         return len(entries)
 
-    def upsert_model_overrides(self, *, entries: list[ModelCatalogEntry]) -> int:
-        self.overrides.extend(entries)
-        return len(entries)
-
     def list_models(self, *, query) -> list[ModelCatalogEntry]:  # noqa: ANN001
         _ = query
         return []
 
+    def count_models(self, *, query) -> int:  # noqa: ANN001
+        _ = query
+        return 0
+
     def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
         _ = (provider, model)
         return None
-
-
-def test_merge_overlay_entries_applies_pricing_override() -> None:
-    live = [
-        ModelCatalogEntry(
-            provider="openrouter",
-            model="m1",
-            source_quality="live",
-            pricing=ModelCatalogPricing(input_cost_per_1m=1.0, output_cost_per_1m=2.0),
-        )
-    ]
-    overlays = [
-        ModelCatalogEntry(
-            provider="openrouter",
-            model="m1",
-            source_quality="overlay",
-            pricing=ModelCatalogPricing(input_cost_per_1m=3.0, output_cost_per_1m=4.0),
-        )
-    ]
-    merged = merge_overlay_entries(live_entries=live, overlays=overlays)
-    assert len(merged) == 1
-    assert merged[0].source_quality == "overlay"
-    assert merged[0].pricing is not None
-    assert merged[0].pricing.input_cost_per_1m == 3.0
 
 
 def test_catalog_service_sync_writes_snapshots(monkeypatch) -> None:  # noqa: ANN001
@@ -123,10 +101,6 @@ def test_catalog_service_sync_writes_snapshots(monkeypatch) -> None:  # noqa: AN
     monkeypatch.setattr(
         "dr_llm.catalog.service.fetch_out_of_registry_provider_models",
         lambda provider: ([], {"data": []}),
-    )
-    monkeypatch.setattr(
-        "dr_llm.catalog.service.ModelCatalogService._load_overrides",
-        lambda self: [],
     )
 
     results = service.sync_models_detailed(provider="dummy")

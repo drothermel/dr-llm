@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from dr_llm.providers.base import ProviderAdapter, ProviderCapabilities
+from dr_llm.providers.base import (
+    ProviderAdapter,
+    ProviderCapabilities,
+    ProviderRuntimeRequirements,
+)
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.types import CallMode, LlmRequest, LlmResponse, TokenUsage
 
@@ -16,6 +20,10 @@ class _FakeAdapter(ProviderAdapter):
     @property
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities()
+
+    @property
+    def runtime_requirements(self) -> ProviderRuntimeRequirements:
+        return ProviderRuntimeRequirements()
 
     def generate(self, request: LlmRequest) -> LlmResponse:  # noqa: ARG002
         return LlmResponse(
@@ -42,24 +50,29 @@ def test_register_rejects_whitespace_adapter_name() -> None:
         registry.register(_FakeAdapter(name=" fake "))
 
 
-def test_register_rejects_empty_alias() -> None:
-    registry = ProviderRegistry()
-    with pytest.raises(ValueError, match="provider alias must be non-empty"):
-        registry.register(_FakeAdapter(name="fake"), aliases=[""])
-
-
-def test_register_rejects_whitespace_alias() -> None:
-    registry = ProviderRegistry()
-    with pytest.raises(
-        ValueError, match="provider alias must not have leading or trailing whitespace"
-    ):
-        registry.register(_FakeAdapter(name="fake"), aliases=[" alias "])
-
-
 def test_register_normalizes_keys_to_lowercase() -> None:
     registry = ProviderRegistry()
     adapter = _FakeAdapter(name="FakeProvider")
-    registry.register(adapter, aliases=["ALIAS"])
+    registry.register(adapter)
 
     assert registry.get("fakeprovider") is adapter
-    assert registry.get("alias") is adapter
+    assert registry.names() == {"fakeprovider"}
+
+
+def test_register_rejects_duplicate_normalized_name() -> None:
+    registry = ProviderRegistry()
+    registry.register(_FakeAdapter(name="FakeProvider"))
+
+    with pytest.raises(
+        ValueError, match=r"register conflict for provider 'fakeprovider'"
+    ):
+        registry.register(_FakeAdapter(name="fakeprovider"))
+
+
+def test_alias_lookup_is_not_supported() -> None:
+    registry = ProviderRegistry()
+    adapter = _FakeAdapter(name="FakeProvider")
+    registry.register(adapter)
+
+    with pytest.raises(KeyError, match="Unknown provider"):
+        registry.get("alias")

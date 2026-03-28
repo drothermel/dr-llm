@@ -13,17 +13,16 @@ Prerequisites:
 from __future__ import annotations
 
 import json
-import os
-import shutil
 import subprocess
 from typing import Any
 
 import typer
-from pydantic import BaseModel
 
 from dr_llm.pool.models import PoolSample
 from dr_llm.pool.schema import KeyColumn, PoolSchema
 from dr_llm.pool.store import PoolStore
+from dr_llm.providers import build_default_registry, supported_provider_statuses
+from dr_llm.providers.avail import ProviderAvailabilityStatus
 from dr_llm.project.docker import destroy_project
 from dr_llm.storage._runtime import StorageConfig, StorageRuntime
 
@@ -42,52 +41,18 @@ API_TIMEOUT = 120
 HEADLESS_TIMEOUT = 300
 
 
-class ProviderSpec(BaseModel):
-    name: str
-    env_var: str | None = None
-    cli_tool: str | None = None
-    default_model: str
-
-
-PROVIDERS: list[ProviderSpec] = [
-    # API providers — detected by env var
-    ProviderSpec(name="openai", env_var="OPENAI_API_KEY", default_model="gpt-4o-mini"),
-    ProviderSpec(
-        name="anthropic",
-        env_var="ANTHROPIC_API_KEY",
-        default_model="claude-sonnet-4-20250514",
-    ),
-    ProviderSpec(
-        name="google", env_var="GOOGLE_API_KEY", default_model="gemini-2.5-flash"
-    ),
-    ProviderSpec(
-        name="openrouter",
-        env_var="OPENROUTER_API_KEY",
-        default_model="openai/gpt-4o-mini",
-    ),
-    ProviderSpec(name="glm", env_var="ZAI_API_KEY", default_model="glm-4.5"),
-    ProviderSpec(
-        name="minimax",
-        env_var="MINIMAX_API_KEY",
-        default_model="MiniMax-M2",
-    ),
-    # Headless providers — detected by CLI tool presence (own OAuth/auth)
-    ProviderSpec(name="claude-code", cli_tool="claude", default_model="sonnet"),
-    ProviderSpec(name="codex", cli_tool="codex", default_model="gpt-5.4-mini"),
-    # Headless variants — need CLI tool AND API key for third-party routing
-    ProviderSpec(
-        name="claude-code-minimax",
-        cli_tool="claude",
-        env_var="MINIMAX_API_KEY",
-        default_model="MiniMax-M2",
-    ),
-    ProviderSpec(
-        name="claude-code-kimi",
-        cli_tool="claude",
-        env_var="KIMI_API_KEY",
-        default_model="kimi-for-coding",
-    ),
-]
+DEFAULT_MODELS: dict[str, str] = {
+    "openai": "gpt-4o-mini",
+    "anthropic": "claude-sonnet-4-20250514",
+    "google": "gemini-2.5-flash",
+    "openrouter": "openai/gpt-4o-mini",
+    "glm": "glm-4.5",
+    "minimax": "MiniMax-M2",
+    "claude-code": "sonnet",
+    "codex": "gpt-5.4-mini",
+    "claude-code-minimax": "MiniMax-M2",
+    "claude-code-kimi": "kimi-for-coding",
+}
 
 POOL_SCHEMA = PoolSchema(
     name="provider_queries",
@@ -138,25 +103,21 @@ def run_cli_quiet(*args: str, timeout: int = API_TIMEOUT) -> None:
 # --- Detection ---
 
 
-def _has_cli_tool(tool: str) -> bool:
-    return shutil.which(tool) is not None
-
-
-def detect_providers() -> list[ProviderSpec]:
-    """Detect which providers are available based on env vars and CLI tools."""
-    available: list[ProviderSpec] = []
-    for spec in PROVIDERS:
-        has_env = spec.env_var is None or os.getenv(spec.env_var)
-        has_tool = spec.cli_tool is None or _has_cli_tool(spec.cli_tool)
-        if has_env and has_tool:
-            available.append(spec)
-        else:
-            reasons: list[str] = []
-            if spec.env_var and not os.getenv(spec.env_var):
-                reasons.append(f"{spec.env_var} not set")
-            if spec.cli_tool and not _has_cli_tool(spec.cli_tool):
-                reasons.append(f"'{spec.cli_tool}' CLI not found")
-            warn(f"{spec.name}: {', '.join(reasons)}")
+def detect_providers(
+    statuses: list[ProviderAvailabilityStatus],
+) -> list[ProviderAvailabilityStatus]:
+    """Return available providers and print skip reasons for unavailable ones."""
+    available: list[ProviderAvailabilityStatus] = []
+    for status in statuses:
+        if status.available:
+            available.append(status)
+            continue
+        reasons = [f"{env_var} not set" for env_var in status.missing_env_vars]
+        reasons.extend(
+            f"'{executable}' CLI not found"
+            for executable in status.missing_executables
+        )
+        warn(f"{status.provider}: {', '.join(reasons)}")
     return available
 
 
@@ -176,20 +137,24 @@ def create_demo_project(project_name: str) -> str:
 # --- Model Resolution ---
 
 
-def resolve_model(project: str, spec: ProviderSpec) -> str:
+def resolve_model(project: str, provider: str) -> str:
     """Sync catalog, list models, pick default or first available."""
-    run_cli("--project", project, "models", "sync", "--provider", spec.name)
+    run_cli("--project", project, "models", "sync", "--provider", provider, "--verbose")
     result = run_cli(
-        "--project", project, "models", "list", "--provider", spec.name, "--json"
+        "--project", project, "models", "list", "--provider", provider, "--json"
     )
     models = result.get("models", [])
     if not models:
-        raise RuntimeError(f"No models found for {spec.name}")
+        raise RuntimeError(f"No models found for {provider}")
 
     model_ids = [m["model"] for m in models]
-    if spec.default_model in model_ids:
-        return spec.default_model
-    print(f"  default model '{spec.default_model}' not found, using '{model_ids[0]}'")
+    default_model = DEFAULT_MODELS.get(provider)
+    if default_model and default_model in model_ids:
+        return default_model
+    if default_model:
+        print(f"  default model '{default_model}' not found, using '{model_ids[0]}'")
+    else:
+        print(f"  no default model configured for {provider}, using '{model_ids[0]}'")
     return model_ids[0]
 
 
@@ -308,14 +273,16 @@ def main(
     """Query all available LLM providers and store results in a typed pool."""
 
     step("1. Detecting available providers")
-    available = detect_providers()
+    registry = build_default_registry()
+    available = detect_providers(supported_provider_statuses(registry))
     if not available:
         print(
             f"\n{RED}No providers available. Set API keys or install CLI tools.{RESET}"
         )
         raise typer.Exit(1)
     print(
-        f"\n  Found {len(available)} providers: {', '.join(s.name for s in available)}"
+        f"\n  Found {len(available)} providers: "
+        f"{', '.join(status.provider for status in available)}"
     )
 
     step("2. Creating demo project")
@@ -339,38 +306,39 @@ def main(
         succeeded: list[str] = []
         failed_providers: list[str] = []
 
-        for i, spec in enumerate(available, 1):
-            step(f"4.{i}. Provider: {spec.name}")
+        for i, status in enumerate(available, 1):
+            provider = status.provider
+            step(f"4.{i}. Provider: {provider}")
             try:
                 # Resolve model
-                model = resolve_model(project_name, spec)
+                model = resolve_model(project_name, provider)
                 ok(f"Using model: {model}")
 
                 # Show model info
-                info = show_model(project_name, spec.name, model)
+                info = show_model(project_name, provider, model)
                 display = info.get("display_name", model)
                 ctx = info.get("context_window")
                 ctx_str = f", context={ctx}" if ctx else ""
                 ok(f"Model info: {display}{ctx_str}")
 
                 # Query
-                is_headless = spec.cli_tool is not None
-                print(f"  Querying {spec.name}/{model}...")
+                is_headless = registry.get(provider).mode == "headless"
+                print(f"  Querying {provider}/{model}...")
                 response = query_provider(
-                    project_name, spec.name, model, prompt, is_headless=is_headless
+                    project_name, provider, model, prompt, is_headless=is_headless
                 )
                 text = (response.get("text") or "")[:80].replace("\n", " ")
                 latency = response.get("latency_ms", "?")
                 ok(f"Response ({latency}ms): {text}")
 
                 # Store in pool
-                store_result(store, spec.name, model, prompt, response)
+                store_result(store, provider, model, prompt, response)
                 ok("Stored in pool")
-                succeeded.append(spec.name)
+                succeeded.append(provider)
 
             except Exception as exc:
-                fail(f"{spec.name}: {exc}")
-                failed_providers.append(spec.name)
+                fail(f"{provider}: {exc}")
+                failed_providers.append(provider)
 
         step("5. Results")
         print_summary(store)

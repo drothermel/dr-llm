@@ -249,7 +249,7 @@ class ModelCatalogEntry(BaseModel):
     supports_vision: bool | None = None
     pricing: ModelCatalogPricing | None = None
     rate_limits: ModelCatalogRateLimit | None = None
-    source_quality: Literal["live", "overlay", "static"] = "live"
+    source_quality: Literal["live", "static"] = "live"
     metadata: dict[str, Any] = Field(default_factory=dict)
     fetched_at: datetime | None = None
 

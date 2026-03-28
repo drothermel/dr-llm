@@ -17,7 +17,11 @@ from tenacity import (
 
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.logging import emit_generation_event
-from dr_llm.providers.base import ProviderAdapter, ProviderCapabilities
+from dr_llm.providers.base import (
+    ProviderAdapter,
+    ProviderCapabilities,
+    ProviderRuntimeRequirements,
+)
 from dr_llm.providers.utils import (
     parse_cost_info,
     parse_reasoning,
@@ -152,6 +156,13 @@ class OpenAICompatAdapter(ProviderAdapter):
     @property
     def capabilities(self) -> ProviderCapabilities:
         return self._config.capabilities
+
+    @property
+    def runtime_requirements(self) -> ProviderRuntimeRequirements:
+        required_env_vars = [] if self._config.api_key else [self._config.api_key_env]
+        return ProviderRuntimeRequirements(
+            required_env_vars=required_env_vars,
+        )
 
     def _headers(self, *, idempotency_key: str | None = None) -> dict[str, str]:
         key = self._config.api_key or os.getenv(self._config.api_key_env)

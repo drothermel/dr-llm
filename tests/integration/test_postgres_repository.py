@@ -19,7 +19,6 @@ _TEST_TABLES = (
     "tool_call_dead_letters",
     "tool_results",
     "tool_calls",
-    "provider_model_overrides",
     "provider_models_current",
     "provider_model_catalog_snapshots",
     "session_events",
@@ -68,6 +67,95 @@ def repository() -> Generator[PostgresRepository, None, None]:
 def test_schema_bootstrap_idempotent(repository: PostgresRepository) -> None:
     repository.init_schema()
     repository.init_schema()
+
+
+@pytest.mark.integration
+def test_schema_migration_removes_legacy_model_overrides(
+    repository: PostgresRepository,
+) -> None:
+    dsn = repository.config.dsn
+    with psycopg.connect(dsn) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS provider_model_overrides (
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                pricing_json JSONB,
+                rate_limits_json JSONB,
+                notes TEXT,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (provider, model)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO provider_models_current (
+                provider,
+                model,
+                source_quality,
+                updated_at
+            ) VALUES (%s, %s, %s, now())
+            ON CONFLICT (provider, model)
+            DO UPDATE SET
+                source_quality = excluded.source_quality,
+                updated_at = excluded.updated_at
+            """,
+            ["legacy", "legacy-model", "overlay"],
+        )
+        conn.execute(
+            """
+            INSERT INTO provider_model_overrides (
+                provider,
+                model,
+                notes,
+                updated_at
+            ) VALUES (%s, %s, %s, now())
+            ON CONFLICT (provider, model)
+            DO UPDATE SET
+                notes = excluded.notes,
+                updated_at = excluded.updated_at
+            """,
+            ["legacy", "legacy-model", "legacy override"],
+        )
+        conn.commit()
+
+    migrated_repository = PostgresRepository(
+        StorageConfig(
+            dsn=dsn,
+            min_pool_size=1,
+            max_pool_size=16,
+            application_name="dr_llm_migration_tests",
+        )
+    )
+    try:
+        migrated_repository.init_schema()
+    finally:
+        migrated_repository.close()
+
+    with psycopg.connect(dsn) as conn, conn.cursor(row_factory=dict_row) as cur:
+        row = cur.execute(
+            """
+            SELECT source_quality
+            FROM provider_models_current
+            WHERE provider = %s AND model = %s
+            """,
+            ["legacy", "legacy-model"],
+        ).fetchone()
+        assert row is not None
+        assert row["source_quality"] == "live"
+
+        exists = cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'provider_model_overrides'
+            ) AS exists
+            """
+        ).fetchone()
+        assert exists is not None
+        assert exists["exists"] is False
 
 
 @pytest.mark.integration

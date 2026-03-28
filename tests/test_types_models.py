@@ -3,7 +3,13 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from dr_llm.types import Message, ModelToolCall, ReasoningConfig, TokenUsage
+from dr_llm.types import (
+    Message,
+    ModelCatalogQuery,
+    ModelToolCall,
+    ReasoningConfig,
+    TokenUsage,
+)
 
 
 def test_tool_message_requires_tool_call_id() -> None:
@@ -57,3 +63,7 @@ def test_token_usage_coerces_and_derives_total() -> None:
 def test_token_usage_rejects_invalid_integer_like_values() -> None:
     with pytest.raises(ValidationError):
         TokenUsage.from_raw(prompt_tokens="abc")
+
+
+def test_model_catalog_query_default_limit_remains_non_cli() -> None:
+    assert ModelCatalogQuery().limit == 200

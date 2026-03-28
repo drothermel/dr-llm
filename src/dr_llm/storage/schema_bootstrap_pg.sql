@@ -106,16 +106,6 @@ CREATE TABLE IF NOT EXISTS provider_models_current (
 CREATE INDEX IF NOT EXISTS idx_provider_models_current_provider_reasoning
     ON provider_models_current(provider, supports_reasoning);
 
-CREATE TABLE IF NOT EXISTS provider_model_overrides (
-    provider TEXT NOT NULL,
-    model TEXT NOT NULL,
-    pricing_json JSONB,
-    rate_limits_json JSONB,
-    notes TEXT,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (provider, model)
-);
-
 CREATE TABLE IF NOT EXISTS artifacts (
     artifact_id TEXT PRIMARY KEY,
     run_id TEXT,

@@ -61,7 +61,16 @@ uv run dr-llm query \
 
 The `--no-record` flag skips database recording, so you can test providers without Postgres.
 
-### 2. Start Postgres (for catalog and recording)
+### 2. Inspect supported and available providers
+
+```bash
+uv run dr-llm providers
+uv run dr-llm providers --json
+```
+
+`dr-llm providers` renders a human-readable table showing canonical provider names, whether each provider is currently available on this machine, and any missing local requirements. Use `--json` when you want a scriptable output format.
+
+### 3. Start Postgres (for catalog and recording)
 
 ```bash
 source ./scripts/start-test-postgres.sh
@@ -69,31 +78,33 @@ source ./scripts/start-test-postgres.sh
 
 This starts a local Postgres container, applies schema migrations, and exports `DR_LLM_DATABASE_URL` and `DR_LLM_TEST_DATABASE_URL` into your shell. Use `source` (not `./`) so the env vars persist.
 
-### 3. Sync and list models
+### 4. Sync and list models
 
 ```bash
 uv run dr-llm models sync --provider openai
 uv run dr-llm models list --provider openai
 ```
 
-Use `--json` on `models list` for full metadata output.
+`models sync` now prints a single concise success line by default. Use `--verbose` when you want the full per-provider JSON sync payload. `models list` prints a human-readable header plus bulleted model names by default, and shows 20 results unless you override `--limit`; use `--json` for full metadata output.
 
 ### Available Providers
 
-| Provider | Aliases | Type | API Key Env |
-|---|---|---|---|
-| `openai` | — | OpenAI API | `OPENAI_API_KEY` |
-| `openrouter` | — | OpenRouter API | `OPENROUTER_API_KEY` |
-| `minimax` | — | MiniMax OpenAI-compat API | `MINIMAX_API_KEY` |
-| `anthropic` | — | Anthropic API | `ANTHROPIC_API_KEY` |
-| `google` | — | Google Gemini API | `GOOGLE_API_KEY` |
-| `glm` | — | GLM (ZAI) API | `ZAI_API_KEY` |
-| `codex` | `codex-cli` | Codex CLI (headless) | `OPENAI_API_KEY` |
-| `claude-code` | `claude` | Claude Code CLI (headless) | `ANTHROPIC_API_KEY` |
-| `claude-code-minimax` | `claude-minimax` | Claude Code via MiniMax | `MINIMAX_API_KEY` |
-| `claude-code-kimi` | `claude-kimi` | Claude Code via Kimi | `KIMI_API_KEY` |
+| Provider | Type | Local Requirements |
+|---|---|---|
+| `openai` | OpenAI API | `OPENAI_API_KEY` |
+| `openrouter` | OpenRouter API | `OPENROUTER_API_KEY` |
+| `minimax` | MiniMax OpenAI-compat API | `MINIMAX_API_KEY` |
+| `anthropic` | Anthropic API | `ANTHROPIC_API_KEY` |
+| `google` | Google Gemini API | `GOOGLE_API_KEY` |
+| `glm` | GLM (ZAI) API | `ZAI_API_KEY` |
+| `codex` | Codex CLI (headless) | `codex` executable |
+| `claude-code` | Claude Code CLI (headless) | `claude` executable |
+| `claude-code-minimax` | Claude Code via MiniMax | `claude` executable + `MINIMAX_API_KEY` |
+| `claude-code-kimi` | Claude Code via Kimi | `claude` executable + `KIMI_API_KEY` |
 
-Headless providers shell out to CLI tools (`codex`, `claude`) and redirect API traffic via environment variables. The MiniMax and Kimi variants point Claude Code at third-party Anthropic-compatible endpoints.
+Headless providers shell out to CLI tools (`codex`, `claude`). The MiniMax and Kimi variants point Claude Code at third-party Anthropic-compatible endpoints and require their corresponding API keys.
+
+Run `uv run dr-llm providers` to see which of the supported providers are currently usable in your shell.
 
 Some providers (MiniMax, Codex, Claude Code, Kimi) use static model lists for `models sync` since they don't expose a `/models` endpoint. The CLI will note when a list may be out of date and link to the provider's docs.
 
@@ -106,14 +117,15 @@ Some providers (MiniMax, Codex, Claude Code, Kimi) use static model lists for `m
 - Claude headless coding-plan presets:
   - `claude-code-minimax`: routes via `https://api.minimax.io/anthropic`
   - `claude-code-kimi`: routes via `https://api.kimi.com/coding/`
-- Model catalog overrides: `config/model_overrides.json` (YAML also supported)
 
 ## CLI Reference
 
 ```bash
 dr-llm providers
+dr-llm providers --json
 
 dr-llm models sync
+dr-llm models sync --provider openai --verbose
 dr-llm models list --provider openai
 dr-llm models list --supports-reasoning --json
 dr-llm models show --provider openrouter --model openai/o3-mini
@@ -283,8 +295,8 @@ result = service.acquire_or_generate(
 
 ```bash
 uv run ruff format
-uv run ruff check --fix src/ tests/ scripts/
-uv run ty check src
+uv run ruff check --fix .
+uv run ty check
 uv run pytest tests/ -v
 ```
 
@@ -321,6 +333,17 @@ Creates a project, records queries, verifies backup/restore:
 
 Requires Docker and at least one of `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 
+### Provider discovery demo
+
+Shows all supported canonical providers and which of them are currently available on this machine:
+
+```bash
+source ./scripts/start-test-postgres.sh
+uv run python scripts/demo-providers.py
+```
+
+`scripts/demo-providers.py` exits early if `DR_LLM_DATABASE_URL` is unset, so start the local test Postgres first with `source ./scripts/start-test-postgres.sh` or otherwise export `DR_LLM_DATABASE_URL` before running the demo.
+
 ### Pool provider demo
 
 Queries all available LLM providers (API and headless) and stores results in a typed pool:
@@ -337,17 +360,3 @@ uv run python scripts/demo-pool-providers.py --project-name my-demo --prompt "Ex
 ```
 
 Requires Docker. Works with any combination of providers — set API keys and/or install CLI tools for the providers you want to test.
-
-## Milestone Closeout Artifacts
-
-- Milestone status: `docs/milestones.md`
-- Consumer rollout checklist: `docs/consumer-rollout-checklist.md`
-- M2b operations checklist: `docs/ops/m2b-hardening-checklist.md`
-- Compatibility contract: `docs/compatibility-contract.md`
-- Migration guide: `docs/migration-guide.md`
-- Integration notes:
-  - `docs/integrations/nl_latents.md`
-  - `docs/integrations/unitbench.md`
-- Example gateways:
-  - `examples/nl_latents_gateway.py`
-  - `examples/unitbench_gateway.py`

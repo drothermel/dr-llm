@@ -5,6 +5,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from psycopg.rows import dict_row
+from psycopg.sql import SQL
 
 from dr_llm.errors import PersistenceError
 from dr_llm.storage._runtime import StorageRuntime
@@ -19,6 +20,24 @@ from dr_llm.types import (
 class CatalogStore:
     def __init__(self, runtime: StorageRuntime) -> None:
         self._runtime = runtime
+
+    def _model_filter_clause(
+        self, query: ModelCatalogQuery
+    ) -> tuple[SQL, list[object]]:
+        filter_clause = SQL("""
+                WHERE (%s::text IS NULL OR provider = %s)
+                  AND (%s::boolean IS NULL OR supports_reasoning = %s)
+                  AND (%s::text IS NULL OR model ILIKE %s)
+        """)
+        filter_params: list[object] = [
+            query.provider,
+            query.provider,
+            query.supports_reasoning,
+            query.supports_reasoning,
+            query.model_contains,
+            f"%{query.model_contains}%" if query.model_contains is not None else None,
+        ]
+        return filter_clause, filter_params
 
     def record_catalog_snapshot(
         self,
@@ -158,80 +177,14 @@ class CatalogStore:
                     f"Failed to replace provider models: {exc}"
                 ) from exc
 
-    def upsert_model_overrides(
-        self,
-        *,
-        entries: list[ModelCatalogEntry],
-    ) -> int:
-        self._runtime.init_schema()
-        with self._runtime.conn() as conn:
-            count = 0
-            try:
-                for entry in entries:
-                    if entry.pricing is None and entry.rate_limits is None:
-                        continue
-                    conn.execute(
-                        """
-                        INSERT INTO provider_model_overrides (
-                            provider,
-                            model,
-                            pricing_json,
-                            rate_limits_json,
-                            notes,
-                            updated_at
-                        ) VALUES (%s, %s, %s::jsonb, %s::jsonb, %s, now())
-                        ON CONFLICT (provider, model)
-                        DO UPDATE SET
-                            pricing_json = excluded.pricing_json,
-                            rate_limits_json = excluded.rate_limits_json,
-                            notes = excluded.notes,
-                            updated_at = excluded.updated_at
-                        """,
-                        [
-                            entry.provider,
-                            entry.model,
-                            json.dumps(
-                                (
-                                    entry.pricing.model_dump(
-                                        mode="json",
-                                        exclude_none=True,
-                                        exclude_computed_fields=True,
-                                    )
-                                    if entry.pricing is not None
-                                    else {}
-                                ),
-                                ensure_ascii=True,
-                            ),
-                            json.dumps(
-                                (
-                                    entry.rate_limits.model_dump(
-                                        mode="json",
-                                        exclude_none=True,
-                                        exclude_computed_fields=True,
-                                    )
-                                    if entry.rate_limits is not None
-                                    else {}
-                                ),
-                                ensure_ascii=True,
-                            ),
-                            str(entry.metadata.get("notes") or ""),
-                        ],
-                    )
-                    count += 1
-                conn.commit()
-                return count
-            except Exception as exc:  # noqa: BLE001
-                conn.rollback()
-                raise PersistenceError(
-                    f"Failed to upsert model overrides: {exc}"
-                ) from exc
-
     def list_models(self, *, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
         self._runtime.init_schema()
+        filter_clause, filter_params = self._model_filter_clause(query)
         with self._runtime.conn() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 rows = cur.execute(
-                    """
+                    SQL(
+                        """
                 SELECT
                     provider,
                     model,
@@ -247,28 +200,31 @@ class CatalogStore:
                     metadata_json,
                     updated_at
                 FROM provider_models_current
-                WHERE (%s::text IS NULL OR provider = %s)
-                  AND (%s::boolean IS NULL OR supports_reasoning = %s)
-                  AND (%s::text IS NULL OR model ILIKE %s)
+                {filter_clause}
                 ORDER BY provider, model
                 LIMIT %s OFFSET %s
-                    """,
-                    [
-                        query.provider,
-                        query.provider,
-                        query.supports_reasoning,
-                        query.supports_reasoning,
-                        query.model_contains,
-                        (
-                            f"%{query.model_contains}%"
-                            if query.model_contains is not None
-                            else None
-                        ),
-                        int(query.limit),
-                        int(query.offset),
-                    ],
+                    """
+                    ).format(filter_clause=filter_clause),
+                    [*filter_params, int(query.limit), int(query.offset)],
                 ).fetchall()
         return [_row_to_entry(row) for row in rows]
+
+    def count_models(self, *, query: ModelCatalogQuery) -> int:
+        self._runtime.init_schema()
+        filter_clause, filter_params = self._model_filter_clause(query)
+        with self._runtime.conn() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                row = cur.execute(
+                    SQL(
+                        """
+                SELECT COUNT(*) AS total_count
+                FROM provider_models_current
+                {filter_clause}
+                    """
+                    ).format(filter_clause=filter_clause),
+                    filter_params,
+                ).fetchone()
+        return int(row["total_count"]) if row is not None else 0
 
     def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
         self._runtime.init_schema()
@@ -316,12 +272,14 @@ def _row_to_entry(row: dict[str, Any]) -> ModelCatalogEntry:
         if row.get("source_quality") is not None
         else "live"
     )
-    if source_quality_raw == "overlay":
-        source_quality: Literal["live", "overlay", "static"] = "overlay"
-    elif source_quality_raw == "static":
-        source_quality = "static"
-    else:
+    if source_quality_raw == "static":
+        source_quality: Literal["live", "static"] = "static"
+    elif source_quality_raw == "live":
         source_quality = "live"
+    else:
+        raise ValueError(
+            f"Unexpected source_quality in provider_models_current: {source_quality_raw!r}"
+        )
     display_name_raw = row.get("display_name")
     context_window_raw = row.get("context_window")
     max_output_tokens_raw = row.get("max_output_tokens")
