@@ -22,6 +22,9 @@ _MIGRATION_PATHS = [
     Path(__file__).with_name("schema_migration_20260224_llm_call_response_columns.sql"),
     Path(__file__).with_name("schema_migration_20260328_remove_model_overrides.sql"),
     Path(__file__).with_name(
+        "schema_migration_20260328_remove_claude_code_model_aliases.sql"
+    ),
+    Path(__file__).with_name(
         "schema_migration_20260328_remove_sessions_tools_and_supports_tools.sql"
     ),
 ]

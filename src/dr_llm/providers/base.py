@@ -40,6 +40,9 @@ class ProviderAdapter(ABC):
     def generate(self, request: LlmRequest) -> LlmResponse:
         raise NotImplementedError
 
+    def close(self) -> None:
+        """Release any provider-owned resources."""
+
 
 class ProviderModelCatalogAdapter(Protocol):
     name: str

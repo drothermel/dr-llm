@@ -43,3 +43,10 @@ class ProviderRegistry:
     def names(self) -> set[str]:
         with self._lock:
             return set(self._adapters.keys())
+
+    def close(self) -> None:
+        with self._lock:
+            adapters = list(self._adapters.values())
+            self._adapters.clear()
+        for adapter in adapters:
+            adapter.close()

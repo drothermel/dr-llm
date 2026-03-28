@@ -105,6 +105,7 @@ MINIMAX_ANTHROPIC_BASE_URL = "https://api.minimax.io/anthropic"
 KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/"
 MINIMAX_API_KEY_ENV = "MINIMAX_API_KEY"
 KIMI_API_KEY_ENV = "KIMI_API_KEY"
+CLAUDE_CANONICAL_MODEL_PREFIX = "claude-"
 KEY_TYPE = "type"
 KEY_ITEM = "item"
 KEY_TEXT = "text"
@@ -624,6 +625,12 @@ class ClaudeHeadlessAdapter(_BaseHeadlessAdapter):
         payload: dict[str, Any],
         reasoning_mapping: ReasoningMappingResult,
     ) -> list[str]:
+        if self.name == "claude-code" and not request.model.startswith(
+            CLAUDE_CANONICAL_MODEL_PREFIX
+        ):
+            raise HeadlessExecutionError(
+                "claude-code requires canonical model ids like 'claude-sonnet-4-6'"
+            )
         command = [*self._config.command]
         command.extend(["--model", request.model])
         if reasoning_mapping.cli_args:

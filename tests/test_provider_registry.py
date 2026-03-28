@@ -16,6 +16,7 @@ class _FakeAdapter(ProviderAdapter):
 
     def __init__(self, name: str) -> None:
         self.name = name
+        self.close_calls = 0
 
     @property
     def capabilities(self) -> ProviderCapabilities:
@@ -33,6 +34,9 @@ class _FakeAdapter(ProviderAdapter):
             model="fake",
             mode=CallMode.api,
         )
+
+    def close(self) -> None:
+        self.close_calls += 1
 
 
 def test_register_rejects_empty_adapter_name() -> None:
@@ -76,3 +80,14 @@ def test_alias_lookup_is_not_supported() -> None:
 
     with pytest.raises(KeyError, match="Unknown provider"):
         registry.get("alias")
+
+
+def test_close_releases_registered_adapters() -> None:
+    registry = ProviderRegistry()
+    adapter = _FakeAdapter(name="FakeProvider")
+    registry.register(adapter)
+
+    registry.close()
+
+    assert adapter.close_calls == 1
+    assert registry.names() == set()

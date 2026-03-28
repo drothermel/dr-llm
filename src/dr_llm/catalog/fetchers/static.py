@@ -35,9 +35,6 @@ CLAUDE_CODE_MODELS = [
     ("claude-opus-4-6", "Claude Opus 4.6"),
     ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
     ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
-    ("opus", "Claude Opus 4.6 (alias)"),
-    ("sonnet", "Claude Sonnet 4.6 (alias)"),
-    ("haiku", "Claude Haiku 4.5 (alias)"),
 ]
 
 KIMI_CODING_DOCS_URL = "https://www.kimi.com/code/docs/en/more/third-party-agents.html"
