@@ -48,7 +48,7 @@ DEFAULT_MODELS: dict[str, str] = {
     "openrouter": "openai/gpt-4o-mini",
     "glm": "glm-4.5",
     "minimax": "MiniMax-M2",
-    "claude-code": "sonnet",
+    "claude-code": "claude-sonnet-4-6",
     "codex": "gpt-5.4-mini",
     "claude-code-minimax": "MiniMax-M2",
     "claude-code-kimi": "kimi-for-coding",
