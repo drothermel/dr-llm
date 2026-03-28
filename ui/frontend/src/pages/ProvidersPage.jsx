@@ -8,19 +8,29 @@ export default function ProvidersPage() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    fetch('/api/providers')
+    const controller = new AbortController()
+    let active = true
+
+    fetch('/api/providers', { signal: controller.signal })
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json()
       })
       .then(data => {
+        if (!active) return
         setProviders(data)
         setLoading(false)
       })
       .catch(err => {
-        setError(err.message)
+        if (!active || err?.name === 'AbortError') return
+        setError(err instanceof Error ? err.message : String(err))
         setLoading(false)
       })
+
+    return () => {
+      active = false
+      controller.abort()
+    }
   }, [])
 
   const available = providers.filter(p => p.available)

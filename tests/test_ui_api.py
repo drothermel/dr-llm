@@ -7,8 +7,8 @@ from dr_llm.providers.base import (
     ProviderCapabilities,
     ProviderRuntimeRequirements,
 )
+from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsage
 from dr_llm.providers.registry import ProviderRegistry
-from dr_llm.types import CallMode, LlmRequest, LlmResponse, TokenUsage
 from ui.api import main as ui_api
 
 
@@ -46,7 +46,6 @@ def test_ui_api_builds_registry_on_startup_and_closes_on_shutdown(monkeypatch) -
     registry.register(adapter)
 
     monkeypatch.setattr(ui_api, "build_default_registry", lambda: registry)
-    monkeypatch.setattr(ui_api, "_registry", None)
 
     with TestClient(ui_api.app) as client:
         response = client.get("/api/providers")
@@ -62,4 +61,4 @@ def test_ui_api_builds_registry_on_startup_and_closes_on_shutdown(monkeypatch) -
         }
     ]
     assert adapter.close_calls == 1
-    assert ui_api._registry is None
+    assert getattr(ui_api.app.state, "registry", None) is None

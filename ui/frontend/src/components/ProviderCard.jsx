@@ -15,6 +15,7 @@ export default function ProviderCard({ provider }) {
     syncModels,
   } = useProviderModels(provider.provider)
   const bodyId = `provider-${provider.provider.replace(/[^a-zA-Z0-9_-]/g, '-')}-models`
+  const toggleId = `${bodyId}-toggle`
 
   const toggleExpand = () => {
     const next = !expanded
@@ -37,37 +38,40 @@ export default function ProviderCard({ provider }) {
   return (
     <div className={`provider-card ${expanded ? 'expanded' : ''} ${!provider.available ? 'unavailable' : ''}`}>
       <div className="provider-card-header">
-        <button
-          type="button"
-          className="provider-card-toggle"
-          onClick={toggleExpand}
-          aria-expanded={expanded}
-          aria-controls={bodyId}
-        >
-          <div className="provider-card-left">
-            <svg
-              className={`chevron ${expanded ? 'open' : ''}`}
-              width="14" height="14" viewBox="0 0 14 14"
-              fill="none" stroke="currentColor" strokeWidth="2"
-              strokeLinecap="round" strokeLinejoin="round"
-            >
-              <polyline points="4,2 9,7 4,12" />
-            </svg>
-            <span className="provider-name">{provider.provider}</span>
-            <div className="provider-badges">
-              {provider.supports_structured_output && (
-                <span className="badge badge-blue">structured output</span>
+        <h3 className="provider-card-heading">
+          <button
+            id={toggleId}
+            type="button"
+            className="provider-card-toggle"
+            onClick={toggleExpand}
+            aria-expanded={expanded}
+            aria-controls={bodyId}
+          >
+            <div className="provider-card-left">
+              <svg
+                className={`chevron ${expanded ? 'open' : ''}`}
+                width="14" height="14" viewBox="0 0 14 14"
+                fill="none" stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round"
+              >
+                <polyline points="4,2 9,7 4,12" />
+              </svg>
+              <span className="provider-name">{provider.provider}</span>
+              <div className="provider-badges">
+                {provider.supports_structured_output && (
+                  <span className="badge badge-blue">structured output</span>
+                )}
+              </div>
+            </div>
+            <div className="provider-card-right">
+              {models !== null && (
+                <span className="model-count">
+                  {models.length} model{models.length !== 1 ? 's' : ''}
+                </span>
               )}
             </div>
-          </div>
-          <div className="provider-card-right">
-            {models !== null && (
-              <span className="model-count">
-                {models.length} model{models.length !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-        </button>
+          </button>
+        </h3>
         {provider.available && (
           <div className="provider-card-actions">
             <button
@@ -95,7 +99,7 @@ export default function ProviderCard({ provider }) {
       </div>
 
       {expanded && (
-        <div className="provider-card-body" id={bodyId}>
+        <div className="provider-card-body" id={bodyId} role="region" aria-labelledby={toggleId}>
           {missingItems.length > 0 && (
             <div className="missing-reqs">
               {missingItems.map(item => (

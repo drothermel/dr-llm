@@ -64,7 +64,7 @@
   color: var(--text-secondary);
   font-size: 14px;
   font-weight: 500;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .nav-link:hover {
@@ -83,4 +83,27 @@
   margin-left: 240px;
   padding: 32px 40px;
   min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+  .app {
+    display: block;
+  }
+
+  .sidebar {
+    position: static;
+    width: 100%;
+    top: auto;
+    left: auto;
+    bottom: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    z-index: auto;
+  }
+
+  .content {
+    margin-left: 0;
+    min-height: auto;
+    padding: 24px 20px;
+  }
 }

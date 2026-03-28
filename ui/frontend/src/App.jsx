@@ -12,8 +12,8 @@ function App() {
         </div>
         <div className="nav-section">
           <span className="nav-section-label">Explore</span>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <svg aria-hidden="true" role="presentation" focusable="false" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <rect x="2" y="2" width="5" height="5" rx="1" />
               <rect x="9" y="2" width="5" height="5" rx="1" />
               <rect x="2" y="9" width="5" height="5" rx="1" />
