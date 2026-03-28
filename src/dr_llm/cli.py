@@ -175,6 +175,8 @@ def _render_models_list(
         if item.display_name and item.display_name != item.model:
             label = f"{label} ({item.display_name})"
         typer.echo(f"- {label}")
+
+
 def _parse_json(
     value: str | None, *, arg_name: str, expected: type | tuple[type, ...] | None = None
 ) -> Any:
