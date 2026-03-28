@@ -337,17 +337,3 @@ uv run python scripts/demo-pool-providers.py --project-name my-demo --prompt "Ex
 ```
 
 Requires Docker. Works with any combination of providers — set API keys and/or install CLI tools for the providers you want to test.
-
-## Milestone Closeout Artifacts
-
-- Milestone status: `docs/milestones.md`
-- Consumer rollout checklist: `docs/consumer-rollout-checklist.md`
-- M2b operations checklist: `docs/ops/m2b-hardening-checklist.md`
-- Compatibility contract: `docs/compatibility-contract.md`
-- Migration guide: `docs/migration-guide.md`
-- Integration notes:
-  - `docs/integrations/nl_latents.md`
-  - `docs/integrations/unitbench.md`
-- Example gateways:
-  - `examples/nl_latents_gateway.py`
-  - `examples/unitbench_gateway.py`
