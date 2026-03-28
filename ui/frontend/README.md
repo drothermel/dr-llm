@@ -1,16 +1,31 @@
-# React + Vite
+# dr-llm UI Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite frontend for the `dr-llm` provider explorer.
 
-Currently, two official plugins are available:
+## Commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+pnpm install
+pnpm dev
+pnpm lint
+pnpm build
+```
 
-## React Compiler
+The dev server runs on `http://localhost:5173` and proxies `/api` requests to the backend at `http://localhost:8000`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Backend
 
-## Expanding the ESLint configuration
+Start the FastAPI backend from the repo root:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+uv run uvicorn ui.api.main:app --reload --port 8000
+```
+
+## Current Surface
+
+The frontend currently exposes a provider and model explorer:
+
+- lists supported providers and local availability
+- lazily loads models for each provider
+- triggers live sync for available providers
+- falls back to static model lists when live catalog fetches are unavailable

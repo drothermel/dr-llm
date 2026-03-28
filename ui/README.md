@@ -12,16 +12,16 @@ Standalone web UI for inspecting and interacting with dr-llm subsystems.
 ### Backend
 
 ```bash
-# From the repo root (with dr-llm installed)
-uvicorn ui.api.main:app --reload --port 8000
+# From the repo root
+uv run uvicorn ui.api.main:app --reload --port 8000
 ```
 
 ### Frontend
 
 ```bash
 cd ui/frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 The frontend dev server runs on `http://localhost:5173` and proxies API calls to `http://localhost:8000`.

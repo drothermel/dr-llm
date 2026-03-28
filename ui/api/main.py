@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -147,16 +148,22 @@ _registry: ProviderRegistry | None = None
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     global _registry
-    _registry = build_default_registry()
-    yield
+    registry = build_default_registry()
+    _registry = registry
+    try:
+        yield
+    finally:
+        registry.close()
+        if _registry is registry:
+            _registry = None
 
 
 app = FastAPI(title="dr-llm UI API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
-    CORSMiddleware,
+    cast(Any, CORSMiddleware),
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],

@@ -115,7 +115,12 @@ class GoogleAdapter(ProviderAdapter):
         self, config: GoogleConfig | None = None, client: httpx.Client | None = None
     ) -> None:
         self._config = config or GoogleConfig()
+        self._owns_client = client is None
         self._client = client or httpx.Client(timeout=self._config.timeout_seconds)
+
+    def close(self) -> None:
+        if self._owns_client:
+            self._client.close()
 
     @property
     def config(self) -> GoogleConfig:

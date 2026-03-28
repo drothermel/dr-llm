@@ -24,8 +24,8 @@ export default function ModelTable({ models }) {
           </tr>
         </thead>
         <tbody>
-          {models.map((m, i) => (
-            <tr key={`${m.model}-${i}`}>
+          {models.map(m => (
+            <tr key={`${m.provider}:${m.model}`}>
               <td className="model-id">
                 <code>{m.model}</code>
               </td>
