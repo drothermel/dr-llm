@@ -6,8 +6,7 @@ from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
 from dr_llm.providers.base import (
     ProviderAdapter,
     ProviderAvailabilityStatus,
-    ProviderCapabilities,
-    ProviderRuntimeRequirements,
+    ProviderConfig,
 )
 from dr_llm.providers.google import GoogleAdapter, GoogleConfig
 from dr_llm.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
@@ -16,24 +15,13 @@ from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsa
 
 
 class _FakeAdapter(ProviderAdapter):
-    mode = "api"
-
     def __init__(
         self,
         name: str,
         *,
-        requirements: ProviderRuntimeRequirements | None = None,
+        config: ProviderConfig | None = None,
     ) -> None:
-        self.name = name
-        self._requirements = requirements or ProviderRuntimeRequirements()
-
-    @property
-    def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(supports_structured_output=False)
-
-    @property
-    def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        return self._requirements
+        self._config = config or ProviderConfig(name=name)
 
     def generate(self, request: LlmRequest) -> LlmResponse:  # noqa: ARG002
         return LlmResponse(
@@ -64,7 +52,8 @@ def test_adapter_availability_status_reports_missing_requirements(
 
     adapter = _FakeAdapter(
         "fake-provider",
-        requirements=ProviderRuntimeRequirements(
+        config=ProviderConfig(
+            name="fake-provider",
             required_env_vars=["FAKE_ENV"],
             required_executables=["fake-cli"],
         ),
@@ -91,7 +80,8 @@ def test_registry_availability_statuses_report_missing_requirements(
     registry.register(
         _FakeAdapter(
             "fake-provider",
-            requirements=ProviderRuntimeRequirements(
+            config=ProviderConfig(
+                name="fake-provider",
                 required_env_vars=["FAKE_ENV"],
                 required_executables=["fake-cli"],
             ),
@@ -120,7 +110,8 @@ def test_registry_available_names_filter_to_available_only(
     registry.register(
         _FakeAdapter(
             "ready-provider",
-            requirements=ProviderRuntimeRequirements(
+            config=ProviderConfig(
+                name="ready-provider",
                 required_env_vars=["READY_ENV"],
                 required_executables=["ready-cli"],
             ),
@@ -129,7 +120,8 @@ def test_registry_available_names_filter_to_available_only(
     registry.register(
         _FakeAdapter(
             "missing-provider",
-            requirements=ProviderRuntimeRequirements(
+            config=ProviderConfig(
+                name="missing-provider",
                 required_env_vars=["MISSING_ENV"],
             ),
         )
@@ -150,15 +142,15 @@ def test_registry_available_names_uses_precomputed_statuses() -> None:
 
 def test_openai_compat_inline_api_key_suppresses_env_requirement() -> None:
     adapter = OpenAICompatAdapter(
-        name="openai",
         config=OpenAICompatConfig(
+            name="openai",
             base_url="https://api.example.com/v1",
             api_key_env="OPENAI_API_KEY",
             api_key="inline-key",
         ),
     )
 
-    assert adapter.runtime_requirements.required_env_vars == []
+    assert adapter.config.required_env_vars == []
 
 
 def test_anthropic_inline_api_key_suppresses_env_requirement() -> None:
@@ -169,7 +161,7 @@ def test_anthropic_inline_api_key_suppresses_env_requirement() -> None:
         )
     )
 
-    assert adapter.runtime_requirements.required_env_vars == []
+    assert adapter.config.required_env_vars == []
     adapter.close()
 
 
@@ -181,4 +173,4 @@ def test_google_inline_api_key_suppresses_env_requirement() -> None:
         )
     )
 
-    assert adapter.runtime_requirements.required_env_vars == []
+    assert adapter.config.required_env_vars == []

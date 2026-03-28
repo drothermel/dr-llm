@@ -18,9 +18,8 @@ from tenacity import (
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.logging import emit_generation_event
 from dr_llm.providers.base import (
+    APIProviderConfig,
     ProviderAdapter,
-    ProviderCapabilities,
-    ProviderRuntimeRequirements,
 )
 from dr_llm.providers.utils import (
     parse_cost_info,
@@ -81,26 +80,17 @@ class _OpenAICompatResponse(BaseModel):
     usage: _OpenAICompatUsage | None = None
 
 
-class OpenAICompatConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    base_url: str
+class OpenAICompatConfig(APIProviderConfig):
     api_key_env: str = "OPENAI_API_KEY"
-    api_key: str | None = None
-    timeout_seconds: float = 120.0
     chat_path: str = "/chat/completions"
-    capabilities: ProviderCapabilities = ProviderCapabilities(
-        supports_structured_output=True,
-    )
 
 
 class OpenAICompatAdapter(ProviderAdapter):
-    mode = "api"
+    _config: OpenAICompatConfig
 
     def __init__(
         self,
         *,
-        name: str,
         config: OpenAICompatConfig,
         client: httpx.Client | None = None,
     ) -> None:
@@ -110,7 +100,6 @@ class OpenAICompatAdapter(ProviderAdapter):
         closes it on replacement/close. Injected clients are treated as externally
         owned and are not closed by this adapter.
         """
-        self.name = name
         self._config = config
         self._client: httpx.Client | None = None
         self._owns_client = False
@@ -147,17 +136,6 @@ class OpenAICompatAdapter(ProviderAdapter):
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
         self.close()
-
-    @property
-    def capabilities(self) -> ProviderCapabilities:
-        return self._config.capabilities
-
-    @property
-    def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        required_env_vars = [] if self._config.api_key else [self._config.api_key_env]
-        return ProviderRuntimeRequirements(
-            required_env_vars=required_env_vars,
-        )
 
     def _headers(self, *, idempotency_key: str | None = None) -> dict[str, str]:
         key = self._config.api_key or os.getenv(self._config.api_key_env)

@@ -55,8 +55,9 @@ def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:
     )
 
     with OpenAICompatAdapter(
-        name="openrouter",
-        config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
+        config=OpenAICompatConfig(
+            name="openrouter", base_url="https://openrouter.ai/api/v1", api_key="x"
+        ),
         client=client,
     ) as adapter:
         response = adapter.generate(request)
@@ -76,8 +77,9 @@ def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:
 def test_openai_compat_close_does_not_close_injected_client() -> None:
     client = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
     adapter = OpenAICompatAdapter(
-        name="openrouter",
-        config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
+        config=OpenAICompatConfig(
+            name="openrouter", base_url="https://openrouter.ai/api/v1", api_key="x"
+        ),
         client=client,
     )
     assert not client.is_closed
@@ -88,8 +90,9 @@ def test_openai_compat_close_does_not_close_injected_client() -> None:
 
 def test_openai_compat_close_closes_adapter_owned_client() -> None:
     adapter = OpenAICompatAdapter(
-        name="openrouter",
-        config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
+        config=OpenAICompatConfig(
+            name="openrouter", base_url="https://openrouter.ai/api/v1", api_key="x"
+        ),
     )
     # Intentional private access: there is no public accessor for the internally
     # created client, and this test must verify adapter-owned client shutdown.
@@ -104,8 +107,9 @@ def test_openai_compat_set_client_does_not_close_injected_clients() -> None:
     first = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
     second = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
     adapter = OpenAICompatAdapter(
-        name="openrouter",
-        config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
+        config=OpenAICompatConfig(
+            name="openrouter", base_url="https://openrouter.ai/api/v1", api_key="x"
+        ),
         client=first,
     )
     adapter.set_client(second)

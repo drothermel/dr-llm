@@ -4,8 +4,7 @@ from fastapi.testclient import TestClient
 
 from dr_llm.providers.base import (
     ProviderAdapter,
-    ProviderCapabilities,
-    ProviderRuntimeRequirements,
+    ProviderConfig,
 )
 from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsage
 from dr_llm.providers.registry import ProviderRegistry
@@ -13,19 +12,12 @@ from ui.api import main as ui_api
 
 
 class _UiFakeAdapter(ProviderAdapter):
-    name = "fake-provider"
-    mode = "api"
-
     def __init__(self) -> None:
+        self._config = ProviderConfig(
+            name="fake-provider",
+            supports_structured_output=True,
+        )
         self.close_calls = 0
-
-    @property
-    def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(supports_structured_output=True)
-
-    @property
-    def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        return ProviderRuntimeRequirements()
 
     def generate(self, request: LlmRequest) -> LlmResponse:  # noqa: ARG002
         return LlmResponse(

@@ -8,8 +8,7 @@ from pydantic import BaseModel, Field
 from dr_llm.client import LlmClient
 from dr_llm.providers.base import (
     ProviderAdapter,
-    ProviderCapabilities,
-    ProviderRuntimeRequirements,
+    ProviderConfig,
 )
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.generation.models import LlmRequest, Message
@@ -23,16 +22,12 @@ class CapturingRepository(BaseModel):
 
 
 class FailingHeadlessAdapter(ProviderAdapter):
-    name = "failing-headless"
-    mode = "headless"
-
-    @property
-    def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(supports_structured_output=True)
-
-    @property
-    def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        return ProviderRuntimeRequirements()
+    def __init__(self) -> None:
+        self._config = ProviderConfig(
+            name="failing-headless",
+            mode="headless",
+            supports_structured_output=True,
+        )
 
     def generate(self, request: Any) -> Any:
         _ = request

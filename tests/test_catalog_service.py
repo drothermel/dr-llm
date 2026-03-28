@@ -5,19 +5,13 @@ from typing import Any
 from dr_llm.catalog.models import ModelCatalogEntry
 from dr_llm.catalog.service import ModelCatalogService
 from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsage
-from dr_llm.providers.base import ProviderAdapter, ProviderRuntimeRequirements
+from dr_llm.providers.base import ProviderAdapter, ProviderConfig
 from dr_llm.providers.registry import ProviderRegistry
 
 
 class _DummyAdapter(ProviderAdapter):
-    mode = "api"
-
     def __init__(self, name: str) -> None:
-        self.name = name
-
-    @property
-    def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        return ProviderRuntimeRequirements()
+        self._config = ProviderConfig(name=name)
 
     def generate(self, request: LlmRequest) -> LlmResponse:  # pragma: no cover - unused
         return LlmResponse(

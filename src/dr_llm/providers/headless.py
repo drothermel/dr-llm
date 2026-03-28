@@ -6,16 +6,15 @@ import os
 import subprocess
 import tempfile
 import time
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field, model_validator
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.logging import emit_generation_event
 from dr_llm.providers.base import (
     ProviderAdapter,
-    ProviderCapabilities,
-    ProviderRuntimeRequirements,
+    ProviderConfig,
 )
 from dr_llm.providers.utils import (
     parse_cost_info,
@@ -37,15 +36,39 @@ from dr_llm.generation.models import (
 )
 
 
-class HeadlessConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    command: list[str]
+class HeadlessConfig(ProviderConfig):
+    mode: str = "headless"
+    supports_structured_output: bool = True
     timeout_seconds: float = 180.0
+    command: list[str]
     env_overrides: dict[str, str] = Field(default_factory=dict)
     log_full_io: bool = False
     redact_io: bool = True
     max_logged_chars: int = 512
+
+    @model_validator(mode="after")
+    def _compute_headless_exec_requirements(self) -> Self:
+        if self.command:
+            object.__setattr__(
+                self,
+                "required_executables",
+                [*self.required_executables, self.command[0]],
+            )
+        return self
+
+
+class ClaudeHeadlessConfig(HeadlessConfig):
+    api_key_env: str | None = None
+
+    @model_validator(mode="after")
+    def _compute_claude_env_requirements(self) -> Self:
+        if self.api_key_env:
+            object.__setattr__(
+                self,
+                "required_env_vars",
+                [*self.required_env_vars, self.api_key_env],
+            )
+        return self
 
 
 class _HeadlessRequestPayload(BaseModel):
@@ -171,24 +194,10 @@ def _sanitize_io_for_logs(
 
 
 class _BaseHeadlessAdapter(ProviderAdapter):
-    mode = "headless"
+    _config: HeadlessConfig
 
-    def __init__(self, *, name: str, config: HeadlessConfig) -> None:
-        self.name = name
+    def __init__(self, *, config: HeadlessConfig) -> None:
         self._config = config
-
-    @property
-    def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(supports_structured_output=True)
-
-    @property
-    def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        required_executables: list[str] = []
-        if self._config.command:
-            required_executables.append(self._config.command[0])
-        return ProviderRuntimeRequirements(
-            required_executables=required_executables,
-        )
 
     def _payload(self, request: LlmRequest) -> dict[str, Any]:
         return _HeadlessRequestPayload(
@@ -453,8 +462,10 @@ class _BaseHeadlessAdapter(ProviderAdapter):
 class CodexHeadlessAdapter(_BaseHeadlessAdapter):
     def __init__(self, command: list[str] | None = None) -> None:
         super().__init__(
-            name="codex",
-            config=HeadlessConfig(command=command or CODEX_DEFAULT_COMMAND),
+            config=HeadlessConfig(
+                name="codex",
+                command=command or CODEX_DEFAULT_COMMAND,
+            ),
         )
         self._neutral_instructions_file: str | None = None
 
@@ -580,6 +591,8 @@ class CodexHeadlessAdapter(_BaseHeadlessAdapter):
 
 
 class ClaudeHeadlessAdapter(_BaseHeadlessAdapter):
+    _config: ClaudeHeadlessConfig
+
     def __init__(
         self,
         command: list[str] | None = None,
@@ -589,31 +602,20 @@ class ClaudeHeadlessAdapter(_BaseHeadlessAdapter):
         api_key_env: str | None = None,
     ) -> None:
         super().__init__(
-            name=name,
-            config=HeadlessConfig(
+            config=ClaudeHeadlessConfig(
+                name=name,
                 command=command or CLAUDE_DEFAULT_COMMAND,
                 env_overrides=env_overrides or {},
+                api_key_env=api_key_env,
             ),
-        )
-        self._api_key_env = api_key_env
-
-    @property
-    def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        base_requirements = super().runtime_requirements
-        required_env_vars = list(base_requirements.required_env_vars)
-        if self._api_key_env is not None:
-            required_env_vars.append(self._api_key_env)
-        return ProviderRuntimeRequirements(
-            required_env_vars=required_env_vars,
-            required_executables=base_requirements.required_executables,
         )
 
     def _subprocess_env(
         self, request: LlmRequest, payload: dict[str, Any]
     ) -> dict[str, str]:
         env = super()._subprocess_env(request, payload)
-        if self._api_key_env is not None:
-            key_value = os.getenv(self._api_key_env)
+        if self._config.api_key_env is not None:
+            key_value = os.getenv(self._config.api_key_env)
             if key_value:
                 env[ANTHROPIC_AUTH_TOKEN_ENV] = key_value
                 env[ANTHROPIC_API_KEY_ENV] = key_value

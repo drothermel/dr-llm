@@ -17,9 +17,8 @@ from tenacity import (
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.logging import emit_generation_event
 from dr_llm.providers.base import (
+    APIProviderConfig,
     ProviderAdapter,
-    ProviderCapabilities,
-    ProviderRuntimeRequirements,
 )
 from dr_llm.providers.utils import (
     parse_cost_info,
@@ -79,19 +78,15 @@ class _AnthropicResponse(BaseModel):
     stop_reason: str | None = None
 
 
-class AnthropicConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
+class AnthropicConfig(APIProviderConfig):
+    name: str = "anthropic"
     base_url: str = "https://api.anthropic.com/v1/messages"
     api_key_env: str = "ANTHROPIC_API_KEY"
-    api_key: str | None = None
     anthropic_version: str = "2023-06-01"
-    timeout_seconds: float = 120.0
 
 
 class AnthropicAdapter(ProviderAdapter):
-    name = "anthropic"
-    mode = "api"
+    _config: AnthropicConfig
 
     def __init__(
         self, config: AnthropicConfig | None = None, client: httpx.Client | None = None
@@ -113,17 +108,6 @@ class AnthropicAdapter(ProviderAdapter):
     @property
     def config(self) -> AnthropicConfig:
         return self._config
-
-    @property
-    def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(supports_structured_output=True)
-
-    @property
-    def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        required_env_vars = [] if self._config.api_key else [self._config.api_key_env]
-        return ProviderRuntimeRequirements(
-            required_env_vars=required_env_vars,
-        )
 
     def _headers(self) -> dict[str, str]:
         key = self._config.api_key or os.getenv(self._config.api_key_env)

@@ -3,22 +3,21 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import os
 import shutil
+from typing import Self
 
 from dr_llm.generation.models import LlmRequest, LlmResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class ProviderCapabilities(BaseModel):
+class ProviderConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    name: str
+    mode: str = "api"
     supports_structured_output: bool = False
-
-
-class ProviderRuntimeRequirements(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     required_env_vars: list[str] = Field(default_factory=list)
     required_executables: list[str] = Field(default_factory=list)
+    timeout_seconds: float = 120.0
 
     def missing_env_vars(self) -> tuple[str, ...]:
         return tuple(
@@ -32,6 +31,17 @@ class ProviderRuntimeRequirements(BaseModel):
             if shutil.which(executable) is None
         )
 
+    def availability_status(self) -> ProviderAvailabilityStatus:
+        missing_env = self.missing_env_vars()
+        missing_exec = self.missing_executables()
+        return ProviderAvailabilityStatus(
+            provider=self.name,
+            available=not missing_env and not missing_exec,
+            missing_env_vars=missing_env,
+            missing_executables=missing_exec,
+            supports_structured_output=self.supports_structured_output,
+        )
+
 
 class ProviderAvailabilityStatus(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -43,32 +53,41 @@ class ProviderAvailabilityStatus(BaseModel):
     supports_structured_output: bool = False
 
 
+class APIProviderConfig(ProviderConfig):
+    mode: str = "api"
+    supports_structured_output: bool = True
+    base_url: str
+    api_key_env: str
+    api_key: str | None = None
+
+    @model_validator(mode="after")
+    def _compute_api_env_requirements(self) -> Self:
+        if not self.api_key and self.api_key_env not in self.required_env_vars:
+            object.__setattr__(
+                self, "required_env_vars", [*self.required_env_vars, self.api_key_env]
+            )
+        return self
+
+
 class ProviderAdapter(ABC):
     """Abstract provider adapter interface."""
 
-    name: str
-    mode: str
+    _config: ProviderConfig
 
     @property
-    def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities()
+    def name(self) -> str:
+        return self._config.name
 
     @property
-    @abstractmethod
-    def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        raise NotImplementedError
+    def mode(self) -> str:
+        return self._config.mode
+
+    @property
+    def config(self) -> ProviderConfig:
+        return self._config
 
     def availability_status(self) -> ProviderAvailabilityStatus:
-        requirements = self.runtime_requirements
-        missing_env_vars = requirements.missing_env_vars()
-        missing_executables = requirements.missing_executables()
-        return ProviderAvailabilityStatus(
-            provider=self.name,
-            available=not missing_env_vars and not missing_executables,
-            missing_env_vars=missing_env_vars,
-            missing_executables=missing_executables,
-            supports_structured_output=self.capabilities.supports_structured_output,
-        )
+        return self._config.availability_status()
 
     def is_available(self) -> bool:
         return self.availability_status().available

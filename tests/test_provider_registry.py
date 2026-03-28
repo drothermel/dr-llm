@@ -4,27 +4,16 @@ import pytest
 
 from dr_llm.providers.base import (
     ProviderAdapter,
-    ProviderCapabilities,
-    ProviderRuntimeRequirements,
+    ProviderConfig,
 )
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsage
 
 
 class _FakeAdapter(ProviderAdapter):
-    mode = "api"
-
     def __init__(self, name: str) -> None:
-        self.name = name
+        self._config = ProviderConfig(name=name)
         self.close_calls = 0
-
-    @property
-    def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities()
-
-    @property
-    def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        return ProviderRuntimeRequirements()
 
     def generate(self, request: LlmRequest) -> LlmResponse:  # noqa: ARG002
         return LlmResponse(

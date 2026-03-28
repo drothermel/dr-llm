@@ -8,8 +8,8 @@ class GlmAdapter(OpenAICompatAdapter):
 
     def __init__(self) -> None:
         super().__init__(
-            name="glm",
             config=OpenAICompatConfig(
+                name="glm",
                 base_url="https://api.z.ai/api/coding/paas/v4",
                 api_key_env="ZAI_API_KEY",
             ),

@@ -1,5 +1,5 @@
 from dr_llm.providers.anthropic import AnthropicAdapter
-from dr_llm.providers.base import ProviderAvailabilityStatus
+from dr_llm.providers.base import ProviderAvailabilityStatus, ProviderConfig
 from dr_llm.providers.glm import GlmAdapter
 from dr_llm.providers.google import GoogleAdapter
 from dr_llm.providers.headless import (
@@ -14,20 +14,19 @@ from dr_llm.providers.registry import ProviderRegistry
 
 def build_default_registry() -> ProviderRegistry:
     registry = ProviderRegistry()
-    openai_config = OpenAICompatConfig(
-        base_url="https://api.openai.com/v1",
-        api_key_env="OPENAI_API_KEY",
-    )
     registry.register(
         OpenAICompatAdapter(
-            name="openai",
-            config=openai_config,
+            config=OpenAICompatConfig(
+                name="openai",
+                base_url="https://api.openai.com/v1",
+                api_key_env="OPENAI_API_KEY",
+            ),
         )
     )
     registry.register(
         OpenAICompatAdapter(
-            name="openrouter",
             config=OpenAICompatConfig(
+                name="openrouter",
                 base_url="https://openrouter.ai/api/v1",
                 api_key_env="OPENROUTER_API_KEY",
             ),
@@ -35,8 +34,8 @@ def build_default_registry() -> ProviderRegistry:
     )
     registry.register(
         OpenAICompatAdapter(
-            name="minimax",
             config=OpenAICompatConfig(
+                name="minimax",
                 base_url="https://api.minimax.io/v1",
                 api_key_env="MINIMAX_API_KEY",
             ),
@@ -55,6 +54,7 @@ def build_default_registry() -> ProviderRegistry:
 __all__ = [
     "AnthropicAdapter",
     "ProviderAvailabilityStatus",
+    "ProviderConfig",
     "ClaudeHeadlessAdapter",
     "ClaudeHeadlessKimiAdapter",
     "ClaudeHeadlessMiniMaxAdapter",

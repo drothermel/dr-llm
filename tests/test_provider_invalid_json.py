@@ -24,8 +24,9 @@ def test_openai_compat_invalid_json_is_transport_error() -> None:
         messages=[Message(role="user", content="hi")],
     )
     with OpenAICompatAdapter(
-        name="openrouter",
-        config=OpenAICompatConfig(base_url="https://openrouter.ai/api/v1", api_key="x"),
+        config=OpenAICompatConfig(
+            name="openrouter", base_url="https://openrouter.ai/api/v1", api_key="x"
+        ),
         client=httpx.Client(transport=_invalid_json_transport()),
     ) as adapter:
         with pytest.raises(ProviderTransportError, match="invalid JSON response"):

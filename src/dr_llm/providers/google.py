@@ -17,9 +17,8 @@ from tenacity import (
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.logging import emit_generation_event
 from dr_llm.providers.base import (
+    APIProviderConfig,
     ProviderAdapter,
-    ProviderCapabilities,
-    ProviderRuntimeRequirements,
 )
 from dr_llm.providers.utils import (
     parse_cost_info,
@@ -98,18 +97,14 @@ class _GoogleResponse(BaseModel):
     usageMetadata: _GoogleUsageMetadata | None = None
 
 
-class GoogleConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
+class GoogleConfig(APIProviderConfig):
+    name: str = "google"
     base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     api_key_env: str = "GOOGLE_API_KEY"
-    api_key: str | None = None
-    timeout_seconds: float = 120.0
 
 
 class GoogleAdapter(ProviderAdapter):
-    name = "google"
-    mode = "api"
+    _config: GoogleConfig
 
     def __init__(
         self, config: GoogleConfig | None = None, client: httpx.Client | None = None
@@ -125,17 +120,6 @@ class GoogleAdapter(ProviderAdapter):
     @property
     def config(self) -> GoogleConfig:
         return self._config
-
-    @property
-    def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(supports_structured_output=True)
-
-    @property
-    def runtime_requirements(self) -> ProviderRuntimeRequirements:
-        required_env_vars = [] if self._config.api_key else [self._config.api_key_env]
-        return ProviderRuntimeRequirements(
-            required_env_vars=required_env_vars,
-        )
 
     @retry(
         retry=retry_if_exception_type(
