@@ -80,20 +80,20 @@ Use `--json` on `models list` for full metadata output.
 
 ### Available Providers
 
-| Provider | Aliases | Type | API Key Env |
-|---|---|---|---|
-| `openai` | — | OpenAI API | `OPENAI_API_KEY` |
-| `openrouter` | — | OpenRouter API | `OPENROUTER_API_KEY` |
-| `minimax` | — | MiniMax OpenAI-compat API | `MINIMAX_API_KEY` |
-| `anthropic` | — | Anthropic API | `ANTHROPIC_API_KEY` |
-| `google` | — | Google Gemini API | `GOOGLE_API_KEY` |
-| `glm` | — | GLM (ZAI) API | `ZAI_API_KEY` |
-| `codex` | `codex-cli` | Codex CLI (headless) | `OPENAI_API_KEY` |
-| `claude-code` | `claude` | Claude Code CLI (headless) | `ANTHROPIC_API_KEY` |
-| `claude-code-minimax` | `claude-minimax` | Claude Code via MiniMax | `MINIMAX_API_KEY` |
-| `claude-code-kimi` | `claude-kimi` | Claude Code via Kimi | `KIMI_API_KEY` |
+| Provider | Type | Local Requirements |
+|---|---|---|
+| `openai` | OpenAI API | `OPENAI_API_KEY` |
+| `openrouter` | OpenRouter API | `OPENROUTER_API_KEY` |
+| `minimax` | MiniMax OpenAI-compat API | `MINIMAX_API_KEY` |
+| `anthropic` | Anthropic API | `ANTHROPIC_API_KEY` |
+| `google` | Google Gemini API | `GOOGLE_API_KEY` |
+| `glm` | GLM (ZAI) API | `ZAI_API_KEY` |
+| `codex` | Codex CLI (headless) | `codex` executable |
+| `claude-code` | Claude Code CLI (headless) | `claude` executable |
+| `claude-code-minimax` | Claude Code via MiniMax | `claude` executable + `MINIMAX_API_KEY` |
+| `claude-code-kimi` | Claude Code via Kimi | `claude` executable + `KIMI_API_KEY` |
 
-Headless providers shell out to CLI tools (`codex`, `claude`) and redirect API traffic via environment variables. The MiniMax and Kimi variants point Claude Code at third-party Anthropic-compatible endpoints.
+Headless providers shell out to CLI tools (`codex`, `claude`). The MiniMax and Kimi variants point Claude Code at third-party Anthropic-compatible endpoints and require their corresponding API keys.
 
 Some providers (MiniMax, Codex, Claude Code, Kimi) use static model lists for `models sync` since they don't expose a `/models` endpoint. The CLI will note when a list may be out of date and link to the provider's docs.
 
@@ -329,6 +329,14 @@ uv run python scripts/demo-pool-providers.py
 ```
 
 Auto-detects available providers by checking API key env vars and CLI tool availability (`claude`, `codex`). For each provider: syncs the model catalog, selects a model, sends a query, and inserts the result into a pool. Prints a summary table at the end.
+
+### Provider discovery demo
+
+Shows all supported canonical providers and which of them are currently available on this machine:
+
+```bash
+uv run python scripts/demo-providers.py
+```
 
 Options:
 ```bash

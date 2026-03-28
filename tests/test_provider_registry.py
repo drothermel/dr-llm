@@ -42,24 +42,19 @@ def test_register_rejects_whitespace_adapter_name() -> None:
         registry.register(_FakeAdapter(name=" fake "))
 
 
-def test_register_rejects_empty_alias() -> None:
-    registry = ProviderRegistry()
-    with pytest.raises(ValueError, match="provider alias must be non-empty"):
-        registry.register(_FakeAdapter(name="fake"), aliases=[""])
-
-
-def test_register_rejects_whitespace_alias() -> None:
-    registry = ProviderRegistry()
-    with pytest.raises(
-        ValueError, match="provider alias must not have leading or trailing whitespace"
-    ):
-        registry.register(_FakeAdapter(name="fake"), aliases=[" alias "])
-
-
 def test_register_normalizes_keys_to_lowercase() -> None:
     registry = ProviderRegistry()
     adapter = _FakeAdapter(name="FakeProvider")
-    registry.register(adapter, aliases=["ALIAS"])
+    registry.register(adapter)
 
     assert registry.get("fakeprovider") is adapter
-    assert registry.get("alias") is adapter
+    assert registry.names() == {"fakeprovider"}
+
+
+def test_alias_lookup_is_not_supported() -> None:
+    registry = ProviderRegistry()
+    adapter = _FakeAdapter(name="FakeProvider")
+    registry.register(adapter)
+
+    with pytest.raises(KeyError, match="Unknown provider"):
+        registry.get("alias")

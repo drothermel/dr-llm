@@ -12,9 +12,9 @@ from pydantic import ValidationError
 
 from dr_llm.benchmark import BenchmarkConfig, OperationMix, run_repository_benchmark
 from dr_llm.client import LlmClient
+from dr_llm.providers import build_default_registry, supported_provider_statuses
 from dr_llm.project.cli import project_app
 from dr_llm.project.docker import get_project
-from dr_llm.providers import build_default_registry
 from dr_llm.session import SessionClient, run_tool_worker
 from dr_llm.storage import PostgresRepository, StorageConfig
 from dr_llm.tools import ToolExecutor, ToolRegistry
@@ -181,13 +181,20 @@ def _build_tool_registry(tool_loader: list[str]) -> ToolRegistry:
 
 @app.command("providers")
 def providers() -> None:
-    """List known providers and their declared capabilities."""
-    client = LlmClient(registry=build_default_registry())
-    data = []
-    for name in client.known_providers():
-        caps = client.provider_capabilities(name)
-        data.append({"provider": name, **caps})
-    _emit({"providers": data})
+    """List supported providers and whether they are available locally."""
+    registry = build_default_registry()
+    _emit(
+        {
+            "providers": [
+                status.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                    exclude_computed_fields=True,
+                )
+                for status in supported_provider_statuses(registry)
+            ]
+        }
+    )
 
 
 @models_app.command("sync")

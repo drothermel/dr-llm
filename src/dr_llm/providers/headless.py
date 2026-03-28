@@ -12,7 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.logging import emit_generation_event
-from dr_llm.providers.base import ProviderAdapter, ProviderCapabilities
+from dr_llm.providers.base import (
+    ProviderAdapter,
+    ProviderCapabilities,
+    ProviderRuntimeRequirements,
+)
 from dr_llm.providers.utils import (
     parse_cost_info,
     parse_reasoning,
@@ -191,6 +195,15 @@ class _BaseHeadlessAdapter(ProviderAdapter):
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
             supports_native_tools=False, supports_structured_output=True
+        )
+
+    @property
+    def runtime_requirements(self) -> ProviderRuntimeRequirements:
+        required_executables: list[str] = []
+        if self._config.command:
+            required_executables.append(self._config.command[0])
+        return ProviderRuntimeRequirements(
+            required_executables=required_executables,
         )
 
     def _payload(self, request: LlmRequest) -> dict[str, Any]:
@@ -605,6 +618,17 @@ class ClaudeHeadlessAdapter(_BaseHeadlessAdapter):
             ),
         )
         self._api_key_env = api_key_env
+
+    @property
+    def runtime_requirements(self) -> ProviderRuntimeRequirements:
+        base_requirements = super().runtime_requirements
+        required_env_vars = list(base_requirements.required_env_vars)
+        if self._api_key_env is not None:
+            required_env_vars.append(self._api_key_env)
+        return ProviderRuntimeRequirements(
+            required_env_vars=required_env_vars,
+            required_executables=base_requirements.required_executables,
+        )
 
     def _subprocess_env(
         self, request: LlmRequest, payload: dict[str, Any]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.types import LlmRequest, LlmResponse, ModelCatalogEntry
 
@@ -15,6 +15,13 @@ class ProviderCapabilities(BaseModel):
     supports_structured_output: bool = False
 
 
+class ProviderRuntimeRequirements(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    required_env_vars: list[str] = Field(default_factory=list)
+    required_executables: list[str] = Field(default_factory=list)
+
+
 class ProviderAdapter(ABC):
     """Abstract provider adapter interface."""
 
@@ -24,6 +31,10 @@ class ProviderAdapter(ABC):
     @property
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities()
+
+    @property
+    def runtime_requirements(self) -> ProviderRuntimeRequirements:
+        return ProviderRuntimeRequirements()
 
     @abstractmethod
     def generate(self, request: LlmRequest) -> LlmResponse:

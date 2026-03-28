@@ -10,9 +10,7 @@ class ProviderRegistry:
         self._lock = RLock()
         self._adapters: dict[str, ProviderAdapter] = {}
 
-    def register(
-        self, adapter: ProviderAdapter, *, aliases: list[str] | None = None
-    ) -> None:
+    def register(self, adapter: ProviderAdapter) -> None:
         raw_primary = adapter.name
         primary = raw_primary.strip()
         if not primary:
@@ -22,20 +20,8 @@ class ProviderRegistry:
                 "adapter.name must not have leading or trailing whitespace"
             )
 
-        names = [primary]
-        if aliases:
-            for alias in aliases:
-                normalized = alias.strip()
-                if not normalized:
-                    raise ValueError("provider alias must be non-empty")
-                if alias != normalized:
-                    raise ValueError(
-                        "provider alias must not have leading or trailing whitespace"
-                    )
-                names.append(normalized)
         with self._lock:
-            for name in names:
-                self._adapters[name.lower()] = adapter
+            self._adapters[primary.lower()] = adapter
 
     def get(self, provider_name: str) -> ProviderAdapter:
         key = provider_name.strip().lower()

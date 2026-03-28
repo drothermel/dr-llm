@@ -22,7 +22,8 @@ def test_providers_command_lists_known_providers() -> None:
     assert result.exit_code == 0
 
     payload = json.loads(result.stdout)
-    providers = {item["provider"] for item in payload["providers"]}
+    provider_rows = payload["providers"]
+    providers = {item["provider"] for item in provider_rows}
     assert "openai" in providers
     assert "anthropic" in providers
     assert "google" in providers
@@ -30,6 +31,12 @@ def test_providers_command_lists_known_providers() -> None:
     assert "minimax" in providers
     assert "claude-code-minimax" in providers
     assert "claude-code-kimi" in providers
+    assert "claude" not in providers
+    assert "codex-cli" not in providers
+    for item in provider_rows:
+        assert isinstance(item["available"], bool)
+        assert isinstance(item["missing_env_vars"], list)
+        assert isinstance(item["missing_executables"], list)
 
 
 class _CliFakeRepository:

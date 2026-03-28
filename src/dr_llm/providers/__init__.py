@@ -1,4 +1,10 @@
 from dr_llm.providers.anthropic import AnthropicAdapter
+from dr_llm.providers.avail import (
+    ProviderAvailabilityStatus,
+    available_provider_names,
+    supported_provider_names,
+    supported_provider_statuses,
+)
 from dr_llm.providers.glm import GlmAdapter
 from dr_llm.providers.google import GoogleAdapter
 from dr_llm.providers.headless import (
@@ -44,15 +50,16 @@ def build_default_registry() -> ProviderRegistry:
     registry.register(AnthropicAdapter())
     registry.register(GoogleAdapter())
     registry.register(GlmAdapter())
-    registry.register(CodexHeadlessAdapter(), aliases=["codex-cli"])
-    registry.register(ClaudeHeadlessAdapter(), aliases=["claude", "claude-code"])
-    registry.register(ClaudeHeadlessMiniMaxAdapter(), aliases=["claude-minimax"])
-    registry.register(ClaudeHeadlessKimiAdapter(), aliases=["claude-kimi"])
+    registry.register(CodexHeadlessAdapter())
+    registry.register(ClaudeHeadlessAdapter())
+    registry.register(ClaudeHeadlessMiniMaxAdapter())
+    registry.register(ClaudeHeadlessKimiAdapter())
     return registry
 
 
 __all__ = [
     "AnthropicAdapter",
+    "ProviderAvailabilityStatus",
     "ClaudeHeadlessAdapter",
     "ClaudeHeadlessKimiAdapter",
     "ClaudeHeadlessMiniMaxAdapter",
@@ -62,5 +69,8 @@ __all__ = [
     "OpenAICompatAdapter",
     "OpenAICompatConfig",
     "ProviderRegistry",
+    "available_provider_names",
     "build_default_registry",
+    "supported_provider_names",
+    "supported_provider_statuses",
 ]
