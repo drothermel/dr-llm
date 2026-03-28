@@ -9,10 +9,16 @@ from uuid import uuid4
 
 import typer
 from pydantic import ValidationError
+from rich.console import Console
+from rich.table import Table
 
 from dr_llm.benchmark import BenchmarkConfig, OperationMix, run_repository_benchmark
 from dr_llm.client import LlmClient
-from dr_llm.providers import build_default_registry, supported_provider_statuses
+from dr_llm.providers import (
+    ProviderAvailabilityStatus,
+    build_default_registry,
+    supported_provider_statuses,
+)
 from dr_llm.project.cli import project_app
 from dr_llm.project.docker import get_project
 from dr_llm.session import SessionClient, run_tool_worker
@@ -69,6 +75,50 @@ def main(
 
 def _emit(payload: Any) -> None:
     typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+
+
+def _provider_requirements_text(status: ProviderAvailabilityStatus) -> str:
+    if status.available:
+        return "ready"
+    parts = [f"env: {name}" for name in status.missing_env_vars]
+    parts.extend(f"exe: {name}" for name in status.missing_executables)
+    return ", ".join(parts)
+
+
+def _render_providers_table(statuses: list[ProviderAvailabilityStatus]) -> None:
+    table = Table(title="Providers")
+    table.add_column("Provider", style="bold")
+    table.add_column("Available")
+    table.add_column("Tools")
+    table.add_column("Structured")
+    table.add_column("Missing Requirements", overflow="fold")
+
+    for status in statuses:
+        available_text = "[green]yes[/green]" if status.available else "[red]no[/red]"
+        tools_text = (
+            "[green]native[/green]"
+            if status.supports_native_tools
+            else "[yellow]brokered[/yellow]"
+        )
+        structured_text = (
+            "[green]yes[/green]"
+            if status.supports_structured_output
+            else "[red]no[/red]"
+        )
+        table.add_row(
+            status.provider,
+            available_text,
+            tools_text,
+            structured_text,
+            _provider_requirements_text(status),
+        )
+
+    available_count = sum(1 for status in statuses if status.available)
+    console = Console(force_terminal=False, color_system=None)
+    console.print(table)
+    console.print(
+        f"Available: {available_count}/{len(statuses)} supported providers are ready."
+    )
 
 
 def _parse_json(
@@ -180,21 +230,31 @@ def _build_tool_registry(tool_loader: list[str]) -> ToolRegistry:
 
 
 @app.command("providers")
-def providers() -> None:
+def providers(
+    json_output: bool = typer.Option(
+        False,
+        "--json/--no-json",
+        help="Emit JSON output.",
+    ),
+) -> None:
     """List supported providers and whether they are available locally."""
     registry = build_default_registry()
-    _emit(
-        {
-            "providers": [
-                status.model_dump(
-                    mode="json",
-                    exclude_none=True,
-                    exclude_computed_fields=True,
-                )
-                for status in supported_provider_statuses(registry)
-            ]
-        }
-    )
+    statuses = supported_provider_statuses(registry)
+    if json_output:
+        _emit(
+            {
+                "providers": [
+                    status.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                        exclude_computed_fields=True,
+                    )
+                    for status in statuses
+                ]
+            }
+        )
+        return
+    _render_providers_table(statuses)
 
 
 @models_app.command("sync")

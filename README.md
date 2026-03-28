@@ -61,7 +61,16 @@ uv run dr-llm query \
 
 The `--no-record` flag skips database recording, so you can test providers without Postgres.
 
-### 2. Start Postgres (for catalog and recording)
+### 2. Inspect supported and available providers
+
+```bash
+uv run dr-llm providers
+uv run dr-llm providers --json
+```
+
+`dr-llm providers` renders a human-readable table showing canonical provider names, whether each provider is currently available on this machine, and any missing local requirements. Use `--json` when you want a scriptable output format.
+
+### 3. Start Postgres (for catalog and recording)
 
 ```bash
 source ./scripts/start-test-postgres.sh
@@ -69,7 +78,7 @@ source ./scripts/start-test-postgres.sh
 
 This starts a local Postgres container, applies schema migrations, and exports `DR_LLM_DATABASE_URL` and `DR_LLM_TEST_DATABASE_URL` into your shell. Use `source` (not `./`) so the env vars persist.
 
-### 3. Sync and list models
+### 4. Sync and list models
 
 ```bash
 uv run dr-llm models sync --provider openai
@@ -95,6 +104,8 @@ Use `--json` on `models list` for full metadata output.
 
 Headless providers shell out to CLI tools (`codex`, `claude`). The MiniMax and Kimi variants point Claude Code at third-party Anthropic-compatible endpoints and require their corresponding API keys.
 
+Run `uv run dr-llm providers` to see which of the supported providers are currently usable in your shell.
+
 Some providers (MiniMax, Codex, Claude Code, Kimi) use static model lists for `models sync` since they don't expose a `/models` endpoint. The CLI will note when a list may be out of date and link to the provider's docs.
 
 ## Configuration
@@ -111,6 +122,7 @@ Some providers (MiniMax, Codex, Claude Code, Kimi) use static model lists for `m
 
 ```bash
 dr-llm providers
+dr-llm providers --json
 
 dr-llm models sync
 dr-llm models list --provider openai
@@ -282,8 +294,8 @@ result = service.acquire_or_generate(
 
 ```bash
 uv run ruff format
-uv run ruff check --fix src/ tests/ scripts/
-uv run ty check src
+uv run ruff check --fix .
+uv run ty check
 uv run pytest tests/ -v
 ```
 
@@ -320,6 +332,14 @@ Creates a project, records queries, verifies backup/restore:
 
 Requires Docker and at least one of `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 
+### Provider discovery demo
+
+Shows all supported canonical providers and which of them are currently available on this machine:
+
+```bash
+uv run python scripts/demo-providers.py
+```
+
 ### Pool provider demo
 
 Queries all available LLM providers (API and headless) and stores results in a typed pool:
@@ -329,14 +349,6 @@ uv run python scripts/demo-pool-providers.py
 ```
 
 Auto-detects available providers by checking API key env vars and CLI tool availability (`claude`, `codex`). For each provider: syncs the model catalog, selects a model, sends a query, and inserts the result into a pool. Prints a summary table at the end.
-
-### Provider discovery demo
-
-Shows all supported canonical providers and which of them are currently available on this machine:
-
-```bash
-uv run python scripts/demo-providers.py
-```
 
 Options:
 ```bash

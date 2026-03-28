@@ -16,9 +16,23 @@ from dr_llm.cli import app
 from dr_llm.types import RunStatus
 
 
-def test_providers_command_lists_known_providers() -> None:
+def test_providers_command_is_human_readable_by_default() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["providers"])
+    assert result.exit_code == 0
+    assert "Providers" in result.stdout
+    assert "Available" in result.stdout
+    assert "openai" in result.stdout
+    assert "anthropic" in result.stdout
+    assert "claude-code" in result.stdout
+    assert "claude-code-minimax" in result.stdout
+    assert "codex-cli" not in result.stdout
+    assert '"providers"' not in result.stdout
+
+
+def test_providers_command_json_lists_known_providers() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["providers", "--json"])
     assert result.exit_code == 0
 
     payload = json.loads(result.stdout)
