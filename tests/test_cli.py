@@ -5,7 +5,7 @@ import json
 from typer.testing import CliRunner
 
 import dr_llm.cli.common as cli_common
-import dr_llm.cli.models as models_cli
+import dr_llm.cli.project_info as models_cli
 import dr_llm.cli.query as query_cli
 from dr_llm.catalog.models import (
     ModelCatalogEntry,
@@ -127,9 +127,7 @@ def test_models_sync_verbose_emits_json(monkeypatch) -> None:
 
     monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
 
-    result = runner.invoke(
-        app, ["models", "sync", "--provider", "openai", "--verbose"]
-    )
+    result = runner.invoke(app, ["models", "sync", "--provider", "openai", "--verbose"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -245,9 +243,7 @@ def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None
 
     assert result.exit_code == 0
     assert result.stdout == (
-        "openai Models (Showing 2 out of 347)\n"
-        "- gpt-4o-mini (GPT-4o mini)\n"
-        "- gpt-4.1\n"
+        "openai Models (Showing 2 out of 347)\n- gpt-4o-mini (GPT-4o mini)\n- gpt-4.1\n"
     )
 
 

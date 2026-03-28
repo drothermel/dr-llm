@@ -2,34 +2,22 @@ from __future__ import annotations
 
 import json
 import subprocess
-from datetime import datetime, timezone
+from enum import StrEnum
 from time import sleep
-
-from dr_llm.project.models import (
-    DB_NAME,
-    DB_PASSWORD,
-    DB_USER,
-    DOCKER_IMAGE,
-    LABEL_PREFIX,
-    ProjectInfo,
-    container_name,
-    dsn_for_port,
-    parse_docker_labels,
-    volume_name,
-)
-from dr_llm.project.ports import find_available_port
+from typing import Any
 
 
-def _docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["docker", *args],
-        capture_output=True,
-        text=True,
-        check=check,
-    )
+class ContainerStatus(StrEnum):
+    RUNNING = "running"
+    STOPPED = "stopped"
+    UNKNOWN = "unknown"
+
+    @classmethod
+    def default(cls) -> ContainerStatus:
+        return cls.UNKNOWN
 
 
-def _require_docker() -> None:
+def require_docker() -> None:
     result = subprocess.run(
         ["docker", "info"], capture_output=True, text=True, check=False
     )
@@ -39,178 +27,158 @@ def _require_docker() -> None:
         )
 
 
-def _wait_ready(cname: str, timeout_seconds: int = 30) -> None:
+def wait_docker_ready(
+    container_name: str,
+    db_user: str,
+    db_name: str,
+    timeout_seconds: int = 30,
+) -> ContainerStatus:
     for _ in range(timeout_seconds):
         result = subprocess.run(
-            ["docker", "exec", cname, "pg_isready", "-U", DB_USER, "-d", DB_NAME],
+            [
+                "docker",
+                "exec",
+                container_name,
+                "pg_isready",
+                "-U",
+                db_user,
+                "-d",
+                db_name,
+            ],
             capture_output=True,
             text=True,
             check=False,
         )
         if result.returncode == 0:
             sleep(1)
-            return
+            return ContainerStatus.RUNNING
         sleep(1)
     raise RuntimeError(
-        f"Postgres in {cname} did not become ready within {timeout_seconds}s"
+        f"Postgres in {container_name} did not become ready within {timeout_seconds}s"
     )
 
 
-def _apply_schema(port: int) -> None:
-    from dr_llm.storage import PostgresRepository, StorageConfig
-
-    dsn = dsn_for_port(port)
-    repo = PostgresRepository(StorageConfig(dsn=dsn))
-    try:
-        repo.initialize()
-    finally:
-        repo.close()
+def call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["docker", *args],
+        capture_output=True,
+        text=True,
+        check=check,
+    )
 
 
-def _inspect_container(cname: str) -> dict[str, str] | None:
-    result = _docker(
+def call_docker_get_labels_status(container_name: str) -> str | None:
+    result = call_docker(
         "inspect",
         "--format",
         "{{json .Config.Labels}}||{{json .State.Status}}",
-        cname,
+        container_name,
         check=False,
     )
     if result.returncode != 0:
         return None
-    parts = result.stdout.strip().split("||", 1)
-    labels = json.loads(parts[0]) if parts[0] else {}
-    status = json.loads(parts[1]) if len(parts) > 1 else "unknown"
-    labels["__status__"] = status
-    return labels
+    return result.stdout.strip()
 
 
-def _info_from_labels(name: str, labels: dict[str, str]) -> ProjectInfo:
-    port = int(labels.get(f"{LABEL_PREFIX}.port", "0"))
-    status = labels.get("__status__", "unknown")
-    return ProjectInfo(
-        name=name,
-        container_name=container_name(name),
-        volume_name=volume_name(name),
-        port=port,
-        status=status,
-        dsn=dsn_for_port(port),
-        created_at=labels.get(f"{LABEL_PREFIX}.created-at"),
-    )
-
-
-def create_project(name: str) -> ProjectInfo:
-    _require_docker()
-    cname = container_name(name)
-    vname = volume_name(name)
-
-    existing = _inspect_container(cname)
-    if existing is not None:
-        raise RuntimeError(f"Project '{name}' already exists (container {cname})")
-
-    port = find_available_port()
-    now = datetime.now(timezone.utc).isoformat()
-
-    _docker("volume", "create", vname)
-    _docker(
+def call_docker_create(
+    volume_name: str,
+    container_name: str,
+    db_name: str,
+    db_user: str,
+    db_password: str,
+    docker_image: str,
+    label_prefix: str | None = None,
+    name: str | None = None,
+    port: int | None = None,
+    created_at: str | None = None,
+):
+    call_docker("volume", "create", volume_name)
+    docker_cmd = [
         "run",
         "-d",
         "--name",
-        cname,
+        container_name,
         "-v",
-        f"{vname}:/var/lib/postgresql/data",
+        f"{volume_name}:/var/lib/postgresql/data",
         "-e",
-        f"POSTGRES_DB={DB_NAME}",
+        f"POSTGRES_DB={db_name}",
         "-e",
-        f"POSTGRES_USER={DB_USER}",
+        f"POSTGRES_USER={db_user}",
         "-e",
-        f"POSTGRES_PASSWORD={DB_PASSWORD}",
+        f"POSTGRES_PASSWORD={db_password}",
         "-p",
         f"{port}:5432",
-        "--label",
-        f"{LABEL_PREFIX}.name={name}",
-        "--label",
-        f"{LABEL_PREFIX}.port={port}",
-        "--label",
-        f"{LABEL_PREFIX}.created-at={now}",
-        DOCKER_IMAGE,
-    )
-
-    _wait_ready(cname)
-    _apply_schema(port)
-
-    return ProjectInfo(
-        name=name,
-        container_name=cname,
-        volume_name=vname,
-        port=port,
-        status="running",
-        dsn=dsn_for_port(port),
-        created_at=now,
-    )
+    ]
+    if all(val is not None for val in [label_prefix, name, port, created_at]):
+        docker_cmd.extend(
+            [
+                "--label",
+                f"{label_prefix}.name={name}",
+                "--label",
+                f"{label_prefix}.port={port}",
+                "--label",
+                f"{label_prefix}.created-at={created_at}",
+            ]
+        )
+    docker_cmd.append(docker_image)
+    call_docker(*docker_cmd)
 
 
-def start_project(name: str) -> ProjectInfo:
-    _require_docker()
-    cname = container_name(name)
-    labels = _inspect_container(cname)
-    if labels is None:
-        raise RuntimeError(f"Project '{name}' not found")
-    if labels["__status__"] == "running":
-        return _info_from_labels(name, labels)
-
-    _docker("start", cname)
-    _wait_ready(cname)
-    labels["__status__"] = "running"
-    return _info_from_labels(name, labels)
+def call_docker_start(container_name: str) -> None:
+    call_docker("start", container_name)
 
 
-def stop_project(name: str) -> None:
-    _require_docker()
-    cname = container_name(name)
-    labels = _inspect_container(cname)
-    if labels is None:
-        raise RuntimeError(f"Project '{name}' not found")
-    _docker("stop", cname)
+def call_docker_stop(container_name: str) -> None:
+    call_docker("stop", container_name)
 
 
-def destroy_project(name: str) -> None:
-    _require_docker()
-    cname = container_name(name)
-    vname = volume_name(name)
-    _docker("rm", "-f", cname, check=False)
-    _docker("volume", "rm", vname, check=False)
+def call_docker_destroy(container_name: str, volume_name: str) -> None:
+    call_docker("rm", "-f", container_name, check=False)
+    call_docker("volume", "rm", volume_name, check=False)
 
 
-def list_projects() -> list[ProjectInfo]:
-    _require_docker()
-    result = _docker(
+def parse_docker_labels(raw: str) -> dict[str, str]:
+    raw = raw.strip()
+    if raw.startswith("{"):
+        return json.loads(raw)
+    if raw.startswith('"'):
+        raw = json.loads(raw)
+    labels: dict[str, str] = {}
+    for pair in raw.split(","):
+        k, _, v = pair.partition("=")
+        labels[k.strip()] = v.strip()
+    return labels
+
+
+def call_docker_list_labels(label_prefix: str) -> str:
+    result = call_docker(
         "ps",
         "-a",
         "--filter",
-        f"label={LABEL_PREFIX}.name",
+        f"label={label_prefix}.name",
         "--format",
         "{{json .}}",
         check=False,
     )
-    projects: list[ProjectInfo] = []
-    for line in result.stdout.strip().splitlines():
+    return result.stdout.strip()
+
+
+def get_all_docker_names_labels_status(label_prefix: str) -> list[dict[str, Any]]:
+    names_labels_status = []
+    for line in call_docker_list_labels(label_prefix).splitlines():
         if not line:
             continue
         data = json.loads(line)
-        labels = parse_docker_labels(data.get("Labels", ""))
-        pname = labels.get(f"{LABEL_PREFIX}.name")
+        status = data.get("State")
+        parsed = parse_docker_labels(data.get("Labels", ""))
+        pname = parsed.get(f"{label_prefix}.name")
         if pname is None:
             continue
-        status = data.get("State", "unknown")
-        labels["__status__"] = status
-        projects.append(_info_from_labels(pname, labels))
-    return projects
-
-
-def get_project(name: str) -> ProjectInfo | None:
-    _require_docker()
-    cname = container_name(name)
-    labels = _inspect_container(cname)
-    if labels is None:
-        return None
-    return _info_from_labels(name, labels)
+        names_labels_status.append(
+            {
+                "name": pname,
+                "labels": parsed,
+                "status": status,
+            }
+        )
+    return names_labels_status

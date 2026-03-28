@@ -6,27 +6,33 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from dr_llm.project.docker import get_project
-from dr_llm.project.models import DB_NAME, DB_USER, container_name
+from dr_llm.project.models import ProjectInfo
 
 DEFAULT_BACKUP_DIR = Path.home() / ".dr-llm" / "backups"
 
 
 def _psql(cname: str, db: str, *args: str) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(
-        ["docker", "exec", cname, "psql", "-U", DB_USER, db, *args],
+        [
+            "docker",
+            "exec",
+            cname,
+            "psql",
+            "-U",
+            ProjectInfo.db_user,
+            db,
+            *args,
+        ],
         capture_output=True,
         check=True,
     )
 
 
 def backup_project(name: str, output_dir: Path | None = None) -> Path:
-    info = get_project(name)
-    if info is None:
-        raise RuntimeError(f"Project '{name}' not found")
-    if info.status != "running":
+    project_info = ProjectInfo.get_by_name(name)
+    if not project_info.running:
         raise RuntimeError(
-            f"Project '{name}' is {info.status} — start it before backing up"
+            f"Project '{name}' is {project_info.status} — start it before backing up"
         )
 
     backup_dir = (output_dir or DEFAULT_BACKUP_DIR) / name
@@ -36,7 +42,15 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
     backup_file = backup_dir / f"{name}_{timestamp}.sql.gz"
 
     result = subprocess.run(
-        ["docker", "exec", container_name(name), "pg_dump", "-U", DB_USER, DB_NAME],
+        [
+            "docker",
+            "exec",
+            project_info.container_name,
+            "pg_dump",
+            "-U",
+            ProjectInfo.db_user,
+            ProjectInfo.db_name,
+        ],
         capture_output=True,
         check=True,
     )
@@ -48,12 +62,10 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
 
 
 def restore_project(name: str, backup_file: Path) -> None:
-    info = get_project(name)
-    if info is None:
-        raise RuntimeError(f"Project '{name}' not found")
-    if info.status != "running":
+    project_info = ProjectInfo.get_by_name(name)
+    if not project_info.running:
         raise RuntimeError(
-            f"Project '{name}' is {info.status} — start it before restoring"
+            f"Project '{name}' is {project_info.status} — start it before restoring"
         )
 
     if not backup_file.exists():
@@ -65,14 +77,23 @@ def restore_project(name: str, backup_file: Path) -> None:
     else:
         sql_bytes = backup_file.read_bytes()
 
-    cname = container_name(name)
+    cname = project_info.container_name
     tmp_db = f"dr_llm_restore_{uuid4().hex[:8]}"
 
     # Restore into a temp database first so the original is untouched on failure.
     _psql(cname, "postgres", "-c", f"CREATE DATABASE {tmp_db};")
     try:
         subprocess.run(
-            ["docker", "exec", "-i", cname, "psql", "-U", DB_USER, tmp_db],
+            [
+                "docker",
+                "exec",
+                "-i",
+                cname,
+                "psql",
+                "-U",
+                project_info.db_name,
+                tmp_db,
+            ],
             input=sql_bytes,
             capture_output=True,
             check=True,
@@ -86,7 +107,7 @@ def restore_project(name: str, backup_file: Path) -> None:
         cname,
         "postgres",
         "-c",
-        f"DROP DATABASE IF EXISTS {DB_NAME};",
+        f"DROP DATABASE IF EXISTS {project_info.db_name};",
         "-c",
-        f"ALTER DATABASE {tmp_db} RENAME TO {DB_NAME};",
+        f"ALTER DATABASE {tmp_db} RENAME TO {project_info.db_name};",
     )

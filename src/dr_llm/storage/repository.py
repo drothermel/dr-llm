@@ -6,13 +6,28 @@ from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
 from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse
 from dr_llm.storage._catalog_store import CatalogStore
 from dr_llm.storage._runs_calls_store import RunsCallsStore
-from dr_llm.storage.models import RecordedCall, RunStatus
 from dr_llm.storage._runtime import StorageConfig, StorageRuntime
+from dr_llm.storage.models import RecordedCall, RunStatus
+
+
+def try_init_repo_from_dsn(dsn: str | None = None) -> None:
+    repo = PostgresRepository(dsn=dsn)
+    try:
+        repo.initialize()
+    finally:
+        repo.close()
 
 
 class PostgresRepository:
-    def __init__(self, config: StorageConfig | None = None) -> None:
-        self.config = config or StorageConfig()
+    def __init__(
+        self,
+        config: StorageConfig | None = None,
+        dsn: str | None = None,
+    ) -> None:
+        self.config = config
+        if self.config is None:
+            self.config = StorageConfig() if dsn is None else StorageConfig(dsn=dsn)
+
         self._runtime = StorageRuntime(self.config)
         self._runs_calls = RunsCallsStore(self._runtime)
         self._catalog = CatalogStore(self._runtime)
