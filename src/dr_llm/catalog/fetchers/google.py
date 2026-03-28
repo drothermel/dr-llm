@@ -31,15 +31,6 @@ def fetch_google_models(
             continue
         model_name = name_raw.split("/")[-1]
         supports_reasoning = bool(item.get("thinking")) if "thinking" in item else None
-        supports_tools = _first_bool(
-            item,
-            "supportsTools",
-            "supports_tools",
-            "toolCalling",
-            "tool_calling",
-            "functionCalling",
-            "function_calling",
-        )
         supports_vision = _first_bool(
             item,
             "supportsVision",
@@ -55,7 +46,6 @@ def fetch_google_models(
                 context_window=_as_int(item.get("inputTokenLimit")),
                 max_output_tokens=_as_int(item.get("outputTokenLimit")),
                 supports_reasoning=supports_reasoning,
-                supports_tools=supports_tools,
                 supports_vision=supports_vision,
                 metadata=item,
                 fetched_at=now,

@@ -2,10 +2,9 @@ from dr_llm.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
-    parse_tool_calls,
     to_openai_messages,
 )
-from dr_llm.types import Message, ModelToolCall, TokenUsage
+from dr_llm.types import Message, TokenUsage
 
 
 def test_token_usage_defaults_total() -> None:
@@ -23,55 +22,6 @@ def test_token_usage_includes_reasoning_tokens() -> None:
         prompt_tokens=10, completion_tokens=5, total_tokens=20, reasoning_tokens=7
     )
     assert usage.reasoning_tokens == 7
-
-
-def test_parse_tool_calls_parses_json_arguments() -> None:
-    calls = parse_tool_calls(
-        [
-            {
-                "id": "abc",
-                "function": {
-                    "name": "lookup",
-                    "arguments": '{"query":"x"}',
-                },
-            }
-        ]
-    )
-    assert len(calls) == 1
-    assert calls[0].tool_call_id == "abc"
-    assert calls[0].name == "lookup"
-    assert calls[0].arguments == {"query": "x"}
-
-
-def test_parse_tool_calls_skips_missing_name() -> None:
-    calls = parse_tool_calls([{"id": "abc", "function": {"arguments": "{}"}}])
-    assert calls == []
-
-
-def test_parse_tool_calls_invalid_json_arguments_fallback_raw() -> None:
-    calls = parse_tool_calls(
-        [
-            {
-                "id": "abc",
-                "function": {"name": "lookup", "arguments": "{not-json"},
-            }
-        ]
-    )
-    assert len(calls) == 1
-    assert calls[0].arguments == {"_raw": "{not-json"}
-
-
-def test_parse_tool_calls_non_dict_json_arguments_fallback_value() -> None:
-    calls = parse_tool_calls(
-        [
-            {
-                "id": "abc",
-                "function": {"name": "lookup", "arguments": '["a","b"]'},
-            }
-        ]
-    )
-    assert len(calls) == 1
-    assert calls[0].arguments == {"_value": ["a", "b"]}
 
 
 def test_parse_reasoning_tokens_nested_details() -> None:
@@ -121,28 +71,29 @@ def test_parse_cost_info_missing_keys_returns_none() -> None:
     assert parse_cost_info({"usage": {"prompt_tokens": 1}}) is None
 
 
-def test_to_openai_messages_includes_tool_call_id() -> None:
-    payload = to_openai_messages(
-        [
-            Message(role="tool", content='{"ok":true}', tool_call_id="tc_123"),
-        ]
+def test_parse_cost_info_ignores_non_string_currency_values() -> None:
+    cost = parse_cost_info(
+        {
+            "usage": {
+                "cost": 0.25,
+                "currency": 0,
+            }
+        }
     )
-    assert payload[0]["tool_call_id"] == "tc_123"
+    assert cost is not None
+    assert cost.currency == "USD"
 
 
-def test_to_openai_messages_includes_assistant_tool_calls() -> None:
+def test_to_openai_messages_serializes_plain_messages() -> None:
     payload = to_openai_messages(
         [
-            Message(
-                role="assistant",
-                content="",
-                tool_calls=[
-                    ModelToolCall(
-                        tool_call_id="tc_1", name="lookup", arguments={"q": "abc"}
-                    )
-                ],
-            )
+            Message(role="system", content="be concise"),
+            Message(role="user", content="hello"),
+            Message(role="assistant", content="hi"),
         ]
     )
-    assert payload[0]["tool_calls"][0]["id"] == "tc_1"
-    assert payload[0]["tool_calls"][0]["function"]["name"] == "lookup"
+    assert payload == [
+        {"role": "system", "content": "be concise"},
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "hi"},
+    ]

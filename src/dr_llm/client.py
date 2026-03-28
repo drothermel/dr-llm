@@ -36,7 +36,6 @@ class LlmClient:
         adapter = self.get_adapter(provider_name)
         caps = adapter.capabilities
         return {
-            "supports_native_tools": caps.supports_native_tools,
             "supports_structured_output": caps.supports_structured_output,
         }
 

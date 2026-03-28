@@ -21,7 +21,6 @@ from dr_llm.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
-    parse_tool_calls,
 )
 from dr_llm.reasoning import (
     ReasoningMappingResult,
@@ -33,10 +32,8 @@ from dr_llm.types import (
     LlmRequest,
     LlmResponse,
     Message,
-    ProviderToolSpec,
     ReasoningConfig,
     TokenUsage,
-    ToolPolicy,
 )
 
 
@@ -60,8 +57,6 @@ class _HeadlessRequestPayload(BaseModel):
     max_tokens: int | None = None
     reasoning: ReasoningConfig | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-    tools: list[ProviderToolSpec] | None = None
-    tool_policy: ToolPolicy
 
 
 class _HeadlessUsagePayload(BaseModel):
@@ -94,8 +89,6 @@ CLAUDE_DEFAULT_COMMAND = [
     "text",
     "--system-prompt",
     "",
-    "--tools",
-    "",
     "--disable-slash-commands",
     "--no-session-persistence",
     "--setting-sources",
@@ -119,12 +112,6 @@ KEY_USAGE = "usage"
 KEY_TURN_COMPLETED = "turn.completed"
 KEY_ITEM_COMPLETED = "item.completed"
 KEY_AGENT_MESSAGE = "agent_message"
-KEY_FUNCTION_CALL = "function_call"
-KEY_TOOL_CALL = "tool_call"
-KEY_NAME = "name"
-KEY_ARGUMENTS = "arguments"
-KEY_ARGS = "args"
-KEY_ID = "id"
 KEY_RESULT = "result"
 KEY_STOP_REASON = "stop_reason"
 KEY_TOTAL_COST_USD = "total_cost_usd"
@@ -139,8 +126,6 @@ _DISALLOWED_HEADLESS_COMMANDS = {"sh", "bash", "zsh", "fish", "pwsh", "powershel
 
 
 def _message_label(message: Message) -> str:
-    if message.role == "tool":
-        return f"tool:{message.name}" if message.name else "tool"
     return message.role
 
 
@@ -193,9 +178,7 @@ class _BaseHeadlessAdapter(ProviderAdapter):
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(
-            supports_native_tools=False, supports_structured_output=True
-        )
+        return ProviderCapabilities(supports_structured_output=True)
 
     @property
     def runtime_requirements(self) -> ProviderRuntimeRequirements:
@@ -216,8 +199,6 @@ class _BaseHeadlessAdapter(ProviderAdapter):
             max_tokens=request.max_tokens,
             reasoning=request.reasoning,
             metadata=request.metadata,
-            tools=request.tools,
-            tool_policy=request.tool_policy,
         ).model_dump(
             mode="json",
             exclude_computed_fields=True,
@@ -328,9 +309,6 @@ class _BaseHeadlessAdapter(ProviderAdapter):
                     item for item in raw_reasoning_details if isinstance(item, dict)
                 ]
         cost = parse_cost_info(body if isinstance(body, dict) else {})
-        tool_calls = parse_tool_calls(
-            (body.get("tool_calls") or []) if isinstance(body, dict) else []
-        )
         text = str(body.get(KEY_TEXT) or "") if isinstance(body, dict) else str(body)
         finish_reason = body.get("finish_reason") if isinstance(body, dict) else None
         resolved_raw_json = (
@@ -353,7 +331,6 @@ class _BaseHeadlessAdapter(ProviderAdapter):
             provider=request.provider,
             model=request.model,
             mode=CallMode.headless,
-            tool_calls=tool_calls,
         )
 
     def _parse_stdout(
@@ -755,7 +732,6 @@ def _codex_events_to_body(
     passthrough_lines: list[str],
 ) -> dict[str, Any]:
     text_chunks: list[str] = []
-    tool_calls: list[dict[str, Any]] = []
     usage: dict[str, int] = {}
     finish_reason: str | None = None
 
@@ -770,19 +746,6 @@ def _codex_events_to_body(
                 text = item.get(KEY_TEXT)
                 if isinstance(text, str) and text:
                     text_chunks.append(text)
-            elif item_type in {KEY_FUNCTION_CALL, KEY_TOOL_CALL}:
-                name = item.get(KEY_NAME)
-                if not isinstance(name, str) or not name:
-                    continue
-                arguments_raw = item.get(KEY_ARGUMENTS, item.get(KEY_ARGS))
-                arguments = arguments_raw if isinstance(arguments_raw, dict) else {}
-                tool_calls.append(
-                    {
-                        KEY_ID: item.get(KEY_ID) or f"call_{len(tool_calls) + 1}",
-                        KEY_NAME: name,
-                        KEY_ARGUMENTS: arguments,
-                    }
-                )
         if event_type == KEY_TURN_COMPLETED:
             finish_reason = "stop"
             usage_raw = event.get(KEY_USAGE)
@@ -810,8 +773,6 @@ def _codex_events_to_body(
         "finish_reason": finish_reason,
         KEY_USAGE: usage,
     }
-    if tool_calls:
-        body["tool_calls"] = tool_calls
     if passthrough_lines:
         body[KEY_NON_JSON_STDOUT_LINES] = passthrough_lines
     return body

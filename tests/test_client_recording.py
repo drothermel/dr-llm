@@ -28,9 +28,7 @@ class FailingHeadlessAdapter(ProviderAdapter):
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(
-            supports_native_tools=False, supports_structured_output=True
-        )
+        return ProviderCapabilities(supports_structured_output=True)
 
     @property
     def runtime_requirements(self) -> ProviderRuntimeRequirements:

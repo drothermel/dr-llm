@@ -93,7 +93,6 @@ CREATE TABLE IF NOT EXISTS provider_models_current (
     context_window INTEGER,
     max_output_tokens INTEGER,
     supports_reasoning BOOLEAN,
-    supports_tools BOOLEAN,
     supports_vision BOOLEAN,
     pricing_json JSONB,
     rate_limits_json JSONB,
@@ -116,82 +115,6 @@ CREATE TABLE IF NOT EXISTS artifacts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_run_id ON artifacts(run_id);
-
-CREATE TABLE IF NOT EXISTS sessions (
-    session_id TEXT PRIMARY KEY,
-    status TEXT NOT NULL,
-    version INTEGER NOT NULL,
-    strategy_mode TEXT NOT NULL,
-    metadata_json JSONB,
-    last_error_text TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_sessions_status_created ON sessions(status, created_at);
-
-CREATE TABLE IF NOT EXISTS session_turns (
-    turn_id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    turn_index INTEGER NOT NULL,
-    status TEXT NOT NULL,
-    metadata_json JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at TIMESTAMPTZ,
-    UNIQUE(session_id, turn_index)
-);
-
-CREATE INDEX IF NOT EXISTS idx_session_turns_session_id_turn_index ON session_turns(session_id, turn_index);
-
-CREATE TABLE IF NOT EXISTS session_events (
-    event_seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    event_id TEXT NOT NULL UNIQUE,
-    session_id TEXT NOT NULL,
-    turn_id TEXT,
-    event_type TEXT NOT NULL,
-    payload_json JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_session_events_session_seq ON session_events(session_id, event_seq);
-CREATE INDEX IF NOT EXISTS idx_session_events_type_created ON session_events(event_type, created_at);
-
-CREATE TABLE IF NOT EXISTS tool_calls (
-    tool_call_id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    turn_id TEXT,
-    idempotency_key TEXT NOT NULL,
-    tool_name TEXT NOT NULL,
-    status TEXT NOT NULL,
-    args_json JSONB NOT NULL,
-    attempt_count INTEGER NOT NULL DEFAULT 0,
-    worker_id TEXT,
-    last_error_text TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    claimed_at TIMESTAMPTZ,
-    lease_expires_at TIMESTAMPTZ,
-    UNIQUE(idempotency_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_tool_calls_status_created ON tool_calls(status, created_at);
-CREATE INDEX IF NOT EXISTS idx_tool_calls_session_created ON tool_calls(session_id, created_at);
-
-CREATE TABLE IF NOT EXISTS tool_results (
-    tool_call_id TEXT PRIMARY KEY,
-    result_json JSONB,
-    error_json JSONB,
-    completed_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS tool_call_dead_letters (
-    dead_letter_id TEXT PRIMARY KEY,
-    tool_call_id TEXT NOT NULL,
-    reason TEXT NOT NULL,
-    payload_json JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_tool_call_dead_letters_created ON tool_call_dead_letters(created_at);
 
 DO $$
 BEGIN
@@ -225,45 +148,4 @@ BEGIN
             FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE;
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_session_turns_session') THEN
-        ALTER TABLE session_turns
-            ADD CONSTRAINT fk_session_turns_session
-            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_session_events_session') THEN
-        ALTER TABLE session_events
-            ADD CONSTRAINT fk_session_events_session
-            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_session_events_turn') THEN
-        ALTER TABLE session_events
-            ADD CONSTRAINT fk_session_events_turn
-            FOREIGN KEY (turn_id) REFERENCES session_turns(turn_id) ON DELETE SET NULL;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tool_calls_session') THEN
-        ALTER TABLE tool_calls
-            ADD CONSTRAINT fk_tool_calls_session
-            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tool_calls_turn') THEN
-        ALTER TABLE tool_calls
-            ADD CONSTRAINT fk_tool_calls_turn
-            FOREIGN KEY (turn_id) REFERENCES session_turns(turn_id) ON DELETE SET NULL;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tool_results_tool_call') THEN
-        ALTER TABLE tool_results
-            ADD CONSTRAINT fk_tool_results_tool_call
-            FOREIGN KEY (tool_call_id) REFERENCES tool_calls(tool_call_id) ON DELETE CASCADE;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tool_call_dead_letters_tool_call') THEN
-        ALTER TABLE tool_call_dead_letters
-            ADD CONSTRAINT fk_tool_call_dead_letters_tool_call
-            FOREIGN KEY (tool_call_id) REFERENCES tool_calls(tool_call_id) ON DELETE CASCADE;
-    END IF;
 END $$;

@@ -34,10 +34,7 @@ class _FakeAdapter(ProviderAdapter):
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(
-            supports_native_tools=True,
-            supports_structured_output=False,
-        )
+        return ProviderCapabilities(supports_structured_output=False)
 
     @property
     def runtime_requirements(self) -> ProviderRuntimeRequirements:
@@ -87,7 +84,6 @@ def test_supported_provider_statuses_report_missing_requirements(
     assert statuses[0].available is False
     assert statuses[0].missing_env_vars == ("FAKE_ENV",)
     assert statuses[0].missing_executables == ("fake-cli",)
-    assert statuses[0].supports_native_tools is True
     assert statuses[0].supports_structured_output is False
 
 
@@ -130,8 +126,6 @@ def test_available_provider_names_uses_precomputed_statuses() -> None:
     ]
 
     assert available_provider_names(registry, statuses=statuses) == ["ready-provider"]
-
-
 
 def test_openai_compat_inline_api_key_suppresses_env_requirement() -> None:
     adapter = OpenAICompatAdapter(

@@ -31,16 +31,10 @@ def fetch_openai_compat_models(
         pricing = _parse_pricing(item.get("pricing"))
         supported_params = item.get("supported_parameters")
         supports_reasoning = None
-        supports_tools = None
         if isinstance(supported_params, list):
             normalized = {str(param) for param in supported_params}
             supports_reasoning = (
                 "reasoning" in normalized or "reasoning.effort" in normalized
-            )
-            supports_tools = (
-                "tools" in normalized
-                or "tool_choice" in normalized
-                or "function_call" in normalized
             )
         out.append(
             ModelCatalogEntry(
@@ -50,7 +44,6 @@ def fetch_openai_compat_models(
                 context_window=_as_int(item.get("context_length")),
                 max_output_tokens=_as_int(item.get("max_output_tokens")),
                 supports_reasoning=supports_reasoning,
-                supports_tools=supports_tools,
                 supports_vision=_detect_supports_vision(item),
                 pricing=pricing,
                 metadata=item,

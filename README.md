@@ -3,9 +3,8 @@
 `dr-llm` is a shared primitive for:
 - provider-agnostic LLM calls (API and headless)
 - canonical PostgreSQL recording/query storage
-- event-sourced multistep sessions with tool-calling
-- worker-safe parallel tool execution with queue claiming
-- generic typed sample pools for benchmark storage
+- model catalog sync and lookup
+- generic typed sample pools
 - isolated per-project databases with backup/restore
 
 It is intentionally domain-neutral so repos like `nl_latents` and `unitbench` can reuse it.
@@ -16,14 +15,8 @@ It is intentionally domain-neutral so repos like `nl_latents` and `unitbench` ca
   - `LlmClient.query(LlmRequest) -> LlmResponse`
 - Canonical storage (PostgreSQL):
   - runs, calls, request/response payloads, artifacts
-- Session runtime:
-  - `start`, `step`, `resume`, `cancel`
-  - native tool strategy (if provider supports tools) + brokered fallback
-- Tool queue + workers:
-  - idempotent tool call enqueue
-  - concurrent worker claims via `FOR UPDATE SKIP LOCKED`
-- Replay:
-  - reconstruct message history from `session_events`
+- Model catalog:
+  - provider sync, listing, filtering, per-model lookup
 - Sample pools:
   - schema-driven typed key dimensions with auto-generated DDL
   - no-replacement acquisition via claims table
@@ -68,7 +61,7 @@ uv run dr-llm providers
 uv run dr-llm providers --json
 ```
 
-`dr-llm providers` renders a human-readable table showing canonical provider names, whether each provider is currently available on this machine, and any missing local requirements. Use `--json` when you want a scriptable output format.
+`dr-llm providers` renders a human-readable table by default. Use `--json` for machine-readable provider availability and local-requirement details.
 
 ### 3. Start Postgres (for catalog and recording)
 
@@ -85,7 +78,7 @@ uv run dr-llm models sync --provider openai
 uv run dr-llm models list --provider openai
 ```
 
-`models sync` now prints a single concise success line by default. Use `--verbose` when you want the full per-provider JSON sync payload. `models list` prints a human-readable header plus bulleted model names by default, and shows 20 results unless you override `--limit`; use `--json` for full metadata output.
+`models sync` prints a concise summary by default. Use `--verbose` for full JSON sync results. `models list` prints model ids by default and supports `--json` for full metadata output.
 
 ### Available Providers
 
@@ -122,10 +115,9 @@ Some providers (MiniMax, Codex, Claude Code, Kimi) use static model lists for `m
 
 ```bash
 dr-llm providers
-dr-llm providers --json
 
 dr-llm models sync
-dr-llm models sync --provider openai --verbose
+dr-llm models sync --provider openai
 dr-llm models list --provider openai
 dr-llm models list --supports-reasoning --json
 dr-llm models show --provider openrouter --model openai/o3-mini
@@ -142,32 +134,8 @@ dr-llm query \
   --reasoning-json '{"effort":"high"}' \
   --message "hello"
 
-dr-llm run start --run-type benchmark
+dr-llm run start
 dr-llm run finish --run-id <run_id> --status success
-dr-llm run benchmark \
-  --workers 128 \
-  --total-operations 200000 \
-  --warmup-operations 10000 \
-  --max-in-flight 128 \
-  --operation-mix-json '{"record_call":2,"session_roundtrip":1,"read_calls":1}' \
-  --artifact-path .dr_llm/benchmarks/release-baseline.json
-
-dr-llm session start \
-  --provider openai \
-  --model gpt-4.1 \
-  --message "You are helpful" \
-  --message "Solve this task"
-
-dr-llm session step --session-id <session_id> --message "next"
-dr-llm session resume --session-id <session_id>
-dr-llm session cancel --session-id <session_id> --reason "stopped"
-
-# brokered tool calls are queued by default; use workers
-dr-llm tool worker run --tool-loader mypkg.tools:register_tools
-# optional synchronous override for a single step:
-dr-llm session step --session-id <session_id> --inline-tool-execution
-
-dr-llm replay session --session-id <session_id>
 
 dr-llm project create my-experiment
 dr-llm project list
@@ -177,19 +145,6 @@ dr-llm project stop my-experiment
 dr-llm project backup my-experiment
 dr-llm project restore my-experiment backups/my-experiment-20260325.sql.gz
 dr-llm project destroy my-experiment --yes-really-delete-everything
-```
-
-Benchmark command output:
-```json
-{
-  "artifact_path": ".dr_llm/benchmarks/release-baseline.json",
-  "failed_operations": 0,
-  "operations_per_second": 4231.8,
-  "p50_latency_ms": 20.0,
-  "p95_latency_ms": 200.0,
-  "run_id": "run_abc123",
-  "status": "success"
-}
 ```
 
 Reasoning + cost notes:
@@ -209,7 +164,7 @@ Generation transcript logging (default on):
 ## Python Example
 
 ```python
-from dr_llm import LlmClient, LlmRequest, Message, PostgresRepository, ToolRegistry
+from dr_llm import LlmClient, LlmRequest, Message, PostgresRepository
 
 repo = PostgresRepository()
 client = LlmClient(repository=repo)
@@ -229,7 +184,7 @@ Adapter lifecycle note:
 
 ## Pool Example
 
-Pools provide schema-driven sample storage with no-replacement acquisition for benchmarks.
+Pools provide schema-driven sample storage with no-replacement acquisition.
 
 ```python
 from dr_llm import (
@@ -241,7 +196,7 @@ from dr_llm.storage._runtime import StorageConfig, StorageRuntime
 
 # 1. Declare a pool schema with typed key dimensions
 schema = PoolSchema(
-    name="my_benchmark",
+    name="my_pool",
     key_columns=[
         KeyColumn(name="provider"),
         KeyColumn(name="difficulty", type=ColumnType.integer),

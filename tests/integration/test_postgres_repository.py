@@ -1,29 +1,20 @@
 from __future__ import annotations
 
 import os
-from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Generator
 from typing import Any, cast
 
-import pytest
 import psycopg
+import pytest
 from psycopg import sql
 from psycopg.rows import dict_row
 
-from dr_llm.benchmark import BenchmarkConfig, run_repository_benchmark
-from dr_llm.errors import SessionConflictError
 from dr_llm.storage.repository import PostgresRepository, StorageConfig
-from dr_llm.types import SessionTurnStatus, ToolPolicy
+from dr_llm.types import CallMode, LlmRequest, LlmResponse, Message, TokenUsage
 
 _TEST_TABLES = (
-    "tool_call_dead_letters",
-    "tool_results",
-    "tool_calls",
     "provider_models_current",
     "provider_model_catalog_snapshots",
-    "session_events",
-    "session_turns",
-    "sessions",
     "artifacts",
     "llm_call_responses",
     "llm_call_requests",
@@ -70,53 +61,34 @@ def test_schema_bootstrap_idempotent(repository: PostgresRepository) -> None:
 
 
 @pytest.mark.integration
-def test_schema_migration_removes_legacy_model_overrides(
+def test_schema_migration_removes_legacy_tables_and_supports_tools_column(
     repository: PostgresRepository,
 ) -> None:
     dsn = repository.config.dsn
+    legacy_table_names = [
+        "sessions",
+        "session_turns",
+        "session_events",
+        "tool_calls",
+        "tool_results",
+        "tool_call_dead_letters",
+    ]
     with psycopg.connect(dsn) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS provider_model_overrides (
-                provider TEXT NOT NULL,
-                model TEXT NOT NULL,
-                pricing_json JSONB,
-                rate_limits_json JSONB,
-                notes TEXT,
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                PRIMARY KEY (provider, model)
+        for table_name in legacy_table_names:
+            conn.execute(
+                sql.SQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS {} (
+                        id TEXT PRIMARY KEY
+                    )
+                    """
+                ).format(sql.Identifier(table_name))
             )
-            """
-        )
         conn.execute(
             """
-            INSERT INTO provider_models_current (
-                provider,
-                model,
-                source_quality,
-                updated_at
-            ) VALUES (%s, %s, %s, now())
-            ON CONFLICT (provider, model)
-            DO UPDATE SET
-                source_quality = excluded.source_quality,
-                updated_at = excluded.updated_at
-            """,
-            ["legacy", "legacy-model", "overlay"],
-        )
-        conn.execute(
+            ALTER TABLE provider_models_current
+            ADD COLUMN IF NOT EXISTS supports_tools BOOLEAN
             """
-            INSERT INTO provider_model_overrides (
-                provider,
-                model,
-                notes,
-                updated_at
-            ) VALUES (%s, %s, %s, now())
-            ON CONFLICT (provider, model)
-            DO UPDATE SET
-                notes = excluded.notes,
-                updated_at = excluded.updated_at
-            """,
-            ["legacy", "legacy-model", "legacy override"],
         )
         conn.commit()
 
@@ -133,142 +105,63 @@ def test_schema_migration_removes_legacy_model_overrides(
     finally:
         migrated_repository.close()
 
-    with psycopg.connect(dsn) as conn, conn.cursor(row_factory=dict_row) as cur:
-        row = cur.execute(
-            """
-            SELECT source_quality
-            FROM provider_models_current
-            WHERE provider = %s AND model = %s
-            """,
-            ["legacy", "legacy-model"],
-        ).fetchone()
-        assert row is not None
-        assert row["source_quality"] == "live"
+    with psycopg.connect(dsn) as conn:
+        for table_name in legacy_table_names:
+            table_exists = conn.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = %s
+                ) AS exists
+                """,
+                (table_name,),
+            ).fetchone()
+            assert table_exists is not None
+            assert table_exists[0] is False
 
-        exists = cur.execute(
+        supports_tools_exists = conn.execute(
             """
             SELECT EXISTS (
                 SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'provider_model_overrides'
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'provider_models_current'
+                  AND column_name = 'supports_tools'
             ) AS exists
             """
         ).fetchone()
-        assert exists is not None
-        assert exists["exists"] is False
+        assert supports_tools_exists is not None
+        assert supports_tools_exists[0] is False
 
 
 @pytest.mark.integration
-def test_session_event_append_and_replay(repository: PostgresRepository) -> None:
-    handle = repository.start_session(
-        strategy_mode=ToolPolicy.native_preferred,
-        metadata={"provider": "openai", "model": "gpt-4.1"},
-    )
-    turn_id, _ = repository.create_session_turn(
-        session_id=handle.session_id, status=SessionTurnStatus.active
-    )
-    repository.append_session_event(
-        session_id=handle.session_id,
-        turn_id=turn_id,
-        event_type="message",
-        payload={"message": {"role": "user", "content": "hello"}},
-    )
-    repository.complete_session_turn(
-        turn_id=turn_id, status=SessionTurnStatus.completed
-    )
-
-    replayed = repository.replay_session_messages(session_id=handle.session_id)
-    assert replayed[-1] == {"role": "user", "content": "hello"}
-
-
-@pytest.mark.integration
-def test_session_version_conflict(repository: PostgresRepository) -> None:
-    handle = repository.start_session(
-        strategy_mode=ToolPolicy.native_preferred,
-        metadata={"provider": "openai", "model": "gpt-4.1"},
-    )
-    repository.advance_session_version(session_id=handle.session_id, expected_version=1)
-    with pytest.raises(SessionConflictError):
-        repository.advance_session_version(
-            session_id=handle.session_id, expected_version=1
-        )
-
-
-@pytest.mark.integration
-def test_tool_claim_parallel_without_duplicates(repository: PostgresRepository) -> None:
-    handle = repository.start_session(
-        strategy_mode=ToolPolicy.native_preferred,
-        metadata={"provider": "openai", "model": "gpt-4.1"},
-    )
-    turn_id, _ = repository.create_session_turn(
-        session_id=handle.session_id, status=SessionTurnStatus.active
-    )
-
-    for idx in range(24):
-        repository.enqueue_tool_call(
-            session_id=handle.session_id,
-            turn_id=turn_id,
-            tool_name="echo",
-            args={"idx": idx},
-            idempotency_key=f"{handle.session_id}:{turn_id}:{idx}",
-            tool_call_id=f"tc_{idx}",
-        )
-
-    def claim_all(worker: str) -> list[str]:
-        claimed_ids: list[str] = []
-        while True:
-            batch = repository.claim_tool_calls(
-                worker_id=worker, limit=3, lease_seconds=120
-            )
-            if not batch:
-                return claimed_ids
-            claimed_ids.extend(call.tool_call_id for call in batch)
-
-    workers = [f"w{idx}" for idx in range(8)]
-    with ThreadPoolExecutor(max_workers=len(workers)) as pool:
-        results = [
-            future.result()
-            for future in [pool.submit(claim_all, worker) for worker in workers]
-        ]
-
-    flattened = [item for sublist in results for item in sublist]
-    assert len(flattened) == 24
-    assert len(set(flattened)) == 24
-
-
-@pytest.mark.integration
-def test_benchmark_persists_artifact_record(
-    repository: PostgresRepository, tmp_path
-) -> None:
-    artifact_path = tmp_path / "benchmark-report.json"
-
-    report = run_repository_benchmark(
-        repository=repository,
-        config=BenchmarkConfig(
-            workers=4,
-            total_operations=120,
-            warmup_operations=12,
-            max_in_flight=4,
-            artifact_path=str(artifact_path),
+def test_record_call_and_list_calls_round_trip(repository: PostgresRepository) -> None:
+    call_id = repository.record_call(
+        request=LlmRequest(
+            provider="openai",
+            model="gpt-4.1",
+            messages=[Message(role="user", content="hello")],
+            metadata={"purpose": "test"},
         ),
+        response=LlmResponse(
+            text="hi",
+            usage=TokenUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3),
+            provider="openai",
+            model="gpt-4.1",
+            mode=CallMode.api,
+        ),
+        status="success",
+        mode=CallMode.api,
+        metadata={"source": "integration"},
     )
 
-    assert report.run_id
-    assert artifact_path.exists()
-    with psycopg.connect(
-        repository.config.dsn, row_factory=cast(Any, dict_row)
-    ) as conn:
-        row = conn.execute(
-            """
-            SELECT artifact_type, artifact_path
-            FROM artifacts
-            WHERE run_id = %s
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            [report.run_id],
-        ).fetchone()
-    assert row is not None
-    row_dict = cast(dict[str, Any], row)
-    assert row_dict["artifact_type"] == "benchmark_report"
-    assert str(row_dict["artifact_path"]) == str(artifact_path)
+    calls = repository.list_calls(limit=10)
+    matching_call = next((call for call in calls if call.call_id == call_id), None)
+    assert matching_call is not None
+    assert matching_call.provider == "openai"
+    assert matching_call.model == "gpt-4.1"
+    assert matching_call.request is not None
+    assert matching_call.request["metadata"]["purpose"] == "test"
+    assert matching_call.response is not None
+    assert matching_call.response["usage"]["total_tokens"] == 3

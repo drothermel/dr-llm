@@ -15,7 +15,6 @@ class ProviderAvailabilityStatus(BaseModel):
     available: bool
     missing_env_vars: tuple[str, ...] = Field(default_factory=tuple)
     missing_executables: tuple[str, ...] = Field(default_factory=tuple)
-    supports_native_tools: bool = False
     supports_structured_output: bool = False
 
 
@@ -47,7 +46,6 @@ def supported_provider_statuses(
                 available=not missing_env_vars and not missing_executables,
                 missing_env_vars=tuple(missing_env_vars),
                 missing_executables=tuple(missing_executables),
-                supports_native_tools=capabilities.supports_native_tools,
                 supports_structured_output=capabilities.supports_structured_output,
             )
         )

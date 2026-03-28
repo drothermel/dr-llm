@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 from typing import Any, cast
 
@@ -15,16 +14,10 @@ from dr_llm.providers.headless import (
     ClaudeHeadlessMiniMaxAdapter,
     CodexHeadlessAdapter,
 )
-from dr_llm.types import (
-    LlmRequest,
-    Message,
-    ModelToolCall,
-    ProviderToolSpec,
-    ToolFunctionSpec,
-)
+from dr_llm.types import LlmRequest, Message
 
 
-def test_anthropic_payload_preserves_tool_context() -> None:
+def test_anthropic_payload_serializes_plain_messages() -> None:
     captured: dict[str, object] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -38,75 +31,39 @@ def test_anthropic_payload_preserves_tool_context() -> None:
             },
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
     adapter = AnthropicAdapter(
         config=AnthropicConfig(
             api_key="x", base_url="https://api.anthropic.com/v1/messages"
         ),
-        client=client,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
-    request = LlmRequest(
-        provider="anthropic",
-        model="claude-test",
-        messages=[
-            Message(role="user", content="find item"),
-            Message(
-                role="assistant",
-                content="",
-                tool_calls=[
-                    ModelToolCall(
-                        tool_call_id="tc_1", name="lookup", arguments={"q": "abc"}
-                    )
-                ],
-            ),
-            Message(
-                role="tool",
-                name="lookup",
-                tool_call_id="tc_1",
-                content='{"result": 123}',
-            ),
-        ],
-        tools=[
-            ProviderToolSpec(
-                function=ToolFunctionSpec(
-                    name="lookup",
-                    description="Lookup a value",
-                    parameters={
-                        "type": "object",
-                        "properties": {"q": {"type": "string"}},
-                    },
-                )
-            )
-        ],
+    response = adapter.generate(
+        LlmRequest(
+            provider="anthropic",
+            model="claude-test",
+            messages=[
+                Message(role="system", content="Be concise."),
+                Message(role="user", content="find item"),
+                Message(role="assistant", content="previous answer"),
+            ],
+        )
     )
 
-    response = adapter.generate(request)
     assert response.text == "done"
-
     payload = cast(dict[str, Any], captured["payload"])
-    messages = cast(list[dict[str, Any]], payload["messages"])
-    assert any(
-        message["role"] == "assistant"
-        and any(
-            block.get("type") == "tool_use" and block.get("id") == "tc_1"
-            for block in message["content"]
-        )
-        for message in messages
-    )
-    assert any(
-        message["role"] == "user"
-        and any(
-            block.get("type") == "tool_result" and block.get("tool_use_id") == "tc_1"
-            for block in message["content"]
-        )
-        for message in messages
-    )
-    tools = cast(list[dict[str, Any]], payload["tools"])
-    assert tools[0]["name"] == "lookup"
+    assert payload["system"] == "Be concise."
+    assert payload["messages"] == [
+        {"role": "user", "content": [{"type": "text", "text": "find item"}]},
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "previous answer"}],
+        },
+    ]
+    assert "tools" not in payload
 
 
-def test_google_payload_preserves_tool_context() -> None:
+def test_google_payload_serializes_plain_messages() -> None:
     captured: dict[str, object] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -130,169 +87,36 @@ def test_google_payload_preserves_tool_context() -> None:
             },
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    adapter = GoogleAdapter(
-        config=GoogleConfig(
-            api_key="x", base_url="https://generativelanguage.googleapis.com/v1beta"
-        ),
-        client=client,
-    )
-
-    request = LlmRequest(
-        provider="google",
-        model="gemini-test",
-        messages=[
-            Message(role="user", content="find item"),
-            Message(
-                role="assistant",
-                content="",
-                tool_calls=[
-                    ModelToolCall(
-                        tool_call_id="tc_1", name="lookup", arguments={"q": "abc"}
-                    )
-                ],
-            ),
-            Message(
-                role="tool",
-                name="lookup",
-                tool_call_id="tc_1",
-                content='{"result": 123}',
-            ),
-        ],
-        tools=[
-            ProviderToolSpec(
-                function=ToolFunctionSpec(
-                    name="lookup",
-                    description="Lookup a value",
-                    parameters={
-                        "type": "object",
-                        "properties": {"q": {"type": "string"}},
-                    },
-                )
-            )
-        ],
-    )
-
-    response = adapter.generate(request)
-    assert response.text == "done"
-
-    payload = cast(dict[str, Any], captured["payload"])
-    headers = cast(dict[str, str], captured["headers"])
-    assert headers["x-goog-api-key"] == "x"
-    assert "?key=" not in cast(str, captured["url"])
-    contents = cast(list[dict[str, Any]], payload["contents"])
-    assert any(
-        content["role"] == "model"
-        and any(
-            part.get("functionCall", {}).get("name") == "lookup"
-            for part in content["parts"]
-        )
-        for content in contents
-    )
-    assert any(
-        content["role"] == "user"
-        and any(
-            part.get("functionResponse", {}).get("name") == "lookup"
-            for part in content["parts"]
-        )
-        for content in contents
-    )
-    tools = cast(list[dict[str, Any]], payload["tools"])
-    declarations = cast(list[dict[str, Any]], tools[0]["functionDeclarations"])
-    assert declarations[0]["name"] == "lookup"
-
-
-def test_google_tool_call_ids_are_sequential_for_valid_function_calls() -> None:
-    def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            status_code=200,
-            json={
-                "candidates": [
-                    {
-                        "content": {
-                            "parts": [
-                                {"text": "thinking"},
-                                {"functionCall": {"name": "", "args": {}}},
-                                {
-                                    "functionCall": {
-                                        "name": "lookup",
-                                        "args": {"q": "x"},
-                                    }
-                                },
-                                {"text": "more text"},
-                                {
-                                    "functionCall": {
-                                        "name": "search",
-                                        "args": {"q": "y"},
-                                    }
-                                },
-                            ]
-                        },
-                        "finishReason": "STOP",
-                    }
-                ],
-                "usageMetadata": {
-                    "promptTokenCount": 1,
-                    "candidatesTokenCount": 2,
-                    "totalTokenCount": 3,
-                },
-            },
-        )
-
     adapter = GoogleAdapter(
         config=GoogleConfig(
             api_key="x", base_url="https://generativelanguage.googleapis.com/v1beta"
         ),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
+
     response = adapter.generate(
         LlmRequest(
             provider="google",
             model="gemini-test",
-            messages=[Message(role="user", content="go")],
+            messages=[
+                Message(role="system", content="Be concise."),
+                Message(role="user", content="find item"),
+                Message(role="assistant", content="previous answer"),
+            ],
         )
     )
 
-    ids = [call.tool_call_id for call in response.tool_calls]
-    assert len(ids) == 2
-    assert re.match(r"^google_[0-9a-f]{32}_call_1$", ids[0]) is not None
-    assert re.match(r"^google_[0-9a-f]{32}_call_2$", ids[1]) is not None
-    assert ids[0].split("_call_")[0] == ids[1].split("_call_")[0]
-    assert [call.name for call in response.tool_calls] == ["lookup", "search"]
-
-
-def test_headless_tool_call_ids_are_sequential_for_valid_items(monkeypatch) -> None:
-    body = {
-        "text": "ok",
-        "tool_calls": [
-            "not-a-dict",
-            {"arguments": {"q": "ignored"}},
-            {"name": "lookup", "arguments": {"q": "x"}},
-            {"name": "search", "arguments": {"q": "y"}},
-        ],
-    }
-
-    def fake_run(command: list[str], **kwargs):
-        return subprocess.CompletedProcess(
-            args=kwargs.get("args") or command,
-            returncode=0,
-            stdout=json.dumps(body, ensure_ascii=True),
-            stderr="",
-        )
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    adapter = CodexHeadlessAdapter(command=["codex", "exec", "--json"])
-    response = adapter.generate(
-        LlmRequest(
-            provider="codex",
-            model="codex-test",
-            messages=[Message(role="user", content="go")],
-        )
-    )
-
-    assert [call.tool_call_id for call in response.tool_calls] == ["call_1", "call_2"]
-    assert [call.name for call in response.tool_calls] == ["lookup", "search"]
+    assert response.text == "done"
+    payload = cast(dict[str, Any], captured["payload"])
+    headers = cast(dict[str, str], captured["headers"])
+    assert headers["x-goog-api-key"] == "x"
+    assert "?key=" not in cast(str, captured["url"])
+    assert payload["systemInstruction"] == {"parts": [{"text": "Be concise."}]}
+    assert payload["contents"] == [
+        {"role": "user", "parts": [{"text": "find item"}]},
+        {"role": "model", "parts": [{"text": "previous answer"}]},
+    ]
+    assert "tools" not in payload
 
 
 def test_codex_headless_defaults_use_exec_and_minimal_flags(monkeypatch) -> None:  # noqa: ANN001
@@ -381,16 +205,14 @@ def test_claude_headless_defaults_use_empty_system_prompt(monkeypatch) -> None: 
     assert "--output-format" in command
     assert "json" in command
     assert "--system-prompt" in command
-    assert "--tools" in command
     assert "--disable-slash-commands" in command
     assert "--no-session-persistence" in command
     assert "--setting-sources" in command
     assert "--model" in command
     assert "claude-sonnet-4-6" in command
+    assert "--tools" not in command
     system_prompt_index = command.index("--system-prompt")
     assert command[system_prompt_index + 1] == ""
-    tools_index = command.index("--tools")
-    assert command[tools_index + 1] == ""
     assert str(captured["input"]) == "user: hello"
     assert response.text == "OK"
     assert response.usage.prompt_tokens == 1

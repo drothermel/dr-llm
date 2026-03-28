@@ -3,29 +3,17 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from dr_llm.types import (
-    Message,
-    ModelCatalogQuery,
-    ModelToolCall,
-    ReasoningConfig,
-    TokenUsage,
-)
+from dr_llm.types import Message, ModelCatalogQuery, ReasoningConfig, TokenUsage
 
 
-def test_tool_message_requires_tool_call_id() -> None:
+def test_message_rejects_unknown_role() -> None:
     with pytest.raises(ValidationError):
-        Message(role="tool", content='{"ok":true}')
+        Message(role="tool", content="nope")  # type: ignore[arg-type]
 
 
-def test_non_assistant_message_rejects_tool_calls() -> None:
+def test_message_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError):
-        Message(
-            role="user",
-            content="hello",
-            tool_calls=[
-                ModelToolCall(tool_call_id="tc_1", name="lookup", arguments={"q": "x"})
-            ],
-        )
+        Message(role="assistant", content="hi", tool_calls=[])  # type: ignore[call-arg]
 
 
 def test_reasoning_config_rejects_effort_with_max_tokens() -> None:
