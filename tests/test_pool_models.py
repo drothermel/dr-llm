@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dr_llm.pool.models import (
+from dr_llm.pool.sample_models import (
     AcquireQuery,
     AcquireResult,
     InsertResult,

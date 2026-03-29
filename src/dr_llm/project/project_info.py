@@ -22,7 +22,7 @@ from dr_llm.project.docker import (
     get_docker_project_metadata,
     wait_docker_ready,
 )
-from dr_llm.storage.repository import try_init_repo_from_dsn
+from dr_llm.pool.db import try_init_db_from_dsn
 
 BASE_PORT = 5500
 
@@ -169,7 +169,7 @@ class ProjectInfo(BaseModel):
             db_user=ProjectInfo.db_user,
             db_name=ProjectInfo.db_name,
         )
-        try_init_repo_from_dsn(project_info.dsn)
+        try_init_db_from_dsn(project_info.dsn)
         return project_info
 
     def verify_exists(self) -> None:

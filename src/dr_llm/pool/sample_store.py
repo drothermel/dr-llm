@@ -15,7 +15,7 @@ from psycopg.rows import dict_row
 
 from dr_llm.pool.ddl import generate_ddl
 from dr_llm.pool.errors import PoolSchemaError
-from dr_llm.pool.models import (
+from dr_llm.pool.sample_models import (
     AcquireQuery,
     AcquireResult,
     CoverageRow,
@@ -24,8 +24,8 @@ from dr_llm.pool.models import (
     PendingStatus,
     PoolSample,
 )
-from dr_llm.pool.schema import PoolSchema
-from dr_llm.storage._runtime import StorageRuntime
+from dr_llm.pool.pool_schema import PoolSchema
+from dr_llm.pool.runtime import DbRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ def _parse_json_field(raw: Any) -> dict[str, Any]:
 class PoolStore:
     """Generic pool storage operations parameterized by schema."""
 
-    def __init__(self, schema: PoolSchema, runtime: StorageRuntime) -> None:
+    def __init__(self, schema: PoolSchema, runtime: DbRuntime) -> None:
         self._schema = schema
         self._runtime = runtime
         self._schema_lock = threading.Lock()

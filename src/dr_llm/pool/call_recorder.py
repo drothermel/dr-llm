@@ -13,19 +13,19 @@ from tenacity import (
 )
 
 from dr_llm.errors import PersistenceError, TransientPersistenceError
-from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.llm_response import LlmResponse
-from dr_llm.providers.models import CallMode
-from dr_llm.storage._runtime import (
-    StorageRuntime,
+from dr_llm.pool.recorded_call import RecordedCall, RunStatus
+from dr_llm.pool.runtime import (
+    DbRuntime,
     hash_payload,
     is_retryable_db_error,
 )
-from dr_llm.storage.models import RecordedCall, RunStatus
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
+from dr_llm.providers.models import CallMode
 
 
-class RunsCallsStore:
-    def __init__(self, runtime: StorageRuntime) -> None:
+class CallRecorder:
+    def __init__(self, runtime: DbRuntime) -> None:
         self._runtime = runtime
 
     def _record_call_with_conn(

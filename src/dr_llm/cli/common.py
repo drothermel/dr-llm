@@ -10,9 +10,10 @@ from rich.console import Console
 from rich.table import Table
 
 from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogSyncResult
+from dr_llm.pool.db import PoolDb
+from dr_llm.pool.runtime import DbConfig
 from dr_llm.providers.models import Message
 from dr_llm.providers.provider_config import ProviderAvailabilityStatus
-from dr_llm.storage import PostgresRepository, StorageConfig
 
 
 def _emit(payload: Any) -> None:
@@ -189,15 +190,13 @@ def _load_messages(
     return result
 
 
-def _repo(
-    dsn: str | None, min_pool_size: int, max_pool_size: int
-) -> PostgresRepository:
+def _repo(dsn: str | None, min_pool_size: int, max_pool_size: int) -> PoolDb:
     if dsn is None:
-        cfg = StorageConfig(min_pool_size=min_pool_size, max_pool_size=max_pool_size)
+        cfg = DbConfig(min_pool_size=min_pool_size, max_pool_size=max_pool_size)
     else:
-        cfg = StorageConfig(
+        cfg = DbConfig(
             dsn=dsn,
             min_pool_size=min_pool_size,
             max_pool_size=max_pool_size,
         )
-    return PostgresRepository(cfg)
+    return PoolDb(cfg)

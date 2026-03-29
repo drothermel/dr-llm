@@ -18,13 +18,13 @@ from typing import Any
 
 import typer
 
-from dr_llm.pool.models import PoolSample
-from dr_llm.pool.schema import KeyColumn, PoolSchema
-from dr_llm.pool.store import PoolStore
+from dr_llm.pool.sample_models import PoolSample
+from dr_llm.pool.pool_schema import KeyColumn, PoolSchema
+from dr_llm.pool.sample_store import PoolStore
 from dr_llm.providers import build_default_registry
 from dr_llm.providers.provider_config import ProviderAvailabilityStatus
 from dr_llm.project.project_info import ProjectInfo
-from dr_llm.storage._runtime import StorageConfig, StorageRuntime
+from dr_llm.pool.runtime import DbConfig, DbRuntime
 
 app = typer.Typer()
 
@@ -287,14 +287,14 @@ def main(
 
     step("2. Creating demo project")
     demo_succeeded = False
-    runtime: StorageRuntime | None = None
+    runtime: DbRuntime | None = None
     try:
         dsn = create_demo_project(project_name)
         ok(f"Project '{project_name}' created")
 
         step("3. Initializing pool")
-        runtime = StorageRuntime(
-            StorageConfig(dsn=dsn, min_pool_size=1, max_pool_size=4)
+        runtime = DbRuntime(
+            DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=4)
         )
         store = PoolStore(POOL_SCHEMA, runtime)
         store.init_schema()

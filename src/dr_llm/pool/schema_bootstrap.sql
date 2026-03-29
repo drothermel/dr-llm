@@ -74,37 +74,6 @@ CREATE TABLE IF NOT EXISTS llm_call_responses (
 
 CREATE INDEX IF NOT EXISTS idx_llm_call_responses_hash ON llm_call_responses(response_hash);
 
-CREATE TABLE IF NOT EXISTS provider_model_catalog_snapshots (
-    snapshot_id TEXT PRIMARY KEY,
-    provider TEXT NOT NULL,
-    fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    status TEXT NOT NULL,
-    raw_json JSONB,
-    error_text TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_provider_model_catalog_snapshots_provider_fetched
-    ON provider_model_catalog_snapshots(provider, fetched_at DESC);
-
-CREATE TABLE IF NOT EXISTS provider_models_current (
-    provider TEXT NOT NULL,
-    model TEXT NOT NULL,
-    display_name TEXT,
-    context_window INTEGER,
-    max_output_tokens INTEGER,
-    supports_reasoning BOOLEAN,
-    supports_vision BOOLEAN,
-    pricing_json JSONB,
-    rate_limits_json JSONB,
-    source_quality TEXT NOT NULL DEFAULT 'live',
-    metadata_json JSONB,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (provider, model)
-);
-
-CREATE INDEX IF NOT EXISTS idx_provider_models_current_provider_reasoning
-    ON provider_models_current(provider, supports_reasoning);
-
 CREATE TABLE IF NOT EXISTS artifacts (
     artifact_id TEXT PRIMARY KEY,
     run_id TEXT,

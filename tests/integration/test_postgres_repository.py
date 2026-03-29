@@ -2,22 +2,19 @@ from __future__ import annotations
 
 import os
 from collections.abc import Generator
-from typing import Any, cast
 
 import psycopg
 import pytest
 from psycopg import sql
-from psycopg.rows import dict_row
 
+from dr_llm.pool.db import PoolDb
+from dr_llm.pool.runtime import DbConfig
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.providers.models import CallMode, Message
 from dr_llm.providers.usage import TokenUsage
-from dr_llm.storage.repository import PostgresRepository, StorageConfig
 
 _TEST_TABLES = (
-    "provider_models_current",
-    "provider_model_catalog_snapshots",
     "artifacts",
     "llm_call_responses",
     "llm_call_requests",
@@ -36,39 +33,37 @@ def _truncate_test_tables(dsn: str) -> None:
 
 
 @pytest.fixture(scope="module")
-def repository() -> Generator[PostgresRepository, None, None]:
+def db() -> Generator[PoolDb, None, None]:
     dsn = os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv("DR_LLM_DATABASE_URL")
     if not dsn:
         pytest.skip(
             "Set DR_LLM_TEST_DATABASE_URL (or DR_LLM_DATABASE_URL) to run integration tests"
         )
-    repo = PostgresRepository(
-        StorageConfig(
+    pool_db = PoolDb(
+        DbConfig(
             dsn=dsn,
             min_pool_size=1,
             max_pool_size=16,
             application_name="dr_llm_tests",
         )
     )
-    repo.init_schema()
+    pool_db.init_schema()
     _truncate_test_tables(dsn)
-    yield repo
+    yield pool_db
     _truncate_test_tables(dsn)
-    repo.close()
+    pool_db.close()
 
 
 @pytest.mark.integration
-def test_schema_bootstrap_idempotent(repository: PostgresRepository) -> None:
-    repository.init_schema()
-    repository.init_schema()
+def test_schema_bootstrap_idempotent(db: PoolDb) -> None:
+    db.init_schema()
+    db.init_schema()
 
 
 @pytest.mark.integration
-def test_schema_migration_removes_legacy_tables_and_supports_tools_column(
-    repository: PostgresRepository,
-) -> None:
-    assert repository.config is not None
-    dsn = repository.config.dsn
+def test_schema_migration_removes_legacy_tables(db: PoolDb) -> None:
+    assert db.config is not None
+    dsn = db.config.dsn
     assert dsn is not None
     legacy_table_names = [
         "sessions",
@@ -89,16 +84,10 @@ def test_schema_migration_removes_legacy_tables_and_supports_tools_column(
                     """
                 ).format(sql.Identifier(table_name))
             )
-        conn.execute(
-            """
-            ALTER TABLE provider_models_current
-            ADD COLUMN IF NOT EXISTS supports_tools BOOLEAN
-            """
-        )
         conn.commit()
 
-    migrated_repository = PostgresRepository(
-        StorageConfig(
+    migrated_db = PoolDb(
+        DbConfig(
             dsn=dsn,
             min_pool_size=1,
             max_pool_size=16,
@@ -106,9 +95,9 @@ def test_schema_migration_removes_legacy_tables_and_supports_tools_column(
         )
     )
     try:
-        migrated_repository.init_schema()
+        migrated_db.init_schema()
     finally:
-        migrated_repository.close()
+        migrated_db.close()
 
     with psycopg.connect(dsn) as conn:
         for table_name in legacy_table_names:
@@ -125,24 +114,10 @@ def test_schema_migration_removes_legacy_tables_and_supports_tools_column(
             assert table_exists is not None
             assert table_exists[0] is False
 
-        supports_tools_exists = conn.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                  AND table_name = 'provider_models_current'
-                  AND column_name = 'supports_tools'
-            ) AS exists
-            """
-        ).fetchone()
-        assert supports_tools_exists is not None
-        assert supports_tools_exists[0] is False
-
 
 @pytest.mark.integration
-def test_record_call_and_list_calls_round_trip(repository: PostgresRepository) -> None:
-    call_id = repository.record_call(
+def test_record_call_and_list_calls_round_trip(db: PoolDb) -> None:
+    call_id = db.record_call(
         request=LlmRequest(
             provider="openai",
             model="gpt-4.1",
@@ -161,7 +136,7 @@ def test_record_call_and_list_calls_round_trip(repository: PostgresRepository) -
         metadata={"source": "integration"},
     )
 
-    calls = repository.list_calls(limit=10)
+    calls = db.list_calls(limit=10)
     matching_call = next((call for call in calls if call.call_id == call_id), None)
     assert matching_call is not None
     assert matching_call.provider == "openai"

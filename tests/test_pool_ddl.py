@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from dr_llm.pool.ddl import generate_ddl
-from dr_llm.pool.schema import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.pool_schema import ColumnType, KeyColumn, PoolSchema
 
 
 def _simple_schema() -> PoolSchema:

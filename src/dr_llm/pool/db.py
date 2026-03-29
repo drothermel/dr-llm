@@ -2,37 +2,38 @@ from __future__ import annotations
 
 from typing import Any
 
-from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
+from dr_llm.pool.call_recorder import CallRecorder
+from dr_llm.pool.recorded_call import RecordedCall, RunStatus
+from dr_llm.pool.runtime import DbConfig, DbRuntime
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.providers.models import CallMode
-from dr_llm.storage._catalog_store import CatalogStore
-from dr_llm.storage._runs_calls_store import RunsCallsStore
-from dr_llm.storage._runtime import StorageConfig, StorageRuntime
-from dr_llm.storage.models import RecordedCall, RunStatus
 
 
-def try_init_repo_from_dsn(dsn: str | None = None) -> None:
-    repo = PostgresRepository(dsn=dsn)
+def try_init_db_from_dsn(dsn: str | None = None) -> None:
+    db = PoolDb(dsn=dsn)
     try:
-        repo.initialize()
+        db.initialize()
     finally:
-        repo.close()
+        db.close()
 
 
-class PostgresRepository:
+class PoolDb:
     def __init__(
         self,
-        config: StorageConfig | None = None,
+        config: DbConfig | None = None,
         dsn: str | None = None,
     ) -> None:
         self.config = config
         if self.config is None:
-            self.config = StorageConfig() if dsn is None else StorageConfig(dsn=dsn)
+            self.config = DbConfig() if dsn is None else DbConfig(dsn=dsn)
 
-        self._runtime = StorageRuntime(self.config)
-        self._runs_calls = RunsCallsStore(self._runtime)
-        self._catalog = CatalogStore(self._runtime)
+        self._runtime = DbRuntime(self.config)
+        self._recorder = CallRecorder(self._runtime)
+
+    @property
+    def runtime(self) -> DbRuntime:
+        return self._runtime
 
     def close(self) -> None:
         self._runtime.close()
@@ -51,7 +52,7 @@ class PostgresRepository:
         metadata: dict[str, Any] | None = None,
         run_id: str | None = None,
     ) -> str:
-        return self._runs_calls.start_run(
+        return self._recorder.start_run(
             run_type=run_type,
             status=status,
             metadata=metadata,
@@ -59,7 +60,7 @@ class PostgresRepository:
         )
 
     def upsert_run_parameters(self, *, run_id: str, parameters: dict[str, Any]) -> int:
-        return self._runs_calls.upsert_run_parameters(
+        return self._recorder.upsert_run_parameters(
             run_id=run_id,
             parameters=parameters,
         )
@@ -71,7 +72,7 @@ class PostgresRepository:
         status: RunStatus,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        self._runs_calls.finish_run(run_id=run_id, status=status, metadata=metadata)
+        self._recorder.finish_run(run_id=run_id, status=status, metadata=metadata)
 
     def record_call(
         self,
@@ -86,7 +87,7 @@ class PostgresRepository:
         metadata: dict[str, Any] | None = None,
         call_id: str | None = None,
     ) -> str:
-        return self._runs_calls.record_call(
+        return self._recorder.record_call(
             request=request,
             response=response,
             run_id=run_id,
@@ -105,7 +106,7 @@ class PostgresRepository:
         responses: list[LlmResponse | None],
         run_id: str | None = None,
     ) -> list[str]:
-        return self._runs_calls.record_calls_batch(
+        return self._recorder.record_calls_batch(
             requests=requests,
             responses=responses,
             run_id=run_id,
@@ -118,7 +119,7 @@ class PostgresRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> list[RecordedCall]:
-        return self._runs_calls.list_calls(run_id=run_id, limit=limit, offset=offset)
+        return self._recorder.list_calls(run_id=run_id, limit=limit, offset=offset)
 
     def record_artifact(
         self,
@@ -128,41 +129,9 @@ class PostgresRepository:
         artifact_path: str,
         metadata: dict[str, Any] | None = None,
     ) -> str:
-        return self._runs_calls.record_artifact(
+        return self._recorder.record_artifact(
             run_id=run_id,
             artifact_type=artifact_type,
             artifact_path=artifact_path,
             metadata=metadata,
         )
-
-    def record_model_catalog_snapshot(
-        self,
-        *,
-        provider: str,
-        status: str,
-        raw_payload: dict[str, Any] | None = None,
-        error_text: str | None = None,
-    ) -> str:
-        return self._catalog.record_catalog_snapshot(
-            provider=provider,
-            status=status,
-            raw_payload=raw_payload,
-            error_text=error_text,
-        )
-
-    def replace_provider_models(
-        self,
-        *,
-        provider: str,
-        entries: list[ModelCatalogEntry],
-    ) -> int:
-        return self._catalog.replace_provider_models(provider=provider, entries=entries)
-
-    def list_models(self, *, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
-        return self._catalog.list_models(query=query)
-
-    def count_models(self, *, query: ModelCatalogQuery) -> int:
-        return self._catalog.count_models(query=query)
-
-    def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
-        return self._catalog.get_model(provider=provider, model=model)

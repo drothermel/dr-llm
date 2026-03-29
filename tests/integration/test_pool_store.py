@@ -11,16 +11,16 @@ import pytest
 from psycopg import sql
 
 from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
-from dr_llm.pool.models import (
+from dr_llm.pool.sample_models import (
     AcquireQuery,
     PendingSample,
     PendingStatus,
     PoolSample,
 )
-from dr_llm.pool.schema import ColumnType, KeyColumn, PoolSchema
-from dr_llm.pool.service import PoolService
-from dr_llm.pool.store import PoolStore
-from dr_llm.storage._runtime import StorageConfig, StorageRuntime
+from dr_llm.pool.pool_schema import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.pool_service import PoolService
+from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.runtime import DbConfig, DbRuntime
 
 
 _TEST_SCHEMA = PoolSchema(
@@ -60,8 +60,8 @@ def pool_store() -> Generator[PoolStore, None, None]:
     if not dsn:
         pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
     _drop_tables(dsn)
-    runtime = StorageRuntime(
-        StorageConfig(dsn=dsn, min_pool_size=1, max_pool_size=4, application_name="pool_tests")
+    runtime = DbRuntime(
+        DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=4, application_name="pool_tests")
     )
     store = PoolStore(_TEST_SCHEMA, runtime)
     store.init_schema()

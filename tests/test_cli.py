@@ -75,10 +75,9 @@ def test_providers_command_json_lists_known_providers() -> None:
 
 def test_models_sync_is_concise_by_default(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
-    class _FakeClient:
-        def __init__(self, *, registry: object, repository: object) -> None:
+    class _FakeService:
+        def __init__(self, *, registry: object, repository: object = None) -> None:
             _ = registry, repository
 
         def sync_models_detailed(
@@ -93,7 +92,7 @@ def test_models_sync_is_concise_by_default(monkeypatch) -> None:
                 )
             ]
 
-    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "ModelCatalogService", _FakeService)
 
     result = runner.invoke(app, ["models", "sync", "--provider", "openai"])
 
@@ -103,10 +102,9 @@ def test_models_sync_is_concise_by_default(monkeypatch) -> None:
 
 def test_models_sync_verbose_emits_json(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
-    class _FakeClient:
-        def __init__(self, *, registry: object, repository: object) -> None:
+    class _FakeService:
+        def __init__(self, *, registry: object, repository: object = None) -> None:
             _ = registry, repository
 
         def sync_models_detailed(
@@ -122,7 +120,7 @@ def test_models_sync_verbose_emits_json(monkeypatch) -> None:
                 )
             ]
 
-    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "ModelCatalogService", _FakeService)
 
     result = runner.invoke(app, ["models", "sync", "--provider", "openai", "--verbose"])
 
@@ -143,10 +141,9 @@ def test_models_sync_verbose_emits_json(monkeypatch) -> None:
 
 def test_models_sync_failure_is_concise_and_nonzero(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
-    class _FakeClient:
-        def __init__(self, *, registry: object, repository: object) -> None:
+    class _FakeService:
+        def __init__(self, *, registry: object, repository: object = None) -> None:
             _ = registry, repository
 
         def sync_models_detailed(
@@ -161,7 +158,7 @@ def test_models_sync_failure_is_concise_and_nonzero(monkeypatch) -> None:
                 )
             ]
 
-    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "ModelCatalogService", _FakeService)
 
     result = runner.invoke(app, ["models", "sync", "--provider", "openai"])
 
@@ -172,10 +169,9 @@ def test_models_sync_failure_is_concise_and_nonzero(monkeypatch) -> None:
 
 def test_models_list_json_emits_models(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
-    class _FakeClient:
-        def __init__(self, *, registry: object, repository: object) -> None:
+    class _FakeService:
+        def __init__(self, *, registry: object, repository: object = None) -> None:
             _ = registry, repository
 
         def list_models(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
@@ -188,7 +184,7 @@ def test_models_list_json_emits_models(monkeypatch) -> None:
                 )
             ]
 
-    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "ModelCatalogService", _FakeService)
 
     result = runner.invoke(app, ["models", "list", "--provider", "openai", "--json"])
 
@@ -209,10 +205,9 @@ def test_models_list_json_emits_models(monkeypatch) -> None:
 
 def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
-    class _FakeClient:
-        def __init__(self, *, registry: object, repository: object) -> None:
+    class _FakeService:
+        def __init__(self, *, registry: object, repository: object = None) -> None:
             _ = registry, repository
 
         def list_models(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
@@ -234,7 +229,7 @@ def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None
             assert query.provider == "openai"
             return 347
 
-    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "ModelCatalogService", _FakeService)
 
     result = runner.invoke(app, ["models", "list", "--provider", "openai"])
 
@@ -246,10 +241,9 @@ def test_models_list_is_human_readable_with_provider_header(monkeypatch) -> None
 
 def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
-    class _FakeClient:
-        def __init__(self, *, registry: object, repository: object) -> None:
+    class _FakeService:
+        def __init__(self, *, registry: object, repository: object = None) -> None:
             _ = registry, repository
 
         def list_models(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
@@ -270,7 +264,7 @@ def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> N
             assert query.provider is None
             return 347
 
-    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "ModelCatalogService", _FakeService)
 
     result = runner.invoke(app, ["models", "list"])
 
@@ -284,10 +278,9 @@ def test_models_list_without_provider_includes_provider_prefix(monkeypatch) -> N
 
 def test_models_list_empty_page_mentions_matching_total(monkeypatch) -> None:
     runner = CliRunner()
-    monkeypatch.setattr(cli_common, "_repo", lambda *_: _CliFakeRepository())
 
-    class _FakeClient:
-        def __init__(self, *, registry: object, repository: object) -> None:
+    class _FakeService:
+        def __init__(self, *, registry: object, repository: object = None) -> None:
             _ = registry, repository
 
         def list_models(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
@@ -299,7 +292,7 @@ def test_models_list_empty_page_mentions_matching_total(monkeypatch) -> None:
             assert query.provider == "openai"
             return 347
 
-    monkeypatch.setattr(models_cli, "LlmClient", _FakeClient)
+    monkeypatch.setattr(models_cli, "ModelCatalogService", _FakeService)
 
     result = runner.invoke(
         app, ["models", "list", "--provider", "openai", "--offset", "40"]
@@ -315,23 +308,30 @@ def test_models_list_empty_page_mentions_matching_total(monkeypatch) -> None:
 def test_query_emits_response_json(monkeypatch) -> None:
     runner = CliRunner()
 
-    class _FakeClient:
-        def __init__(self, *, registry: object, repository: object | None) -> None:
-            _ = registry, repository
+    def _fake_generate(request: LlmRequest) -> LlmResponse:
+        assert request.provider == "openai"
+        assert request.model == "gpt-4.1"
+        assert request.messages == [Message(role="user", content="hello")]
+        return LlmResponse(
+            text="hi",
+            usage=TokenUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3),
+            provider="openai",
+            model="gpt-4.1",
+            mode=CallMode.api,
+        )
 
-        def query(self, request: LlmRequest, **_: object) -> LlmResponse:
-            assert request.provider == "openai"
-            assert request.model == "gpt-4.1"
-            assert request.messages == [Message(role="user", content="hello")]
-            return LlmResponse(
-                text="hi",
-                usage=TokenUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3),
-                provider="openai",
-                model="gpt-4.1",
-                mode=CallMode.api,
-            )
+    class _FakeAdapter:
+        name = "openai"
+        mode = "api"
 
-    monkeypatch.setattr(query_cli, "LlmClient", _FakeClient)
+        def generate(self, request: LlmRequest) -> LlmResponse:
+            return _fake_generate(request)
+
+    class _FakeRegistry:
+        def get(self, name: str) -> _FakeAdapter:
+            return _FakeAdapter()
+
+    monkeypatch.setattr(query_cli, "build_default_registry", _FakeRegistry)
 
     result = runner.invoke(
         app,

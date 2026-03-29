@@ -17,20 +17,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from dr_llm.errors import TransientPersistenceError
 
 
-_SCHEMA_PATH = Path(__file__).with_name("schema_bootstrap_pg.sql")
-_MIGRATION_PATHS = [
-    Path(__file__).with_name("schema_migration_20260224_llm_call_response_columns.sql"),
-    Path(__file__).with_name("schema_migration_20260328_remove_model_overrides.sql"),
-    Path(__file__).with_name(
-        "schema_migration_20260328_remove_claude_code_model_aliases.sql"
-    ),
-    Path(__file__).with_name(
-        "schema_migration_20260328_remove_sessions_tools_and_supports_tools.sql"
-    ),
-]
+_SCHEMA_PATH = Path(__file__).parent / "schema_bootstrap.sql"
+_MIGRATION_DIR = Path(__file__).parent / "migrations"
 
 
-class StorageConfig(BaseModel):
+class DbConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     dsn: str = Field(
@@ -70,8 +61,8 @@ def hash_payload(payload: dict[str, Any]) -> str:
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
-class StorageRuntime:
-    def __init__(self, config: StorageConfig) -> None:
+class DbRuntime:
+    def __init__(self, config: DbConfig) -> None:
         self.config = config
         self.pool = ConnectionPool(
             self.config.dsn,
@@ -137,10 +128,9 @@ class StorageRuntime:
             schema_sql = _SCHEMA_PATH.read_text(encoding="utf-8")
             with self.conn() as conn:
                 conn.execute(sql.SQL(cast(LiteralString, schema_sql)))
-                for migration_path in _MIGRATION_PATHS:
-                    if not migration_path.exists():
-                        continue
-                    migration_sql = migration_path.read_text(encoding="utf-8")
-                    conn.execute(sql.SQL(cast(LiteralString, migration_sql)))
+                if _MIGRATION_DIR.is_dir():
+                    for migration_path in sorted(_MIGRATION_DIR.glob("*.sql")):
+                        migration_sql = migration_path.read_text(encoding="utf-8")
+                        conn.execute(sql.SQL(cast(LiteralString, migration_sql)))
                 conn.commit()
             self.schema_initialized = True

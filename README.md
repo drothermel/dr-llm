@@ -164,12 +164,14 @@ Generation transcript logging (default on):
 ## Python Example
 
 ```python
-from dr_llm import LlmClient, LlmRequest, Message, PostgresRepository
+from dr_llm.providers import build_default_registry
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.models import Message
 
-repo = PostgresRepository()
-client = LlmClient(repository=repo)
+registry = build_default_registry()
+adapter = registry.get("openai")
 
-response = client.query(
+response = adapter.generate(
     LlmRequest(
         provider="openai",
         model="gpt-4.1",
@@ -191,8 +193,8 @@ from dr_llm import (
     ColumnType, KeyColumn, PoolSchema, PoolStore, PoolService,
     PoolAcquireQuery, PoolAcquireResult,
 )
-from dr_llm.pool.models import PoolSample
-from dr_llm.storage._runtime import StorageConfig, StorageRuntime
+from dr_llm.pool.sample_models import PoolSample
+from dr_llm.pool.runtime import DbConfig, DbRuntime
 
 # 1. Declare a pool schema with typed key dimensions
 schema = PoolSchema(
@@ -204,7 +206,7 @@ schema = PoolSchema(
 )
 
 # 2. Connect and create tables
-runtime = StorageRuntime(StorageConfig(dsn="postgresql://..."))
+runtime = DbRuntime(DbConfig(dsn="postgresql://..."))
 store = PoolStore(schema, runtime)
 store.init_schema()  # idempotent CREATE TABLE IF NOT EXISTS
 

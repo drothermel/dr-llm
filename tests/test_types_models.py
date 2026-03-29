@@ -9,7 +9,7 @@ from dr_llm.catalog.models import ModelCatalogQuery
 from dr_llm.providers.models import CallMode, Message
 from dr_llm.providers.reasoning import ReasoningConfig
 from dr_llm.providers.usage import TokenUsage
-from dr_llm.storage.models import RecordedCall, RunStatus
+from dr_llm.pool.recorded_call import RecordedCall, RunStatus
 
 
 def test_message_rejects_unknown_role() -> None:
