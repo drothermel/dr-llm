@@ -2,9 +2,8 @@ from dr_llm.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
-    to_openai_messages,
 )
-from dr_llm.generation.models import Message, TokenUsage
+from dr_llm.generation.models import TokenUsage
 
 
 def test_token_usage_defaults_total() -> None:
@@ -82,18 +81,3 @@ def test_parse_cost_info_ignores_non_string_currency_values() -> None:
     )
     assert cost is not None
     assert cost.currency == "USD"
-
-
-def test_to_openai_messages_serializes_plain_messages() -> None:
-    payload = to_openai_messages(
-        [
-            Message(role="system", content="be concise"),
-            Message(role="user", content="hello"),
-            Message(role="assistant", content="hi"),
-        ]
-    )
-    assert payload == [
-        {"role": "system", "content": "be concise"},
-        {"role": "user", "content": "hello"},
-        {"role": "assistant", "content": "hi"},
-    ]

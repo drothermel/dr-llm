@@ -7,8 +7,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.generation.models import CallMode, LlmRequest, ReasoningWarning
-from dr_llm.providers.utils import to_openai_messages
+from dr_llm.generation.models import CallMode, LlmRequest, Message, ReasoningWarning
 from dr_llm.reasoning import map_reasoning_for_openai_compat
 
 if TYPE_CHECKING:
@@ -46,7 +45,7 @@ class OpenAICompatRequest(BaseModel):
         return cls(
             provider=request.provider,
             model=request.model,
-            messages=to_openai_messages(request.messages),
+            messages=cls._to_openai_messages(request.messages),
             temperature=request.temperature,
             top_p=request.top_p,
             max_tokens=request.max_tokens,
@@ -58,6 +57,12 @@ class OpenAICompatRequest(BaseModel):
             idempotency_key=cls._resolve_idempotency_key(request=request),
             warnings=reasoning_mapping.warnings,
         )
+
+    @staticmethod
+    def _to_openai_messages(messages: list[Message]) -> list[dict[str, str]]:
+        return [
+            {"role": message.role, "content": message.content} for message in messages
+        ]
 
     @staticmethod
     def _resolve_api_key(

@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel
-
-from dr_llm.generation.models import CostInfo, Message
+from dr_llm.generation.models import CostInfo
 
 KEY_USAGE = "usage"
 KEY_REASONING = "reasoning"
@@ -35,32 +33,12 @@ USAGE_PREFIX = "usage."
 BODY_PREFIX = "body."
 
 
-class _OpenAIWireMessage(BaseModel):
-    role: Literal["system", "user", "assistant"]
-    content: str
-
-
 def stable_json_dumps(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
 def payload_hash(payload: dict[str, Any]) -> str:
     return sha256(stable_json_dumps(payload).encode("utf-8")).hexdigest()
-
-
-def to_openai_messages(messages: list[Message]) -> list[dict[str, Any]]:
-    payloads = [
-        _OpenAIWireMessage(role=message.role, content=message.content)
-        for message in messages
-    ]
-    return [
-        message.model_dump(
-            mode="json",
-            exclude_none=True,
-            exclude_computed_fields=True,
-        )
-        for message in payloads
-    ]
 
 
 def parse_reasoning_tokens(usage_raw: dict[str, Any] | None) -> int:

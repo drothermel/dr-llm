@@ -132,7 +132,11 @@ def test_openai_compat_request_builds_endpoint_headers_and_payload() -> None:
         LlmRequest(
             provider="openrouter",
             model="openai/gpt-4o-mini",
-            messages=[Message(role="user", content="hi")],
+            messages=[
+                Message(role="system", content="be concise"),
+                Message(role="user", content="hi"),
+                Message(role="assistant", content="hello"),
+            ],
             metadata={"idempotency_key": "fixed-key"},
         ),
         OpenAICompatConfig(
@@ -150,7 +154,11 @@ def test_openai_compat_request_builds_endpoint_headers_and_payload() -> None:
     }
     assert provider_request.json_payload() == {
         "model": "openai/gpt-4o-mini",
-        "messages": [{"role": "user", "content": "hi"}],
+        "messages": [
+            {"role": "system", "content": "be concise"},
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ],
     }
 
 
