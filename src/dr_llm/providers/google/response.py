@@ -99,8 +99,8 @@ class GoogleResponse(BaseModel):
         return {
             "status_code": self.status_code,
             "endpoint": request.endpoint(),
-            "response_text": self.response_text,
-            "request_payload": request.json_payload(),
+            "response_preview": self.response_text_preview,
+            "response_length": len(self.response_text),
         }
 
     def _validated_candidate(self) -> _GoogleCandidate:

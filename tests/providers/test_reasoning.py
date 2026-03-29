@@ -12,7 +12,7 @@ from dr_llm.providers.reasoning import ReasoningConfig
 
 def test_openai_compat_passes_through_config() -> None:
     config = ReasoningConfig(effort="high", exclude=False)
-    result = OpenAICompatReasoningConfig.from_base(config, provider="openai", mode=CallMode.api)
+    result = OpenAICompatReasoningConfig.from_base(config)
     payload = result.to_payload()
     assert payload["effort"] == "high"
     assert payload["exclude"] is False
@@ -20,7 +20,7 @@ def test_openai_compat_passes_through_config() -> None:
 
 
 def test_openai_compat_none_config_returns_empty() -> None:
-    result = OpenAICompatReasoningConfig.from_base(None, provider="openai", mode=CallMode.api)
+    result = OpenAICompatReasoningConfig.from_base(None)
     assert result.to_payload() == {}
     assert result.warnings == []
 

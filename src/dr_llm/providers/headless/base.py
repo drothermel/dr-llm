@@ -16,7 +16,6 @@ from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.providers.models import CallMode, Message
 from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.providers.reasoning import ReasoningConfig
-from dr_llm.providers.headless.reasoning import CodexHeadlessReasoningConfig
 from dr_llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
 
 
@@ -234,7 +233,7 @@ class BaseHeadlessAdapter(ProviderAdapter):
         return {**os.environ, **self._config.env_overrides}
 
     def reasoning_mapping(self, request: LlmRequest) -> HeadlessReasoningResult:
-        return CodexHeadlessReasoningConfig()
+        raise NotImplementedError("subclasses must implement reasoning_mapping")
 
     def parse_stdout(
         self,

@@ -116,12 +116,10 @@ class TokenUsage(BaseModel):
         reasoning_tokens: Any = None,
     ) -> TokenUsage:
         return cls(
-            **{
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": total_tokens,
-                "reasoning_tokens": reasoning_tokens,
-            }
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            reasoning_tokens=reasoning_tokens,
         )
 
     @computed_field

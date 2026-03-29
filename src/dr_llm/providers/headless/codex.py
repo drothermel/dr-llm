@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import tempfile
 from typing import Any, ClassVar
 
@@ -194,6 +195,14 @@ class CodexHeadlessAdapter(BaseHeadlessAdapter):
             ),
         )
         self._neutral_instructions_file: str | None = None
+
+    def close(self) -> None:
+        if self._neutral_instructions_file is not None:
+            try:
+                os.remove(self._neutral_instructions_file)
+            except OSError:
+                pass
+            self._neutral_instructions_file = None
 
     def _ensure_neutral_instructions_file(self) -> str:
         if self._neutral_instructions_file is not None:

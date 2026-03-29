@@ -55,11 +55,16 @@ class AnthropicAdapter(ProviderAdapter):
     def generate(self, request: LlmRequest) -> LlmResponse:
         provider_request = AnthropicRequest.from_llm_request(request, self._config)
         started = time.perf_counter()
-        response = self._client.post(
-            provider_request.endpoint(),
-            headers=provider_request.headers(),
-            json=provider_request.json_payload(),
-        )
+        try:
+            response = self._client.post(
+                provider_request.endpoint(),
+                headers=provider_request.headers(),
+                json=provider_request.json_payload(),
+            )
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise ProviderTransportError(
+                f"anthropic HTTP request failed: {exc}"
+            ) from exc
         latency_ms = int((time.perf_counter() - started) * 1000)
         provider_response = AnthropicResponse.from_http_response(response)
         emit_generation_event(

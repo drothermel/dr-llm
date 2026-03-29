@@ -39,9 +39,18 @@ class GoogleReasoningConfig(BaseModel):
         if config.max_tokens is not None:
             payload["thinkingBudget"] = int(config.max_tokens)
         if config.effort is not None:
-            payload["thinkingLevel"] = _GOOGLE_THINKING_LEVEL.get(
-                config.effort, "medium"
-            )
+            thinking_level = _GOOGLE_THINKING_LEVEL.get(config.effort)
+            if thinking_level is None:
+                warnings.append(
+                    ReasoningWarning(
+                        code=ReasoningWarningCode.mapped_with_heuristic,
+                        message=f"google: unrecognized effort {config.effort!r}, defaulting to medium",
+                        provider=provider,
+                        mode=mode,
+                    )
+                )
+                thinking_level = "medium"
+            payload["thinkingLevel"] = thinking_level
         if config.exclude is True:
             warnings.append(
                 ReasoningWarning(

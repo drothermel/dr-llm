@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.models import CallMode, Message, ReasoningWarning
+from dr_llm.providers.models import Message, ReasoningWarning
 from dr_llm.providers.openai_compat.reasoning import OpenAICompatReasoningConfig
 
 if TYPE_CHECKING:
@@ -40,8 +40,6 @@ class OpenAICompatRequest(BaseModel):
     ) -> OpenAICompatRequest:
         reasoning_mapping = OpenAICompatReasoningConfig.from_base(
             request.reasoning,
-            provider=request.provider,
-            mode=CallMode.api,
         )
         return cls(
             provider=request.provider,

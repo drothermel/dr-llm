@@ -38,4 +38,4 @@ class ProviderAdapter(ABC):
         raise NotImplementedError
 
     def close(self) -> None:
-        """Release any provider-owned resources."""
+        """Release any provider-owned resources. Subclasses may override."""

@@ -40,8 +40,10 @@ class AnthropicReasoningConfig(BaseModel):
         if config.max_tokens is not None:
             budget = max(1024, min(int(config.max_tokens), 128000))
         elif config.effort is not None:
-            max_tokens = int(request_max_tokens or 2048)
             ratio = _EFFORT_RATIO.get(config.effort, 0.5)
+            if ratio == 0.0:
+                return cls()
+            max_tokens = int(request_max_tokens or 2048)
             budget = max(1024, min(int(max_tokens * ratio), 128000))
         if budget is None:
             return cls()

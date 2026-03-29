@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.providers.models import CallMode, ReasoningWarning
+from dr_llm.providers.models import ReasoningWarning
 from dr_llm.providers.reasoning import ReasoningConfig
 
 
@@ -18,9 +18,6 @@ class OpenAICompatReasoningConfig(BaseModel):
     def from_base(
         cls,
         config: ReasoningConfig | None,
-        *,
-        provider: str,
-        mode: CallMode,
     ) -> OpenAICompatReasoningConfig:
         if config is None:
             return cls()
