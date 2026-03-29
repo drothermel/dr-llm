@@ -1,12 +1,11 @@
 from dr_llm.providers.anthropic import AnthropicAdapter
+from dr_llm.providers.google import GoogleAdapter
 from dr_llm.providers.headless_adapter import (
     ClaudeHeadlessAdapter,
     ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
     CodexHeadlessAdapter,
 )
-from dr_llm.providers.glm import GlmAdapter
-from dr_llm.providers.google import GoogleAdapter
 from dr_llm.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
 from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.providers.provider_config import ProviderAvailabilityStatus, ProviderConfig
@@ -42,9 +41,17 @@ def build_default_registry() -> ProviderRegistry:
             ),
         )
     )
+    registry.register(
+        OpenAICompatAdapter(
+            config=OpenAICompatConfig(
+                name="glm",
+                base_url="https://api.z.ai/api/coding/paas/v4",
+                api_key_env="ZAI_API_KEY",
+            ),
+        )
+    )
     registry.register(AnthropicAdapter())
     registry.register(GoogleAdapter())
-    registry.register(GlmAdapter())
     registry.register(CodexHeadlessAdapter())
     registry.register(ClaudeHeadlessAdapter())
     registry.register(ClaudeHeadlessMiniMaxAdapter())
@@ -60,7 +67,6 @@ __all__ = [
     "ClaudeHeadlessKimiAdapter",
     "ClaudeHeadlessMiniMaxAdapter",
     "CodexHeadlessAdapter",
-    "GlmAdapter",
     "GoogleAdapter",
     "OpenAICompatAdapter",
     "OpenAICompatConfig",
