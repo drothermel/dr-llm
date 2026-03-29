@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.logging import emit_generation_event
-from dr_llm.providers.headless_provider_config import (
+from dr_llm.providers.headless.config import (
     ClaudeHeadlessProviderConfig,
     HeadlessProviderConfig,
 )

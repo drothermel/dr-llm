@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from dr_llm.providers.headless_adapter import (
+from dr_llm.providers.headless import (
     ClaudeHeadlessAdapter,
     ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,

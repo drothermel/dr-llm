@@ -1,6 +1,6 @@
 from dr_llm.providers.anthropic import AnthropicAdapter
 from dr_llm.providers.google import GoogleAdapter
-from dr_llm.providers.headless_adapter import (
+from dr_llm.providers.headless import (
     ClaudeHeadlessAdapter,
     ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,

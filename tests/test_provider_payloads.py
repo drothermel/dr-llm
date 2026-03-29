@@ -8,7 +8,7 @@ import httpx
 
 from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
 from dr_llm.providers.google import GoogleAdapter, GoogleConfig
-from dr_llm.providers.headless_adapter import (
+from dr_llm.providers.headless import (
     ClaudeHeadlessAdapter,
     ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
