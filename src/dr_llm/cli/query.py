@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -126,8 +127,13 @@ def query(
                             metadata=metadata,
                             call_id=call_id,
                         )
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as rec_exc:  # noqa: BLE001
+                        logging.getLogger(__name__).warning(
+                            "Failed to record failed call (call_id=%s, run_id=%s): %s",
+                            call_id,
+                            run_id,
+                            rec_exc,
+                        )
                 raise
 
             emit_generation_event(
@@ -153,8 +159,13 @@ def query(
                         metadata=metadata,
                         call_id=call_id,
                     )
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as rec_exc:  # noqa: BLE001
+                    logging.getLogger(__name__).warning(
+                        "Failed to record successful call (call_id=%s, run_id=%s): %s",
+                        call_id,
+                        run_id,
+                        rec_exc,
+                    )
 
         common._emit(response.model_dump(mode="json", exclude_computed_fields=True))
     finally:

@@ -64,7 +64,12 @@ def key_values_from_row(schema: PoolSchema, row: dict[str, Any]) -> dict[str, An
 
 
 def validate_key_filter(schema: PoolSchema, key_filter: dict[str, Any]) -> None:
-    """Warn on unknown keys in a partial key filter."""
+    """Warn on unknown keys in a partial key filter.
+
+    Unlike validate_key_values (which requires an exact key match and raises
+    PoolSchemaError), this is intentionally permissive: key_filter is a partial
+    subset, so unknown keys are logged as warnings rather than errors.
+    """
     unknown = set(key_filter.keys()) - set(schema.key_column_names)
     if unknown:
         logger.warning(

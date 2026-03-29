@@ -87,10 +87,11 @@ def project_use(
         raise typer.Exit(1) from exc
     if not project_info.running:
         typer.secho(
-            f"Project '{name}' is {project_info.status} — start it first",
+            f"Project '{name}' is {project_info.status} - start it first",
             fg=typer.colors.YELLOW,
             err=True,
         )
+        raise typer.Exit(1)
     typer.echo(f"export DR_LLM_DATABASE_URL={project_info.dsn}")
 
 

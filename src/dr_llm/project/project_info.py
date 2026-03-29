@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import gzip
 import socket
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
@@ -46,7 +46,7 @@ def _find_available_port(
         if port not in claimed_ports and _port_is_free(port):
             return port
     raise RuntimeError(
-        f"No available port found in range {base}–{base + max_attempts - 1}"
+        f"No available port found in range {base}-{base + max_attempts - 1}"
     )
 
 
@@ -149,7 +149,7 @@ class ProjectInfo(BaseModel):
         project_info = cls(
             name=name,
             port=_find_available_port(claimed_ports),
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         project_info.verify_not_exists()
         call_docker_create(
@@ -209,7 +209,7 @@ class ProjectInfo(BaseModel):
         backup_dir = (output_dir or self.default_backup_dir) / self.name
         backup_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         backup_file = backup_dir / f"{self.name}_{timestamp}.sql.gz"
 
         result = call_docker_pg_dump(

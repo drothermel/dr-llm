@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import subprocess
 from enum import StrEnum
 from time import sleep
@@ -8,6 +10,18 @@ from typing import ClassVar
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
+
+_VALID_PG_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _validate_pg_identifier(name: str, label: str = "identifier") -> str:
+    """Validate a string is safe for use as a PostgreSQL identifier."""
+    if not _VALID_PG_IDENTIFIER.match(name):
+        raise ValueError(
+            f"Invalid PostgreSQL {label}: {name!r} "
+            f"(must match {_VALID_PG_IDENTIFIER.pattern})"
+        )
+    return name
 
 
 class ContainerStatus(StrEnum):
@@ -220,10 +234,10 @@ def call_docker_create(
         "-e",
         f"POSTGRES_USER={db_user}",
         "-e",
-        f"POSTGRES_PASSWORD={db_password}",
-        "-p",
-        f"{port}:5432",
+        "POSTGRES_PASSWORD",
     ]
+    if port is not None:
+        docker_cmd.extend(["-p", f"{port}:5432"])
     if all(val is not None for val in [label_prefix, name, port, created_at]):
         docker_cmd.extend(
             [
@@ -236,7 +250,15 @@ def call_docker_create(
             ]
         )
     docker_cmd.append(docker_image)
-    call_docker(*docker_cmd)
+    prev = os.environ.get("POSTGRES_PASSWORD")
+    os.environ["POSTGRES_PASSWORD"] = db_password
+    try:
+        call_docker(*docker_cmd)
+    finally:
+        if prev is None:
+            os.environ.pop("POSTGRES_PASSWORD", None)
+        else:
+            os.environ["POSTGRES_PASSWORD"] = prev
 
 
 def call_docker_start(container_name: str) -> None:
@@ -292,12 +314,13 @@ def call_docker_psql_create_db(
     db_user: str,
     db_name: str,
 ) -> subprocess.CompletedProcess[bytes]:
+    _validate_pg_identifier(db_name, "database name")
     return call_docker_psql(
         container_name,
         db_user,
         "postgres",
         "-c",
-        f"CREATE DATABASE {db_name};",
+        f'CREATE DATABASE "{db_name}";',
     )
 
 
@@ -306,12 +329,13 @@ def call_docker_psql_drop_db(
     db_user: str,
     db_name: str,
 ) -> subprocess.CompletedProcess[bytes]:
+    _validate_pg_identifier(db_name, "database name")
     return call_docker_psql(
         container_name,
         db_user,
         "postgres",
         "-c",
-        f"DROP DATABASE IF EXISTS {db_name};",
+        f'DROP DATABASE IF EXISTS "{db_name}";',
     )
 
 
@@ -321,14 +345,16 @@ def call_docker_psql_swap_in_db(
     target_db_name: str,
     swap_in_db: str,
 ) -> subprocess.CompletedProcess[bytes]:
+    _validate_pg_identifier(target_db_name, "database name")
+    _validate_pg_identifier(swap_in_db, "database name")
     return call_docker_psql(
         container_name,
         db_user,
         "postgres",
         "-c",
-        f"DROP DATABASE IF EXISTS {target_db_name};",
+        f'DROP DATABASE IF EXISTS "{target_db_name}";',
         "-c",
-        f"ALTER DATABASE {swap_in_db} RENAME TO {target_db_name};",
+        f'ALTER DATABASE "{swap_in_db}" RENAME TO "{target_db_name}";',
     )
 
 
@@ -342,15 +368,15 @@ def docker_swap_in_db(
     call_docker_psql_create_db(container_name, db_user, swap_in_db)
     try:
         call_docker_psql_input(container_name, db_user, swap_in_db, sql_bytes)
-    except subprocess.CalledProcessError:
+        call_docker_psql_swap_in_db(
+            container_name,
+            db_user,
+            target_db_name,
+            swap_in_db,
+        )
+    except Exception:
         call_docker_psql_drop_db(container_name, db_user, swap_in_db)
         raise
-    call_docker_psql_swap_in_db(
-        container_name,
-        db_user,
-        target_db_name,
-        swap_in_db,
-    )
 
 
 def call_docker_pg_dump(

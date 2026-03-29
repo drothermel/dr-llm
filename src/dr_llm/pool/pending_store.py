@@ -449,7 +449,7 @@ class PendingStore:
                         call_id=row["call_id"],
                         metadata=parse_json_field(row["metadata_json"]),
                         priority=row["priority"],
-                        status=row["status"],
+                        status=PendingStatus(row["status"]),
                         worker_id=row["worker_id"],
                         lease_expires_at=row["lease_expires_at"],
                         attempt_count=row["attempt_count"],
