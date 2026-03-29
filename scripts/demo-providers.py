@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Demo: show supported providers and currently available providers."""
+"""Demo: discover providers and sync/browse model catalogs (Flow 1).
+
+No database or Docker required. Uses file-based catalog cache.
+
+Usage:
+  uv run python scripts/demo-providers.py
+
+  The script will:
+  - List all supported and available providers
+  - For each available provider, sync its model catalog and list models
+  - Catalog data is cached locally at ~/.dr_llm/catalog_cache/
+"""
 
 from __future__ import annotations
 

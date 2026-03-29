@@ -1,18 +1,34 @@
 #!/usr/bin/env python3
 """Demo: query all available LLM providers and store results in a typed pool.
 
-Demonstrates the hybrid CLI + Python API workflow:
+Demonstrates the hybrid CLI + Python API workflow (Flow 2):
 - CLI (subprocess): project create/destroy, models sync/list/show, query
 - Python API: PoolSchema, PoolStore, PoolSample, bulk_load
 
 Prerequisites:
-  - Docker running
-  - At least one of: API key env var set, or claude/codex CLI installed
+  1. Docker running (used to spin up a Postgres container for the pool)
+  2. At least one provider available:
+     - API key env var (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.), or
+     - CLI tool installed (claude, codex)
+
+Usage:
+  uv run python scripts/demo-pool-providers.py
+
+  The script will:
+  - Create a Docker-based Postgres project called 'demo-pool'
+  - Detect which LLM providers are available
+  - Query each provider and store results in a typed pool
+  - Print a summary table of all results
+  - Leave the project running so you can inspect the data
+
+  To clean up afterwards:
+    uv run dr-llm project destroy demo-pool --yes-really-delete-everything
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from typing import Any
 
@@ -114,8 +130,7 @@ def detect_providers(
             continue
         reasons = [f"{env_var} not set" for env_var in status.missing_env_vars]
         reasons.extend(
-            f"'{executable}' CLI not found"
-            for executable in status.missing_executables
+            f"'{executable}' CLI not found" for executable in status.missing_executables
         )
         warn(f"{status.provider}: {', '.join(reasons)}")
     return available
@@ -271,6 +286,13 @@ def main(
     prompt: str = typer.Option(DEFAULT_PROMPT, help="Prompt to send to each provider"),
 ) -> None:
     """Query all available LLM providers and store results in a typed pool."""
+    if not shutil.which("docker"):
+        fail(
+            "Docker is required but not found.\n"
+            "  This demo creates a Postgres container to store pool data.\n"
+            "  Install Docker and ensure it's running, then retry."
+        )
+        raise typer.Exit(1)
 
     step("1. Detecting available providers")
     registry = build_default_registry()
@@ -293,9 +315,7 @@ def main(
         ok(f"Project '{project_name}' created")
 
         step("3. Initializing pool")
-        runtime = DbRuntime(
-            DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=4)
-        )
+        runtime = DbRuntime(DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=4))
         store = PoolStore(POOL_SCHEMA, runtime)
         store.init_schema()
         ok(
