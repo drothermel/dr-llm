@@ -5,10 +5,10 @@ from typing import Any, cast
 
 import httpx
 
+from dr_llm.providers.openai_compat_request import OpenAICompatRequest
 from dr_llm.providers.openai_compat import (
     OpenAICompatAdapter,
     OpenAICompatConfig,
-    _OpenAICompatRequestPayload,
 )
 from dr_llm.generation.models import LlmRequest, Message, ReasoningConfig
 
@@ -18,6 +18,7 @@ def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["payload"] = json.loads(request.content.decode("utf-8"))
+        captured["headers"] = dict(request.headers)
         return httpx.Response(
             status_code=200,
             json={
@@ -63,7 +64,9 @@ def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:
         response = adapter.generate(request)
 
     payload = cast(dict[str, Any], captured["payload"])
+    headers = cast(dict[str, str], captured["headers"])
     assert payload["reasoning"] == {"effort": "high", "exclude": False}
+    assert headers["idempotency-key"]
 
     assert response.reasoning == "internal trace"
     assert response.reasoning_details == [{"type": "reasoning.text", "text": "step 1"}]
@@ -121,13 +124,45 @@ def test_openai_compat_set_client_does_not_close_injected_clients() -> None:
     second.close()
 
 
-def test_openai_compat_request_payload_omits_optional_fields() -> None:
-    payload = _OpenAICompatRequestPayload(
-        model="openai/gpt-4o-mini",
-        messages=[{"role": "user", "content": "hi"}],
-    ).model_dump(mode="json", exclude_none=True)
+def test_openai_compat_request_builds_endpoint_headers_and_payload() -> None:
+    provider_request = OpenAICompatRequest.from_llm_request(
+        LlmRequest(
+            provider="openrouter",
+            model="openai/gpt-4o-mini",
+            messages=[Message(role="user", content="hi")],
+            metadata={"idempotency_key": "fixed-key"},
+        ),
+        OpenAICompatConfig(
+            name="openrouter",
+            base_url="https://openrouter.ai/api/v1/",
+            api_key="x",
+        ),
+    )
 
-    assert payload == {
+    assert provider_request.endpoint() == "https://openrouter.ai/api/v1/chat/completions"
+    assert provider_request.headers() == {
+        "Authorization": "Bearer x",
+        "Content-Type": "application/json",
+        "Idempotency-Key": "fixed-key",
+    }
+    assert provider_request.json_payload() == {
         "model": "openai/gpt-4o-mini",
         "messages": [{"role": "user", "content": "hi"}],
     }
+
+
+def test_openai_compat_request_generates_idempotency_key_when_missing() -> None:
+    provider_request = OpenAICompatRequest.from_llm_request(
+        LlmRequest(
+            provider="openrouter",
+            model="openai/gpt-4o-mini",
+            messages=[Message(role="user", content="hi")],
+        ),
+        OpenAICompatConfig(
+            name="openrouter",
+            base_url="https://openrouter.ai/api/v1",
+            api_key="x",
+        ),
+    )
+
+    assert provider_request.idempotency_key

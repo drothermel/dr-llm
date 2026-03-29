@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from typing import Any
-from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -24,23 +22,13 @@ from dr_llm.generation.models import (
 )
 from dr_llm.logging import emit_generation_event
 from dr_llm.providers.api_provider_config import APIProviderConfig
+from dr_llm.providers.openai_compat_request import OpenAICompatRequest
 from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.providers.utils import (
     parse_cost_info,
     parse_reasoning,
     parse_reasoning_tokens,
-    to_openai_messages,
 )
-from dr_llm.reasoning import map_reasoning_for_openai_compat
-
-
-class _OpenAICompatRequestPayload(BaseModel):
-    model: str
-    messages: list[dict[str, Any]]
-    temperature: float | None = None
-    top_p: float | None = None
-    max_tokens: int | None = None
-    reasoning: dict[str, Any] | None = None
 
 
 class _OpenAICompatUsageDetails(BaseModel):
@@ -135,20 +123,6 @@ class OpenAICompatAdapter(ProviderAdapter):
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
         self.close()
 
-    def _headers(self, *, idempotency_key: str | None = None) -> dict[str, str]:
-        key = self._config.api_key or os.getenv(self._config.api_key_env)
-        if not key:
-            raise ProviderSemanticError(
-                f"Missing API key for {self.name}. Set {self._config.api_key_env} or pass config.api_key"
-            )
-        headers = {
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        }
-        if idempotency_key:
-            headers["Idempotency-Key"] = idempotency_key
-        return headers
-
     @retry(
         retry=retry_if_exception_type(
             (httpx.TimeoutException, httpx.TransportError, ProviderTransportError)
@@ -160,32 +134,13 @@ class OpenAICompatAdapter(ProviderAdapter):
     def generate(self, request: LlmRequest) -> LlmResponse:
         if self._client is None:
             raise ProviderTransportError(f"{self.name} client is not initialized")
-        reasoning_mapping = map_reasoning_for_openai_compat(
-            request.reasoning,
-            provider=request.provider,
-            mode=CallMode.api,
-        )
-        payload = _OpenAICompatRequestPayload(
-            model=request.model,
-            messages=to_openai_messages(request.messages),
-            temperature=request.temperature,
-            top_p=request.top_p,
-            max_tokens=request.max_tokens,
-            reasoning=reasoning_mapping.payload or None,
-        ).model_dump(mode="json", exclude_none=True)
-        request_idempotency_key = request.metadata.get("idempotency_key")
-        idempotency_key = (
-            str(request_idempotency_key)
-            if isinstance(request_idempotency_key, str) and request_idempotency_key
-            else uuid4().hex
-        )
-        endpoint = self._config.base_url.rstrip("/") + self._config.chat_path
+        provider_request = OpenAICompatRequest.from_llm_request(request, self._config)
         started = time.perf_counter()
         try:
             resp = self._client.post(
-                endpoint,
-                headers=self._headers(idempotency_key=idempotency_key),
-                json=payload,
+                provider_request.endpoint(),
+                headers=provider_request.headers(),
+                json=provider_request.json_payload(),
             )
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             raise ProviderTransportError(
@@ -199,12 +154,12 @@ class OpenAICompatAdapter(ProviderAdapter):
             stage=f"{self.name}.http_response",
             payload={
                 "status_code": resp.status_code,
-                "endpoint": endpoint,
-                "idempotency_key": idempotency_key,
+                "endpoint": provider_request.endpoint(),
+                "idempotency_key": provider_request.idempotency_key,
                 "response_text_preview": resp.text[:500],
                 "request_shape": {
-                    "model": payload.get("model"),
-                    "message_count": len(payload.get("messages", [])),
+                    "model": provider_request.model,
+                    "message_count": len(provider_request.messages),
                 },
             },
         )
@@ -265,5 +220,5 @@ class OpenAICompatAdapter(ProviderAdapter):
             provider=request.provider,
             model=request.model,
             mode=CallMode.api,
-            warnings=reasoning_mapping.warnings,
+            warnings=provider_request.warnings,
         )
