@@ -7,19 +7,11 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
-from dr_llm.generation.models import (
-    CallMode,
-    LlmRequest,
-    LlmResponse,
-    ReasoningWarning,
-    TokenUsage,
-)
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
+from dr_llm.providers.models import CallMode, ReasoningWarning
 from dr_llm.providers.openai_compat.request import OpenAICompatRequest
-from dr_llm.providers.utils import (
-    parse_cost_info,
-    parse_reasoning,
-    parse_reasoning_tokens,
-)
+from dr_llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
 
 
 class _OpenAICompatUsageDetails(BaseModel):
@@ -148,7 +140,7 @@ class OpenAICompatResponse(BaseModel):
         usage_raw = (
             self.usage.model_dump(mode="json", exclude_none=True) if self.usage else {}
         )
-        reasoning_tokens = parse_reasoning_tokens(usage_raw)
+        reasoning_tokens = TokenUsage.extract_reasoning_tokens(usage_raw)
         usage = TokenUsage.from_raw(
             prompt_tokens=self.usage.prompt_tokens if self.usage else None,
             completion_tokens=self.usage.completion_tokens if self.usage else None,
@@ -165,7 +157,7 @@ class OpenAICompatResponse(BaseModel):
             usage=usage,
             reasoning=reasoning,
             reasoning_details=reasoning_details,
-            cost=parse_cost_info(raw_json),
+            cost=CostInfo.from_raw(raw_json),
             raw_json=raw_json,
             latency_ms=latency_ms,
             provider=request.provider,

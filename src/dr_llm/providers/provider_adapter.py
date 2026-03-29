@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from dr_llm.generation.models import LlmRequest, LlmResponse
-
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.providers.provider_config import (
     ProviderAvailabilityStatus,
     ProviderConfig,

@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.generation.models import CallMode, ReasoningWarning
+from dr_llm.providers.models import CallMode, ReasoningWarning
 
 
 class RunStatus(StrEnum):

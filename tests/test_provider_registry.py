@@ -5,7 +5,10 @@ import pytest
 from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.providers.provider_config import ProviderConfig
 from dr_llm.providers.registry import ProviderRegistry
-from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsage
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
+from dr_llm.providers.models import CallMode
+from dr_llm.providers.usage import TokenUsage
 
 
 class _FakeAdapter(ProviderAdapter):

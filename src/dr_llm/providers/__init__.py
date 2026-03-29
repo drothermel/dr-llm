@@ -1,15 +1,14 @@
-from dr_llm.providers.anthropic import AnthropicAdapter
+from dr_llm.providers.anthropic.adapter import AnthropicAdapter
 from dr_llm.providers.api_provider_config import APIProviderConfig
-from dr_llm.providers.google import GoogleAdapter
-from dr_llm.providers.headless import (
-    ClaudeHeadlessAdapter,
+from dr_llm.providers.google.adapter import GoogleAdapter
+from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
+from dr_llm.providers.headless.claude_presets import (
     ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
-    CodexHeadlessAdapter,
 )
-from dr_llm.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
-from dr_llm.providers.provider_adapter import ProviderAdapter
-from dr_llm.providers.provider_config import ProviderAvailabilityStatus, ProviderConfig
+from dr_llm.providers.headless.codex import CodexHeadlessAdapter
+from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
+from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.providers.registry import ProviderRegistry
 
 
@@ -66,20 +65,3 @@ def build_default_registry() -> ProviderRegistry:
     registry.register(ClaudeHeadlessMiniMaxAdapter())
     registry.register(ClaudeHeadlessKimiAdapter())
     return registry
-
-
-__all__ = [
-    "AnthropicAdapter",
-    "ProviderAvailabilityStatus",
-    "ProviderConfig",
-    "ClaudeHeadlessAdapter",
-    "ClaudeHeadlessKimiAdapter",
-    "ClaudeHeadlessMiniMaxAdapter",
-    "CodexHeadlessAdapter",
-    "GoogleAdapter",
-    "OpenAICompatAdapter",
-    "OpenAICompatConfig",
-    "ProviderAdapter",
-    "ProviderRegistry",
-    "build_default_registry",
-]

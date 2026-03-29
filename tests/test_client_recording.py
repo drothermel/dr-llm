@@ -9,7 +9,8 @@ from dr_llm.client import LlmClient
 from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.providers.provider_config import ProviderConfig
 from dr_llm.providers.registry import ProviderRegistry
-from dr_llm.generation.models import LlmRequest, Message
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.models import Message
 
 
 class CapturingRepository(BaseModel):

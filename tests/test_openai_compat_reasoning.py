@@ -6,14 +6,14 @@ from typing import Any, cast
 import httpx
 import pytest
 
-from dr_llm.providers.openai_compat import (
-    OpenAICompatAdapter,
-    OpenAICompatConfig,
-    OpenAICompatRequest,
-    OpenAICompatResponse,
-)
+from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
+from dr_llm.providers.openai_compat.config import OpenAICompatConfig
+from dr_llm.providers.openai_compat.request import OpenAICompatRequest
+from dr_llm.providers.openai_compat.response import OpenAICompatResponse
 from dr_llm.errors import ProviderTransportError
-from dr_llm.generation.models import LlmRequest, Message, ReasoningConfig
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.models import Message
+from dr_llm.providers.reasoning import ReasoningConfig
 
 
 def test_openai_compat_forwards_reasoning_and_parses_reasoning_cost() -> None:

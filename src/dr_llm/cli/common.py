@@ -10,8 +10,8 @@ from rich.console import Console
 from rich.table import Table
 
 from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogSyncResult
-from dr_llm.generation.models import Message
-from dr_llm.providers import ProviderAvailabilityStatus
+from dr_llm.providers.models import Message
+from dr_llm.providers.provider_config import ProviderAvailabilityStatus
 from dr_llm.storage import PostgresRepository, StorageConfig
 
 

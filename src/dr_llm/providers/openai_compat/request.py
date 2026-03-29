@@ -7,8 +7,9 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.generation.models import CallMode, LlmRequest, Message, ReasoningWarning
-from dr_llm.reasoning import map_reasoning_for_openai_compat
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.models import CallMode, Message, ReasoningWarning
+from dr_llm.providers.openai_compat.reasoning import OpenAICompatReasoningConfig
 
 if TYPE_CHECKING:
     from dr_llm.providers.openai_compat.config import OpenAICompatConfig
@@ -37,7 +38,7 @@ class OpenAICompatRequest(BaseModel):
         request: LlmRequest,
         config: OpenAICompatConfig,
     ) -> OpenAICompatRequest:
-        reasoning_mapping = map_reasoning_for_openai_compat(
+        reasoning_mapping = OpenAICompatReasoningConfig.from_base(
             request.reasoning,
             provider=request.provider,
             mode=CallMode.api,
@@ -49,7 +50,7 @@ class OpenAICompatRequest(BaseModel):
             temperature=request.temperature,
             top_p=request.top_p,
             max_tokens=request.max_tokens,
-            reasoning=reasoning_mapping.payload or None,
+            reasoning=reasoning_mapping.to_payload() or None,
             base_url=config.base_url,
             chat_path=config.chat_path,
             api_key_env=config.api_key_env,

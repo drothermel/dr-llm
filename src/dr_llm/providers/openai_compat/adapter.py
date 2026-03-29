@@ -11,10 +11,8 @@ from tenacity import (
 )
 
 from dr_llm.errors import ProviderTransportError
-from dr_llm.generation.models import (
-    LlmRequest,
-    LlmResponse,
-)
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.logging import emit_generation_event
 from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.providers.openai_compat.request import OpenAICompatRequest

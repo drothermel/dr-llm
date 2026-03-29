@@ -12,7 +12,8 @@ from tenacity import (
 
 from dr_llm.providers.api_provider_config import APIProviderConfig
 from dr_llm.errors import ProviderTransportError
-from dr_llm.generation.models import LlmRequest, LlmResponse
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.logging import emit_generation_event
 from dr_llm.providers.google.request import GoogleRequest
 from dr_llm.providers.google.response import GoogleResponse

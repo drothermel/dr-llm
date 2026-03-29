@@ -3,16 +3,21 @@ from __future__ import annotations
 import pytest
 
 from dr_llm.providers.api_provider_config import APIProviderConfig
-from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
+from dr_llm.providers.anthropic.adapter import AnthropicAdapter
+from dr_llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.providers.provider_config import (
     ProviderAvailabilityStatus,
     ProviderConfig,
 )
-from dr_llm.providers.google import GoogleAdapter
-from dr_llm.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
+from dr_llm.providers.google.adapter import GoogleAdapter
+from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
+from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.providers.registry import ProviderRegistry
-from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsage
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
+from dr_llm.providers.models import CallMode
+from dr_llm.providers.usage import TokenUsage
 
 
 class _FakeAdapter(ProviderAdapter):

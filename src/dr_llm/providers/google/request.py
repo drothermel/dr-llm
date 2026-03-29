@@ -6,9 +6,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.generation.models import CallMode, LlmRequest, Message, ReasoningWarning
 from dr_llm.providers.api_provider_config import APIProviderConfig
-from dr_llm.reasoning import map_reasoning_for_google
+from dr_llm.providers.google.reasoning import GoogleReasoningConfig
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.models import CallMode, Message, ReasoningWarning
 
 
 class _GoogleGenerationConfig(BaseModel):
@@ -51,7 +52,7 @@ class GoogleRequest(BaseModel):
         request: LlmRequest,
         config: APIProviderConfig,
     ) -> GoogleRequest:
-        reasoning_mapping = map_reasoning_for_google(
+        reasoning_mapping = GoogleReasoningConfig.from_base(
             request.reasoning,
             provider=request.provider,
             mode=CallMode.api,
@@ -70,7 +71,7 @@ class GoogleRequest(BaseModel):
             ),
             generationConfig=cls._generation_config(
                 request=request,
-                reasoning_payload=reasoning_mapping.payload,
+                reasoning_payload=reasoning_mapping.to_payload(),
             ),
             base_url=config.base_url,
             api_key_env=config.api_key_env,

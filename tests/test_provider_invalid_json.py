@@ -5,10 +5,13 @@ import pytest
 
 from dr_llm.errors import ProviderTransportError
 from dr_llm.providers.api_provider_config import APIProviderConfig
-from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
-from dr_llm.providers.google import GoogleAdapter
-from dr_llm.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
-from dr_llm.generation.models import LlmRequest, Message
+from dr_llm.providers.anthropic.adapter import AnthropicAdapter
+from dr_llm.providers.anthropic.config import AnthropicConfig
+from dr_llm.providers.google.adapter import GoogleAdapter
+from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
+from dr_llm.providers.openai_compat.config import OpenAICompatConfig
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.models import Message
 
 
 def _invalid_json_transport() -> httpx.MockTransport:

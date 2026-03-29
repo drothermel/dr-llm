@@ -7,15 +7,17 @@ from typing import Any, cast
 import httpx
 
 from dr_llm.providers.api_provider_config import APIProviderConfig
-from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
-from dr_llm.providers.google import GoogleAdapter
-from dr_llm.providers.headless import (
-    ClaudeHeadlessAdapter,
+from dr_llm.providers.anthropic.adapter import AnthropicAdapter
+from dr_llm.providers.anthropic.config import AnthropicConfig
+from dr_llm.providers.google.adapter import GoogleAdapter
+from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
+from dr_llm.providers.headless.claude_presets import (
     ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
-    CodexHeadlessAdapter,
 )
-from dr_llm.generation.models import LlmRequest, Message
+from dr_llm.providers.headless.codex import CodexHeadlessAdapter
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.models import Message
 
 
 def test_anthropic_payload_serializes_plain_messages() -> None:

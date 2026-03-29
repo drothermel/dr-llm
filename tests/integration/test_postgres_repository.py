@@ -9,7 +9,10 @@ import pytest
 from psycopg import sql
 from psycopg.rows import dict_row
 
-from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, Message, TokenUsage
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
+from dr_llm.providers.models import CallMode, Message
+from dr_llm.providers.usage import TokenUsage
 from dr_llm.storage.repository import PostgresRepository, StorageConfig
 
 _TEST_TABLES = (

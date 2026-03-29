@@ -7,19 +7,11 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
-from dr_llm.generation.models import (
-    CallMode,
-    LlmRequest,
-    LlmResponse,
-    ReasoningWarning,
-    TokenUsage,
-)
 from dr_llm.providers.google.request import GoogleRequest
-from dr_llm.providers.utils import (
-    parse_cost_info,
-    parse_reasoning,
-    parse_reasoning_tokens,
-)
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
+from dr_llm.providers.models import CallMode, ReasoningWarning
+from dr_llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
 
 
 class _GooglePart(BaseModel):
@@ -147,7 +139,7 @@ class GoogleResponse(BaseModel):
             if self.usageMetadata
             else {}
         )
-        reasoning_tokens = parse_reasoning_tokens(usage_raw)
+        reasoning_tokens = TokenUsage.extract_reasoning_tokens(usage_raw)
         usage = TokenUsage.from_raw(
             prompt_tokens=(
                 self.usageMetadata.promptTokenCount if self.usageMetadata else None
@@ -168,7 +160,7 @@ class GoogleResponse(BaseModel):
             usage=usage,
             reasoning=reasoning,
             reasoning_details=reasoning_details,
-            cost=parse_cost_info(raw_json),
+            cost=CostInfo.from_raw(raw_json),
             raw_json=raw_json,
             latency_ms=latency_ms,
             provider=request.provider,

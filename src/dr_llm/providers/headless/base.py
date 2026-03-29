@@ -4,28 +4,28 @@ import json
 import os
 import subprocess
 import time
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
-from dr_llm.generation.models import (
-    CallMode,
-    LlmRequest,
-    LlmResponse,
-    Message,
-    ReasoningConfig,
-    TokenUsage,
-)
 from dr_llm.logging import emit_generation_event
 from dr_llm.providers.headless.config import HeadlessProviderConfig
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
+from dr_llm.providers.models import CallMode, Message
 from dr_llm.providers.provider_adapter import ProviderAdapter
-from dr_llm.providers.utils import (
-    parse_cost_info,
-    parse_reasoning,
-    parse_reasoning_tokens,
-)
-from dr_llm.reasoning import ReasoningMappingResult
+from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.headless.reasoning import CodexHeadlessReasoningConfig
+from dr_llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
+
+
+class HeadlessReasoningResult(Protocol):
+    @property
+    def cli_args(self) -> list[str]: ...
+
+    @property
+    def warnings(self) -> list[Any]: ...
 
 
 HEADLESS_DEFAULT_EMPTY_PROMPT = " "
@@ -98,7 +98,7 @@ class ParsedHeadlessOutput(BaseModel):
         raw_usage: dict[str, Any] = (
             raw_usage_raw if isinstance(raw_usage_raw, dict) else {}
         )
-        reasoning_tokens = parse_reasoning_tokens(raw_usage)
+        reasoning_tokens = TokenUsage.extract_reasoning_tokens(raw_usage)
         prompt_tokens = raw_usage.get("prompt_tokens")
         completion_tokens = raw_usage.get("completion_tokens")
         total_tokens = raw_usage.get("total_tokens")
@@ -152,7 +152,7 @@ class ParsedHeadlessOutput(BaseModel):
             ),
             reasoning=reasoning,
             reasoning_details=reasoning_details,
-            cost=parse_cost_info(body),
+            cost=CostInfo.from_raw(body),
             raw_json=self.raw_json,
             latency_ms=latency_ms,
             provider=request.provider,
@@ -214,7 +214,7 @@ class BaseHeadlessAdapter(ProviderAdapter):
         self,
         request: LlmRequest,
         payload: HeadlessRequestPayload,
-        reasoning_mapping: ReasoningMappingResult,
+        reasoning_mapping: HeadlessReasoningResult,
     ) -> list[str]:
         return [*self._config.command]
 
@@ -233,8 +233,8 @@ class BaseHeadlessAdapter(ProviderAdapter):
         del request, payload
         return {**os.environ, **self._config.env_overrides}
 
-    def reasoning_mapping(self, request: LlmRequest) -> ReasoningMappingResult:
-        return ReasoningMappingResult()
+    def reasoning_mapping(self, request: LlmRequest) -> HeadlessReasoningResult:
+        return CodexHeadlessReasoningConfig()
 
     def parse_stdout(
         self,

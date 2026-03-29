@@ -13,13 +13,10 @@ from dr_llm.catalog.models import (
     ModelCatalogSyncResult,
 )
 from dr_llm.cli import app
-from dr_llm.generation.models import (
-    CallMode,
-    LlmRequest,
-    LlmResponse,
-    Message,
-    TokenUsage,
-)
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
+from dr_llm.providers.models import CallMode, Message
+from dr_llm.providers.usage import TokenUsage
 
 
 class _CliFakeRepository:

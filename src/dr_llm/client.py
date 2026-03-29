@@ -9,7 +9,8 @@ from dr_llm.catalog.models import (
     ModelCatalogSyncResult,
 )
 from dr_llm.catalog.service import ModelCatalogService
-from dr_llm.generation.models import LlmRequest, LlmResponse
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.logging import emit_generation_event, generation_log_context
 from dr_llm.providers import build_default_registry
 from dr_llm.providers.provider_adapter import ProviderAdapter

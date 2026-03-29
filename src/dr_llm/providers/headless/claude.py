@@ -7,16 +7,18 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
-from dr_llm.generation.models import CallMode, LlmRequest
 from dr_llm.providers.headless.base import (
     BaseHeadlessAdapter,
     HEADLESS_DEFAULT_EMPTY_PROMPT,
+    HeadlessReasoningResult,
     HeadlessRequestPayload,
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
 from dr_llm.providers.headless.config import ClaudeHeadlessProviderConfig
-from dr_llm.reasoning import ReasoningMappingResult, map_reasoning_for_claude_headless
+from dr_llm.providers.headless.reasoning import ClaudeHeadlessReasoningConfig
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.models import CallMode
 
 
 CLAUDE_DEFAULT_COMMAND = [
@@ -161,7 +163,7 @@ class ClaudeHeadlessAdapter(BaseHeadlessAdapter):
         self,
         request: LlmRequest,
         payload: HeadlessRequestPayload,
-        reasoning_mapping: ReasoningMappingResult,
+        reasoning_mapping: HeadlessReasoningResult,
     ) -> list[str]:
         del payload
         if self.name == "claude-code" and not request.model.startswith(
@@ -176,8 +178,8 @@ class ClaudeHeadlessAdapter(BaseHeadlessAdapter):
             command.extend(reasoning_mapping.cli_args)
         return command
 
-    def reasoning_mapping(self, request: LlmRequest) -> ReasoningMappingResult:
-        return map_reasoning_for_claude_headless(
+    def reasoning_mapping(self, request: LlmRequest) -> HeadlessReasoningResult:
+        return ClaudeHeadlessReasoningConfig.from_base(
             request.reasoning,
             provider=request.provider,
             mode=CallMode.headless,

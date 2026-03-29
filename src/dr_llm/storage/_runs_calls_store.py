@@ -13,7 +13,9 @@ from tenacity import (
 )
 
 from dr_llm.errors import PersistenceError, TransientPersistenceError
-from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.llm_response import LlmResponse
+from dr_llm.providers.models import CallMode
 from dr_llm.storage._runtime import (
     StorageRuntime,
     hash_payload,

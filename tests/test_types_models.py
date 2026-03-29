@@ -5,9 +5,10 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from dr_llm.generation.models import CallMode
 from dr_llm.catalog.models import ModelCatalogQuery
-from dr_llm.generation.models import Message, ReasoningConfig, TokenUsage
+from dr_llm.providers.models import CallMode, Message
+from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.usage import TokenUsage
 from dr_llm.storage.models import RecordedCall, RunStatus
 
 

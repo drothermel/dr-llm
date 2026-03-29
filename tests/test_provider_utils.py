@@ -1,9 +1,4 @@
-from dr_llm.providers.utils import (
-    parse_cost_info,
-    parse_reasoning,
-    parse_reasoning_tokens,
-)
-from dr_llm.generation.models import TokenUsage
+from dr_llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
 
 
 def test_token_usage_defaults_total() -> None:
@@ -25,16 +20,16 @@ def test_token_usage_includes_reasoning_tokens() -> None:
 
 def test_parse_reasoning_tokens_nested_details() -> None:
     usage_raw = {"completion_tokens_details": {"reasoning_tokens": 13}}
-    assert parse_reasoning_tokens(usage_raw) == 13
+    assert TokenUsage.extract_reasoning_tokens(usage_raw) == 13
 
 
 def test_parse_reasoning_tokens_output_tokens_details() -> None:
     usage_raw = {"output_tokens_details": {"reasoning_tokens": 7}}
-    assert parse_reasoning_tokens(usage_raw) == 7
+    assert TokenUsage.extract_reasoning_tokens(usage_raw) == 7
 
 
 def test_parse_reasoning_tokens_missing_returns_zero() -> None:
-    assert parse_reasoning_tokens({"completion_tokens": 42}) == 0
+    assert TokenUsage.extract_reasoning_tokens({"completion_tokens": 42}) == 0
 
 
 def test_parse_reasoning_fields() -> None:
@@ -49,7 +44,7 @@ def test_parse_reasoning_fields() -> None:
 
 
 def test_parse_cost_info() -> None:
-    cost = parse_cost_info(
+    cost = CostInfo.from_raw(
         {
             "usage": {
                 "cost": 0.0123,
@@ -67,11 +62,11 @@ def test_parse_cost_info() -> None:
 
 
 def test_parse_cost_info_missing_keys_returns_none() -> None:
-    assert parse_cost_info({"usage": {"prompt_tokens": 1}}) is None
+    assert CostInfo.from_raw({"usage": {"prompt_tokens": 1}}) is None
 
 
 def test_parse_cost_info_ignores_non_string_currency_values() -> None:
-    cost = parse_cost_info(
+    cost = CostInfo.from_raw(
         {
             "usage": {
                 "cost": 0.25,

@@ -6,9 +6,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.generation.models import CallMode, LlmRequest, Message, ReasoningWarning
 from dr_llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.reasoning import map_reasoning_for_anthropic
+from dr_llm.providers.anthropic.reasoning import AnthropicReasoningConfig
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.models import CallMode, Message, ReasoningWarning
 
 
 class _AnthropicRequestTextBlock(BaseModel):
@@ -43,7 +44,7 @@ class AnthropicRequest(BaseModel):
         request: LlmRequest,
         config: AnthropicConfig,
     ) -> AnthropicRequest:
-        reasoning_mapping = map_reasoning_for_anthropic(
+        reasoning_mapping = AnthropicReasoningConfig.from_base(
             request.reasoning,
             provider=request.provider,
             mode=CallMode.api,
@@ -60,7 +61,7 @@ class AnthropicRequest(BaseModel):
             system=system or None,
             temperature=request.temperature,
             top_p=request.top_p,
-            thinking=reasoning_mapping.payload or None,
+            thinking=reasoning_mapping.to_payload() or None,
             base_url=config.base_url,
             api_key=cls._resolve_api_key(config=config),
             anthropic_version=config.anthropic_version,

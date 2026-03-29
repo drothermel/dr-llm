@@ -6,7 +6,8 @@ import typer
 from pydantic import ValidationError
 
 from dr_llm.client import LlmClient
-from dr_llm.generation.models import LlmRequest, ReasoningConfig
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.reasoning import ReasoningConfig
 from dr_llm.providers import build_default_registry
 from dr_llm.storage import PostgresRepository
 

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from dr_llm.catalog.fetchers.common import api_key_from_env, get_json
-from dr_llm.providers.openai_compat import OpenAICompatAdapter
+from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
 from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogPricing
 
 

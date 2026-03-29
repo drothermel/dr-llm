@@ -8,16 +8,18 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
-from dr_llm.generation.models import CallMode, LlmRequest
 from dr_llm.providers.headless.base import (
     BaseHeadlessAdapter,
     HEADLESS_DEFAULT_EMPTY_PROMPT,
+    HeadlessReasoningResult,
     HeadlessRequestPayload,
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
 from dr_llm.providers.headless.config import HeadlessProviderConfig
-from dr_llm.reasoning import ReasoningMappingResult, map_reasoning_for_codex_headless
+from dr_llm.providers.headless.reasoning import CodexHeadlessReasoningConfig
+from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.models import CallMode
 
 
 CODEX_DEFAULT_COMMAND = [
@@ -211,7 +213,7 @@ class CodexHeadlessAdapter(BaseHeadlessAdapter):
         self,
         request: LlmRequest,
         payload: HeadlessRequestPayload,
-        reasoning_mapping: ReasoningMappingResult,
+        reasoning_mapping: HeadlessReasoningResult,
     ) -> list[str]:
         del payload, reasoning_mapping
         command = [*self._config.command]
@@ -226,8 +228,8 @@ class CodexHeadlessAdapter(BaseHeadlessAdapter):
         )
         return command
 
-    def reasoning_mapping(self, request: LlmRequest) -> ReasoningMappingResult:
-        return map_reasoning_for_codex_headless(
+    def reasoning_mapping(self, request: LlmRequest) -> HeadlessReasoningResult:
+        return CodexHeadlessReasoningConfig.from_base(
             request.reasoning,
             provider=request.provider,
             mode=CallMode.headless,
