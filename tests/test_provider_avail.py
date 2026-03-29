@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
-from dr_llm.providers.base import (
-    ProviderAdapter,
+from dr_llm.providers.provider_adapter import ProviderAdapter
+from dr_llm.providers.provider_config import (
     ProviderAvailabilityStatus,
     ProviderConfig,
 )
@@ -46,7 +46,7 @@ def test_adapter_availability_status_reports_missing_requirements(
 ) -> None:
     monkeypatch.delenv("FAKE_ENV", raising=False)
     monkeypatch.setattr(
-        "dr_llm.providers.base.shutil.which",
+        "dr_llm.providers.provider_config.shutil.which",
         lambda executable: None if executable == "fake-cli" else "/usr/bin/ok",
     )
 
@@ -72,7 +72,7 @@ def test_registry_availability_statuses_report_missing_requirements(
 ) -> None:
     monkeypatch.delenv("FAKE_ENV", raising=False)
     monkeypatch.setattr(
-        "dr_llm.providers.base.shutil.which",
+        "dr_llm.providers.provider_config.shutil.which",
         lambda executable: None if executable == "fake-cli" else "/usr/bin/ok",
     )
 
@@ -102,7 +102,7 @@ def test_registry_available_names_filter_to_available_only(
 ) -> None:
     monkeypatch.setenv("READY_ENV", "present")
     monkeypatch.setattr(
-        "dr_llm.providers.base.shutil.which",
+        "dr_llm.providers.provider_config.shutil.which",
         lambda executable: "/usr/bin/ready" if executable == "ready-cli" else None,
     )
 

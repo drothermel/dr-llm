@@ -6,15 +6,18 @@ import os
 import subprocess
 import tempfile
 import time
-from typing import Any, Self
+from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.logging import emit_generation_event
-from dr_llm.providers.base import (
+from dr_llm.providers.headless_provider_config import (
+    ClaudeHeadlessProviderConfig,
+    HeadlessProviderConfig,
+)
+from dr_llm.providers.provider_adapter import (
     ProviderAdapter,
-    ProviderConfig,
 )
 from dr_llm.providers.utils import (
     parse_cost_info,
@@ -34,41 +37,6 @@ from dr_llm.generation.models import (
     ReasoningConfig,
     TokenUsage,
 )
-
-
-class HeadlessConfig(ProviderConfig):
-    mode: str = "headless"
-    supports_structured_output: bool = True
-    timeout_seconds: float = 180.0
-    command: list[str]
-    env_overrides: dict[str, str] = Field(default_factory=dict)
-    log_full_io: bool = False
-    redact_io: bool = True
-    max_logged_chars: int = 512
-
-    @model_validator(mode="after")
-    def _compute_headless_exec_requirements(self) -> Self:
-        if self.command:
-            object.__setattr__(
-                self,
-                "required_executables",
-                [*self.required_executables, self.command[0]],
-            )
-        return self
-
-
-class ClaudeHeadlessConfig(HeadlessConfig):
-    api_key_env: str | None = None
-
-    @model_validator(mode="after")
-    def _compute_claude_env_requirements(self) -> Self:
-        if self.api_key_env:
-            object.__setattr__(
-                self,
-                "required_env_vars",
-                [*self.required_env_vars, self.api_key_env],
-            )
-        return self
 
 
 class _HeadlessRequestPayload(BaseModel):
@@ -194,9 +162,9 @@ def _sanitize_io_for_logs(
 
 
 class _BaseHeadlessAdapter(ProviderAdapter):
-    _config: HeadlessConfig
+    _config: HeadlessProviderConfig
 
-    def __init__(self, *, config: HeadlessConfig) -> None:
+    def __init__(self, *, config: HeadlessProviderConfig) -> None:
         self._config = config
 
     def _payload(self, request: LlmRequest) -> dict[str, Any]:
@@ -462,7 +430,7 @@ class _BaseHeadlessAdapter(ProviderAdapter):
 class CodexHeadlessAdapter(_BaseHeadlessAdapter):
     def __init__(self, command: list[str] | None = None) -> None:
         super().__init__(
-            config=HeadlessConfig(
+            config=HeadlessProviderConfig(
                 name="codex",
                 command=command or CODEX_DEFAULT_COMMAND,
             ),
@@ -591,7 +559,7 @@ class CodexHeadlessAdapter(_BaseHeadlessAdapter):
 
 
 class ClaudeHeadlessAdapter(_BaseHeadlessAdapter):
-    _config: ClaudeHeadlessConfig
+    _config: ClaudeHeadlessProviderConfig
 
     def __init__(
         self,
@@ -602,7 +570,7 @@ class ClaudeHeadlessAdapter(_BaseHeadlessAdapter):
         api_key_env: str | None = None,
     ) -> None:
         super().__init__(
-            config=ClaudeHeadlessConfig(
+            config=ClaudeHeadlessProviderConfig(
                 name=name,
                 command=command or CLAUDE_DEFAULT_COMMAND,
                 env_overrides=env_overrides or {},

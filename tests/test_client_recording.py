@@ -6,10 +6,8 @@ import pytest
 from pydantic import BaseModel, Field
 
 from dr_llm.client import LlmClient
-from dr_llm.providers.base import (
-    ProviderAdapter,
-    ProviderConfig,
-)
+from dr_llm.providers.provider_adapter import ProviderAdapter
+from dr_llm.providers.provider_config import ProviderConfig
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.generation.models import LlmRequest, Message
 

@@ -1,14 +1,15 @@
 from dr_llm.providers.anthropic import AnthropicAdapter
-from dr_llm.providers.base import ProviderAvailabilityStatus, ProviderConfig
-from dr_llm.providers.glm import GlmAdapter
-from dr_llm.providers.google import GoogleAdapter
-from dr_llm.providers.headless import (
+from dr_llm.providers.headless_adapter import (
     ClaudeHeadlessAdapter,
     ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
     CodexHeadlessAdapter,
 )
+from dr_llm.providers.glm import GlmAdapter
+from dr_llm.providers.google import GoogleAdapter
 from dr_llm.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
+from dr_llm.providers.provider_adapter import ProviderAdapter
+from dr_llm.providers.provider_config import ProviderAvailabilityStatus, ProviderConfig
 from dr_llm.providers.registry import ProviderRegistry
 
 
@@ -63,6 +64,7 @@ __all__ = [
     "GoogleAdapter",
     "OpenAICompatAdapter",
     "OpenAICompatConfig",
+    "ProviderAdapter",
     "ProviderRegistry",
     "build_default_registry",
 ]

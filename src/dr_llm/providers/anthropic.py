@@ -16,10 +16,8 @@ from tenacity import (
 
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.logging import emit_generation_event
-from dr_llm.providers.base import (
-    APIProviderConfig,
-    ProviderAdapter,
-)
+from dr_llm.providers.api_provider_config import APIProviderConfig
+from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.providers.utils import (
     parse_cost_info,
     parse_reasoning,

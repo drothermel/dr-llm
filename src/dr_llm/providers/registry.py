@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from threading import RLock
 
-from dr_llm.providers.base import ProviderAdapter, ProviderAvailabilityStatus
+from dr_llm.providers.provider_adapter import ProviderAdapter
+from dr_llm.providers.provider_config import ProviderAvailabilityStatus
 
 
 class ProviderRegistry:

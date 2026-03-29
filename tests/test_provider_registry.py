@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from dr_llm.providers.base import (
-    ProviderAdapter,
-    ProviderConfig,
-)
+from dr_llm.providers.provider_adapter import ProviderAdapter
+from dr_llm.providers.provider_config import ProviderConfig
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsage
 

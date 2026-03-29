@@ -22,7 +22,7 @@ from dr_llm.pool.models import PoolSample
 from dr_llm.pool.schema import KeyColumn, PoolSchema
 from dr_llm.pool.store import PoolStore
 from dr_llm.providers import build_default_registry
-from dr_llm.providers.base import ProviderAvailabilityStatus
+from dr_llm.providers.provider_config import ProviderAvailabilityStatus
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.storage._runtime import StorageConfig, StorageRuntime
 
