@@ -11,7 +11,7 @@ from dr_llm.generation.models import CallMode, LlmRequest, Message, ReasoningWar
 from dr_llm.reasoning import map_reasoning_for_openai_compat
 
 if TYPE_CHECKING:
-    from dr_llm.providers.openai_compat import OpenAICompatConfig
+    from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 
 
 class OpenAICompatRequest(BaseModel):

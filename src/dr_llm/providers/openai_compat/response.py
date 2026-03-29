@@ -14,7 +14,7 @@ from dr_llm.generation.models import (
     ReasoningWarning,
     TokenUsage,
 )
-from dr_llm.providers.openai_compat_request import OpenAICompatRequest
+from dr_llm.providers.openai_compat.request import OpenAICompatRequest
 from dr_llm.providers.utils import (
     parse_cost_info,
     parse_reasoning,

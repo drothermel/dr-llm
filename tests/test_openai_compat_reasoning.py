@@ -6,11 +6,11 @@ from typing import Any, cast
 import httpx
 import pytest
 
-from dr_llm.providers.openai_compat_request import OpenAICompatRequest
-from dr_llm.providers.openai_compat_response import OpenAICompatResponse
 from dr_llm.providers.openai_compat import (
     OpenAICompatAdapter,
     OpenAICompatConfig,
+    OpenAICompatRequest,
+    OpenAICompatResponse,
 )
 from dr_llm.errors import ProviderTransportError
 from dr_llm.generation.models import LlmRequest, Message, ReasoningConfig

@@ -16,15 +16,10 @@ from dr_llm.generation.models import (
     LlmResponse,
 )
 from dr_llm.logging import emit_generation_event
-from dr_llm.providers.api_provider_config import APIProviderConfig
-from dr_llm.providers.openai_compat_request import OpenAICompatRequest
-from dr_llm.providers.openai_compat_response import OpenAICompatResponse
+from dr_llm.providers.openai_compat.config import OpenAICompatConfig
+from dr_llm.providers.openai_compat.request import OpenAICompatRequest
+from dr_llm.providers.openai_compat.response import OpenAICompatResponse
 from dr_llm.providers.provider_adapter import ProviderAdapter
-
-
-class OpenAICompatConfig(APIProviderConfig):
-    api_key_env: str = "OPENAI_API_KEY"
-    chat_path: str = "/chat/completions"
 
 
 class OpenAICompatAdapter(ProviderAdapter):
