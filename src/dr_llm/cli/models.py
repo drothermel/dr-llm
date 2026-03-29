@@ -71,7 +71,7 @@ def models_list(
             provider = registry.get(provider).name
         except KeyError:
             pass
-    svc = ModelCatalogService(registry=registry)
+    svc = ModelCatalogService(registry=registry, repository=FileCatalogStore())
     base_query = ModelCatalogQuery(
         provider=provider,
         supports_reasoning=supports_reasoning,

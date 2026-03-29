@@ -19,6 +19,15 @@ class ContainerStatus(StrEnum):
     def default(cls) -> ContainerStatus:
         return cls.UNKNOWN
 
+    @classmethod
+    def from_docker(cls, status: str) -> ContainerStatus:
+        """Map a Docker container status string to ContainerStatus."""
+        if status == "running":
+            return cls.RUNNING
+        if status in ("exited", "created", "paused", "restarting", "removing", "dead"):
+            return cls.STOPPED
+        return cls.UNKNOWN
+
 
 class DockerProjectMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -68,7 +77,7 @@ class DockerProjectMetadata(BaseModel):
             name=labels[cls.name_key(label_prefix)],
             port=cls._parse_port(labels.get(cls.port_key(label_prefix))),
             created_at=labels.get(cls.created_at_key(label_prefix)),
-            status=ContainerStatus(status or ContainerStatus.default()),
+            status=ContainerStatus.from_docker(status) if status else ContainerStatus.default(),
         )
 
     @classmethod
