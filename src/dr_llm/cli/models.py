@@ -1,22 +1,26 @@
 from __future__ import annotations
 
+from contextlib import suppress
+
 import typer
 
 from dr_llm.catalog.file_store import FileCatalogStore
 from dr_llm.catalog.models import ModelCatalogQuery
 from dr_llm.catalog.service import ModelCatalogService
 from dr_llm.providers import build_default_registry
+from dr_llm.providers.registry import ProviderRegistry
 
 from . import common
 
 models_app = typer.Typer(help="Model catalog commands")
 
 
-def _catalog_service() -> ModelCatalogService:
-    return ModelCatalogService(
-        registry=build_default_registry(),
-        repository=FileCatalogStore(),
-    )
+def _catalog_service(
+    registry: ProviderRegistry | None = None,
+) -> tuple[ModelCatalogService, ProviderRegistry]:
+    reg = registry or build_default_registry()
+    svc = ModelCatalogService(registry=reg, repository=FileCatalogStore())
+    return svc, reg
 
 
 @models_app.command("sync")
@@ -29,7 +33,7 @@ def models_sync(
     ),
 ) -> None:
     """Sync provider model catalog."""
-    svc = _catalog_service()
+    svc, _ = _catalog_service()
     results = svc.sync_models_detailed(provider=provider)
     exit_code = 1 if any(not result.success for result in results) else 0
     if verbose:
@@ -65,25 +69,16 @@ def models_list(
     ),
 ) -> None:
     """List models from stored catalog."""
-    registry = build_default_registry()
+    svc, registry = _catalog_service()
     if provider is not None:
-        try:
+        with suppress(KeyError):
             provider = registry.get(provider).name
-        except KeyError:
-            pass
-    svc = ModelCatalogService(registry=registry, repository=FileCatalogStore())
     base_query = ModelCatalogQuery(
         provider=provider,
         supports_reasoning=supports_reasoning,
         model_contains=model_contains,
     )
-    list_query = ModelCatalogQuery(
-        provider=base_query.provider,
-        supports_reasoning=base_query.supports_reasoning,
-        model_contains=base_query.model_contains,
-        limit=limit,
-        offset=offset,
-    )
+    list_query = base_query.model_copy(update={"limit": limit, "offset": offset})
     items = svc.list_models(list_query)
     if json_output:
         common._emit(
@@ -125,7 +120,7 @@ def models_show(
     model: str = typer.Option(...),
 ) -> None:
     """Show one model from stored catalog."""
-    svc = _catalog_service()
+    svc, _ = _catalog_service()
     item = svc.show_model(provider=provider, model=model)
     if item is None:
         typer.secho(

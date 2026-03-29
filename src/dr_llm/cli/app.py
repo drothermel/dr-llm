@@ -40,5 +40,10 @@ def main(
             )
             raise typer.Exit(1)
         if project_info.dsn is None:
-            raise Exception(f"Project '{project}' has no database URL")
+            typer.secho(
+                f"Project '{project}' has no database URL",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(1)
         os.environ["DR_LLM_DATABASE_URL"] = project_info.dsn

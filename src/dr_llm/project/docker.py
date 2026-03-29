@@ -77,7 +77,9 @@ class DockerProjectMetadata(BaseModel):
             name=labels[cls.name_key(label_prefix)],
             port=cls._parse_port(labels.get(cls.port_key(label_prefix))),
             created_at=labels.get(cls.created_at_key(label_prefix)),
-            status=ContainerStatus.from_docker(status) if status else ContainerStatus.default(),
+            status=ContainerStatus.from_docker(status)
+            if status
+            else ContainerStatus.default(),
         )
 
     @classmethod

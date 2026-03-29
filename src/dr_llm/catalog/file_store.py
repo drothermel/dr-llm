@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -21,10 +22,10 @@ class FileCatalogStore:
     def record_model_catalog_snapshot(
         self,
         *,
-        provider: str,
-        status: str,
-        raw_payload: dict[str, Any] | None = None,
-        error_text: str | None = None,
+        provider: str,  # noqa: ARG002
+        status: str,  # noqa: ARG002
+        raw_payload: dict[str, Any] | None = None,  # noqa: ARG002
+        error_text: str | None = None,  # noqa: ARG002
     ) -> str:
         return uuid4().hex
 
@@ -41,9 +42,9 @@ class FileCatalogStore:
             dir=self._cache_dir, suffix=".tmp", prefix=f"{provider}_"
         )
         try:
-            with open(fd, "w", encoding="utf-8") as f:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, default=str)
-            Path(tmp_path).rename(target)
+            Path(tmp_path).replace(target)
         except BaseException:
             Path(tmp_path).unlink(missing_ok=True)
             raise

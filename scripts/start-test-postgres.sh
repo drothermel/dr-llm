@@ -55,8 +55,10 @@ POOL_DIR="${REPO_ROOT}/src/dr_llm/pool"
 
 echo "Applying schema migrations..."
 psql -v ON_ERROR_STOP=1 "${DATABASE_URL}" -f "${POOL_DIR}/schema_bootstrap.sql" || { echo "Migration failed: schema_bootstrap.sql"; return 1 2>/dev/null || exit 1; }
-for migration in "${POOL_DIR}"/migrations/*.sql; do
-  [ -f "$migration" ] || continue
-  psql -v ON_ERROR_STOP=1 "${DATABASE_URL}" -f "$migration" || { echo "Migration failed: $(basename "$migration")"; return 1 2>/dev/null || exit 1; }
-done
+if [ -d "${POOL_DIR}/migrations" ]; then
+  for migration in "${POOL_DIR}"/migrations/*.sql; do
+    [ -f "$migration" ] || continue
+    psql -v ON_ERROR_STOP=1 "${DATABASE_URL}" -f "$migration" || { echo "Migration failed: $(basename "$migration")"; return 1 2>/dev/null || exit 1; }
+  done
+fi
 echo "Schema migrations applied."
