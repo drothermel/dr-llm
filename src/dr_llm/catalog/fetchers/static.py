@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from dr_llm.providers.base import ProviderAdapter
-from dr_llm.providers.headless import (
-    ClaudeHeadlessAdapter,
+from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
+from dr_llm.providers.headless.claude_presets import (
     ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
-    CodexHeadlessAdapter,
 )
+from dr_llm.providers.headless.codex import CodexHeadlessAdapter
+from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.catalog.models import ModelCatalogEntry
 
 CODEX_DOCS_URL = "https://developers.openai.com/codex/models"

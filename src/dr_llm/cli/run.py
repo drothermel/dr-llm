@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typer
 
-from dr_llm.storage.models import RunStatus
+from dr_llm.pool.recorded_call import RunStatus
 
 from . import common
 

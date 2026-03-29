@@ -4,7 +4,7 @@ import os
 
 import typer
 
-from dr_llm.project.docker import get_project
+from dr_llm.project.project_info import ProjectInfo
 
 from .models import models_app
 from .project import project_app
@@ -27,15 +27,23 @@ def main(
 ) -> None:
     """dr-llm CLI"""
     if project is not None:
-        info = get_project(project)
-        if info is None:
-            typer.secho(f"Project '{project}' not found", fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-        if info.status != "running":
+        try:
+            project_info = ProjectInfo.get_by_name(project)
+        except RuntimeError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from exc
+        if project_info.status != "running":
             typer.secho(
-                f"Project '{project}' is {info.status} - start it first",
+                f"Project '{project}' is {project_info.status} - start it first",
                 fg=typer.colors.RED,
                 err=True,
             )
             raise typer.Exit(1)
-        os.environ["DR_LLM_DATABASE_URL"] = info.dsn
+        if project_info.dsn is None:
+            typer.secho(
+                f"Project '{project}' has no database URL",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(1)
+        os.environ["DR_LLM_DATABASE_URL"] = project_info.dsn

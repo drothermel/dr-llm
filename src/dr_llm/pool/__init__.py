@@ -1,10 +1,18 @@
+from dr_llm.pool.call_recorder import CallRecorder
+from dr_llm.pool.db import PoolDb
 from dr_llm.pool.errors import (
     PoolAcquireError,
     PoolError,
     PoolSchemaError,
     PoolTopupError,
 )
-from dr_llm.pool.models import (
+from dr_llm.pool.metadata_store import MetadataStore
+from dr_llm.pool.pending_store import PendingStore
+from dr_llm.pool.pool_schema import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.pool_service import PoolService
+from dr_llm.pool.recorded_call import RecordedCall, RunStatus
+from dr_llm.pool.runtime import DbConfig, DbRuntime
+from dr_llm.pool.sample_models import (
     AcquireQuery,
     AcquireResult,
     CoverageRow,
@@ -15,21 +23,25 @@ from dr_llm.pool.models import (
     PoolSample,
     SampleStatus,
 )
-from dr_llm.pool.schema import ColumnType, KeyColumn, PoolSchema
-from dr_llm.pool.service import PoolService
-from dr_llm.pool.store import PoolStore
+from dr_llm.pool.sample_store import PoolStore
 
 __all__ = [
     "AcquireQuery",
     "AcquireResult",
+    "CallRecorder",
     "ColumnType",
     "CoverageRow",
+    "DbConfig",
+    "DbRuntime",
     "InsertResult",
     "KeyColumn",
+    "MetadataStore",
     "PendingSample",
     "PendingStatus",
+    "PendingStore",
     "PoolAcquireError",
     "PoolClaim",
+    "PoolDb",
     "PoolError",
     "PoolSample",
     "PoolSchema",
@@ -37,5 +49,7 @@ __all__ = [
     "PoolService",
     "PoolStore",
     "PoolTopupError",
+    "RecordedCall",
+    "RunStatus",
     "SampleStatus",
 ]

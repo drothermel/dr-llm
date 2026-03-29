@@ -1,30 +1,46 @@
 #!/usr/bin/env python3
 """Demo: query all available LLM providers and store results in a typed pool.
 
-Demonstrates the hybrid CLI + Python API workflow:
+Demonstrates the hybrid CLI + Python API workflow (Flow 2):
 - CLI (subprocess): project create/destroy, models sync/list/show, query
 - Python API: PoolSchema, PoolStore, PoolSample, bulk_load
 
 Prerequisites:
-  - Docker running
-  - At least one of: API key env var set, or claude/codex CLI installed
+  1. Docker running (used to spin up a Postgres container for the pool)
+  2. At least one provider available:
+     - API key env var (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.), or
+     - CLI tool installed (claude, codex)
+
+Usage:
+  uv run python scripts/demo-pool-providers.py
+
+  The script will:
+  - Create a Docker-based Postgres project called 'demo-pool'
+  - Detect which LLM providers are available
+  - Query each provider and store results in a typed pool
+  - Print a summary table of all results
+  - Leave the project running so you can inspect the data
+
+  To clean up afterwards:
+    uv run dr-llm project destroy demo-pool --yes-really-delete-everything
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from typing import Any
 
 import typer
 
-from dr_llm.pool.models import PoolSample
-from dr_llm.pool.schema import KeyColumn, PoolSchema
-from dr_llm.pool.store import PoolStore
-from dr_llm.providers import build_default_registry, supported_provider_statuses
-from dr_llm.providers.avail import ProviderAvailabilityStatus
-from dr_llm.project.docker import destroy_project
-from dr_llm.storage._runtime import StorageConfig, StorageRuntime
+from dr_llm.pool.sample_models import PoolSample
+from dr_llm.pool.pool_schema import KeyColumn, PoolSchema
+from dr_llm.pool.sample_store import PoolStore
+from dr_llm.providers import build_default_registry
+from dr_llm.providers.provider_config import ProviderAvailabilityStatus
+from dr_llm.project.project_info import ProjectInfo
+from dr_llm.pool.runtime import DbConfig, DbRuntime
 
 app = typer.Typer()
 
@@ -114,8 +130,7 @@ def detect_providers(
             continue
         reasons = [f"{env_var} not set" for env_var in status.missing_env_vars]
         reasons.extend(
-            f"'{executable}' CLI not found"
-            for executable in status.missing_executables
+            f"'{executable}' CLI not found" for executable in status.missing_executables
         )
         warn(f"{status.provider}: {', '.join(reasons)}")
     return available
@@ -271,10 +286,17 @@ def main(
     prompt: str = typer.Option(DEFAULT_PROMPT, help="Prompt to send to each provider"),
 ) -> None:
     """Query all available LLM providers and store results in a typed pool."""
+    if not shutil.which("docker"):
+        fail(
+            "Docker is required but not found.\n"
+            "  This demo creates a Postgres container to store pool data.\n"
+            "  Install Docker and ensure it's running, then retry."
+        )
+        raise typer.Exit(1)
 
     step("1. Detecting available providers")
     registry = build_default_registry()
-    available = detect_providers(supported_provider_statuses(registry))
+    available = detect_providers(registry.availability_statuses())
     if not available:
         print(
             f"\n{RED}No providers available. Set API keys or install CLI tools.{RESET}"
@@ -287,15 +309,13 @@ def main(
 
     step("2. Creating demo project")
     demo_succeeded = False
-    runtime: StorageRuntime | None = None
+    runtime: DbRuntime | None = None
     try:
         dsn = create_demo_project(project_name)
         ok(f"Project '{project_name}' created")
 
         step("3. Initializing pool")
-        runtime = StorageRuntime(
-            StorageConfig(dsn=dsn, min_pool_size=1, max_pool_size=4)
-        )
+        runtime = DbRuntime(DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=4))
         store = PoolStore(POOL_SCHEMA, runtime)
         store.init_schema()
         ok(
@@ -354,7 +374,9 @@ def main(
         if not demo_succeeded:
             print(f"\n{BOLD}Cleaning up after failure...{RESET}")
             try:
-                destroy_project(project_name)
+                project_info = ProjectInfo.maybe_from_existing(project_name)
+                if project_info is not None:
+                    project_info.destroy()
             except Exception:
                 pass
 

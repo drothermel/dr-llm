@@ -10,16 +10,16 @@ from dr_llm.catalog.fetchers.static import (
     fetch_static_headless_models,
     fetch_static_minimax_models,
 )
-from dr_llm.providers.anthropic import AnthropicAdapter
-from dr_llm.providers.base import ProviderAdapter
-from dr_llm.providers.google import GoogleAdapter
-from dr_llm.providers.headless import (
-    ClaudeHeadlessAdapter,
+from dr_llm.providers.anthropic.adapter import AnthropicAdapter
+from dr_llm.providers.google.adapter import GoogleAdapter
+from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
+from dr_llm.providers.headless.claude_presets import (
     ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
-    CodexHeadlessAdapter,
 )
-from dr_llm.providers.openai_compat import OpenAICompatAdapter
+from dr_llm.providers.headless.codex import CodexHeadlessAdapter
+from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
+from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.catalog.models import ModelCatalogEntry
 
 

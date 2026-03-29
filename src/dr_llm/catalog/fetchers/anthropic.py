@@ -6,7 +6,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from dr_llm.catalog.fetchers.common import api_key_from_env, as_int, get_json
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.providers.anthropic import AnthropicAdapter
+from dr_llm.providers.anthropic.adapter import AnthropicAdapter
 from dr_llm.catalog.models import ModelCatalogEntry
 
 

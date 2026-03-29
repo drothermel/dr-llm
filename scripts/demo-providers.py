@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
-"""Demo: show supported providers and currently available providers."""
+"""Demo: discover providers and sync/browse model catalogs (Flow 1).
+
+No database or Docker required. Uses file-based catalog cache.
+
+Usage:
+  uv run python scripts/demo-providers.py
+
+  The script will:
+  - List all supported and available providers
+  - For each available provider, sync its model catalog and list models
+  - Catalog data is cached locally at ~/.dr_llm/catalog_cache/
+"""
 
 from __future__ import annotations
 
-import os
 import subprocess
 
 import typer
 
-from dr_llm.providers import (
-    available_provider_names,
-    build_default_registry,
-    supported_provider_names,
-    supported_provider_statuses,
-)
+from dr_llm.providers import build_default_registry
 
 app = typer.Typer()
 
@@ -53,23 +58,15 @@ def run_cli_streaming(*args: str) -> None:
 @app.command()
 def main() -> None:
     """Show providers and demo catalog sync/list commands for available ones."""
-    if not os.getenv("DR_LLM_DATABASE_URL"):
-        fail(
-            "DR_LLM_DATABASE_URL is not set. Start a local database first with "
-            "'source ./scripts/start-test-postgres.sh', then rerun "
-            "'uv run python scripts/demo-providers.py'."
-        )
-        raise typer.Exit(1)
-
     registry = build_default_registry()
-    statuses = supported_provider_statuses(registry)
+    statuses = registry.availability_statuses()
 
     step("1. Supported providers")
-    for provider in supported_provider_names(registry):
+    for provider in registry.sorted_names():
         print(f"  - {provider}")
 
     step("2. Available providers")
-    available = available_provider_names(registry, statuses=statuses)
+    available = registry.available_names(statuses=statuses)
     if available:
         for provider in available:
             print(f"  - {provider}")
