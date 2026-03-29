@@ -52,7 +52,7 @@ def test_payload_serializes_messages() -> None:
 
 
 def test_invalid_json_raises_transport_error() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(status_code=200, text="{")
 
     client = httpx.Client(transport=httpx.MockTransport(handler))

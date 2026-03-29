@@ -8,7 +8,7 @@ from dr_llm.catalog.file_store import FileCatalogStore
 from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
 
 
-@pytest.fixture()
+@pytest.fixture
 def store(tmp_path: Path) -> FileCatalogStore:
     return FileCatalogStore(cache_dir=tmp_path)
 

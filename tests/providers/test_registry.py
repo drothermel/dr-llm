@@ -9,14 +9,14 @@ from tests.conftest import FakeAdapter
 def test_register_rejects_empty_name() -> None:
     registry = ProviderRegistry()
     adapter = FakeAdapter(name="")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="non-empty"):
         registry.register(adapter)
 
 
 def test_register_rejects_whitespace_name() -> None:
     registry = ProviderRegistry()
     adapter = FakeAdapter(name="  fake  ")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="whitespace"):
         registry.register(adapter)
 
 
@@ -29,7 +29,7 @@ def test_normalizes_keys_to_lowercase() -> None:
 def test_rejects_duplicate_normalized_name() -> None:
     registry = ProviderRegistry()
     registry.register(FakeAdapter(name="fake"))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="conflict"):
         registry.register(FakeAdapter(name="FAKE"))
 
 

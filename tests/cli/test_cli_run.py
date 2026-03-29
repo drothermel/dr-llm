@@ -31,21 +31,27 @@ class _FakeRepository:
         return None
 
 
-def test_run_start_and_finish(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_start(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli_common, "_repo", lambda *_: _FakeRepository())
 
-    start_result = runner.invoke(app, ["run", "start"])
-    finish_result = runner.invoke(
-        app, ["run", "finish", "--run-id", "run_cli", "--status", "success"]
-    )
+    result = runner.invoke(app, ["run", "start"])
 
-    assert start_result.exit_code == 0
-    assert json.loads(start_result.stdout) == {
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
         "parameters_written": 1,
         "run_id": "run_cli",
     }
-    assert finish_result.exit_code == 0
-    assert json.loads(finish_result.stdout) == {
+
+
+def test_run_finish(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli_common, "_repo", lambda *_: _FakeRepository())
+
+    result = runner.invoke(
+        app, ["run", "finish", "--run-id", "run_cli", "--status", "success"]
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
         "run_id": "run_cli",
         "status": "success",
     }

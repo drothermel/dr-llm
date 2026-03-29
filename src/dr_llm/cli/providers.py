@@ -20,19 +20,22 @@ def providers(
 ) -> None:
     """List supported providers and whether they are available locally."""
     registry = build_default_registry()
-    statuses = registry.availability_statuses()
-    if json_output:
-        common._emit(
-            {
-                "providers": [
-                    status.model_dump(
-                        mode="json",
-                        exclude_none=True,
-                        exclude_computed_fields=True,
-                    )
-                    for status in statuses
-                ]
-            }
-        )
-        return
-    common._render_providers_table(statuses)
+    try:
+        statuses = registry.availability_statuses()
+        if json_output:
+            common._emit(
+                {
+                    "providers": [
+                        status.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                            exclude_computed_fields=True,
+                        )
+                        for status in statuses
+                    ]
+                }
+            )
+            return
+        common._render_providers_table(statuses)
+    finally:
+        registry.close()

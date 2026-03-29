@@ -222,9 +222,7 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
         raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
 
     # Check if provider is available (has required env vars / executables)
-    statuses = registry.availability_statuses()
-    status = next((s for s in statuses if s.provider == provider), None)
-    is_available = status.available if status else False
+    is_available = registry.availability_status(provider).available
 
     if not is_available:
         # Return static/hardcoded models

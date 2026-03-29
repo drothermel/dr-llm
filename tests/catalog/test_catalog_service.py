@@ -54,16 +54,13 @@ class _FakeRepo:
         self.replaced[provider] = entries
         return len(entries)
 
-    def list_models(self, *, query: Any) -> list[ModelCatalogEntry]:
-        _ = query
+    def list_models(self, *, query: object) -> list[ModelCatalogEntry]:
         return []
 
-    def count_models(self, *, query: Any) -> int:
-        _ = query
+    def count_models(self, *, query: object) -> int:
         return 0
 
     def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
-        _ = (provider, model)
         return None
 
 

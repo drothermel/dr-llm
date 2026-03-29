@@ -48,6 +48,9 @@ class ProviderRegistry:
     def sorted_names(self) -> list[str]:
         return sorted(self.names())
 
+    def availability_status(self, provider_name: str) -> ProviderAvailabilityStatus:
+        return self.get(provider_name).availability_status()
+
     def availability_statuses(self) -> list[ProviderAvailabilityStatus]:
         return [
             self.get(provider_name).availability_status()
