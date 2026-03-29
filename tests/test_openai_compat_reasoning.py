@@ -4,12 +4,15 @@ import json
 from typing import Any, cast
 
 import httpx
+import pytest
 
 from dr_llm.providers.openai_compat_request import OpenAICompatRequest
+from dr_llm.providers.openai_compat_response import OpenAICompatResponse
 from dr_llm.providers.openai_compat import (
     OpenAICompatAdapter,
     OpenAICompatConfig,
 )
+from dr_llm.errors import ProviderTransportError
 from dr_llm.generation.models import LlmRequest, Message, ReasoningConfig
 
 
@@ -166,3 +169,98 @@ def test_openai_compat_request_generates_idempotency_key_when_missing() -> None:
     )
 
     assert provider_request.idempotency_key
+
+
+def test_openai_compat_response_builds_event_payload_and_llm_response() -> None:
+    provider_request = OpenAICompatRequest.from_llm_request(
+        LlmRequest(
+            provider="openrouter",
+            model="openai/o3-mini",
+            messages=[Message(role="user", content="hello")],
+            metadata={"idempotency_key": "fixed-key"},
+        ),
+        OpenAICompatConfig(
+            name="openrouter",
+            base_url="https://openrouter.ai/api/v1",
+            api_key="x",
+        ),
+    )
+    provider_response = OpenAICompatResponse.from_http_response(
+        httpx.Response(
+            status_code=200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "content": "final answer",
+                            "reasoning": "internal trace",
+                            "reasoning_details": [
+                                {"type": "reasoning.text", "text": "step 1"}
+                            ],
+                        },
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 40,
+                    "total_tokens": 140,
+                    "completion_tokens_details": {"reasoning_tokens": 22},
+                    "cost": 0.003,
+                    "prompt_cost": 0.001,
+                    "completion_cost": 0.002,
+                    "currency": "USD",
+                },
+            },
+        )
+    )
+
+    assert provider_response.event_payload(provider_request) == {
+        "status_code": 200,
+        "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+        "idempotency_key": "fixed-key",
+        "response_text_preview": (
+            '{"choices":[{"finish_reason":"stop","message":{"content":"final answer",'
+            '"reasoning":"internal trace","reasoning_details":[{"type":"reasoning.text",'
+            '"text":"step 1"}]}}],"usage":{"prompt_tokens":100,"completion_tokens":40,'
+            '"total_tokens":140,"completion_tokens_details":{"reasoning_tokens":22},'
+            '"cost":0.003,"prompt_cost":0.001,"completion_cost":0.002,"currency":"USD"}}'
+        ),
+        "request_shape": {"model": "openai/o3-mini", "message_count": 1},
+    }
+
+    llm_response = provider_response.to_llm_response(
+        LlmRequest(
+            provider="openrouter",
+            model="openai/o3-mini",
+            messages=[Message(role="user", content="hello")],
+        ),
+        latency_ms=123,
+        warnings=[],
+    )
+
+    assert llm_response.text == "final answer"
+    assert llm_response.finish_reason == "stop"
+    assert llm_response.reasoning == "internal trace"
+    assert llm_response.reasoning_details == [{"type": "reasoning.text", "text": "step 1"}]
+    assert llm_response.usage.reasoning_tokens == 22
+    assert llm_response.cost is not None
+    assert llm_response.cost.total_cost_usd == 0.003
+    assert llm_response.latency_ms == 123
+
+
+def test_openai_compat_response_invalid_json_raises_transport_error() -> None:
+    provider_response = OpenAICompatResponse.from_http_response(
+        httpx.Response(status_code=200, text="{")
+    )
+
+    with pytest.raises(ProviderTransportError, match="invalid JSON response"):
+        provider_response.to_llm_response(
+            LlmRequest(
+                provider="openrouter",
+                model="openai/o3-mini",
+                messages=[Message(role="user", content="hello")],
+            ),
+            latency_ms=0,
+            warnings=[],
+        )
