@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import gzip
-import json
 import socket
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,14 +10,16 @@ from pydantic import BaseModel, computed_field
 
 from dr_llm.project.docker import (
     ContainerStatus,
+    DockerProjectMetadata,
     call_docker_create,
     call_docker_destroy,
-    call_docker_get_labels_status,
     call_docker_pg_dump,
     call_docker_start,
     call_docker_stop,
     docker_swap_in_db,
+    get_all_docker_project_metadata,
     get_claimed_project_ports,
+    get_docker_project_metadata,
     wait_docker_ready,
 )
 from dr_llm.storage.repository import try_init_repo_from_dsn
@@ -87,14 +88,6 @@ class ProjectInfo(BaseModel):
         return self.status == ContainerStatus.RUNNING
 
     @classmethod
-    def port_key(cls) -> str:
-        return f"{cls.label_prefix}.port"
-
-    @classmethod
-    def created_at_key(cls) -> str:
-        return f"{cls.label_prefix}.created-at"
-
-    @classmethod
     def get_volume_name(cls, name: str) -> str:
         return f"{cls.volume_prefix}{name}"
 
@@ -108,35 +101,33 @@ class ProjectInfo(BaseModel):
 
     @classmethod
     def check_exists(cls, container_name: str) -> bool:
-        return call_docker_get_labels_status(container_name) is not None
+        return (
+            get_docker_project_metadata(
+                container_name,
+                label_prefix=cls.label_prefix,
+            )
+            is not None
+        )
 
     @classmethod
-    def from_labels(
-        cls, name: str, labels: dict[str, str], status: str | None
-    ) -> ProjectInfo:
+    def from_metadata(cls, metadata: DockerProjectMetadata) -> ProjectInfo:
         return ProjectInfo(
-            name=name,
-            port=int(labels.get(cls.port_key(), "0")),
-            status=ContainerStatus(status or ContainerStatus.default()),
-            created_at=labels.get(cls.created_at_key()),
+            name=metadata.name,
+            port=metadata.port,
+            status=metadata.status,
+            created_at=metadata.created_at,
         )
 
     @classmethod
     def maybe_from_existing(cls, name: str) -> ProjectInfo | None:
         container_name = cls.get_container_name(name)
-        raw_labels_status = call_docker_get_labels_status(container_name)
-        if raw_labels_status is None:
+        metadata = get_docker_project_metadata(
+            container_name,
+            label_prefix=cls.label_prefix,
+        )
+        if metadata is None:
             return None
-
-        res_split = raw_labels_status.split("||", 1)
-        if len(res_split) == 0 or res_split[0] is None:
-            raise RuntimeError(f"Labels for project '{name}' incorrect shape")
-
-        status = None
-        labels = json.loads(res_split[0])
-        if len(res_split) > 1 and res_split[1] is not None:
-            status = json.loads(res_split[1])
-        return cls.from_labels(name, labels, status)
+        return cls.from_metadata(metadata)
 
     @classmethod
     def get_by_name(cls, name: str) -> ProjectInfo:
@@ -144,6 +135,13 @@ class ProjectInfo(BaseModel):
         if project_info is None:
             raise RuntimeError(f"Project '{name}' not found")
         return project_info
+
+    @classmethod
+    def list_all(cls) -> list[ProjectInfo]:
+        return [
+            cls.from_metadata(metadata)
+            for metadata in get_all_docker_project_metadata(cls.label_prefix)
+        ]
 
     @classmethod
     def create_new(cls, name: str) -> ProjectInfo:

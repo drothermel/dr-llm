@@ -6,7 +6,6 @@ from pathlib import Path
 
 import typer
 
-from dr_llm.project.docker import get_all_docker_names_labels_status
 from dr_llm.project.project_info import ProjectInfo
 
 project_app = typer.Typer(help="Manage isolated dr-llm project databases")
@@ -32,10 +31,7 @@ def project_create(
 @project_app.command("list")
 def project_list() -> None:
     """List all dr-llm projects."""
-    names_labels_status = get_all_docker_names_labels_status(
-        ProjectInfo.label_prefix,
-    )
-    projects = [ProjectInfo.from_labels(**nls) for nls in names_labels_status]
+    projects = ProjectInfo.list_all()
     if not projects:
         typer.echo("No projects found.")
         return

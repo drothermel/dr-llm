@@ -16,6 +16,12 @@ from tenacity import (
 )
 
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
+from dr_llm.generation.models import (
+    CallMode,
+    LlmRequest,
+    LlmResponse,
+    TokenUsage,
+)
 from dr_llm.logging import emit_generation_event
 from dr_llm.providers.base import (
     APIProviderConfig,
@@ -28,12 +34,6 @@ from dr_llm.providers.utils import (
     to_openai_messages,
 )
 from dr_llm.reasoning import map_reasoning_for_openai_compat
-from dr_llm.generation.models import (
-    CallMode,
-    LlmRequest,
-    LlmResponse,
-    TokenUsage,
-)
 
 
 class _OpenAICompatRequestPayload(BaseModel):

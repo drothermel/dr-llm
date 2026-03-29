@@ -4,8 +4,10 @@ import json
 import subprocess
 from enum import StrEnum
 from time import sleep
-from typing import Any
+from typing import ClassVar
 from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict
 
 
 class ContainerStatus(StrEnum):
@@ -16,6 +18,71 @@ class ContainerStatus(StrEnum):
     @classmethod
     def default(cls) -> ContainerStatus:
         return cls.UNKNOWN
+
+
+class DockerProjectMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    inspect_delimiter: ClassVar[str] = "||"
+
+    name: str
+    port: int | None = None
+    created_at: str | None = None
+    status: ContainerStatus = ContainerStatus.UNKNOWN
+
+    @classmethod
+    def name_key(cls, label_prefix: str) -> str:
+        return f"{label_prefix}.name"
+
+    @classmethod
+    def port_key(cls, label_prefix: str) -> str:
+        return f"{label_prefix}.port"
+
+    @classmethod
+    def created_at_key(cls, label_prefix: str) -> str:
+        return f"{label_prefix}.created-at"
+
+    @classmethod
+    def from_inspect_output(
+        cls,
+        raw: str,
+        *,
+        label_prefix: str,
+    ) -> DockerProjectMetadata:
+        labels, status = cls._parse_inspect_output(raw)
+        return cls.from_labels_status(
+            labels=labels,
+            status=status,
+            label_prefix=label_prefix,
+        )
+
+    @classmethod
+    def from_labels_status(
+        cls,
+        *,
+        labels: dict[str, str],
+        status: str | None,
+        label_prefix: str,
+    ) -> DockerProjectMetadata:
+        return cls(
+            name=labels[cls.name_key(label_prefix)],
+            port=cls._parse_port(labels.get(cls.port_key(label_prefix))),
+            created_at=labels.get(cls.created_at_key(label_prefix)),
+            status=ContainerStatus(status or ContainerStatus.default()),
+        )
+
+    @classmethod
+    def _parse_inspect_output(cls, raw: str) -> tuple[dict[str, str], str | None]:
+        labels_raw, status_raw = raw.split(cls.inspect_delimiter, 1)
+        labels = json.loads(labels_raw)
+        status = json.loads(status_raw) if status_raw else None
+        return labels, status
+
+    @staticmethod
+    def _parse_port(value: str | None) -> int | None:
+        if value is None or value == "":
+            return None
+        return int(value)
 
 
 def _docker_error(args: tuple[str, ...], stderr: str) -> RuntimeError:
@@ -97,7 +164,11 @@ def call_docker_bytes(
     return result
 
 
-def call_docker_get_labels_status(container_name: str) -> str | None:
+def get_docker_project_metadata(
+    container_name: str,
+    *,
+    label_prefix: str,
+) -> DockerProjectMetadata | None:
     result = call_docker(
         "inspect",
         "--format",
@@ -107,7 +178,10 @@ def call_docker_get_labels_status(container_name: str) -> str | None:
     )
     if result.returncode != 0:
         return None
-    return result.stdout.strip()
+    return DockerProjectMetadata.from_inspect_output(
+        result.stdout.strip(),
+        label_prefix=label_prefix,
+    )
 
 
 def call_docker_create(
@@ -311,37 +385,27 @@ def call_docker_list_labels(label_prefix: str) -> str:
 
 def get_claimed_project_ports(label_prefix: str) -> set[int]:
     ports: set[int] = set()
-    for line in call_docker_list_labels(label_prefix).splitlines():
-        if not line:
-            continue
-        data = json.loads(line)
-        parsed = parse_docker_labels(data.get("Labels", ""))
-        port_str = parsed.get(f"{label_prefix}.port")
-        if port_str is None:
-            continue
-        try:
-            ports.add(int(port_str))
-        except ValueError:
-            continue
+    for metadata in get_all_docker_project_metadata(label_prefix):
+        if metadata.port is not None:
+            ports.add(metadata.port)
     return ports
 
 
-def get_all_docker_names_labels_status(label_prefix: str) -> list[dict[str, Any]]:
-    names_labels_status = []
+def get_all_docker_project_metadata(label_prefix: str) -> list[DockerProjectMetadata]:
+    project_metadata: list[DockerProjectMetadata] = []
     for line in call_docker_list_labels(label_prefix).splitlines():
         if not line:
             continue
         data = json.loads(line)
         status = data.get("State")
         parsed = parse_docker_labels(data.get("Labels", ""))
-        pname = parsed.get(f"{label_prefix}.name")
-        if pname is None:
+        if DockerProjectMetadata.name_key(label_prefix) not in parsed:
             continue
-        names_labels_status.append(
-            {
-                "name": pname,
-                "labels": parsed,
-                "status": status,
-            }
+        project_metadata.append(
+            DockerProjectMetadata.from_labels_status(
+                labels=parsed,
+                status=status,
+                label_prefix=label_prefix,
+            )
         )
-    return names_labels_status
+    return project_metadata
