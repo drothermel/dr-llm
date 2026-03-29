@@ -6,6 +6,12 @@ from dr_llm.pool.errors import (
     PoolSchemaError,
     PoolTopupError,
 )
+from dr_llm.pool.metadata_store import MetadataStore
+from dr_llm.pool.pending_store import PendingStore
+from dr_llm.pool.pool_schema import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.pool_service import PoolService
+from dr_llm.pool.recorded_call import RecordedCall, RunStatus
+from dr_llm.pool.runtime import DbConfig, DbRuntime
 from dr_llm.pool.sample_models import (
     AcquireQuery,
     AcquireResult,
@@ -17,10 +23,6 @@ from dr_llm.pool.sample_models import (
     PoolSample,
     SampleStatus,
 )
-from dr_llm.pool.recorded_call import RecordedCall, RunStatus
-from dr_llm.pool.runtime import DbConfig, DbRuntime
-from dr_llm.pool.pool_schema import ColumnType, KeyColumn, PoolSchema
-from dr_llm.pool.pool_service import PoolService
 from dr_llm.pool.sample_store import PoolStore
 
 __all__ = [
@@ -33,8 +35,10 @@ __all__ = [
     "DbRuntime",
     "InsertResult",
     "KeyColumn",
+    "MetadataStore",
     "PendingSample",
     "PendingStatus",
+    "PendingStore",
     "PoolAcquireError",
     "PoolClaim",
     "PoolDb",

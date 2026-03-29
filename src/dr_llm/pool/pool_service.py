@@ -55,9 +55,9 @@ class PoolService:
             return result
 
         # Wait for pending samples that might be in-flight
-        pending_count = self._store.pending_counts(key_values=query.key_values)
+        pending_count = self._store.pending.pending_counts(key_values=query.key_values)
         if pending_count > 0:
-            self._store.bump_pending_priority(
+            self._store.pending.bump_pending_priority(
                 key_values=query.key_values,
                 priority=self._pending_priority_bump,
             )
@@ -112,7 +112,7 @@ class PoolService:
 
         while time.monotonic() < deadline and deficit > 0:
             time.sleep(self._pending_poll_interval_s)
-            pending = self._store.pending_counts(key_values=query.key_values)
+            pending = self._store.pending.pending_counts(key_values=query.key_values)
             if pending == 0:
                 break
 

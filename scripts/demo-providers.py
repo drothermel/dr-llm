@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 
 import typer
@@ -48,14 +47,6 @@ def run_cli_streaming(*args: str) -> None:
 @app.command()
 def main() -> None:
     """Show providers and demo catalog sync/list commands for available ones."""
-    if not os.getenv("DR_LLM_DATABASE_URL"):
-        fail(
-            "DR_LLM_DATABASE_URL is not set. Start a local database first with "
-            "'source ./scripts/start-test-postgres.sh', then rerun "
-            "'uv run python scripts/demo-providers.py'."
-        )
-        raise typer.Exit(1)
-
     registry = build_default_registry()
     statuses = registry.availability_statuses()
 

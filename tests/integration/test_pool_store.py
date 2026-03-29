@@ -177,16 +177,16 @@ def test_remaining(pool_store: PoolStore) -> None:
 @pytest.mark.integration
 def test_pending_insert_and_count(pool_store: PoolStore) -> None:
     p = _pending(dim_a="pend", dim_b=1)
-    assert pool_store.insert_pending(p) is True
-    assert pool_store.pending_counts(key_values={"dim_a": "pend", "dim_b": 1}) == 1
+    assert pool_store.pending.insert_pending(p) is True
+    assert pool_store.pending.pending_counts(key_values={"dim_a": "pend", "dim_b": 1}) == 1
 
 
 @pytest.mark.integration
 def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
     p = _pending(dim_a="promote", dim_b=1, sample_idx=0)
-    pool_store.insert_pending(p)
+    pool_store.pending.insert_pending(p)
 
-    claimed = pool_store.claim_pending(
+    claimed = pool_store.pending.claim_pending(
         worker_id="w1", limit=1, lease_seconds=60,
         key_filter={"dim_a": "promote", "dim_b": 1},
     )
@@ -195,7 +195,7 @@ def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
     assert claimed[0].worker_id == "w1"
 
     # Promote with final payload
-    sample = pool_store.promote_pending(
+    sample = pool_store.pending.promote_pending(
         pending_id=claimed[0].pending_id,
         payload={"final": True, "score": 0.95},
     )
@@ -207,24 +207,24 @@ def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
 @pytest.mark.integration
 def test_pending_fail(pool_store: PoolStore) -> None:
     p = _pending(dim_a="fail", dim_b=1, sample_idx=0)
-    pool_store.insert_pending(p)
+    pool_store.pending.insert_pending(p)
 
-    claimed = pool_store.claim_pending(
+    claimed = pool_store.pending.claim_pending(
         worker_id="w1", limit=1, lease_seconds=60,
         key_filter={"dim_a": "fail", "dim_b": 1},
     )
-    pool_store.fail_pending(pending_id=claimed[0].pending_id, worker_id="w1", reason="docker timeout")
+    pool_store.pending.fail_pending(pending_id=claimed[0].pending_id, worker_id="w1", reason="docker timeout")
 
     # Failed samples should not be counted as pending
-    assert pool_store.pending_counts(key_values={"dim_a": "fail", "dim_b": 1}) == 0
+    assert pool_store.pending.pending_counts(key_values={"dim_a": "fail", "dim_b": 1}) == 0
 
 
 @pytest.mark.integration
 def test_bump_pending_priority(pool_store: PoolStore) -> None:
     p = _pending(dim_a="bump", dim_b=1, sample_idx=0, priority=5)
-    pool_store.insert_pending(p)
+    pool_store.pending.insert_pending(p)
 
-    updated = pool_store.bump_pending_priority(
+    updated = pool_store.pending.bump_pending_priority(
         key_values={"dim_a": "bump", "dim_b": 1}, priority=50
     )
     assert updated == 1
@@ -235,21 +235,21 @@ def test_bump_pending_priority(pool_store: PoolStore) -> None:
 
 @pytest.mark.integration
 def test_metadata_upsert_and_get(pool_store: PoolStore) -> None:
-    pool_store.upsert_metadata("prompt_config_abc", {"blocks": ["role", "task"]})
-    result = pool_store.get_metadata("prompt_config_abc")
+    pool_store.metadata.upsert_metadata("prompt_config_abc", {"blocks": ["role", "task"]})
+    result = pool_store.metadata.get_metadata("prompt_config_abc")
     assert result is not None
     assert result["blocks"] == ["role", "task"]
 
     # Update
-    pool_store.upsert_metadata("prompt_config_abc", {"blocks": ["role", "task", "goal"]})
-    result = pool_store.get_metadata("prompt_config_abc")
+    pool_store.metadata.upsert_metadata("prompt_config_abc", {"blocks": ["role", "task", "goal"]})
+    result = pool_store.metadata.get_metadata("prompt_config_abc")
     assert result is not None
     assert len(result["blocks"]) == 3
 
 
 @pytest.mark.integration
 def test_metadata_get_missing(pool_store: PoolStore) -> None:
-    assert pool_store.get_metadata("nonexistent_key") is None
+    assert pool_store.metadata.get_metadata("nonexistent_key") is None
 
 
 # --- Coverage ---
@@ -284,10 +284,10 @@ def test_bulk_load_with_filter(pool_store: PoolStore) -> None:
 
 @pytest.mark.integration
 def test_bulk_load_pending(pool_store: PoolStore) -> None:
-    pool_store.insert_pending(_pending(dim_a="blp", dim_b=70, sample_idx=0))
-    pool_store.insert_pending(_pending(dim_a="blp", dim_b=70, sample_idx=1))
+    pool_store.pending.insert_pending(_pending(dim_a="blp", dim_b=70, sample_idx=0))
+    pool_store.pending.insert_pending(_pending(dim_a="blp", dim_b=70, sample_idx=1))
 
-    results = pool_store.bulk_load_pending(key_filter={"dim_a": "blp", "dim_b": 70})
+    results = pool_store.pending.bulk_load_pending(key_filter={"dim_a": "blp", "dim_b": 70})
     assert len(results) == 2
     assert all(isinstance(r, PendingSample) for r in results)
     assert all(r.key_values["dim_a"] == "blp" for r in results)
@@ -295,10 +295,10 @@ def test_bulk_load_pending(pool_store: PoolStore) -> None:
 
 @pytest.mark.integration
 def test_bulk_load_pending_with_filter(pool_store: PoolStore) -> None:
-    pool_store.insert_pending(_pending(dim_a="blpf_a", dim_b=71, sample_idx=0))
-    pool_store.insert_pending(_pending(dim_a="blpf_b", dim_b=71, sample_idx=0))
+    pool_store.pending.insert_pending(_pending(dim_a="blpf_a", dim_b=71, sample_idx=0))
+    pool_store.pending.insert_pending(_pending(dim_a="blpf_b", dim_b=71, sample_idx=0))
 
-    filtered = pool_store.bulk_load_pending(key_filter={"dim_a": "blpf_a"})
+    filtered = pool_store.pending.bulk_load_pending(key_filter={"dim_a": "blpf_a"})
     assert len(filtered) == 1
     assert filtered[0].key_values["dim_a"] == "blpf_a"
 
@@ -306,18 +306,18 @@ def test_bulk_load_pending_with_filter(pool_store: PoolStore) -> None:
 @pytest.mark.integration
 def test_bulk_load_pending_excludes_promoted(pool_store: PoolStore) -> None:
     # Insert a pending sample and promote it
-    pool_store.insert_pending(_pending(dim_a="blpe", dim_b=72, sample_idx=0))
-    claimed = pool_store.claim_pending(
+    pool_store.pending.insert_pending(_pending(dim_a="blpe", dim_b=72, sample_idx=0))
+    claimed = pool_store.pending.claim_pending(
         worker_id="w1", limit=1, lease_seconds=300,
         key_filter={"dim_a": "blpe", "dim_b": 72},
     )
     assert len(claimed) == 1
-    pool_store.promote_pending(pending_id=claimed[0].pending_id)
+    pool_store.pending.promote_pending(pending_id=claimed[0].pending_id)
 
     # Insert another that stays pending
-    pool_store.insert_pending(_pending(dim_a="blpe", dim_b=72, sample_idx=1))
+    pool_store.pending.insert_pending(_pending(dim_a="blpe", dim_b=72, sample_idx=1))
 
-    results = pool_store.bulk_load_pending(key_filter={"dim_a": "blpe", "dim_b": 72})
+    results = pool_store.pending.bulk_load_pending(key_filter={"dim_a": "blpe", "dim_b": 72})
     assert len(results) == 1
     assert results[0].sample_idx == 1
 
