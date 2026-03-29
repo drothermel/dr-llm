@@ -1,30 +1,16 @@
 # dr-llm
 
-`dr-llm` is a shared primitive for:
-- provider-agnostic LLM calls (API and headless)
-- canonical PostgreSQL recording/query storage
-- model catalog sync and lookup
-- generic typed sample pools
-- isolated per-project databases with backup/restore
+Provider-agnostic LLM primitives: call any model, browse catalogs, run batch experiments with typed sample pools.
 
-It is intentionally domain-neutral so repos like `nl_latents` and `unitbench` can reuse it.
+Domain-neutral by design — shared across repos like `nl_latents` and `unitbench`.
 
-## Core Capabilities
+## Two Flows
 
-- Unified call interface:
-  - `LlmClient.query(LlmRequest) -> LlmResponse`
-- Canonical storage (PostgreSQL):
-  - runs, calls, request/response payloads, artifacts
-- Model catalog:
-  - provider sync, listing, filtering, per-model lookup
-- Sample pools:
-  - schema-driven typed key dimensions with auto-generated DDL
-  - no-replacement acquisition via claims table
-  - pending sample lifecycle (claim/promote/fail with `FOR UPDATE SKIP LOCKED`)
-  - top-up orchestration: acquire, wait for pending, generate, re-acquire
-- Project management:
-  - isolated per-project Postgres containers via Docker
-  - backup/restore with atomic swap
+**Flow 1 — Standalone (no database):**
+Call providers, sync model catalogs, browse available models. File-based catalog cache, zero infrastructure.
+
+**Flow 2 — Pool (Postgres-backed):**
+Schema-driven sample pools with no-replacement acquisition, pending sample lifecycle, run/call recording, and per-project isolated databases via Docker.
 
 ## Install
 
@@ -32,17 +18,9 @@ It is intentionally domain-neutral so repos like `nl_latents` and `unitbench` ca
 uv add dr-llm
 ```
 
-Quick verification:
-
-```bash
-uv run python -c "import dr_llm"
-```
-
-For maintainers, see the release runbook: `docs/releasing.md`.
-
 ## Quick Start
 
-### 1. Query a provider (no database required)
+### 1. Query a provider
 
 ```bash
 uv run dr-llm query \
@@ -52,116 +30,47 @@ uv run dr-llm query \
   --no-record
 ```
 
-The `--no-record` flag skips database recording, so you can test providers without Postgres.
+No database needed with `--no-record`.
 
-### 2. Inspect supported and available providers
-
-```bash
-uv run dr-llm providers
-uv run dr-llm providers --json
-```
-
-`dr-llm providers` renders a human-readable table by default. Use `--json` for machine-readable provider availability and local-requirement details.
-
-### 3. Start Postgres (for catalog and recording)
+### 2. List providers
 
 ```bash
-source ./scripts/start-test-postgres.sh
+uv run dr-llm providers         # human-readable table
+uv run dr-llm providers --json  # machine-readable
 ```
 
-This starts a local Postgres container, applies schema migrations, and exports `DR_LLM_DATABASE_URL` and `DR_LLM_TEST_DATABASE_URL` into your shell. Use `source` (not `./`) so the env vars persist.
-
-### 4. Sync and list models
+### 3. Sync and browse model catalogs
 
 ```bash
 uv run dr-llm models sync --provider openai
 uv run dr-llm models list --provider openai
+uv run dr-llm models show --provider openai --model gpt-4.1
 ```
 
-`models sync` prints a concise summary by default. Use `--verbose` for full JSON sync results. `models list` prints model ids by default and supports `--json` for full metadata output.
+Catalog data is cached locally at `~/.dr_llm/catalog_cache/`. No database required.
 
-### Available Providers
+## Available Providers
 
-| Provider | Type | Local Requirements |
+| Provider | Type | Requirements |
 |---|---|---|
 | `openai` | OpenAI API | `OPENAI_API_KEY` |
 | `openrouter` | OpenRouter API | `OPENROUTER_API_KEY` |
-| `minimax` | MiniMax OpenAI-compat API | `MINIMAX_API_KEY` |
+| `minimax` | MiniMax API | `MINIMAX_API_KEY` |
 | `anthropic` | Anthropic API | `ANTHROPIC_API_KEY` |
 | `google` | Google Gemini API | `GOOGLE_API_KEY` |
 | `glm` | GLM (ZAI) API | `ZAI_API_KEY` |
 | `codex` | Codex CLI (headless) | `codex` executable |
 | `claude-code` | Claude Code CLI (headless) | `claude` executable |
-| `claude-code-minimax` | Claude Code via MiniMax | `claude` executable + `MINIMAX_API_KEY` |
-| `claude-code-kimi` | Claude Code via Kimi | `claude` executable + `KIMI_API_KEY` |
+| `claude-code-minimax` | Claude Code via MiniMax | `claude` + `MINIMAX_API_KEY` |
+| `claude-code-kimi` | Claude Code via Kimi | `claude` + `KIMI_API_KEY` |
 
-Headless providers shell out to CLI tools (`codex`, `claude`). The MiniMax and Kimi variants point Claude Code at third-party Anthropic-compatible endpoints and require their corresponding API keys.
+Headless providers shell out to CLI tools. MiniMax/Kimi variants point Claude Code at third-party Anthropic-compatible endpoints.
 
-Run `uv run dr-llm providers` to see which of the supported providers are currently usable in your shell.
+Some providers use static model lists for `models sync` (no `/models` endpoint). The CLI notes when a list may be out of date and links to docs.
 
-Some providers (MiniMax, Codex, Claude Code, Kimi) use static model lists for `models sync` since they don't expose a `/models` endpoint. The CLI will note when a list may be out of date and link to the provider's docs.
+## Python API
 
-## Configuration
-
-- Required for DB-backed workflows: `DR_LLM_DATABASE_URL`
-- Provider API keys: see the table above
-- GLM provider defaults to: `https://api.z.ai/api/coding/paas/v4`
-- MiniMax API provider defaults to: `https://api.minimax.io/v1`
-- Claude headless coding-plan presets:
-  - `claude-code-minimax`: routes via `https://api.minimax.io/anthropic`
-  - `claude-code-kimi`: routes via `https://api.kimi.com/coding/`
-
-## CLI Reference
-
-```bash
-dr-llm providers
-
-dr-llm models sync
-dr-llm models sync --provider openai
-dr-llm models list --provider openai
-dr-llm models list --supports-reasoning --json
-dr-llm models show --provider openrouter --model openai/o3-mini
-
-dr-llm query \
-  --provider openai \
-  --model gpt-4.1 \
-  --message "hello" \
-  --no-record
-
-dr-llm query \
-  --provider openai \
-  --model gpt-4.1 \
-  --reasoning-json '{"effort":"high"}' \
-  --message "hello"
-
-dr-llm run start
-dr-llm run finish --run-id <run_id> --status success
-
-dr-llm project create my-experiment
-dr-llm project list
-dr-llm project use my-experiment    # prints export DR_LLM_DATABASE_URL=...
-dr-llm project start my-experiment
-dr-llm project stop my-experiment
-dr-llm project backup my-experiment
-dr-llm project restore my-experiment backups/my-experiment-20260325.sql.gz
-dr-llm project destroy my-experiment --yes-really-delete-everything
-```
-
-Reasoning + cost notes:
-- OpenAI-compatible adapters now accept `LlmRequest.reasoning` / `--reasoning-json`.
-- Reasoning text/details and reasoning token counts are normalized on `LlmResponse`.
-- Provider-returned cost fields (e.g. OpenRouter `usage.cost` variants) are normalized into `LlmResponse.cost`.
-- These are persisted in `llm_call_responses` alongside standard token usage.
-
-Generation transcript logging (default on):
-- `DR_LLM_GENERATION_LOG_ENABLED=true`
-- `DR_LLM_GENERATION_LOG_DIR=.dr_llm/generation_logs`
-- `DR_LLM_GENERATION_LOG_ROTATE_BYTES=104857600`
-- `DR_LLM_GENERATION_LOG_BACKUPS=10`
-- `DR_LLM_GENERATION_LOG_REDACT_SECRETS=true`
-- `DR_LLM_GENERATION_LOG_MAX_EVENT_BYTES=10485760`
-
-## Python Example
+### Calling a provider
 
 ```python
 from dr_llm.providers import build_default_registry
@@ -181,22 +90,16 @@ response = adapter.generate(
 print(response.text)
 ```
 
-Adapter lifecycle note:
-- If you instantiate provider adapters directly, call `adapter.close()` when done (or use context manager form `with ... as adapter:`) to release underlying HTTP connections.
-
-## Pool Example
-
-Pools provide schema-driven sample storage with no-replacement acquisition.
+### Sample pools (requires Postgres)
 
 ```python
-from dr_llm import (
+from dr_llm.pool import (
     ColumnType, KeyColumn, PoolSchema, PoolStore, PoolService,
-    PoolAcquireQuery, PoolAcquireResult,
+    AcquireQuery, DbConfig, DbRuntime,
 )
 from dr_llm.pool.sample_models import PoolSample
-from dr_llm.pool.runtime import DbConfig, DbRuntime
 
-# 1. Declare a pool schema with typed key dimensions
+# 1. Define pool schema
 schema = PoolSchema(
     name="my_pool",
     key_columns=[
@@ -208,7 +111,7 @@ schema = PoolSchema(
 # 2. Connect and create tables
 runtime = DbRuntime(DbConfig(dsn="postgresql://..."))
 store = PoolStore(schema, runtime)
-store.init_schema()  # idempotent CREATE TABLE IF NOT EXISTS
+store.init_schema()
 
 # 3. Insert samples
 store.insert_samples([
@@ -217,103 +120,111 @@ store.insert_samples([
         sample_idx=0,
         payload={"prompt": "What is 2+2?", "expected": "4"},
     ),
-    PoolSample(
-        key_values={"provider": "openai", "difficulty": 1},
-        sample_idx=1,
-        payload={"prompt": "What is 3+3?", "expected": "6"},
-    ),
 ])
 
 # 4. Acquire samples (no-replacement within a run)
-result = store.acquire(PoolAcquireQuery(
+result = store.acquire(AcquireQuery(
     run_id="run_001",
     key_values={"provider": "openai", "difficulty": 1},
     n=2,
 ))
-for sample in result.samples:
-    print(sample.payload)
 
-# 5. Or use PoolService for automatic top-up generation
+# 5. Pending samples and metadata via sub-stores
+store.pending.insert_pending(...)
+store.metadata.upsert_metadata("config", {"key": "value"})
+
+# 6. Auto top-up with PoolService
 service = PoolService(store)
 result = service.acquire_or_generate(
-    PoolAcquireQuery(
+    AcquireQuery(
         run_id="run_002",
         key_values={"provider": "openai", "difficulty": 2},
         n=5,
     ),
-    generator_fn=lambda key_values, deficit: [
-        PoolSample(key_values=key_values, payload={"generated": True})
+    generator_fn=lambda kv, deficit: [
+        PoolSample(key_values=kv, payload={"generated": True})
         for _ in range(deficit)
     ],
 )
 ```
 
+## CLI Reference
+
+```bash
+# Providers
+dr-llm providers [--json]
+
+# Model catalog (file-based, no DB needed)
+dr-llm models sync [--provider NAME] [--verbose]
+dr-llm models list [--provider NAME] [--supports-reasoning] [--model-contains TEXT] [--json]
+dr-llm models show --provider NAME --model NAME
+
+# Query
+dr-llm query --provider NAME --model NAME --message TEXT [--no-record]
+dr-llm query --provider NAME --model NAME --reasoning-json '{"effort":"high"}' --message TEXT
+
+# Runs (requires DB)
+dr-llm run start [--run-type TYPE] [--metadata-json JSON]
+dr-llm run finish --run-id ID --status success|failed|canceled
+dr-llm run list-calls [--run-id ID]
+
+# Projects (Docker-managed Postgres)
+dr-llm project create NAME
+dr-llm project list
+dr-llm project use NAME
+dr-llm project start|stop NAME
+dr-llm project backup NAME
+dr-llm project restore NAME BACKUP_PATH
+dr-llm project destroy NAME --yes-really-delete-everything
+```
+
+## Configuration
+
+Generation transcript logging (default on):
+
+| Variable | Default |
+|---|---|
+| `DR_LLM_GENERATION_LOG_ENABLED` | `true` |
+| `DR_LLM_GENERATION_LOG_DIR` | `.dr_llm/generation_logs` |
+| `DR_LLM_GENERATION_LOG_ROTATE_BYTES` | `104857600` (100MB) |
+| `DR_LLM_GENERATION_LOG_BACKUPS` | `10` |
+| `DR_LLM_GENERATION_LOG_REDACT_SECRETS` | `true` |
+
+Provider endpoint defaults:
+- GLM: `https://api.z.ai/api/coding/paas/v4`
+- MiniMax API: `https://api.minimax.io/v1`
+- Claude headless MiniMax: `https://api.minimax.io/anthropic`
+- Claude headless Kimi: `https://api.kimi.com/coding/`
+
 ## Testing
 
 ```bash
-uv run ruff format
-uv run ruff check --fix .
-uv run ty check
-uv run pytest tests/ -v
+uv run ruff format && uv run ruff check --fix .
+uv run pytest tests/ -v --ignore=tests/integration/
 ```
 
-### Integration tests
-
-Integration tests require a running Postgres instance. If the test container (`dr-llm-pg-test` on port 5433) is already running, tests work automatically — `conftest.py` sets the default `DR_LLM_TEST_DATABASE_URL`.
-
-To start the test container from scratch:
+### Integration tests (requires Postgres)
 
 ```bash
-source ./scripts/start-test-postgres.sh
-```
-
-Then run integration tests:
-
-```bash
+source ./scripts/start-test-postgres.sh    # starts container, applies schema
 uv run pytest tests/ -v -m integration
-```
-
-If integration tests are skipped unexpectedly, include skip reasons:
-```bash
-uv run pytest tests/ -v -m integration -rs
+./scripts/stop-test-postgres.sh            # cleanup
 ```
 
 ## Demo Scripts
 
-### End-to-end query flow
-
-Creates a project, records queries, verifies backup/restore:
+### Provider discovery (no DB needed)
 
 ```bash
-./scripts/demo-query-flow.sh
-```
-
-Requires Docker and at least one of `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
-
-### Provider discovery demo
-
-Shows all supported canonical providers and which of them are currently available on this machine:
-
-```bash
-source ./scripts/start-test-postgres.sh
 uv run python scripts/demo-providers.py
 ```
 
-`scripts/demo-providers.py` exits early if `DR_LLM_DATABASE_URL` is unset, so start the local test Postgres first with `source ./scripts/start-test-postgres.sh` or otherwise export `DR_LLM_DATABASE_URL` before running the demo.
+Lists all supported providers, syncs and displays model catalogs for each available one.
 
-### Pool provider demo
-
-Queries all available LLM providers (API and headless) and stores results in a typed pool:
+### Pool provider demo (requires Docker)
 
 ```bash
 uv run python scripts/demo-pool-providers.py
 ```
 
-Auto-detects available providers by checking API key env vars and CLI tool availability (`claude`, `codex`). For each provider: syncs the model catalog, selects a model, sends a query, and inserts the result into a pool. Prints a summary table at the end.
-
-Options:
-```bash
-uv run python scripts/demo-pool-providers.py --project-name my-demo --prompt "Explain gravity in one sentence."
-```
-
-Requires Docker. Works with any combination of providers — set API keys and/or install CLI tools for the providers you want to test.
+Creates a project, queries every available provider, stores results in a typed pool, prints a summary table. Run with `--help` for options.
