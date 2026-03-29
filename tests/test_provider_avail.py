@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+from dr_llm.providers.api_provider_config import APIProviderConfig
 from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
 from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.providers.provider_config import (
     ProviderAvailabilityStatus,
     ProviderConfig,
 )
-from dr_llm.providers.google import GoogleAdapter, GoogleConfig
+from dr_llm.providers.google import GoogleAdapter
 from dr_llm.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
 from dr_llm.providers.registry import ProviderRegistry
 from dr_llm.generation.models import CallMode, LlmRequest, LlmResponse, TokenUsage
@@ -167,7 +168,9 @@ def test_anthropic_inline_api_key_suppresses_env_requirement() -> None:
 
 def test_google_inline_api_key_suppresses_env_requirement() -> None:
     adapter = GoogleAdapter(
-        config=GoogleConfig(
+        config=APIProviderConfig(
+            name="google",
+            base_url="https://generativelanguage.googleapis.com/v1beta",
             api_key_env="GOOGLE_API_KEY",
             api_key="inline-key",
         )

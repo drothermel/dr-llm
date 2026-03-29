@@ -1,4 +1,5 @@
 from dr_llm.providers.anthropic import AnthropicAdapter
+from dr_llm.providers.api_provider_config import APIProviderConfig
 from dr_llm.providers.google import GoogleAdapter
 from dr_llm.providers.headless import (
     ClaudeHeadlessAdapter,
@@ -51,7 +52,15 @@ def build_default_registry() -> ProviderRegistry:
         )
     )
     registry.register(AnthropicAdapter())
-    registry.register(GoogleAdapter())
+    registry.register(
+        GoogleAdapter(
+            config=APIProviderConfig(
+                name="google",
+                base_url="https://generativelanguage.googleapis.com/v1beta",
+                api_key_env="GOOGLE_API_KEY",
+            )
+        )
+    )
     registry.register(CodexHeadlessAdapter())
     registry.register(ClaudeHeadlessAdapter())
     registry.register(ClaudeHeadlessMiniMaxAdapter())

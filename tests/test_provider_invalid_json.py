@@ -4,8 +4,9 @@ import httpx
 import pytest
 
 from dr_llm.errors import ProviderTransportError
+from dr_llm.providers.api_provider_config import APIProviderConfig
 from dr_llm.providers.anthropic import AnthropicAdapter, AnthropicConfig
-from dr_llm.providers.google import GoogleAdapter, GoogleConfig
+from dr_llm.providers.google import GoogleAdapter
 from dr_llm.providers.openai_compat import OpenAICompatAdapter, OpenAICompatConfig
 from dr_llm.generation.models import LlmRequest, Message
 
@@ -51,8 +52,11 @@ def test_anthropic_invalid_json_is_transport_error() -> None:
 
 def test_google_invalid_json_is_transport_error() -> None:
     adapter = GoogleAdapter(
-        config=GoogleConfig(
-            api_key="x", base_url="https://generativelanguage.googleapis.com/v1beta"
+        config=APIProviderConfig(
+            name="google",
+            base_url="https://generativelanguage.googleapis.com/v1beta",
+            api_key_env="GOOGLE_API_KEY",
+            api_key="x",
         ),
         client=httpx.Client(transport=_invalid_json_transport()),
     )
