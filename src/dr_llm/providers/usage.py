@@ -222,11 +222,12 @@ class CostInfo(BaseModel):
             if key in body_raw:
                 raw[f"body.{key}"] = body_raw[key]
 
+        is_usd = currency == _DEFAULT_CURRENCY
         return cls(
-            total_cost_usd=total_cost,
-            prompt_cost_usd=prompt_cost,
-            completion_cost_usd=completion_cost,
-            reasoning_cost_usd=reasoning_cost,
+            total_cost_usd=total_cost if is_usd else None,
+            prompt_cost_usd=prompt_cost if is_usd else None,
+            completion_cost_usd=completion_cost if is_usd else None,
+            reasoning_cost_usd=reasoning_cost if is_usd else None,
             currency=currency,
             raw=raw,
         )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -198,10 +199,8 @@ class CodexHeadlessAdapter(BaseHeadlessAdapter):
 
     def close(self) -> None:
         if self._neutral_instructions_file is not None:
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(self._neutral_instructions_file)
-            except OSError:
-                pass
             self._neutral_instructions_file = None
 
     def _ensure_neutral_instructions_file(self) -> str:

@@ -14,23 +14,28 @@ from tests.conftest import make_response
 runner = CliRunner()
 
 
+class _FakeAdapter:
+    name = "openai"
+    mode = "api"
+
+    def generate(self, request: Any) -> Any:
+        return make_response(
+            text="hi",
+            usage=TokenUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3),
+            provider="openai",
+            model="gpt-4.1",
+        )
+
+
+class _FakeRegistry:
+    def get(self, name: str) -> _FakeAdapter:
+        return _FakeAdapter()
+
+    def close(self) -> None:
+        pass
+
+
 def test_query_emits_response_json(monkeypatch: pytest.MonkeyPatch) -> None:
-    class _FakeAdapter:
-        name = "openai"
-        mode = "api"
-
-        def generate(self, request: Any) -> Any:
-            return make_response(
-                text="hi",
-                usage=TokenUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3),
-                provider="openai",
-                model="gpt-4.1",
-            )
-
-    class _FakeRegistry:
-        def get(self, name: str) -> _FakeAdapter:
-            return _FakeAdapter()
-
     monkeypatch.setattr(query_cli, "build_default_registry", _FakeRegistry)
 
     result = runner.invoke(
@@ -55,18 +60,6 @@ def test_query_emits_response_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_query_no_record_skips_db(monkeypatch: pytest.MonkeyPatch) -> None:
     """--no-record should never attempt to create a DB connection."""
-
-    class _FakeAdapter:
-        name = "openai"
-        mode = "api"
-
-        def generate(self, request: Any) -> Any:
-            return make_response(provider="openai", model="gpt-4.1")
-
-    class _FakeRegistry:
-        def get(self, name: str) -> _FakeAdapter:
-            return _FakeAdapter()
-
     repo_created = False
 
     def _repo_should_not_be_called(*args: Any, **kwargs: Any) -> None:

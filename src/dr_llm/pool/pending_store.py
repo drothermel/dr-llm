@@ -359,8 +359,8 @@ class PendingStore:
             where_parts.append(f"{group_column} IN ({placeholders})")
             params.extend(group_values)
 
-        where_parts.append("status = %s")
-        params.append(PendingStatus.pending.value)
+        where_parts.append("status IN (%s, %s)")
+        params.extend([PendingStatus.pending.value, PendingStatus.leased.value])
 
         where_clause = " AND ".join(where_parts)
         sql_str = (

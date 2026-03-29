@@ -64,7 +64,7 @@ def test_recorded_call_coerces_status_to_enum() -> None:
         provider="openai",
         model="gpt-4.1",
         mode=CallMode.api,
-        status=RunStatus.success,
+        status="success",  # type: ignore[arg-type]  # raw string, not enum
         created_at=datetime(2026, 3, 28, 12, 0, tzinfo=UTC),
         latency_ms=12,
         error_text=None,

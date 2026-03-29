@@ -96,21 +96,14 @@ def models_list(
     else:
         total_count = svc.count_models(base_query)
         common._render_models_list(items, provider, total_count)
-        static_providers = {
-            item.provider for item in items if item.source_quality == "static"
-        }
-        for provider_name in sorted(static_providers):
-            docs_url = ""
-            for item in items:
-                if (
-                    item.provider == provider_name
-                    and item.metadata.get("docs_url") is not None
-                ):
-                    docs_url = item.metadata["docs_url"]
-                    break
+        static_docs: dict[str, str] = {}
+        for item in items:
+            if item.source_quality == "static" and item.provider not in static_docs:
+                static_docs[item.provider] = item.metadata.get("docs_url", "")
+        for provider_name in sorted(static_docs):
             message = f"\nNote: {provider_name} models are from a static list and may be out of date."
-            if docs_url:
-                message += f"\nSee {docs_url} for the latest models."
+            if static_docs[provider_name]:
+                message += f"\nSee {static_docs[provider_name]} for the latest models."
             typer.echo(message, err=True)
 
 

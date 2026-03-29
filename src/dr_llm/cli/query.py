@@ -76,11 +76,11 @@ def query(
         raise typer.BadParameter(str(exc)) from exc
 
     registry = build_default_registry()
-    adapter = registry.get(provider)
-    call_id = external_call_id or uuid4().hex
-
-    repository: PoolDb | None = None
     try:
+        adapter = registry.get(provider)
+        call_id = external_call_id or uuid4().hex
+
+        repository: PoolDb | None = None
         if record:
             repository = common._repo(dsn, min_pool_size, max_pool_size)
 
@@ -171,3 +171,4 @@ def query(
     finally:
         if repository is not None:
             repository.close()
+        registry.close()

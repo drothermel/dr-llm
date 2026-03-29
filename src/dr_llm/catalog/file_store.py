@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from pydantic import ValidationError
+
 from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
 
+logger = logging.getLogger(__name__)
 
 _DEFAULT_CACHE_DIR = Path.home() / ".dr_llm" / "catalog_cache"
 
@@ -71,8 +75,12 @@ class FileCatalogStore:
         path = self._cache_dir / f"{provider}.json"
         if not path.exists():
             return []
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return [ModelCatalogEntry.model_validate(item) for item in data]
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return [ModelCatalogEntry.model_validate(item) for item in data]
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            logger.warning("Skipping corrupt catalog cache %s: %s", path, exc)
+            return []
 
     def _load_all(
         self, *, provider_filter: str | None = None
@@ -83,8 +91,11 @@ class FileCatalogStore:
             return self._load_provider(provider_filter)
         entries: list[ModelCatalogEntry] = []
         for path in sorted(self._cache_dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
-            entries.extend(ModelCatalogEntry.model_validate(item) for item in data)
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                entries.extend(ModelCatalogEntry.model_validate(item) for item in data)
+            except (OSError, json.JSONDecodeError, ValidationError) as exc:
+                logger.warning("Skipping corrupt catalog cache %s: %s", path, exc)
         return entries
 
     @staticmethod
