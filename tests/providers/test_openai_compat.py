@@ -11,7 +11,7 @@ from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
 from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.providers.openai_compat.request import OpenAICompatRequest
 from dr_llm.providers.openai_compat.response import OpenAICompatResponse
-from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.reasoning import ReasoningEffort
 from tests.conftest import make_request
 from tests.providers.conftest import make_http_client
 
@@ -56,12 +56,12 @@ def test_forwards_reasoning_and_parses_cost() -> None:
     with OpenAICompatAdapter(config=_CONFIG, client=client) as adapter:
         request = make_request(
             provider="openrouter",
-            model="some-model",
-            reasoning=ReasoningConfig(effort="high", exclude=False),
+            model="openai/gpt-5",
+            reasoning=ReasoningEffort(level="high"),
         )
         result = adapter.generate(request)
 
-    assert captured["payload"]["reasoning"] == {"effort": "high", "exclude": False}
+    assert captured["payload"]["reasoning"] == {"effort": "high"}
     assert result.reasoning == "internal trace"
     assert result.usage.reasoning_tokens == 22
     assert result.cost is not None

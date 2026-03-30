@@ -9,6 +9,7 @@ from dr_llm.errors import ProviderTransportError
 from dr_llm.providers.api_provider_config import APIProviderConfig
 from dr_llm.providers.google.adapter import GoogleAdapter
 from dr_llm.providers.models import Message
+from dr_llm.providers.reasoning import GoogleReasoning, ReasoningBudget
 from tests.conftest import make_request
 from tests.providers.conftest import make_http_client
 
@@ -50,6 +51,36 @@ def test_payload_serializes_messages() -> None:
         {"role": "user", "parts": [{"text": "find item"}]},
         {"role": "model", "parts": [{"text": "previous answer"}]},
     ]
+
+
+def test_payload_serializes_budget_reasoning_under_thinking_config() -> None:
+    captured, client = make_http_client(_MOCK_RESPONSE)
+    adapter = GoogleAdapter(config=_GOOGLE_CONFIG, client=client)
+
+    request = make_request(
+        provider="google",
+        model="gemini-2.5-flash",
+        reasoning=ReasoningBudget(tokens=512),
+    )
+    adapter.generate(request)
+
+    payload = cast(dict[str, Any], captured["payload"])
+    assert payload["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 512}
+
+
+def test_payload_serializes_dynamic_google_reasoning() -> None:
+    captured, client = make_http_client(_MOCK_RESPONSE)
+    adapter = GoogleAdapter(config=_GOOGLE_CONFIG, client=client)
+
+    request = make_request(
+        provider="google",
+        model="gemini-2.5-flash",
+        reasoning=GoogleReasoning(dynamic=True),
+    )
+    adapter.generate(request)
+
+    payload = cast(dict[str, Any], captured["payload"])
+    assert payload["generationConfig"]["thinkingConfig"] == {"thinkingBudget": -1}
 
 
 def test_invalid_json_raises_transport_error() -> None:

@@ -9,7 +9,7 @@ When no --dsn is provided, the script auto-creates a Docker-managed Postgres
 project via ProjectInfo, runs the demo, and destroys it on exit.
 
 The demo:
-  - Defines LlmConfig instances for cheap/fast models
+  - Defines reasoning-valid LlmConfig instances for OpenAI and Google
   - Defines short prompts as Message lists
   - Seeds the pending queue with the full (llm_config x prompt) cross product
   - Starts background workers using make_llm_process_fn (real LLM calls)
@@ -40,20 +40,23 @@ from dr_llm.project.project_info import ProjectInfo
 from dr_llm.providers import build_default_registry
 from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.models import Message
+from dr_llm.providers.reasoning import GoogleReasoning, ReasoningEffort
 
 app = typer.Typer()
 
 LLM_CONFIGS: dict[str, LlmConfig] = {
-    "gpt-4.1-mini": LlmConfig(
+    "gpt-5-mini-low": LlmConfig(
         provider="openai",
-        model="gpt-4.1-mini",
+        model="gpt-5-mini",
         temperature=0.7,
         max_tokens=64,
+        reasoning=ReasoningEffort(level="low"),
     ),
-    "gemini-flash": LlmConfig(
+    "gemini-flash-budget": LlmConfig(
         provider="google",
         model="gemini-2.5-flash",
         max_tokens=64,
+        reasoning=GoogleReasoning(thinking_budget=512),
     ),
 }
 

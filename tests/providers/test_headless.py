@@ -5,6 +5,7 @@ import subprocess
 from typing import Any, cast
 
 import pytest
+from pydantic import ValidationError
 
 from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
 from dr_llm.providers.headless.claude_presets import (
@@ -13,6 +14,7 @@ from dr_llm.providers.headless.claude_presets import (
 )
 from dr_llm.providers.headless.codex import CodexHeadlessAdapter
 from dr_llm.providers.models import Message
+from dr_llm.providers.reasoning import ReasoningEffort
 from tests.conftest import make_request
 from tests.providers.conftest import make_subprocess_mock
 
@@ -68,6 +70,32 @@ def test_claude_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.cost.total_cost_usd == 0.01
 
 
+def test_claude_command_includes_effort(monkeypatch: pytest.MonkeyPatch) -> None:
+    stdout = json.dumps(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "result": "OK",
+            "usage": {"input_tokens": 1, "output_tokens": 2},
+            "total_cost_usd": 0.01,
+        }
+    )
+    captured, fake_run = make_subprocess_mock(stdout)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    adapter = ClaudeHeadlessAdapter()
+    request = make_request(
+        provider="claude-code",
+        model="claude-sonnet-4-6",
+        reasoning=ReasoningEffort(level="max"),
+    )
+    adapter.generate(request)
+
+    command = cast(list[str], captured["command"])
+    assert command[command.index("--effort") + 1] == "max"
+
+
 def test_claude_minimax_preset_maps_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MINIMAX_API_KEY", "minimax-test-key")
     stdout = json.dumps({
@@ -110,3 +138,31 @@ def test_claude_kimi_preset_maps_env(monkeypatch: pytest.MonkeyPatch) -> None:
     env = cast(dict[str, str], captured["env"])
     assert env["ANTHROPIC_BASE_URL"] == "https://api.kimi.com/coding/"
     assert env["ANTHROPIC_AUTH_TOKEN"] == "kimi-test-key"
+
+
+def test_codex_rejects_reasoning_before_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "turn.started"}),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "OK"},
+                }
+            ),
+            json.dumps(
+                {"type": "turn.completed", "usage": {"input_tokens": 2, "output_tokens": 3}}
+            ),
+        ]
+    )
+    captured, fake_run = make_subprocess_mock(stdout)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    adapter = CodexHeadlessAdapter()
+    with pytest.raises(ValidationError):
+        make_request(
+            provider="codex",
+            model="gpt-5-codex",
+            reasoning=ReasoningEffort(level="high"),
+        )
+    assert "command" not in captured

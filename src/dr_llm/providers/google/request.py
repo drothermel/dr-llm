@@ -9,13 +9,16 @@ from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.api_provider_config import APIProviderConfig
 from dr_llm.providers.google.reasoning import GoogleReasoningConfig
 from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.models import CallMode, Message, ReasoningWarning
+from dr_llm.providers.models import Message, ReasoningWarning
 
 
 class _GoogleGenerationConfig(BaseModel):
     temperature: float | None = None
     topP: float | None = None
     maxOutputTokens: int | None = None
+
+
+class _GoogleThinkingConfig(BaseModel):
     thinkingBudget: int | None = None
     thinkingLevel: str | None = None
 
@@ -41,6 +44,7 @@ class GoogleRequest(BaseModel):
     contents: list[_GoogleRequestContent]
     systemInstruction: _GoogleSystemInstruction | None = None
     generationConfig: _GoogleGenerationConfig | None = None
+    thinkingConfig: _GoogleThinkingConfig | None = None
     base_url: str = Field(exclude=True)
     api_key_env: str = Field(exclude=True)
     api_key: str = Field(exclude=True, repr=False)
@@ -52,11 +56,7 @@ class GoogleRequest(BaseModel):
         request: LlmRequest,
         config: APIProviderConfig,
     ) -> GoogleRequest:
-        reasoning_mapping = GoogleReasoningConfig.from_base(
-            request.reasoning,
-            provider=request.provider,
-            mode=CallMode.api,
-        )
+        reasoning_mapping = GoogleReasoningConfig.from_base(request.reasoning)
         system = "\n".join(
             message.content for message in request.messages if message.role == "system"
         )
@@ -69,9 +69,9 @@ class GoogleRequest(BaseModel):
                 if system
                 else None
             ),
-            generationConfig=cls._generation_config(
-                request=request,
-                reasoning_payload=reasoning_mapping.to_payload(),
+            generationConfig=cls._generation_config(request=request),
+            thinkingConfig=cls._thinking_config(
+                reasoning_payload=reasoning_mapping.to_payload()
             ),
             base_url=config.base_url,
             api_key_env=config.api_key_env,
@@ -115,7 +115,6 @@ class GoogleRequest(BaseModel):
     def _generation_config(
         *,
         request: LlmRequest,
-        reasoning_payload: dict[str, Any],
     ) -> _GoogleGenerationConfig | None:
         generation_config = _GoogleGenerationConfig()
         has_generation_config = False
@@ -130,25 +129,29 @@ class GoogleRequest(BaseModel):
                 maxOutputTokens=request.max_tokens,
             )
             has_generation_config = True
-        if reasoning_payload:
-            generation_config = generation_config.model_copy(
-                update={
-                    "thinkingBudget": (
-                        int(reasoning_payload["thinkingBudget"])
-                        if "thinkingBudget" in reasoning_payload
-                        else generation_config.thinkingBudget
-                    ),
-                    "thinkingLevel": (
-                        str(reasoning_payload["thinkingLevel"])
-                        if "thinkingLevel" in reasoning_payload
-                        else generation_config.thinkingLevel
-                    ),
-                }
-            )
-            has_generation_config = True
         if not has_generation_config:
             return None
         return generation_config
+
+    @staticmethod
+    def _thinking_config(
+        *,
+        reasoning_payload: dict[str, Any],
+    ) -> _GoogleThinkingConfig | None:
+        if not reasoning_payload:
+            return None
+        return _GoogleThinkingConfig(
+            thinkingBudget=(
+                int(reasoning_payload["thinkingBudget"])
+                if "thinkingBudget" in reasoning_payload
+                else None
+            ),
+            thinkingLevel=(
+                str(reasoning_payload["thinkingLevel"])
+                if "thinkingLevel" in reasoning_payload
+                else None
+            ),
+        )
 
     def endpoint(self) -> str:
         return f"{self.base_url}/models/{self.model}:generateContent"
@@ -157,4 +160,9 @@ class GoogleRequest(BaseModel):
         return {"x-goog-api-key": self.api_key}
 
     def json_payload(self) -> dict[str, Any]:
-        return self.model_dump(mode="json", exclude_none=True)
+        payload = self.model_dump(mode="json", exclude_none=True)
+        thinking_config = payload.pop("thinkingConfig", None)
+        if thinking_config is not None:
+            generation_config = payload.setdefault("generationConfig", {})
+            generation_config["thinkingConfig"] = thinking_config
+        return payload

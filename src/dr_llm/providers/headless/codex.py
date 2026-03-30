@@ -21,7 +21,6 @@ from dr_llm.providers.headless.base import (
 from dr_llm.providers.headless.config import HeadlessProviderConfig
 from dr_llm.providers.headless.reasoning import CodexHeadlessReasoningConfig
 from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.models import CallMode
 
 
 CODEX_DEFAULT_COMMAND = [
@@ -237,11 +236,7 @@ class CodexHeadlessAdapter(BaseHeadlessAdapter):
         return command
 
     def reasoning_mapping(self, request: LlmRequest) -> HeadlessReasoningResult:
-        return CodexHeadlessReasoningConfig.from_base(
-            request.reasoning,
-            provider=request.provider,
-            mode=CallMode.headless,
-        )
+        return CodexHeadlessReasoningConfig.from_base(request.reasoning)
 
     def stdin_for_request(
         self,

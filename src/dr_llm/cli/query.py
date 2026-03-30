@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from dr_llm.logging import emit_generation_event, generation_log_context
 from dr_llm.providers import build_default_registry
 from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.reasoning import parse_reasoning_spec
 from dr_llm.pool.db import PoolDb
 
 from . import common
@@ -34,7 +34,7 @@ def query(
     max_tokens: int | None = typer.Option(None),
     reasoning_json: str | None = typer.Option(
         None,
-        help='JSON reasoning config (e.g. {"effort":"high"} or {"max_tokens":2000}).',
+        help='JSON reasoning config (e.g. {"kind":"effort","level":"high"}).',
     ),
     metadata_json: str | None = typer.Option(None, help="JSON object metadata."),
     run_id: str | None = typer.Option(None),
@@ -53,7 +53,7 @@ def query(
     )
     try:
         reasoning = (
-            ReasoningConfig(**reasoning_payload)
+            parse_reasoning_spec(reasoning_payload)
             if isinstance(reasoning_payload, dict)
             else None
         )

@@ -8,6 +8,7 @@ from dr_llm.catalog.fetchers.common import api_key_from_env, as_int, get_json
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.anthropic.adapter import AnthropicAdapter
 from dr_llm.catalog.models import ModelCatalogEntry
+from dr_llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
 
 
 def fetch_anthropic_models(
@@ -48,7 +49,10 @@ def fetch_anthropic_models(
                 display_name=str(item.get("display_name") or model_id),
                 context_window=as_int(item.get("context_window")),
                 max_output_tokens=as_int(item.get("max_output_tokens")),
-                supports_reasoning=True,
+                reasoning_capabilities=reasoning_capabilities_for_model(
+                    provider=adapter.name,
+                    model=model_id,
+                ),
                 supports_vision=None,
                 metadata=item,
                 fetched_at=now,

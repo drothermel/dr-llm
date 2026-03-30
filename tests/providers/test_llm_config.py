@@ -5,7 +5,11 @@ from pydantic import ValidationError
 
 from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.reasoning import (
+    GoogleReasoning,
+    ReasoningBudget,
+    ReasoningEffort,
+)
 
 
 def test_basic_construction() -> None:
@@ -20,10 +24,10 @@ def test_basic_construction() -> None:
 
 
 def test_construction_with_all_fields() -> None:
-    reasoning = ReasoningConfig(effort="high")
+    reasoning = ReasoningEffort(level="high")
     config = LlmConfig(
-        provider="anthropic",
-        model="claude-sonnet-4-6-20250514",
+        provider="openai",
+        model="gpt-5-mini",
         temperature=0.7,
         top_p=0.9,
         max_tokens=1024,
@@ -34,7 +38,7 @@ def test_construction_with_all_fields() -> None:
     assert config.top_p == 0.9
     assert config.max_tokens == 1024
     assert config.reasoning is not None
-    assert config.reasoning.effort == "high"
+    assert config.reasoning.kind == "effort"
 
 
 def test_frozen() -> None:
@@ -75,26 +79,44 @@ def test_to_request() -> None:
 
 def test_to_request_with_reasoning() -> None:
     config = LlmConfig(
-        provider="anthropic",
-        model="claude-sonnet-4-6-20250514",
-        reasoning=ReasoningConfig(effort="medium"),
+        provider="google",
+        model="gemini-2.5-flash",
+        reasoning=ReasoningBudget(tokens=512),
     )
     messages = [Message(role="user", content="Think about this")]
 
     request = config.to_request(messages)
 
     assert request.reasoning is not None
-    assert request.reasoning.effort == "medium"
+    assert request.reasoning.kind == "budget"
 
 
 def test_model_dump_roundtrip() -> None:
     config = LlmConfig(
-        provider="openai",
-        model="gpt-4.1-mini",
+        provider="google",
+        model="gemini-3-flash-preview",
         temperature=0.7,
-        reasoning=ReasoningConfig(effort="high"),
+        reasoning=GoogleReasoning(thinking_level="minimal"),
     )
     dumped = config.model_dump()
     restored = LlmConfig(**dumped)
 
     assert restored == config
+
+
+def test_rejects_reasoning_for_unsupported_model() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-4.1-mini",
+            reasoning=ReasoningEffort(level="high"),
+        )
+
+
+def test_rejects_provider_specific_reasoning_on_wrong_provider() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5-mini",
+            reasoning=GoogleReasoning(thinking_level="low"),
+        )

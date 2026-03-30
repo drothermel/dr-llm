@@ -15,7 +15,7 @@ from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.providers.models import CallMode, Message
 from dr_llm.providers.provider_adapter import ProviderAdapter
-from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.reasoning import ReasoningSpec
 from dr_llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
 
 
@@ -40,7 +40,7 @@ class HeadlessRequestPayload(BaseModel):
     temperature: float | None = None
     top_p: float | None = None
     max_tokens: int | None = None
-    reasoning: ReasoningConfig | None = None
+    reasoning: ReasoningSpec | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod

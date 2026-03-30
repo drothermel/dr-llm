@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.reasoning import AnthropicReasoning, GoogleReasoning, ReasoningBudget
 from dr_llm.providers.usage import TokenUsage
 
 
@@ -18,14 +18,19 @@ def test_message_rejects_extra_fields() -> None:
         Message(role="assistant", content="hi", tool_calls=[])  # type: ignore[call-arg]
 
 
-def test_reasoning_config_rejects_effort_with_max_tokens() -> None:
+def test_reasoning_budget_rejects_non_positive_tokens() -> None:
     with pytest.raises(ValidationError):
-        ReasoningConfig(effort="high", max_tokens=100)
+        ReasoningBudget(tokens=0)
 
 
-def test_reasoning_config_effective_enabled() -> None:
-    assert ReasoningConfig(effort="low").effective_enabled
-    assert not ReasoningConfig(enabled=False).effective_enabled
+def test_google_reasoning_requires_exactly_one_mode() -> None:
+    with pytest.raises(ValidationError):
+        GoogleReasoning(thinking_level="low", thinking_budget=512)
+
+
+def test_anthropic_adaptive_requires_effort() -> None:
+    with pytest.raises(ValidationError):
+        AnthropicReasoning(thinking_mode="adaptive")
 
 
 def test_token_usage_computed_total() -> None:

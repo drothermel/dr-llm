@@ -4,18 +4,15 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.providers.models import CallMode, ReasoningWarning, ReasoningWarningCode
-from dr_llm.providers.reasoning import ReasoningConfig
-
-
-_GOOGLE_THINKING_LEVEL = {
-    "xhigh": "high",
-    "high": "high",
-    "medium": "medium",
-    "low": "low",
-    "minimal": "minimal",
-    "none": "minimal",
-}
+from dr_llm.errors import ProviderSemanticError
+from dr_llm.providers.models import ReasoningWarning
+from dr_llm.providers.reasoning import (
+    GoogleReasoning,
+    ReasoningBudget,
+    ReasoningEffort,
+    ReasoningOff,
+    ReasoningSpec,
+)
 
 
 class GoogleReasoningConfig(BaseModel):
@@ -27,43 +24,35 @@ class GoogleReasoningConfig(BaseModel):
     @classmethod
     def from_base(
         cls,
-        config: ReasoningConfig | None,
-        *,
-        provider: str,
-        mode: CallMode,
+        config: ReasoningSpec | None,
     ) -> GoogleReasoningConfig:
         if config is None:
             return cls()
-        payload: dict[str, Any] = {}
-        warnings: list[ReasoningWarning] = []
-        if config.max_tokens is not None:
-            payload["thinkingBudget"] = int(config.max_tokens)
-        if config.effort is not None:
-            thinking_level = _GOOGLE_THINKING_LEVEL.get(config.effort)
-            if thinking_level is None:
-                warnings.append(
-                    ReasoningWarning(
-                        code=ReasoningWarningCode.mapped_with_heuristic,
-                        message=f"google: unrecognized effort {config.effort!r}, defaulting to medium",
-                        provider=provider,
-                        mode=mode,
-                    )
+        match config:
+            case ReasoningOff():
+                return cls(payload={"thinkingBudget": 0})
+            case ReasoningBudget(tokens=tokens):
+                return cls(payload={"thinkingBudget": tokens})
+            case ReasoningEffort(level=level):
+                return cls(payload={"thinkingLevel": level})
+            case GoogleReasoning(
+                thinking_level=thinking_level,
+                thinking_budget=thinking_budget,
+                dynamic=dynamic,
+            ):
+                if thinking_level is not None:
+                    return cls(payload={"thinkingLevel": thinking_level})
+                if thinking_budget is not None:
+                    return cls(payload={"thinkingBudget": thinking_budget})
+                if dynamic:
+                    return cls(payload={"thinkingBudget": -1})
+                raise ProviderSemanticError(
+                    "google reasoning config did not contain a serializable setting"
                 )
-                thinking_level = "medium"
-            payload["thinkingLevel"] = thinking_level
-        if config.exclude is True:
-            warnings.append(
-                ReasoningWarning(
-                    code=ReasoningWarningCode.partially_supported,
-                    message="google reasoning.exclude is not directly supported and was ignored",
-                    provider=provider,
-                    mode=mode,
+            case _:
+                raise ProviderSemanticError(
+                    f"google reasoning serializer received unsupported config kind={config.kind!r}"
                 )
-            )
-        if config.enabled is False:
-            payload["thinkingBudget"] = 0
-            payload["thinkingLevel"] = "minimal"
-        return cls(payload=payload, warnings=warnings)
 
     def to_payload(self) -> dict[str, Any]:
         return self.payload

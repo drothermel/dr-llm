@@ -9,6 +9,7 @@ from dr_llm.errors import ProviderTransportError
 from dr_llm.providers.anthropic.adapter import AnthropicAdapter
 from dr_llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.providers.models import Message
+from dr_llm.providers.reasoning import AnthropicReasoning, ReasoningEffort
 from tests.conftest import make_request
 from tests.providers.conftest import make_http_client
 
@@ -49,6 +50,44 @@ def test_payload_serializes_messages() -> None:
         {"role": "user", "content": [{"type": "text", "text": "hello"}]},
         {"role": "assistant", "content": [{"type": "text", "text": "hi there"}]},
     ]
+
+
+def test_payload_serializes_effort_output_config() -> None:
+    captured, client = make_http_client(_MOCK_RESPONSE)
+    adapter = AnthropicAdapter(config=_make_config(), client=client)
+
+    request = make_request(
+        provider="anthropic",
+        model="claude-sonnet-4-6",
+        reasoning=ReasoningEffort(level="medium"),
+    )
+    adapter.generate(request)
+
+    payload = captured["payload"]
+    assert payload["output_config"] == {"effort": "medium"}
+
+
+def test_payload_serializes_manual_thinking() -> None:
+    captured, client = make_http_client(_MOCK_RESPONSE)
+    adapter = AnthropicAdapter(config=_make_config(), client=client)
+
+    request = make_request(
+        provider="anthropic",
+        model="claude-sonnet-4-5-20250929",
+        reasoning=AnthropicReasoning(
+            budget_tokens=2048,
+            thinking_mode="enabled",
+            display="omitted",
+        ),
+    )
+    adapter.generate(request)
+
+    payload = captured["payload"]
+    assert payload["thinking"] == {
+        "type": "enabled",
+        "budget_tokens": 2048,
+        "display": "omitted",
+    }
 
 
 def test_invalid_json_raises_transport_error() -> None:

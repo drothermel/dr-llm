@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from dr_llm.providers.reasoning_capabilities import ReasoningCapabilities
 
 
 class ModelCatalogPricing(BaseModel):
@@ -34,12 +36,23 @@ class ModelCatalogEntry(BaseModel):
     context_window: int | None = None
     max_output_tokens: int | None = None
     supports_reasoning: bool | None = None
+    reasoning_capabilities: ReasoningCapabilities | None = None
     supports_vision: bool | None = None
     pricing: ModelCatalogPricing | None = None
     rate_limits: ModelCatalogRateLimit | None = None
     source_quality: Literal["live", "static"] = "live"
     metadata: dict[str, Any] = Field(default_factory=dict)
     fetched_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _derive_supports_reasoning(self) -> ModelCatalogEntry:
+        if self.reasoning_capabilities is not None:
+            return self.model_copy(
+                update={
+                    "supports_reasoning": self.reasoning_capabilities.supports_reasoning
+                }
+            )
+        return self
 
 
 class ModelCatalogQuery(BaseModel):

@@ -21,7 +21,14 @@ from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.providers.models import CallMode, Message, ReasoningWarning
-from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.reasoning import (
+    AnthropicReasoning,
+    GoogleReasoning,
+    ReasoningBudget,
+    ReasoningEffort,
+    ReasoningOff,
+    ReasoningSpec,
+)
 from dr_llm.providers.usage import CostInfo, TokenUsage
 
 __all__ = [
@@ -44,7 +51,12 @@ __all__ = [
     "PoolSchema",
     "PoolService",
     "PoolStore",
-    "ReasoningConfig",
+    "AnthropicReasoning",
+    "GoogleReasoning",
+    "ReasoningBudget",
+    "ReasoningEffort",
+    "ReasoningOff",
+    "ReasoningSpec",
     "ReasoningWarning",
     "RunStatus",
     "TokenUsage",

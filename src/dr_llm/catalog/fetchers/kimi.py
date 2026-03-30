@@ -6,6 +6,7 @@ from typing import Any
 from dr_llm.catalog.fetchers.common import api_key_from_env, as_int, get_json
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.catalog.models import ModelCatalogEntry
+from dr_llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
 
 
 KIMI_CATALOG_URL = "https://api.kimi.com/coding/v1/models"
@@ -41,6 +42,10 @@ def fetch_kimi_models() -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
                     bool(item.get("supports_reasoning"))
                     if item.get("supports_reasoning") is not None
                     else None
+                ),
+                reasoning_capabilities=reasoning_capabilities_for_model(
+                    provider=KIMI_PROVIDER_NAME,
+                    model=model_id,
                 ),
                 supports_vision=True,
                 metadata=item,

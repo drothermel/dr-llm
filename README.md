@@ -181,7 +181,8 @@ dr-llm models show --provider NAME --model NAME
 
 # Query
 dr-llm query --provider NAME --model NAME --message TEXT [--no-record]
-dr-llm query --provider NAME --model NAME --reasoning-json '{"effort":"high"}' --message TEXT
+dr-llm query --provider openai --model gpt-5-mini --reasoning-json '{"kind":"effort","level":"high"}' --message TEXT
+dr-llm query --provider google --model gemini-2.5-flash --reasoning-json '{"kind":"google","thinking_budget":512}' --message TEXT
 
 # Runs (requires DB)
 dr-llm run start [--run-type TYPE] [--metadata-json JSON]
@@ -257,3 +258,5 @@ uv run python scripts/demo-pool-fill.py
 ```
 
 Auto-creates a Docker Postgres project, seeds a pending queue for an `(llm_config, prompt)` pool using `LlmConfig` and `Message` objects, starts workers that make real LLM calls via `make_llm_process_fn`, prints progress, shows response snippets, and destroys the project on exit. Pass `--dsn` to use an existing database instead. Run with `--help` for options.
+
+Reasoning configs are validated before dispatch. For example, `{"kind":"effort","level":"high"}` is valid for `gpt-5-mini`, while Google 2.5 models require budget-style reasoning such as `{"kind":"google","thinking_budget":512}`.

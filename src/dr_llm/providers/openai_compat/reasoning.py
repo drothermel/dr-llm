@@ -4,8 +4,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.models import ReasoningWarning
-from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.reasoning import ReasoningEffort, ReasoningOff, ReasoningSpec
 
 
 class OpenAICompatReasoningConfig(BaseModel):
@@ -17,17 +18,19 @@ class OpenAICompatReasoningConfig(BaseModel):
     @classmethod
     def from_base(
         cls,
-        config: ReasoningConfig | None,
+        config: ReasoningSpec | None,
     ) -> OpenAICompatReasoningConfig:
         if config is None:
             return cls()
-        return cls(
-            payload=config.model_dump(
-                mode="json",
-                exclude_none=True,
-                exclude_computed_fields=True,
-            ),
-        )
+        match config:
+            case ReasoningEffort(level=level):
+                return cls(payload={"effort": level})
+            case ReasoningOff():
+                return cls(payload={"effort": "none"})
+            case _:
+                raise ProviderSemanticError(
+                    f"OpenAI-compatible reasoning serializer received unsupported config kind={config.kind!r}"
+                )
 
     def to_payload(self) -> dict[str, Any]:
         return self.payload
