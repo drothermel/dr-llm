@@ -16,6 +16,8 @@ from dr_llm.pool import (
 from dr_llm.pool.db import PoolDb
 from dr_llm.pool.recorded_call import RunStatus
 from dr_llm.pool.runtime import DbConfig
+from dr_llm.pool.pool_fill import make_llm_process_fn
+from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.providers.models import CallMode, Message, ReasoningWarning
@@ -28,6 +30,7 @@ __all__ = [
     "CostInfo",
     "DbConfig",
     "KeyColumn",
+    "LlmConfig",
     "LlmRequest",
     "LlmResponse",
     "Message",
@@ -45,4 +48,5 @@ __all__ = [
     "ReasoningWarning",
     "RunStatus",
     "TokenUsage",
+    "make_llm_process_fn",
 ]

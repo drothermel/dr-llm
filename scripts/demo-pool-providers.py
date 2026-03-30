@@ -139,14 +139,12 @@ def detect_providers(
 # --- Project ---
 
 
-def create_demo_project(project_name: str) -> str:
-    """Create a demo project, returning its DSN."""
-    run_cli_quiet("project", "destroy", project_name, "--yes-really-delete-everything")
-    result = run_cli("project", "create", project_name)
-    dsn = result.get("dsn")
-    if not dsn:
-        raise RuntimeError(f"Project create did not return DSN: {result}")
-    return dsn
+def create_demo_project(project_name: str) -> ProjectInfo:
+    """Create a demo project, destroying any existing one first."""
+    existing = ProjectInfo.maybe_from_existing(project_name)
+    if existing is not None:
+        existing.destroy()
+    return ProjectInfo.create_new(project_name)
 
 
 # --- Model Resolution ---
@@ -310,12 +308,14 @@ def main(
     step("2. Creating demo project")
     demo_succeeded = False
     runtime: DbRuntime | None = None
+    project: ProjectInfo | None = None
     try:
-        dsn = create_demo_project(project_name)
-        ok(f"Project '{project_name}' created")
+        project = create_demo_project(project_name)
+        assert project.dsn is not None
+        ok(f"Project '{project_name}' created at {project.dsn}")
 
         step("3. Initializing pool")
-        runtime = DbRuntime(DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=4))
+        runtime = DbRuntime(DbConfig(dsn=project.dsn, min_pool_size=1, max_pool_size=4))
         store = PoolStore(POOL_SCHEMA, runtime)
         store.init_schema()
         ok(
@@ -371,12 +371,10 @@ def main(
     finally:
         if runtime:
             runtime.close()
-        if not demo_succeeded:
+        if not demo_succeeded and project is not None:
             print(f"\n{BOLD}Cleaning up after failure...{RESET}")
             try:
-                project_info = ProjectInfo.maybe_from_existing(project_name)
-                if project_info is not None:
-                    project_info.destroy()
+                project.destroy()
             except Exception:
                 pass
 

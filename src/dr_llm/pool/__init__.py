@@ -10,6 +10,7 @@ from dr_llm.pool.metadata_store import MetadataStore
 from dr_llm.pool.pending_store import PendingStore
 from dr_llm.pool.pool_fill import (
     PoolWorkerController,
+    make_llm_process_fn,
     run_workers,
     seed_pending,
     start_workers,
@@ -58,6 +59,7 @@ __all__ = [
     "PoolStore",
     "PoolTopupError",
     "PoolWorkerController",
+    "make_llm_process_fn",
     "RecordedCall",
     "RunStatus",
     "SampleStatus",

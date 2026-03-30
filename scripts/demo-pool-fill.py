@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
-"""Demo: seed a pool's pending queue and fill it with generic workers.
+"""Demo: seed a pool with LLM configs and prompts, fill it with real provider calls.
 
 Usage:
   uv run python scripts/demo-pool-fill.py
+  uv run python scripts/demo-pool-fill.py --dsn postgresql://postgres:postgres@localhost:5433/dr_llm_test
+
+When no --dsn is provided, the script auto-creates a Docker-managed Postgres
+project via ProjectInfo, runs the demo, and destroys it on exit.
 
 The demo:
-  - Creates a simple pool keyed by (model, prompt)
-  - Seeds the pending queue with the full cartesian product times N samples
-  - Starts background workers using the generic pool-fill API
+  - Defines LlmConfig instances for cheap/fast models
+  - Defines short prompts as Message lists
+  - Seeds the pending queue with the full (llm_config x prompt) cross product
+  - Starts background workers using make_llm_process_fn (real LLM calls)
   - Prints progress until the queued work is complete
 """
 
 from __future__ import annotations
 
+import shutil
 import time
 from typing import Annotated
+from uuid import uuid4
 
 import typer
 
@@ -24,22 +31,36 @@ from dr_llm.pool import (
     KeyColumn,
     PoolSchema,
     PoolStore,
+    make_llm_process_fn,
     seed_pending,
     start_workers,
 )
-from dr_llm.pool.sample_models import PendingSample, WorkerSnapshot
+from dr_llm.pool.sample_models import WorkerSnapshot
+from dr_llm.project.project_info import ProjectInfo
+from dr_llm.providers import build_default_registry
+from dr_llm.providers.llm_config import LlmConfig
+from dr_llm.providers.models import Message
 
 app = typer.Typer()
 
+LLM_CONFIGS: dict[str, LlmConfig] = {
+    "gpt-4.1-mini": LlmConfig(
+        provider="openai",
+        model="gpt-4.1-mini",
+        temperature=0.7,
+        max_tokens=64,
+    ),
+    "gemini-flash": LlmConfig(
+        provider="google",
+        model="gemini-2.5-flash",
+        max_tokens=64,
+    ),
+}
 
-def _demo_process_fn(sample: PendingSample) -> dict[str, str | int]:
-    return {
-        "completion": (
-            f"completion::{sample.key_values['model']}::{sample.key_values['prompt']}::"
-            f"{sample.sample_idx}"
-        ),
-        "sample_idx": sample.sample_idx,
-    }
+PROMPTS: dict[str, list[Message]] = {
+    "haiku": [Message(role="user", content="Write a haiku about programming.")],
+    "math": [Message(role="user", content="What is 17 * 23? Reply with just the number.")],
+}
 
 
 def _print_progress(snapshot: WorkerSnapshot) -> None:
@@ -54,38 +75,13 @@ def _print_progress(snapshot: WorkerSnapshot) -> None:
     )
 
 
-@app.command()
-def main(
-    dsn: Annotated[
-        str | None,
-        typer.Option(help="Optional PostgreSQL DSN. Defaults to DR_LLM_DATABASE_URL."),
-    ] = None,
-    pool_name: Annotated[
-        str,
-        typer.Option(help="Pool name to create for the demo."),
-    ] = "demo_pool_fill",
-    num_workers: Annotated[
-        int,
-        typer.Option(help="Number of concurrent workers to run."),
-    ] = 4,
-    samples_per_cell: Annotated[
-        int,
-        typer.Option(help="Number of samples to queue for each (model, prompt) cell."),
-    ] = 3,
-    models: Annotated[
-        list[str],
-        typer.Option(help="Model values for the cartesian key grid."),
-    ] = ["gpt-4.1-mini", "gpt-5-mini"],
-    prompts: Annotated[
-        list[str],
-        typer.Option(help="Prompt values for the cartesian key grid."),
-    ] = ["math", "history"],
-) -> None:
+def _run_demo(dsn: str, pool_name: str, num_workers: int, samples_per_cell: int) -> None:
     schema = PoolSchema(
         name=pool_name,
-        key_columns=[KeyColumn(name="model"), KeyColumn(name="prompt")],
+        key_columns=[KeyColumn(name="llm_config"), KeyColumn(name="prompt")],
     )
-    runtime = DbRuntime(DbConfig() if dsn is None else DbConfig(dsn=dsn))
+    runtime = DbRuntime(DbConfig(dsn=dsn))
+    registry = build_default_registry()
     store = PoolStore(schema, runtime)
     controller = None
 
@@ -93,7 +89,10 @@ def main(
         store.init_schema()
         seed_result = seed_pending(
             store,
-            key_grid={"model": models, "prompt": prompts},
+            key_grid={
+                "llm_config": LLM_CONFIGS,
+                "prompt": PROMPTS,
+            },
             n=samples_per_cell,
         )
         print(
@@ -101,12 +100,14 @@ def main(
             f" (skipped {seed_result.skipped} existing rows)"
         )
 
+        process_fn = make_llm_process_fn(registry)
         controller = start_workers(
             store,
-            process_fn=_demo_process_fn,
+            process_fn=process_fn,
             num_workers=num_workers,
-            min_poll_interval_s=0.05,
-            max_poll_interval_s=0.25,
+            min_poll_interval_s=0.5,
+            max_poll_interval_s=3.0,
+            max_retries=1,
         )
         try:
             last_progress: tuple[int, int, int, int, int] | None = None
@@ -127,7 +128,7 @@ def main(
                     and snapshot.status_counts.leased == 0
                 ):
                     break
-                time.sleep(0.05)
+                time.sleep(0.5)
         finally:
             controller.stop()
             final_snapshot = controller.join()
@@ -144,11 +145,66 @@ def main(
         coverage = store.coverage()
         total_samples = sum(row.count for row in coverage)
         print(f"Stored {total_samples} samples across {len(coverage)} cells")
+
+        samples = store.bulk_load()
+        for sample in samples[:4]:
+            text = sample.payload.get("text", "")[:80]
+            print(
+                f"  [{sample.key_values['llm_config']}] "
+                f"[{sample.key_values['prompt']}] "
+                f"-> {text!r}"
+            )
     finally:
         if controller is not None:
             controller.stop()
             controller.join()
+        registry.close()
         runtime.close()
+
+
+@app.command()
+def main(
+    dsn: Annotated[
+        str | None,
+        typer.Option(
+            help="PostgreSQL DSN. If omitted, a temporary Docker project is created."
+        ),
+    ] = None,
+    pool_name: Annotated[
+        str,
+        typer.Option(help="Pool name to create for the demo."),
+    ] = "demo_pool_fill",
+    num_workers: Annotated[
+        int,
+        typer.Option(help="Number of concurrent workers to run."),
+    ] = 2,
+    samples_per_cell: Annotated[
+        int,
+        typer.Option(help="Number of samples to queue for each (llm_config, prompt) cell."),
+    ] = 1,
+) -> None:
+    if dsn is not None:
+        _run_demo(dsn, pool_name, num_workers, samples_per_cell)
+        return
+
+    # Auto-manage a Docker Postgres project
+    if not shutil.which("docker"):
+        print("Error: Docker is required when no --dsn is provided.")
+        print("Either install Docker or pass --dsn to use an existing database.")
+        raise typer.Exit(1)
+
+    project_name = f"demo-pool-fill-{uuid4().hex[:8]}"
+    project: ProjectInfo | None = None
+    try:
+        print(f"Creating temporary project '{project_name}'...")
+        project = ProjectInfo.create_new(project_name)
+        assert project.dsn is not None
+        print(f"Postgres ready at {project.dsn}")
+        _run_demo(project.dsn, pool_name, num_workers, samples_per_cell)
+    finally:
+        if project is not None:
+            print(f"Destroying temporary project '{project_name}'...")
+            project.destroy()
 
 
 if __name__ == "__main__":
