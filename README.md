@@ -161,6 +161,7 @@ result = store.acquire(AcquireQuery(
 ))
 
 # 8. Clean up when done
+registry.close()
 runtime.close()
 project.destroy()
 ```

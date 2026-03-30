@@ -141,6 +141,33 @@ def _serialize_payload_value(value: Any) -> Any:
     return value
 
 
+def _parse_key_grid(
+    column_names: list[str],
+    key_grid: Mapping[str, Iterable[Any] | dict[str, Any]],
+) -> tuple[list[list[Any]], dict[str, dict[str, Any]]] | None:
+    """Parse key_grid into (grid_keys, rich_columns) or None if any column is empty."""
+    grid_keys: list[list[Any]] = []
+    rich_columns: dict[str, dict[str, Any]] = {}
+
+    for name in column_names:
+        raw = key_grid[name]
+        if isinstance(raw, dict):
+            keys = list(raw.keys())
+            if not keys:
+                return None
+            grid_keys.append(keys)
+            rich_columns[name] = dict(raw)
+        else:
+            if isinstance(raw, (str, bytes)):
+                raise TypeError(f"key_grid[{name!r}] must be an iterable of values")
+            values = list(raw)
+            if not values:
+                return None
+            grid_keys.append(values)
+
+    return grid_keys, rich_columns
+
+
 def seed_pending(
     store: PoolStore,
     *,
@@ -170,26 +197,11 @@ def seed_pending(
     if n == 0:
         return InsertResult()
 
-    # Separate grid columns into plain values and rich (dict) values.
     column_names = store.schema.key_column_names
-    grid_keys: list[list[Any]] = []  # column values for cartesian product
-    rich_columns: dict[str, dict[str, Any]] = {}  # column name → {id: value}
-
-    for name in column_names:
-        raw = key_grid[name]
-        if isinstance(raw, dict):
-            keys = list(raw.keys())
-            if not keys:
-                return InsertResult()
-            grid_keys.append(keys)
-            rich_columns[name] = dict(raw)
-        else:
-            if isinstance(raw, (str, bytes)):
-                raise TypeError(f"key_grid[{name!r}] must be an iterable of values")
-            values = list(raw)
-            if not values:
-                return InsertResult()
-            grid_keys.append(values)
+    parsed = _parse_key_grid(column_names, key_grid)
+    if parsed is None:
+        return InsertResult()
+    grid_keys, rich_columns = parsed
 
     inserted = 0
     skipped = 0

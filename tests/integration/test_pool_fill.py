@@ -275,49 +275,67 @@ def test_seed_pending_rich_grid_with_workers(fill_store: PoolStore) -> None:
     rich_store = PoolStore(fill_schema, fill_store._runtime)
     rich_store.init_schema()
 
-    configs = {
-        "cfg_a": LlmConfig(provider="fake", model="fake-model"),
-    }
-    prompts = {
-        "p1": [Message(role="user", content="hello")],
-    }
-    seed_result = seed_pending(
-        rich_store,
-        key_grid={"llm_config": configs, "prompt": prompts},
-        n=2,
-    )
-    assert seed_result.inserted == 2
-
-    fake_response = LlmResponse(
-        text="fake response",
-        finish_reason="stop",
-        usage=TokenUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
-        provider="fake",
-        model="fake-model",
-        mode=CallMode.api,
-    )
-    adapter = MagicMock()
-    adapter.generate.return_value = fake_response
-    registry = MagicMock()
-    registry.get.return_value = adapter
-
-    process_fn = make_llm_process_fn(registry)
-    controller = start_workers(
-        rich_store,
-        process_fn=process_fn,
-        num_workers=2,
-        min_poll_interval_s=0.01,
-        max_poll_interval_s=0.05,
-    )
     try:
-        _wait_for_terminal_queue(rich_store)
-        controller.stop()
-        snapshot = controller.join(timeout=5.0)
-    finally:
-        _stop_controller(controller)
+        configs = {
+            "cfg_a": LlmConfig(provider="fake", model="fake-model"),
+        }
+        prompts = {
+            "p1": [Message(role="user", content="hello")],
+        }
+        seed_result = seed_pending(
+            rich_store,
+            key_grid={"llm_config": configs, "prompt": prompts},
+            n=2,
+        )
+        assert seed_result.inserted == 2
 
-    assert snapshot.promoted == 2
-    assert snapshot.failed == 0
-    samples = rich_store.bulk_load()
-    assert len(samples) == 2
-    assert all(s.payload["text"] == "fake response" for s in samples)
+        fake_response = LlmResponse(
+            text="fake response",
+            finish_reason="stop",
+            usage=TokenUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+            provider="fake",
+            model="fake-model",
+            mode=CallMode.api,
+        )
+        adapter = MagicMock()
+        adapter.generate.return_value = fake_response
+        registry = MagicMock()
+        registry.get.return_value = adapter
+
+        process_fn = make_llm_process_fn(registry)
+        controller = start_workers(
+            rich_store,
+            process_fn=process_fn,
+            num_workers=2,
+            min_poll_interval_s=0.01,
+            max_poll_interval_s=0.05,
+        )
+        try:
+            _wait_for_terminal_queue(rich_store)
+            controller.stop()
+            snapshot = controller.join(timeout=5.0)
+        finally:
+            _stop_controller(controller)
+
+        assert snapshot.promoted == 2
+        assert snapshot.failed == 0
+        samples = rich_store.bulk_load()
+        assert len(samples) == 2
+        assert all(s.payload["text"] == "fake response" for s in samples)
+    finally:
+        dsn = _get_dsn()
+        if dsn:
+            rich_tables = (
+                fill_schema.samples_table,
+                fill_schema.claims_table,
+                fill_schema.pending_table,
+                fill_schema.metadata_table,
+            )
+            with psycopg.connect(dsn) as conn:
+                for table_name in rich_tables:
+                    conn.execute(
+                        sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
+                            sql.Identifier(table_name)
+                        )
+                    )
+                conn.commit()
