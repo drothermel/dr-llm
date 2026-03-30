@@ -15,12 +15,12 @@ Before finishing coding work in this repository, run:
 Postgres-backed integration tests and demo scripts should be run against the disposable Docker database provided by the repo scripts.
 
 1. Start it with `./scripts/start-test-postgres.sh`.
-2. This creates `dr-llm-pg-test` on `localhost:5433`, exports `DR_LLM_DATABASE_URL` and `DR_LLM_TEST_DATABASE_URL`, and applies schema bootstrap plus migrations.
-3. In that shell, run the relevant Postgres-backed verification:
-- `uv run pytest tests/integration/test_pool_fill.py -v`
-- `uv run pytest tests/integration/test_pool_store.py -v`
-- `uv run pytest tests/integration/test_postgres_repository.py -v`
-- `uv run python scripts/demo-pool-fill.py --dsn postgresql://postgres:postgres@localhost:5433/dr_llm_test`
-4. Tear it down with `./scripts/stop-test-postgres.sh`.
+1. This creates `dr-llm-pg-test` on `localhost:5433`, exports `DR_LLM_DATABASE_URL` and `DR_LLM_TEST_DATABASE_URL`, and applies schema bootstrap plus migrations.
+1. In that shell, run the relevant Postgres-backed verification:
+    - `uv run pytest tests/integration/test_pool_fill.py -v`
+    - `uv run pytest tests/integration/test_pool_store.py -v`
+    - `uv run pytest tests/integration/test_postgres_repository.py -v`
+    - `uv run python scripts/demo-pool-fill.py --dsn postgresql://postgres:postgres@localhost:5433/dr_llm_test`
+1. Tear it down with `./scripts/stop-test-postgres.sh`.
 
 Integration fixtures may skip when Postgres is unavailable, but for any change that touches Postgres-backed behavior, explicitly run the relevant integration tests or demo against the live container.

@@ -14,7 +14,7 @@ import pytest
 from psycopg import sql
 
 from dr_llm.errors import TransientPersistenceError
-from dr_llm.pool.pool_fill import seed_pending, start_workers
+from dr_llm.pool.pool_fill import PoolWorkerController, seed_pending, start_workers
 from dr_llm.pool.pool_schema import KeyColumn, PoolSchema
 from dr_llm.pool.runtime import DbConfig, DbRuntime
 from dr_llm.pool.sample_store import PoolStore
@@ -53,6 +53,7 @@ def fill_store() -> Generator[PoolStore, None, None]:
     dsn = _get_dsn()
     if not dsn:
         pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+    runtime: DbRuntime | None = None
     try:
         _drop_tables(dsn)
         runtime = DbRuntime(
@@ -66,6 +67,8 @@ def fill_store() -> Generator[PoolStore, None, None]:
         store = PoolStore(_TEST_SCHEMA, runtime)
         store.init_schema()
     except (psycopg.OperationalError, TransientPersistenceError) as exc:
+        if runtime is not None:
+            runtime.close()
         pytest.skip(f"Postgres unavailable for pool fill integration tests: {exc}")
     yield store
     _drop_tables(dsn)
@@ -85,6 +88,11 @@ def _wait_for_terminal_queue(
             return
         time.sleep(0.05)
     raise AssertionError("Timed out waiting for queue to reach a terminal state")
+
+
+def _stop_controller(controller: PoolWorkerController) -> None:
+    controller.stop()
+    controller.join(timeout=5.0)
 
 
 @pytest.mark.integration
@@ -122,10 +130,12 @@ def test_start_workers_promote_seeded_grid(fill_store: PoolStore) -> None:
         min_poll_interval_s=0.01,
         max_poll_interval_s=0.05,
     )
-
-    _wait_for_terminal_queue(fill_store)
-    controller.stop()
-    snapshot = controller.join()
+    try:
+        _wait_for_terminal_queue(fill_store)
+        controller.stop()
+        snapshot = controller.join(timeout=5.0)
+    finally:
+        _stop_controller(controller)
 
     assert snapshot.claimed == 8
     assert snapshot.promoted == 8
@@ -157,10 +167,12 @@ def test_start_workers_retry_then_fail(fill_store: PoolStore) -> None:
         max_poll_interval_s=0.05,
         max_retries=1,
     )
-
-    _wait_for_terminal_queue(fill_store)
-    controller.stop()
-    snapshot = controller.join()
+    try:
+        _wait_for_terminal_queue(fill_store)
+        controller.stop()
+        snapshot = controller.join(timeout=5.0)
+    finally:
+        _stop_controller(controller)
 
     assert snapshot.claimed == 2
     assert snapshot.retried == 1
@@ -195,10 +207,12 @@ def test_start_workers_retry_then_promote(fill_store: PoolStore) -> None:
         max_poll_interval_s=0.05,
         max_retries=1,
     )
-
-    _wait_for_terminal_queue(fill_store)
-    controller.stop()
-    snapshot = controller.join()
+    try:
+        _wait_for_terminal_queue(fill_store)
+        controller.stop()
+        snapshot = controller.join(timeout=5.0)
+    finally:
+        _stop_controller(controller)
 
     assert snapshot.claimed == 2
     assert snapshot.retried == 1
@@ -227,10 +241,12 @@ def test_start_workers_respects_key_filter(fill_store: PoolStore) -> None:
         max_poll_interval_s=0.05,
         key_filter={"model": "m1"},
     )
-
-    _wait_for_terminal_queue(fill_store, key_filter={"model": "m1"})
-    controller.stop()
-    snapshot = controller.join()
+    try:
+        _wait_for_terminal_queue(fill_store, key_filter={"model": "m1"})
+        controller.stop()
+        snapshot = controller.join(timeout=5.0)
+    finally:
+        _stop_controller(controller)
     all_counts = fill_store.pending.status_counts()
 
     assert snapshot.promoted == 2
@@ -255,33 +271,42 @@ def test_demo_pool_fill_script_runs() -> None:
 
     script_path = Path(__file__).resolve().parents[2] / "scripts" / "demo-pool-fill.py"
     pool_name = f"itest_demo_fill_{uuid4().hex[:8]}"
-    result = subprocess.run(
-        [
-            "uv",
-            "run",
-            "python",
-            str(script_path),
-            "--dsn",
-            dsn,
-            "--pool-name",
-            pool_name,
-            "--num-workers",
-            "2",
-            "--samples-per-cell",
-            "2",
-            "--models",
-            "demo-a",
-            "--models",
-            "demo-b",
-            "--prompts",
-            "alpha",
-            "--prompts",
-            "beta",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    cmd = [
+        "uv",
+        "run",
+        "python",
+        str(script_path),
+        "--dsn",
+        dsn,
+        "--pool-name",
+        pool_name,
+        "--num-workers",
+        "2",
+        "--samples-per-cell",
+        "2",
+        "--models",
+        "demo-a",
+        "--models",
+        "demo-b",
+        "--prompts",
+        "alpha",
+        "--prompts",
+        "beta",
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        pytest.fail(
+            "demo-pool-fill.py timed out\n"
+            f"stdout:\n{exc.stdout or ''}\n"
+            f"stderr:\n{exc.stderr or ''}"
+        )
 
     assert "Seeded 8 pending rows" in result.stdout
     assert "Final queue counts: pending=0 leased=0 promoted=8 failed=0" in result.stdout

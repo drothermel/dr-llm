@@ -103,18 +103,24 @@ class PoolWorkerController:
     def join(self, timeout: float | None = None) -> WorkerSnapshot:
         """Wait for workers to exit, returning a final snapshot."""
         deadline = None if timeout is None else time.monotonic() + timeout
+        timed_out = False
         try:
             for future in self._futures:
                 remaining = None
                 if deadline is not None:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
+                        timed_out = True
                         raise TimeoutError("Timed out waiting for workers to stop")
                 future.result(timeout=remaining)
-        finally:
+        except TimeoutError:
             if not self._joined:
-                self._executor.shutdown(wait=True, cancel_futures=False)
+                self._executor.shutdown(wait=False, cancel_futures=False)
                 self._joined = True
+            raise
+        if not self._joined:
+            self._executor.shutdown(wait=not timed_out, cancel_futures=False)
+            self._joined = True
         return self.snapshot()
 
 

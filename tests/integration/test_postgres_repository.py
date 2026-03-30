@@ -40,6 +40,7 @@ def db() -> Generator[PoolDb, None, None]:
         pytest.skip(
             "Set DR_LLM_TEST_DATABASE_URL (or DR_LLM_DATABASE_URL) to run integration tests"
         )
+    pool_db: PoolDb | None = None
     try:
         pool_db = PoolDb(
             DbConfig(
@@ -52,6 +53,8 @@ def db() -> Generator[PoolDb, None, None]:
         pool_db.init_schema()
         _truncate_test_tables(dsn)
     except (psycopg.OperationalError, TransientPersistenceError) as exc:
+        if pool_db is not None:
+            pool_db.close()
         pytest.skip(f"Postgres unavailable for repository integration tests: {exc}")
     yield pool_db
     _truncate_test_tables(dsn)

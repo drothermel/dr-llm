@@ -87,6 +87,7 @@ def main(
     )
     runtime = DbRuntime(DbConfig() if dsn is None else DbConfig(dsn=dsn))
     store = PoolStore(schema, runtime)
+    controller = None
 
     try:
         store.init_schema()
@@ -107,26 +108,30 @@ def main(
             min_poll_interval_s=0.05,
             max_poll_interval_s=0.25,
         )
+        try:
+            last_progress: tuple[int, int, int, int, int] | None = None
+            while True:
+                snapshot = controller.snapshot()
+                current_progress = (
+                    snapshot.claimed,
+                    snapshot.promoted,
+                    snapshot.failed,
+                    snapshot.status_counts.pending,
+                    snapshot.status_counts.leased,
+                )
+                if current_progress != last_progress:
+                    _print_progress(snapshot)
+                    last_progress = current_progress
+                if (
+                    snapshot.status_counts.pending == 0
+                    and snapshot.status_counts.leased == 0
+                ):
+                    break
+                time.sleep(0.05)
+        finally:
+            controller.stop()
+            final_snapshot = controller.join()
 
-        last_progress: tuple[int, int, int, int, int] | None = None
-        while True:
-            snapshot = controller.snapshot()
-            current_progress = (
-                snapshot.claimed,
-                snapshot.promoted,
-                snapshot.failed,
-                snapshot.status_counts.pending,
-                snapshot.status_counts.leased,
-            )
-            if current_progress != last_progress:
-                _print_progress(snapshot)
-                last_progress = current_progress
-            if snapshot.status_counts.pending == 0 and snapshot.status_counts.leased == 0:
-                break
-            time.sleep(0.05)
-
-        controller.stop()
-        final_snapshot = controller.join()
         final_counts = final_snapshot.status_counts
         print(
             "Final queue counts: "
@@ -140,6 +145,9 @@ def main(
         total_samples = sum(row.count for row in coverage)
         print(f"Stored {total_samples} samples across {len(coverage)} cells")
     finally:
+        if controller is not None:
+            controller.stop()
+            controller.join()
         runtime.close()
 
 
