@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import time
 from collections.abc import Generator
-from pathlib import Path
 from uuid import uuid4
 
 import psycopg
@@ -259,55 +257,67 @@ def test_start_workers_respects_key_filter(fill_store: PoolStore) -> None:
 
 
 @pytest.mark.integration
-def test_demo_pool_fill_script_runs() -> None:
-    dsn = _get_dsn()
-    if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
-    try:
-        with psycopg.connect(dsn):
-            pass
-    except psycopg.OperationalError as exc:
-        pytest.skip(f"Postgres unavailable for pool fill integration tests: {exc}")
+def test_seed_pending_rich_grid_with_workers(fill_store: PoolStore) -> None:
+    """End-to-end: seed with rich grid values, fill with make_llm_process_fn."""
+    from unittest.mock import MagicMock
 
-    script_path = Path(__file__).resolve().parents[2] / "scripts" / "demo-pool-fill.py"
-    pool_name = f"itest_demo_fill_{uuid4().hex[:8]}"
-    cmd = [
-        "uv",
-        "run",
-        "python",
-        str(script_path),
-        "--dsn",
-        dsn,
-        "--pool-name",
-        pool_name,
-        "--num-workers",
-        "2",
-        "--samples-per-cell",
-        "2",
-        "--models",
-        "demo-a",
-        "--models",
-        "demo-b",
-        "--prompts",
-        "alpha",
-        "--prompts",
-        "beta",
-    ]
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        )
-    except subprocess.TimeoutExpired as exc:
-        pytest.fail(
-            "demo-pool-fill.py timed out\n"
-            f"stdout:\n{exc.stdout or ''}\n"
-            f"stderr:\n{exc.stderr or ''}"
-        )
+    from dr_llm.pool.pool_fill import make_llm_process_fn, seed_pending
+    from dr_llm.providers.llm_config import LlmConfig
+    from dr_llm.providers.llm_response import LlmResponse
+    from dr_llm.providers.models import CallMode, Message
+    from dr_llm.providers.usage import TokenUsage
 
-    assert "Seeded 8 pending rows" in result.stdout
-    assert "Final queue counts: pending=0 leased=0 promoted=8 failed=0" in result.stdout
-    assert "Stored 8 samples across 4 cells" in result.stdout
+    # Use a fresh schema with llm_config/prompt columns
+    fill_schema = PoolSchema(
+        name=f"itest_rich_{uuid4().hex[:8]}",
+        key_columns=[KeyColumn(name="llm_config"), KeyColumn(name="prompt")],
+    )
+    rich_store = PoolStore(fill_schema, fill_store._runtime)
+    rich_store.init_schema()
+
+    configs = {
+        "cfg_a": LlmConfig(provider="fake", model="fake-model"),
+    }
+    prompts = {
+        "p1": [Message(role="user", content="hello")],
+    }
+    seed_result = seed_pending(
+        rich_store,
+        key_grid={"llm_config": configs, "prompt": prompts},
+        n=2,
+    )
+    assert seed_result.inserted == 2
+
+    fake_response = LlmResponse(
+        text="fake response",
+        finish_reason="stop",
+        usage=TokenUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        provider="fake",
+        model="fake-model",
+        mode=CallMode.api,
+    )
+    adapter = MagicMock()
+    adapter.generate.return_value = fake_response
+    registry = MagicMock()
+    registry.get.return_value = adapter
+
+    process_fn = make_llm_process_fn(registry)
+    controller = start_workers(
+        rich_store,
+        process_fn=process_fn,
+        num_workers=2,
+        min_poll_interval_s=0.01,
+        max_poll_interval_s=0.05,
+    )
+    try:
+        _wait_for_terminal_queue(rich_store)
+        controller.stop()
+        snapshot = controller.join(timeout=5.0)
+    finally:
+        _stop_controller(controller)
+
+    assert snapshot.promoted == 2
+    assert snapshot.failed == 0
+    samples = rich_store.bulk_load()
+    assert len(samples) == 2
+    assert all(s.payload["text"] == "fake response" for s in samples)

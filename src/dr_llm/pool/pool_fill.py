@@ -11,6 +11,9 @@ from itertools import product
 from typing import Any
 from uuid import uuid4
 
+from pydantic import BaseModel
+
+from dr_llm.pool.call_recorder import CallRecorder
 from dr_llm.pool.errors import PoolSchemaError
 from dr_llm.pool.sample_models import (
     InsertResult,
@@ -19,6 +22,9 @@ from dr_llm.pool.sample_models import (
     WorkerSnapshot,
 )
 from dr_llm.pool.sample_store import PoolStore
+from dr_llm.providers.llm_config import LlmConfig
+from dr_llm.providers.models import Message
+from dr_llm.providers.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -124,14 +130,31 @@ class PoolWorkerController:
         return self.snapshot()
 
 
+def _serialize_payload_value(value: Any) -> Any:
+    """Serialize a payload value for JSON storage."""
+    if isinstance(value, BaseModel):
+        return value.model_dump()
+    if isinstance(value, list):
+        return [
+            item.model_dump() if isinstance(item, BaseModel) else item for item in value
+        ]
+    return value
+
+
 def seed_pending(
     store: PoolStore,
     *,
-    key_grid: Mapping[str, Iterable[Any]],
+    key_grid: Mapping[str, Iterable[Any] | dict[str, Any]],
     n: int,
     priority: int = 0,
 ) -> InsertResult:
-    """Seed the pending queue from a key-dimension cartesian product."""
+    """Seed the pending queue from a key-dimension cartesian product.
+
+    Grid values may be plain iterables (column stores value directly) or
+    ``dict[str, Any]`` mappings (dict keys become column values, dict values
+    are serialized into the pending sample's ``payload`` under the column
+    name).
+    """
     if n < 0:
         raise ValueError("n must be non-negative")
 
@@ -147,26 +170,42 @@ def seed_pending(
     if n == 0:
         return InsertResult()
 
-    grid_values: list[list[Any]] = []
-    for name in store.schema.key_column_names:
-        raw_values = key_grid[name]
-        if isinstance(raw_values, (str, bytes)):
-            raise TypeError(f"key_grid[{name!r}] must be an iterable of values")
-        values = list(raw_values)
-        if not values:
-            return InsertResult()
-        grid_values.append(values)
+    # Separate grid columns into plain values and rich (dict) values.
+    column_names = store.schema.key_column_names
+    grid_keys: list[list[Any]] = []  # column values for cartesian product
+    rich_columns: dict[str, dict[str, Any]] = {}  # column name → {id: value}
+
+    for name in column_names:
+        raw = key_grid[name]
+        if isinstance(raw, dict):
+            keys = list(raw.keys())
+            if not keys:
+                return InsertResult()
+            grid_keys.append(keys)
+            rich_columns[name] = dict(raw)
+        else:
+            if isinstance(raw, (str, bytes)):
+                raise TypeError(f"key_grid[{name!r}] must be an iterable of values")
+            values = list(raw)
+            if not values:
+                return InsertResult()
+            grid_keys.append(values)
 
     inserted = 0
     skipped = 0
     failed = 0
-    for combination in product(*grid_values):
-        key_values = dict(zip(store.schema.key_column_names, combination, strict=True))
+    for combination in product(*grid_keys):
+        key_values = dict(zip(column_names, combination, strict=True))
+        payload: dict[str, Any] = {}
+        for name, col_value in key_values.items():
+            if name in rich_columns:
+                payload[name] = _serialize_payload_value(rich_columns[name][col_value])
         for sample_idx in range(n):
             did_insert = store.pending.insert_pending(
                 PendingSample(
                     key_values=key_values,
                     sample_idx=sample_idx,
+                    payload=payload,
                     priority=priority,
                 ),
                 ignore_conflicts=True,
@@ -346,3 +385,56 @@ def _format_error_reason(exc: Exception) -> str:
     if message:
         return f"{type(exc).__name__}: {message}"
     return type(exc).__name__
+
+
+def make_llm_process_fn(
+    registry: ProviderRegistry,
+    *,
+    llm_config_key: str = "llm_config",
+    prompt_key: str = "prompt",
+    recorder: CallRecorder | None = None,
+    run_id: str | None = None,
+) -> ProcessFn:
+    """Build a ``ProcessFn`` that dispatches LLM calls via the provider registry.
+
+    Expects pending samples whose ``payload`` contains serialized
+    :class:`LlmConfig` (under *llm_config_key*) and ``list[Message]``
+    (under *prompt_key*), as produced by :func:`seed_pending` with rich
+    grid values.
+    """
+
+    def _process(sample: PendingSample) -> dict[str, Any]:
+        raw_config = sample.payload.get(llm_config_key)
+        if raw_config is None:
+            raise KeyError(
+                f"Pending sample payload missing {llm_config_key!r}; "
+                "was the pool seeded with a rich grid for this column?"
+            )
+        raw_messages = sample.payload.get(prompt_key)
+        if raw_messages is None:
+            raise KeyError(
+                f"Pending sample payload missing {prompt_key!r}; "
+                "was the pool seeded with a rich grid for this column?"
+            )
+
+        config = LlmConfig(**raw_config)
+        messages = [Message(**m) for m in raw_messages]
+        request = config.to_request(messages)
+
+        adapter = registry.get(request.provider)
+        response = adapter.generate(request)
+
+        call_id: str | None = None
+        if recorder is not None:
+            call_id = recorder.record_call(
+                request=request,
+                response=response,
+                run_id=run_id,
+            )
+
+        result = response.model_dump()
+        if call_id is not None:
+            result["call_id"] = call_id
+        return result
+
+    return _process

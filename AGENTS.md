@@ -9,22 +9,15 @@ Before completing any coding task in this repository, always run:
 3. Manually fix any remaining lint issues in the repository.
 4. `uv run ty check`
 5. `uv run pytest tests/ -v`
+6. `./scripts/run-tests-local.sh` (integration tests — requires Docker)
 
 Fix all issues reported by these commands before considering the task complete.
 
-## Postgres Test Flow
+## Integration Tests
 
-Some tests and demo scripts require a live local Postgres instance.
+`./scripts/run-tests-local.sh` auto-creates a temporary Docker Postgres project, runs `pytest -m integration`, and destroys it on exit. No manual setup needed — just Docker.
 
-1. Start the disposable test database with `./scripts/start-test-postgres.sh`.
-1. The script starts a Docker container on `localhost:5433`, exports `DR_LLM_DATABASE_URL` and `DR_LLM_TEST_DATABASE_URL`, and applies the pool schema plus migrations.
-1. In the same shell, run any Postgres-backed checks, for example:
-    - `uv run pytest tests/integration/test_pool_fill.py -v`
-    - `uv run pytest tests/integration/test_pool_store.py -v`
-    - `uv run python scripts/demo-pool-fill.py --dsn postgresql://postgres:postgres@localhost:5433/dr_llm_test`
-1. When finished, remove the container with `./scripts/stop-test-postgres.sh`.
-
-If the Postgres container is not running, the integration fixtures should skip rather than fail, but do not rely on skip-only runs when changing Postgres-backed behavior. For pool changes or Postgres-backed demo changes, explicitly bring the container up and run the relevant integration tests or scripts against it.
+For targeted runs, pass extra pytest args: `./scripts/run-tests-local.sh -k test_pool_fill`
 
 ## CI Parity
 

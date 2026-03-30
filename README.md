@@ -90,63 +90,82 @@ response = adapter.generate(
 print(response.text)
 ```
 
-### Sample pools (requires Postgres)
+### Filling a pool with LLM calls (requires Docker)
+
+The recommended way to populate a pool: define `LlmConfig`s and prompts, seed the pending queue, and let parallel workers make the actual provider calls. Docker is used to auto-manage a Postgres project.
 
 ```python
 from dr_llm.pool import (
-    ColumnType, KeyColumn, PoolSchema, PoolStore, PoolService,
-    AcquireQuery, DbConfig, DbRuntime,
+    DbConfig, DbRuntime, KeyColumn, PoolSchema, PoolStore,
+    make_llm_process_fn, seed_pending, start_workers,
 )
-from dr_llm.pool.sample_models import PoolSample
+from dr_llm.project.project_info import ProjectInfo
+from dr_llm.providers import build_default_registry
+from dr_llm.providers.llm_config import LlmConfig
+from dr_llm.providers.models import Message
 
-# 1. Define pool schema
+# 1. Create a Docker-managed Postgres project
+project = ProjectInfo.create_new("my_eval")
+
+# 2. Define pool schema — keys are IDs, not raw values
 schema = PoolSchema(
-    name="my_pool",
-    key_columns=[
-        KeyColumn(name="provider"),
-        KeyColumn(name="difficulty", type=ColumnType.integer),
-    ],
+    name="my_eval",
+    key_columns=[KeyColumn(name="llm_config"), KeyColumn(name="prompt")],
 )
-
-# 2. Connect and create tables
-runtime = DbRuntime(DbConfig(dsn="postgresql://..."))
+runtime = DbRuntime(DbConfig(dsn=project.dsn))
 store = PoolStore(schema, runtime)
 store.init_schema()
 
-# 3. Insert samples
-store.insert_samples([
-    PoolSample(
-        key_values={"provider": "openai", "difficulty": 1},
-        sample_idx=0,
-        payload={"prompt": "What is 2+2?", "expected": "4"},
+# 3. Define configs and prompts
+llm_configs = {
+    "gpt-4.1-mini": LlmConfig(
+        provider="openai", model="gpt-4.1-mini",
+        max_tokens=64,
     ),
-])
+    "gemini-flash": LlmConfig(
+        provider="google", model="gemini-2.5-flash",
+        max_tokens=64,
+    ),
+}
+prompts = {
+    "haiku": [Message(role="user", content="Write a haiku about programming.")],
+    "math": [Message(role="user", content="What is 17 * 23?")],
+}
 
-# 4. Acquire samples (no-replacement within a run)
+# 4. Seed pending queue — cross product of configs × prompts × n
+seed_pending(store, key_grid={"llm_config": llm_configs, "prompt": prompts}, n=2)
+# Creates 2×2×2 = 8 pending samples, each with the full LlmConfig and
+# prompt messages serialized in its payload
+
+# 5. Start workers — they call the real providers
+registry = build_default_registry()
+process_fn = make_llm_process_fn(registry)
+controller = start_workers(store, process_fn=process_fn, num_workers=4)
+
+# 6. Wait for completion
+import time
+while True:
+    snap = controller.snapshot()
+    if snap.status_counts.pending == 0 and snap.status_counts.leased == 0:
+        break
+    time.sleep(1)
+controller.stop()
+controller.join()
+
+# 7. Acquire samples (no-replacement within a run)
+from dr_llm.pool import AcquireQuery
 result = store.acquire(AcquireQuery(
-    run_id="run_001",
-    key_values={"provider": "openai", "difficulty": 1},
+    run_id="eval_run_1",
+    key_values={"llm_config": "gpt-4.1-mini", "prompt": "math"},
     n=2,
 ))
 
-# 5. Pending samples and metadata via sub-stores
-store.pending.insert_pending(...)
-store.metadata.upsert_metadata("config", {"key": "value"})
-
-# 6. Auto top-up with PoolService
-service = PoolService(store)
-result = service.acquire_or_generate(
-    AcquireQuery(
-        run_id="run_002",
-        key_values={"provider": "openai", "difficulty": 2},
-        n=5,
-    ),
-    generator_fn=lambda kv, deficit: [
-        PoolSample(key_values=kv, payload={"generated": True})
-        for _ in range(deficit)
-    ],
-)
+# 8. Clean up when done
+runtime.close()
+project.destroy()
 ```
+
+See `scripts/demo-pool-fill.py` for a complete runnable example.
 
 ## CLI Reference
 
@@ -200,16 +219,17 @@ Provider endpoint defaults:
 
 ```bash
 uv run ruff format && uv run ruff check --fix .
-uv run pytest tests/ -v --ignore=tests/integration/
+uv run ty check
+uv run pytest tests/ -v
 ```
 
-### Integration tests (requires Postgres)
+### Integration tests (requires Docker)
 
 ```bash
-source ./scripts/start-test-postgres.sh    # starts container, applies schema
-uv run pytest tests/ -v -m integration
-./scripts/stop-test-postgres.sh            # cleanup
+./scripts/run-tests-local.sh
 ```
+
+Auto-creates a temporary Docker Postgres project, runs `pytest -m integration`, and destroys it on exit. Pass extra pytest args for targeted runs: `./scripts/run-tests-local.sh -k test_pool_fill`.
 
 ## Demo Scripts
 
@@ -229,10 +249,10 @@ uv run python scripts/demo-pool-providers.py
 
 Creates a project, queries every available provider, stores results in a typed pool, prints a summary table. Run with `--help` for options.
 
-### Pool fill worker demo (requires Postgres)
+### Pool fill worker demo (requires Docker + API keys)
 
 ```bash
 uv run python scripts/demo-pool-fill.py
 ```
 
-Seeds a pending queue for a `(model, prompt)` pool, starts generic worker threads, prints progress, and shows the final stored sample counts. Run with `--help` for DSN and grid options.
+Auto-creates a Docker Postgres project, seeds a pending queue for an `(llm_config, prompt)` pool using `LlmConfig` and `Message` objects, starts workers that make real LLM calls via `make_llm_process_fn`, prints progress, shows response snippets, and destroys the project on exit. Pass `--dsn` to use an existing database instead. Run with `--help` for options.

@@ -1,35 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_TEST_DSN="postgresql://postgres:postgres@localhost:5433/dr_llm_test"
-if [ -n "${DR_LLM_DATABASE_URL:-}" ] && [ -z "${DR_LLM_TEST_DATABASE_URL:-}" ]; then
-  echo "Refusing to run integration tests with only DR_LLM_DATABASE_URL set."
-  echo "Set DR_LLM_TEST_DATABASE_URL explicitly to a test database DSN."
+# Run integration tests using a temporary Docker-managed Postgres project.
+# Usage: ./scripts/run-tests-local.sh
+#
+# The script creates a project via `dr-llm project create`, runs the
+# integration test suite, and destroys the project on exit.
+
+PROJECT_NAME="dr-llm-test-runner"
+
+cleanup() {
+  echo "Destroying temporary project '${PROJECT_NAME}'..."
+  uv run dr-llm project destroy "${PROJECT_NAME}" --yes-really-delete-everything 2>/dev/null || true
+}
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is required to run integration tests."
   exit 1
 fi
 
-TEST_DSN="${DR_LLM_TEST_DATABASE_URL:-$DEFAULT_TEST_DSN}"
+# Clean up any leftover project from a prior run
+uv run dr-llm project destroy "${PROJECT_NAME}" --yes-really-delete-everything 2>/dev/null || true
 
-if ! command -v psql >/dev/null 2>&1; then
-  echo "psql is required for preflight checks. Install PostgreSQL client tools and retry."
-  exit 1
-fi
+echo "Creating temporary project '${PROJECT_NAME}'..."
+PROJECT_JSON=$(uv run dr-llm project create "${PROJECT_NAME}")
+DSN=$(echo "${PROJECT_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin)['dsn'])")
+echo "Postgres ready at ${DSN}"
 
-SAFE_DSN="$(printf '%s' "${TEST_DSN}" | sed -E 's#(postgres(ql)?://)[^@/]+@#\1****:****@#')"
-echo "Using integration DB: ${SAFE_DSN}"
-echo "Running DB preflight query..."
-MAX_RETRIES="${DB_READY_RETRIES:-15}"
-SLEEP_SECONDS="${DB_READY_SLEEP_SECONDS:-1}"
-for attempt in $(seq 1 "${MAX_RETRIES}"); do
-  if psql "${TEST_DSN}" -c "select current_user, current_database();" >/dev/null 2>&1; then
-    break
-  fi
-  if [ "${attempt}" -eq "${MAX_RETRIES}" ]; then
-    echo "DB preflight failed after ${MAX_RETRIES} attempts."
-    exit 1
-  fi
-  sleep "${SLEEP_SECONDS}"
-done
+trap cleanup EXIT
 
 echo "Running integration tests..."
-DR_LLM_TEST_DATABASE_URL="${TEST_DSN}" uv run pytest tests/ -v -m integration
+DR_LLM_TEST_DATABASE_URL="${DSN}" uv run pytest tests/ -v -m integration "$@"
