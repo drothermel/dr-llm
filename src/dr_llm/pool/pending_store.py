@@ -12,7 +12,12 @@ from psycopg.rows import dict_row
 from dr_llm.pool.errors import PoolSchemaError
 from dr_llm.pool.pool_schema import PoolSchema
 from dr_llm.pool.runtime import DbRuntime
-from dr_llm.pool.sample_models import PendingSample, PendingStatus, PoolSample
+from dr_llm.pool.sample_models import (
+    PendingSample,
+    PendingStatus,
+    PendingStatusCounts,
+    PoolSample,
+)
 from dr_llm.pool.sql_helpers import (
     is_constraint_error,
     key_where_clause,
@@ -457,3 +462,40 @@ class PendingStore:
                     )
                 )
             return results
+
+    def status_counts(
+        self, *, key_filter: dict[str, Any] | None = None
+    ) -> PendingStatusCounts:
+        """Count pending rows by lifecycle status."""
+        tbl = self._schema.pending_table
+
+        where_parts: list[str] = []
+        params: list[Any] = []
+        if key_filter:
+            validate_key_filter(self._schema, key_filter)
+            for key, value in key_filter.items():
+                if key in self._schema.key_column_names:
+                    where_parts.append(f"{key} = %s")
+                    params.append(value)
+
+        where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+        sql_str = (
+            f"SELECT status, COUNT(*) AS cnt FROM {tbl} {where_clause} GROUP BY status"
+        )
+
+        counts = {status.value: 0 for status in PendingStatus}
+        with self._runtime.conn() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                rows = cur.execute(q(sql_str), params).fetchall()
+
+        for row in rows:
+            status = row["status"]
+            if status in counts:
+                counts[status] = int(row["cnt"])
+
+        return PendingStatusCounts(
+            pending=counts[PendingStatus.pending.value],
+            leased=counts[PendingStatus.leased.value],
+            promoted=counts[PendingStatus.promoted.value],
+            failed=counts[PendingStatus.failed.value],
+        )

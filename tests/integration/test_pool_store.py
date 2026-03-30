@@ -10,6 +10,7 @@ import psycopg
 import pytest
 from psycopg import sql
 
+from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
 from dr_llm.pool.sample_models import (
     AcquireQuery,
@@ -59,12 +60,23 @@ def pool_store() -> Generator[PoolStore, None, None]:
     dsn = _get_dsn()
     if not dsn:
         pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
-    _drop_tables(dsn)
-    runtime = DbRuntime(
-        DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=4, application_name="pool_tests")
-    )
-    store = PoolStore(_TEST_SCHEMA, runtime)
-    store.init_schema()
+    runtime: DbRuntime | None = None
+    try:
+        _drop_tables(dsn)
+        runtime = DbRuntime(
+            DbConfig(
+                dsn=dsn,
+                min_pool_size=1,
+                max_pool_size=4,
+                application_name="pool_tests",
+            )
+        )
+        store = PoolStore(_TEST_SCHEMA, runtime)
+        store.init_schema()
+    except (psycopg.OperationalError, TransientPersistenceError) as exc:
+        if runtime is not None:
+            runtime.close()
+        pytest.skip(f"Postgres unavailable for pool integration tests: {exc}")
     yield store
     _drop_tables(dsn)
     runtime.close()

@@ -7,6 +7,7 @@ import psycopg
 import pytest
 from psycopg import sql
 
+from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.db import PoolDb
 from dr_llm.pool.runtime import DbConfig
 from dr_llm.providers.llm_request import LlmRequest
@@ -39,16 +40,22 @@ def db() -> Generator[PoolDb, None, None]:
         pytest.skip(
             "Set DR_LLM_TEST_DATABASE_URL (or DR_LLM_DATABASE_URL) to run integration tests"
         )
-    pool_db = PoolDb(
-        DbConfig(
-            dsn=dsn,
-            min_pool_size=1,
-            max_pool_size=16,
-            application_name="dr_llm_tests",
+    pool_db: PoolDb | None = None
+    try:
+        pool_db = PoolDb(
+            DbConfig(
+                dsn=dsn,
+                min_pool_size=1,
+                max_pool_size=16,
+                application_name="dr_llm_tests",
+            )
         )
-    )
-    pool_db.init_schema()
-    _truncate_test_tables(dsn)
+        pool_db.init_schema()
+        _truncate_test_tables(dsn)
+    except (psycopg.OperationalError, TransientPersistenceError) as exc:
+        if pool_db is not None:
+            pool_db.close()
+        pytest.skip(f"Postgres unavailable for repository integration tests: {exc}")
     yield pool_db
     _truncate_test_tables(dsn)
     pool_db.close()

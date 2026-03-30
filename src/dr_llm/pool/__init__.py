@@ -8,6 +8,12 @@ from dr_llm.pool.errors import (
 )
 from dr_llm.pool.metadata_store import MetadataStore
 from dr_llm.pool.pending_store import PendingStore
+from dr_llm.pool.pool_fill import (
+    PoolWorkerController,
+    run_workers,
+    seed_pending,
+    start_workers,
+)
 from dr_llm.pool.pool_schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.pool_service import PoolService
 from dr_llm.pool.recorded_call import RecordedCall, RunStatus
@@ -19,9 +25,11 @@ from dr_llm.pool.sample_models import (
     InsertResult,
     PendingSample,
     PendingStatus,
+    PendingStatusCounts,
     PoolClaim,
     PoolSample,
     SampleStatus,
+    WorkerSnapshot,
 )
 from dr_llm.pool.sample_store import PoolStore
 
@@ -49,7 +57,13 @@ __all__ = [
     "PoolService",
     "PoolStore",
     "PoolTopupError",
+    "PoolWorkerController",
     "RecordedCall",
     "RunStatus",
     "SampleStatus",
+    "PendingStatusCounts",
+    "WorkerSnapshot",
+    "run_workers",
+    "seed_pending",
+    "start_workers",
 ]

@@ -191,10 +191,12 @@ def _load_messages(
 
 
 def _repo(dsn: str | None, min_pool_size: int, max_pool_size: int) -> PoolDb:
-    kwargs: dict[str, object] = {
-        "min_pool_size": min_pool_size,
-        "max_pool_size": max_pool_size,
-    }
-    if dsn is not None:
-        kwargs["dsn"] = dsn
-    return PoolDb(DbConfig(**kwargs))
+    if dsn is None:
+        config = DbConfig(min_pool_size=min_pool_size, max_pool_size=max_pool_size)
+    else:
+        config = DbConfig(
+            dsn=dsn,
+            min_pool_size=min_pool_size,
+            max_pool_size=max_pool_size,
+        )
+    return PoolDb(config)

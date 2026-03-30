@@ -104,6 +104,37 @@ class InsertResult(BaseModel):
     failed: int = 0
 
 
+class PendingStatusCounts(BaseModel):
+    """Counts of pending rows by lifecycle status."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pending: int = 0
+    leased: int = 0
+    promoted: int = 0
+    failed: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.pending + self.leased + self.promoted + self.failed
+
+
+class WorkerSnapshot(BaseModel):
+    """Observable state for a running pool worker controller."""
+
+    model_config = ConfigDict(frozen=True)
+
+    worker_count: int
+    stop_requested: bool = False
+    claimed: int = 0
+    promoted: int = 0
+    failed: int = 0
+    retried: int = 0
+    process_errors: int = 0
+    idle_polls: int = 0
+    status_counts: PendingStatusCounts = Field(default_factory=PendingStatusCounts)
+
+
 class CoverageRow(BaseModel):
     """Aggregate count per unique key combination."""
 

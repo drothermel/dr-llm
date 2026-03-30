@@ -228,3 +228,11 @@ uv run python scripts/demo-pool-providers.py
 ```
 
 Creates a project, queries every available provider, stores results in a typed pool, prints a summary table. Run with `--help` for options.
+
+### Pool fill worker demo (requires Postgres)
+
+```bash
+uv run python scripts/demo-pool-fill.py
+```
+
+Seeds a pending queue for a `(model, prompt)` pool, starts generic worker threads, prints progress, and shows the final stored sample counts. Run with `--help` for DSN and grid options.

@@ -11,9 +11,11 @@ from dr_llm.pool.sample_models import (
     AcquireResult,
     InsertResult,
     PendingSample,
+    PendingStatusCounts,
     PendingStatus,
     PoolSample,
     SampleStatus,
+    WorkerSnapshot,
 )
 
 
@@ -52,9 +54,20 @@ def test_insert_result_defaults() -> None:
     assert r.failed == 0
 
 
+def test_pending_status_counts_total() -> None:
+    counts = PendingStatusCounts(pending=1, leased=2, promoted=3, failed=4)
+    assert counts.total == 10
+
+
 def test_acquire_query_auto_request_id() -> None:
     q = AcquireQuery(run_id="r1", key_values={"x": "a"}, n=5)
     assert q.request_id  # auto-generated
+
+
+def test_worker_snapshot_defaults() -> None:
+    snapshot = WorkerSnapshot(worker_count=2)
+    assert snapshot.stop_requested is False
+    assert snapshot.status_counts.total == 0
 
 
 def test_recorded_call_coerces_status_to_enum() -> None:
