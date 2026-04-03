@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import (
     AnthropicReasoning,
@@ -20,6 +21,13 @@ def test_message_rejects_unknown_role() -> None:
 def test_message_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError):
         Message(role="assistant", content="hi", tool_calls=[])  # type: ignore[call-arg]
+
+
+def test_effort_spec_values() -> None:
+    assert EffortSpec.NA == "na"
+    assert EffortSpec.LOW == "low"
+    assert EffortSpec.MEDIUM == "medium"
+    assert EffortSpec.HIGH == "high"
 
 
 def test_reasoning_budget_rejects_non_positive_tokens() -> None:

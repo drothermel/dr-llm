@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import (
@@ -22,6 +23,7 @@ def test_basic_construction() -> None:
     assert config.temperature is None
     assert config.top_p is None
     assert config.max_tokens is None
+    assert config.effort == EffortSpec.NA
     assert config.reasoning is None
 
 
@@ -75,6 +77,7 @@ def test_to_request() -> None:
     assert request.temperature == 0.5
     assert request.max_tokens == 100
     assert request.top_p is None
+    assert request.effort == EffortSpec.NA
     assert request.reasoning is None
     assert request.metadata == {}
 
@@ -91,6 +94,19 @@ def test_to_request_with_reasoning() -> None:
 
     assert request.reasoning is not None
     assert request.reasoning.kind == "budget"
+
+
+def test_to_request_with_effort() -> None:
+    config = LlmConfig(
+        provider="anthropic",
+        model="claude-sonnet-4-6",
+        effort=EffortSpec.MEDIUM,
+    )
+    messages = [Message(role="user", content="Think about this")]
+
+    request = config.to_request(messages)
+
+    assert request.effort == EffortSpec.MEDIUM
 
 
 def test_model_dump_roundtrip() -> None:

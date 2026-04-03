@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
-from dr_llm.providers.models import ReasoningWarning
+from dr_llm.providers.reasoning import ReasoningWarning
 from dr_llm.providers.reasoning import ReasoningEffort, ReasoningSpec
 
 

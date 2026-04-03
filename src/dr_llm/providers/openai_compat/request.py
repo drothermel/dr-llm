@@ -8,7 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.models import Message, ReasoningWarning
+from dr_llm.providers.models import Message
+from dr_llm.providers.reasoning import ReasoningWarning
 from dr_llm.providers.openai_compat.reasoning import OpenAICompatReasoningConfig
 
 if TYPE_CHECKING:

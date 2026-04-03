@@ -10,7 +10,8 @@ from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.providers.google.request import GoogleRequest
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.llm_response import LlmResponse
-from dr_llm.providers.models import CallMode, ReasoningWarning
+from dr_llm.providers.models import CallMode
+from dr_llm.providers.reasoning import ReasoningWarning
 from dr_llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
 
 

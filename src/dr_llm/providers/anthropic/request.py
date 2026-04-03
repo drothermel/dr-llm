@@ -9,7 +9,8 @@ from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.providers.anthropic.reasoning import AnthropicReasoningConfig
 from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.models import Message, ReasoningWarning
+from dr_llm.providers.models import Message
+from dr_llm.providers.reasoning import ReasoningWarning
 
 
 class _AnthropicRequestTextBlock(BaseModel):

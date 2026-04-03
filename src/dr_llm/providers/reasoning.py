@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from enum import StrEnum
+from typing import Any, Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -11,6 +12,7 @@ from pydantic import (
     model_validator,
 )
 
+from dr_llm.providers.models import CallMode
 from dr_llm.providers.reasoning_capabilities import (
     AnthropicEffortLevel,
     GenericEffortLevel,
@@ -18,6 +20,22 @@ from dr_llm.providers.reasoning_capabilities import (
     ReasoningCapabilities,
     reasoning_capabilities_for_model,
 )
+
+
+class ReasoningWarningCode(StrEnum):
+    unsupported_for_provider = "unsupported_for_provider"
+    mapped_with_heuristic = "mapped_with_heuristic"
+    partially_supported = "partially_supported"
+
+
+class ReasoningWarning(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    code: ReasoningWarningCode
+    message: str
+    provider: str | None = None
+    mode: CallMode | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class ReasoningOff(BaseModel):
