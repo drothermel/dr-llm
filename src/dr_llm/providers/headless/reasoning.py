@@ -4,7 +4,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.providers.reasoning import ReasoningWarning
-from dr_llm.providers.reasoning import AnthropicReasoning, ReasoningSpec, ThinkingLevel
+from dr_llm.providers.reasoning import (
+    AnthropicReasoning,
+    CodexReasoning,
+    ReasoningSpec,
+    ThinkingLevel,
+)
 
 
 class ClaudeHeadlessReasoningConfig(BaseModel):
@@ -50,8 +55,24 @@ class CodexHeadlessReasoningConfig(BaseModel):
     ) -> CodexHeadlessReasoningConfig:
         if config is None:
             return cls()
+        match config:
+            case CodexReasoning(thinking_level=ThinkingLevel.NA):
+                return cls()
+            case CodexReasoning(thinking_level=ThinkingLevel.OFF):
+                return cls(cli_args=["-c", 'model_reasoning_effort="none"'])
+            case CodexReasoning(
+                thinking_level=ThinkingLevel.MINIMAL
+                | ThinkingLevel.LOW
+                | ThinkingLevel.MEDIUM
+                | ThinkingLevel.HIGH
+                | ThinkingLevel.XHIGH
+            ):
+                thinking_level = config.thinking_level
+                return cls(
+                    cli_args=["-c", f'model_reasoning_effort="{thinking_level}"']
+                )
         raise HeadlessExecutionError(
-            f"codex headless does not support reasoning config kind={config.kind!r}"
+            f"codex headless reasoning serializer received unsupported config kind={config.kind!r}"
         )
 
     def to_cli_args(self) -> list[str]:

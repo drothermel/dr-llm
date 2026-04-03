@@ -9,7 +9,9 @@ from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import (
     AnthropicReasoning,
+    CodexReasoning,
     GoogleReasoning,
+    OpenAIReasoning,
     ReasoningBudget,
     ThinkingLevel,
 )
@@ -205,7 +207,7 @@ def test_rejects_reasoning_for_unsupported_model() -> None:
         LlmConfig(
             provider="openai",
             model="gpt-4.1-mini",
-            reasoning=ReasoningBudget(tokens=1024),
+            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
         )
 
 
@@ -218,23 +220,133 @@ def test_rejects_provider_specific_reasoning_on_wrong_provider() -> None:
         )
 
 
-def test_openai_gpt5_family_allows_top_level_effort() -> None:
+def test_openai_gpt5_family_accepts_provider_shaped_reasoning() -> None:
     LlmConfig(
         provider="openai",
         model="gpt-5-mini",
-        effort=EffortSpec.HIGH,
+        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL),
     )
 
     LlmConfig(
         provider="openai",
         model="gpt-5.2",
-        effort=EffortSpec.LOW,
+        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
     )
     LlmConfig(
         provider="openrouter",
         model="openai/gpt-5.1",
-        effort=EffortSpec.MEDIUM,
+        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MEDIUM),
     )
+    LlmConfig(
+        provider="openai",
+        model="gpt-5.4",
+        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.XHIGH),
+    )
+
+
+def test_openai_gpt5_rejects_off_before_51() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5-mini",
+            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
+        )
+
+
+def test_openai_51_plus_rejects_minimal() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5.1",
+            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL),
+        )
+
+
+def test_openai_rejects_xhigh_when_model_does_not_support_it() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5.2",
+            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.XHIGH),
+        )
+
+
+def test_codex_accepts_provider_shaped_reasoning() -> None:
+    LlmConfig(
+        provider="codex",
+        model="gpt-5.1-codex-mini",
+        reasoning=CodexReasoning(thinking_level=ThinkingLevel.LOW),
+    )
+    LlmConfig(
+        provider="codex",
+        model="gpt-5.4",
+        reasoning=CodexReasoning(thinking_level=ThinkingLevel.OFF),
+    )
+    LlmConfig(
+        provider="codex",
+        model="gpt-5.4",
+        reasoning=CodexReasoning(thinking_level=ThinkingLevel.XHIGH),
+    )
+
+
+def test_codex_rejects_unsupported_model_specific_thinking_levels() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="codex",
+            model="gpt-5.1-codex-mini",
+            reasoning=CodexReasoning(thinking_level=ThinkingLevel.MINIMAL),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="codex",
+            model="gpt-5.2-codex",
+            reasoning=CodexReasoning(thinking_level=ThinkingLevel.OFF),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="codex",
+            model="gpt-5.1-codex-mini",
+            reasoning=CodexReasoning(thinking_level=ThinkingLevel.XHIGH),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="codex",
+            model="gpt-5.1-codex",
+            reasoning=CodexReasoning(thinking_level=ThinkingLevel.OFF),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="codex",
+            model="gpt-5.1-codex-max",
+            reasoning=CodexReasoning(thinking_level=ThinkingLevel.OFF),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="codex",
+            model="gpt-5.1-codex-mini",
+            reasoning=CodexReasoning(thinking_level=ThinkingLevel.OFF),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="codex",
+            model="gpt-5-codex",
+            reasoning=CodexReasoning(thinking_level=ThinkingLevel.MINIMAL),
+        )
+
+
+def test_openai_and_codex_reject_top_level_effort() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5-mini",
+            effort=EffortSpec.HIGH,
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="codex",
+            model="gpt-5.1-codex-mini",
+            effort=EffortSpec.HIGH,
+        )
 
 
 def test_allows_combining_effort_with_anthropic_off() -> None:

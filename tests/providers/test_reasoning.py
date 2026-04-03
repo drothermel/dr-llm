@@ -12,7 +12,9 @@ from dr_llm.providers.headless.reasoning import (
 from dr_llm.providers.openai_compat.reasoning import OpenAICompatReasoningConfig
 from dr_llm.providers.reasoning import (
     AnthropicReasoning,
+    CodexReasoning,
     GoogleReasoning,
+    OpenAIReasoning,
     ReasoningBudget,
     ThinkingLevel,
 )
@@ -28,6 +30,33 @@ def test_openai_compat_rejects_anthropic_reasoning_shape() -> None:
 def test_openai_compat_rejects_provider_specific_shape() -> None:
     with pytest.raises(ProviderSemanticError):
         OpenAICompatReasoningConfig.from_base(GoogleReasoning(thinking_level="low"))
+
+
+def test_openai_compat_serializes_thinking_levels() -> None:
+    assert (
+        OpenAICompatReasoningConfig.from_base(
+            OpenAIReasoning(thinking_level=ThinkingLevel.NA)
+        ).to_reasoning_effort()
+        is None
+    )
+    assert (
+        OpenAICompatReasoningConfig.from_base(
+            OpenAIReasoning(thinking_level=ThinkingLevel.OFF)
+        ).to_reasoning_effort()
+        == "none"
+    )
+    assert (
+        OpenAICompatReasoningConfig.from_base(
+            OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL)
+        ).to_reasoning_effort()
+        == "minimal"
+    )
+    assert (
+        OpenAICompatReasoningConfig.from_base(
+            OpenAIReasoning(thinking_level=ThinkingLevel.XHIGH)
+        ).to_reasoning_effort()
+        == "xhigh"
+    )
 
 
 def test_anthropic_rejects_non_anthropic_reasoning_config() -> None:
@@ -58,21 +87,27 @@ def test_anthropic_off_omits_thinking() -> None:
 
 
 def test_claude_headless_accepts_adaptive_and_na() -> None:
-    assert ClaudeHeadlessReasoningConfig.from_base(
-        AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
-    ).to_cli_args() == []
-    assert ClaudeHeadlessReasoningConfig.from_base(
-        AnthropicReasoning(thinking_level=ThinkingLevel.NA)
-    ).to_cli_args() == []
+    assert (
+        ClaudeHeadlessReasoningConfig.from_base(
+            AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
+        ).to_cli_args()
+        == []
+    )
+    assert (
+        ClaudeHeadlessReasoningConfig.from_base(
+            AnthropicReasoning(thinking_level=ThinkingLevel.NA)
+        ).to_cli_args()
+        == []
+    )
 
 
 def test_google_serializes_budget_and_dynamic() -> None:
-    assert GoogleReasoningConfig.from_base(ReasoningBudget(tokens=512)).to_payload() == {
-        "thinkingBudget": 512
-    }
-    assert GoogleReasoningConfig.from_base(GoogleReasoning(dynamic=True)).to_payload() == {
-        "thinkingBudget": -1
-    }
+    assert GoogleReasoningConfig.from_base(
+        ReasoningBudget(tokens=512)
+    ).to_payload() == {"thinkingBudget": 512}
+    assert GoogleReasoningConfig.from_base(
+        GoogleReasoning(dynamic=True)
+    ).to_payload() == {"thinkingBudget": -1}
 
 
 def test_google_serializes_level() -> None:
@@ -88,6 +123,24 @@ def test_claude_headless_rejects_reasoning_config() -> None:
         )
 
 
-def test_codex_headless_rejects_reasoning() -> None:
+def test_codex_headless_serializes_reasoning_levels() -> None:
+    assert (
+        CodexHeadlessReasoningConfig.from_base(
+            CodexReasoning(thinking_level=ThinkingLevel.NA)
+        ).to_cli_args()
+        == []
+    )
+    assert CodexHeadlessReasoningConfig.from_base(
+        CodexReasoning(thinking_level=ThinkingLevel.OFF)
+    ).to_cli_args() == ["-c", 'model_reasoning_effort="none"']
+    assert CodexHeadlessReasoningConfig.from_base(
+        CodexReasoning(thinking_level=ThinkingLevel.HIGH)
+    ).to_cli_args() == ["-c", 'model_reasoning_effort="high"']
+    assert CodexHeadlessReasoningConfig.from_base(
+        CodexReasoning(thinking_level=ThinkingLevel.XHIGH)
+    ).to_cli_args() == ["-c", 'model_reasoning_effort="xhigh"']
+
+
+def test_codex_headless_rejects_non_codex_reasoning() -> None:
     with pytest.raises(HeadlessExecutionError):
         CodexHeadlessReasoningConfig.from_base(ReasoningBudget(tokens=1024))

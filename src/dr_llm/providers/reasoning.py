@@ -18,7 +18,19 @@ from dr_llm.providers.anthropic.thinking import (
     ANTHROPIC_THINKING_MAX_BUDGET_TOKENS,
     ANTHROPIC_THINKING_MIN_BUDGET_TOKENS,
 )
+from dr_llm.providers.headless.codex_thinking import (
+    codex_supports_configurable_thinking,
+    codex_supports_minimal_thinking,
+    codex_supports_off_thinking,
+    codex_supports_xhigh_thinking,
+)
 from dr_llm.providers.models import CallMode
+from dr_llm.providers.openai_compat.thinking import (
+    openai_supports_configurable_thinking,
+    openai_supports_minimal_thinking,
+    openai_supports_off_thinking,
+    openai_supports_xhigh_thinking,
+)
 from dr_llm.providers.reasoning_capabilities import (
     GoogleThinkingLevel,
     ReasoningCapabilities,
@@ -47,6 +59,11 @@ class ThinkingLevel(StrEnum):
     OFF = "off"
     BUDGET = "budget"
     ADAPTIVE = "adaptive"
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
 
 
 class ReasoningBudget(BaseModel):
@@ -99,6 +116,20 @@ class AnthropicReasoning(BaseModel):
         return self
 
 
+class OpenAIReasoning(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["openai"] = "openai"
+    thinking_level: ThinkingLevel = ThinkingLevel.NA
+
+
+class CodexReasoning(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["codex"] = "codex"
+    thinking_level: ThinkingLevel = ThinkingLevel.NA
+
+
 class GoogleReasoning(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -129,7 +160,11 @@ class GoogleReasoning(BaseModel):
 
 
 ReasoningSpec = Annotated[
-    ReasoningBudget | AnthropicReasoning | GoogleReasoning,
+    ReasoningBudget
+    | AnthropicReasoning
+    | OpenAIReasoning
+    | CodexReasoning
+    | GoogleReasoning,
     Field(discriminator="kind"),
 ]
 REASONING_SPEC_ADAPTER = TypeAdapter(ReasoningSpec)
@@ -154,6 +189,20 @@ def validate_reasoning(
             thinking_level=reasoning.thinking_level,
             budget_tokens=reasoning.budget_tokens,
             display=reasoning.display,
+        )
+        return
+    if isinstance(reasoning, OpenAIReasoning):
+        _validate_openai_reasoning(
+            provider=provider,
+            model=model,
+            thinking_level=reasoning.thinking_level,
+        )
+        return
+    if isinstance(reasoning, CodexReasoning):
+        _validate_codex_reasoning(
+            provider=provider,
+            model=model,
+            thinking_level=reasoning.thinking_level,
         )
         return
     if provider == "anthropic" and isinstance(reasoning, ReasoningBudget):
@@ -205,6 +254,18 @@ def _validate_against_capabilities(
                 budget_tokens=budget_tokens,
                 display=display,
             )
+        case OpenAIReasoning(thinking_level=thinking_level):
+            _validate_openai_reasoning(
+                provider=provider,
+                model=model,
+                thinking_level=thinking_level,
+            )
+        case CodexReasoning(thinking_level=thinking_level):
+            _validate_codex_reasoning(
+                provider=provider,
+                model=model,
+                thinking_level=thinking_level,
+            )
         case ReasoningBudget(tokens=tokens):
             if provider == "anthropic":
                 if model not in ANTHROPIC_BUDGET_THINKING_SUPPORTED:
@@ -222,7 +283,7 @@ def _validate_against_capabilities(
                 raise ValueError(
                     f"claude-code does not support budget thinking for model={model!r}"
                 )
-            if capabilities.mode in {"unsupported", "codex_headless"}:
+            if capabilities.mode == "unsupported":
                 raise ValueError(
                     f"Reasoning is not supported for provider={provider!r} model={model!r}"
                 )
@@ -238,7 +299,7 @@ def _validate_against_capabilities(
             thinking_budget=thinking_budget,
             dynamic=dynamic,
         ):
-            if capabilities.mode in {"unsupported", "codex_headless"}:
+            if capabilities.mode == "unsupported":
                 raise ValueError(
                     f"Reasoning is not supported for provider={provider!r} model={model!r}"
                 )
@@ -337,6 +398,86 @@ def _validate_anthropic_reasoning(
         raise ValueError(
             f"anthropic reasoning fields are not supported for provider={provider!r}"
         )
+
+
+def _validate_openai_reasoning(
+    *,
+    provider: str,
+    model: str,
+    thinking_level: ThinkingLevel,
+) -> None:
+    if provider not in {"openai", "openrouter"}:
+        raise ValueError(f"openai thinking is not supported for provider={provider!r}")
+    if not openai_supports_configurable_thinking(model):
+        raise ValueError(f"openai thinking is not supported for model={model!r}")
+    _validate_openai_style_thinking_level(
+        provider=provider,
+        model=model,
+        thinking_level=thinking_level,
+        supports_off=openai_supports_off_thinking(model),
+        supports_minimal=openai_supports_minimal_thinking(model),
+        supports_xhigh=openai_supports_xhigh_thinking(model),
+    )
+
+
+def _validate_codex_reasoning(
+    *,
+    provider: str,
+    model: str,
+    thinking_level: ThinkingLevel,
+) -> None:
+    if provider != "codex":
+        raise ValueError(f"codex thinking is not supported for provider={provider!r}")
+    if not codex_supports_configurable_thinking(model):
+        raise ValueError(f"codex thinking is not supported for model={model!r}")
+    _validate_openai_style_thinking_level(
+        provider=provider,
+        model=model,
+        thinking_level=thinking_level,
+        supports_off=codex_supports_off_thinking(model),
+        supports_minimal=codex_supports_minimal_thinking(model),
+        supports_xhigh=codex_supports_xhigh_thinking(model),
+    )
+
+
+def _validate_openai_style_thinking_level(
+    *,
+    provider: str,
+    model: str,
+    thinking_level: ThinkingLevel,
+    supports_off: bool,
+    supports_minimal: bool,
+    supports_xhigh: bool,
+) -> None:
+    if thinking_level == ThinkingLevel.NA:
+        return
+    if thinking_level == ThinkingLevel.OFF:
+        if supports_off:
+            return
+        raise ValueError(
+            f"thinking_level='off' is not supported for provider={provider!r} model={model!r}"
+        )
+    if thinking_level == ThinkingLevel.MINIMAL:
+        if supports_minimal:
+            return
+        raise ValueError(
+            f"thinking_level='minimal' is not supported for provider={provider!r} model={model!r}"
+        )
+    if thinking_level in {
+        ThinkingLevel.LOW,
+        ThinkingLevel.MEDIUM,
+        ThinkingLevel.HIGH,
+    }:
+        return
+    if thinking_level == ThinkingLevel.XHIGH:
+        if supports_xhigh:
+            return
+        raise ValueError(
+            f"thinking_level='xhigh' is not supported for provider={provider!r} model={model!r}"
+        )
+    raise ValueError(
+        f"thinking_level {thinking_level!r} is not supported for provider={provider!r} model={model!r}"
+    )
 
 
 def _validate_anthropic_budget_range(

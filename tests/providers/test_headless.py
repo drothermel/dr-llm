@@ -14,7 +14,7 @@ from dr_llm.providers.headless.claude_presets import (
     ClaudeHeadlessMiniMaxAdapter,
 )
 from dr_llm.providers.headless.codex import CodexHeadlessAdapter
-from dr_llm.providers.reasoning import ReasoningBudget
+from dr_llm.providers.reasoning import CodexReasoning, ReasoningBudget, ThinkingLevel
 from tests.conftest import make_request
 from tests.providers.conftest import make_subprocess_mock
 
@@ -40,6 +40,36 @@ def test_codex_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.text == "OK"
     assert response.usage.prompt_tokens == 2
     assert response.usage.completion_tokens == 3
+
+
+def test_codex_command_includes_reasoning_effort_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "turn.started"}),
+            json.dumps(
+                {"type": "item.completed", "item": {"type": "agent_message", "text": "OK"}}
+            ),
+            json.dumps(
+                {"type": "turn.completed", "usage": {"input_tokens": 2, "output_tokens": 3}}
+            ),
+        ]
+    )
+    captured, fake_run = make_subprocess_mock(stdout)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    adapter = CodexHeadlessAdapter()
+    request = make_request(
+        provider="codex",
+        model="gpt-5.1-codex-mini",
+        reasoning=CodexReasoning(thinking_level=ThinkingLevel.HIGH),
+    )
+    adapter.generate(request)
+
+    command = cast(list[str], captured["command"])
+    assert '-c' in command
+    assert 'model_reasoning_effort="high"' in command
 
 
 def test_claude_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:

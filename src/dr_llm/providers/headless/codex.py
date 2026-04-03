@@ -30,12 +30,12 @@ CODEX_DEFAULT_COMMAND = [
     "--skip-git-repo-check",
     "--sandbox",
     "read-only",
-    "--disable",
-    "web_search_request",
     "-c",
     "include_plan_tool=false",
     "-c",
     "project_doc_max_bytes=0",
+    "-c",
+    'web_search="disabled"',
 ]
 CODEX_PROMPT_SENTINEL = "-"
 CODEX_NEUTRAL_INSTRUCTIONS_CONTENT = "."
@@ -222,9 +222,11 @@ class CodexHeadlessAdapter(BaseHeadlessAdapter):
         payload: HeadlessRequestPayload,
         reasoning_mapping: HeadlessReasoningResult,
     ) -> list[str]:
-        del payload, reasoning_mapping
+        del payload
         command = [*self._config.command]
         command.extend(["-m", request.model])
+        if reasoning_mapping.cli_args:
+            command.extend(reasoning_mapping.cli_args)
         instructions_path = self._ensure_neutral_instructions_file()
         command.extend(
             [

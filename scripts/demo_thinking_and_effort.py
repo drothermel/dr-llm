@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Demo: live verification of Anthropic/Claude Code thinking and effort shapes.
+"""Demo: live verification of OpenAI/Codex thinking-level controls.
 
 Usage:
   uv run python scripts/demo_thinking_and_effort.py
+  uv run python scripts/demo_thinking_and_effort.py --provider openai
+  uv run python scripts/demo_thinking_and_effort.py --provider codex
 """
 
 from __future__ import annotations
@@ -13,55 +15,54 @@ import typer
 from pydantic import BaseModel, ValidationError
 
 from dr_llm.providers import build_default_registry
-from dr_llm.providers.anthropic.effort import ANTHROPIC_EFFORT_SUPPORTED_MODELS
-from dr_llm.providers.anthropic.thinking import (
-    ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
-    ANTHROPIC_BUDGET_THINKING_SUPPORTED,
+from dr_llm.providers.headless.codex_thinking import (
+    codex_supports_configurable_thinking,
+    codex_supports_minimal_thinking,
+    codex_supports_off_thinking,
+    codex_supports_xhigh_thinking,
 )
-from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.models import Message
+from dr_llm.providers.openai_compat.thinking import (
+    openai_supports_configurable_thinking,
+    openai_supports_minimal_thinking,
+    openai_supports_off_thinking,
+    openai_supports_xhigh_thinking,
+)
+from dr_llm.providers.reasoning import CodexReasoning, OpenAIReasoning, ThinkingLevel
 from dr_llm.providers.registry import ProviderRegistry
-from dr_llm.providers.reasoning import AnthropicReasoning, ThinkingLevel
 
 app = typer.Typer()
 
 PROMPT = "Reply with exactly OK."
-BUDGET_TOKENS = 2048
-ANTHROPIC_MAX_TOKENS = 4096
-THINKING_LEVELS = [
-    ThinkingLevel.NA,
-    ThinkingLevel.OFF,
-    ThinkingLevel.BUDGET,
-    ThinkingLevel.ADAPTIVE,
+OPENAI_MODELS = [
+    "gpt-5.4-mini-2026-03-17",
+    "gpt-5-mini-2025-08-07",
+    "gpt-4.1-mini-2025-04-14",
+    "gpt-4o-mini-2024-07-18",
+    "gpt-5.4-nano-2026-03-17",
+    "gpt-5-nano-2025-08-07",
+    "gpt-4.1-nano-2025-04-14",
 ]
-EFFORT_LEVELS = [
-    EffortSpec.NA,
-    EffortSpec.LOW,
-    EffortSpec.MEDIUM,
-    EffortSpec.HIGH,
-]
-
-ANTHROPIC_MODELS = [
-    "claude-sonnet-4-6",
-    "claude-opus-4-6",
-    "claude-opus-4-5-20251101",
-    "claude-haiku-4-5-20251001",
-    "claude-sonnet-4-5-20250929",
-    "claude-opus-4-1-20250805",
-    "claude-opus-4-20250514",
-    "claude-sonnet-4-20250514",
-]
-CLAUDE_CODE_MODELS = [
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5-20251001",
+CODEX_MODELS = [
+    "gpt-5.4",
+    "gpt-5.2",
+    "gpt-5.1",
+    "gpt-5",
+    "gpt-5.3-codex-spark",
+    "gpt-5.3-codex",
+    "gpt-5.2-codex",
+    "gpt-5.1-codex-max",
+    "gpt-5.1-codex",
+    "gpt-5-codex",
+    "gpt-5.4-mini",
+    "gpt-5.1-codex-mini",
 ]
 PROVIDER_MODELS = {
-    "anthropic": ANTHROPIC_MODELS,
-    "claude-code": CLAUDE_CODE_MODELS,
+    "openai": OPENAI_MODELS,
+    "codex": CODEX_MODELS,
 }
-PHASES = ["models", "thinking", "effort"]
+PHASES = ["models", "thinking"]
 
 
 class SummaryCounts(BaseModel):
@@ -71,164 +72,88 @@ class SummaryCounts(BaseModel):
     had_output_text: int = 0
 
 
-def anthropic_supported_thinking_levels(model: str) -> list[ThinkingLevel]:
-    if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
-        return [ThinkingLevel.NA, ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE]
-    if model in ANTHROPIC_BUDGET_THINKING_SUPPORTED:
-        return [ThinkingLevel.NA, ThinkingLevel.OFF, ThinkingLevel.BUDGET]
-    return [ThinkingLevel.NA, ThinkingLevel.OFF]
-
-
-def anthropic_supported_effort_levels(model: str) -> list[EffortSpec]:
-    if model in ANTHROPIC_EFFORT_SUPPORTED_MODELS:
-        return [EffortSpec.LOW, EffortSpec.MEDIUM, EffortSpec.HIGH]
-    return [EffortSpec.NA]
-
-
-def anthropic_default_thinking_for_model(model: str) -> ThinkingLevel:
-    if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
-        return ThinkingLevel.ADAPTIVE
-    return ThinkingLevel.OFF
-
-
-def anthropic_default_thinking_for_effort_sweep(model: str) -> ThinkingLevel:
-    if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
-        return ThinkingLevel.ADAPTIVE
-    return ThinkingLevel.OFF
-
-
-def anthropic_default_effort_for_model(model: str) -> EffortSpec:
-    if model in ANTHROPIC_EFFORT_SUPPORTED_MODELS:
-        return EffortSpec.MEDIUM
-    return EffortSpec.NA
-
-
-def anthropic_default_effort_for_thinking_sweep(model: str) -> EffortSpec:
-    if model in ANTHROPIC_EFFORT_SUPPORTED_MODELS:
-        return EffortSpec.MEDIUM
-    return EffortSpec.NA
-
-
-def claude_code_supported_thinking_levels(model: str) -> list[ThinkingLevel]:
-    if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
-        return [ThinkingLevel.ADAPTIVE]
-    return [ThinkingLevel.NA]
-
-
-def claude_code_supported_effort_levels(model: str) -> list[EffortSpec]:
-    if model in ANTHROPIC_EFFORT_SUPPORTED_MODELS:
-        return [EffortSpec.LOW, EffortSpec.MEDIUM, EffortSpec.HIGH]
-    return [EffortSpec.NA]
-
-
-def claude_code_default_thinking_for_model(model: str) -> ThinkingLevel:
-    if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
-        return ThinkingLevel.ADAPTIVE
-    return ThinkingLevel.NA
-
-
-def claude_code_default_thinking_for_effort_sweep(model: str) -> ThinkingLevel:
-    if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
-        return ThinkingLevel.ADAPTIVE
-    return ThinkingLevel.NA
-
-
-def claude_code_default_effort_for_model(model: str) -> EffortSpec:
-    if model in ANTHROPIC_EFFORT_SUPPORTED_MODELS:
-        return EffortSpec.MEDIUM
-    return EffortSpec.NA
-
-
-def claude_code_default_effort_for_thinking_sweep(model: str) -> EffortSpec:
-    if model in ANTHROPIC_EFFORT_SUPPORTED_MODELS:
-        return EffortSpec.MEDIUM
-    return EffortSpec.NA
-
-
 def supported_thinking_levels(provider: str, model: str) -> list[ThinkingLevel]:
-    if provider == "anthropic":
-        return anthropic_supported_thinking_levels(model)
-    if provider == "claude-code":
-        return claude_code_supported_thinking_levels(model)
+    if provider == "openai":
+        return _supported_openai_thinking_levels(model)
+    if provider == "codex":
+        return _supported_codex_thinking_levels(model)
     raise ValueError(f"unsupported provider: {provider!r}")
 
 
-def supported_effort_levels(provider: str, model: str) -> list[EffortSpec]:
-    if provider == "anthropic":
-        return anthropic_supported_effort_levels(model)
-    if provider == "claude-code":
-        return claude_code_supported_effort_levels(model)
-    raise ValueError(f"unsupported provider: {provider!r}")
+def _supported_openai_thinking_levels(model: str) -> list[ThinkingLevel]:
+    return _supported_openai_style_thinking_levels(
+        supports_configurable=openai_supports_configurable_thinking(model),
+        supports_off=openai_supports_off_thinking(model),
+        supports_minimal=openai_supports_minimal_thinking(model),
+        supports_xhigh=openai_supports_xhigh_thinking(model),
+    )
 
 
-def reasoning_for_thinking_level(level: ThinkingLevel) -> AnthropicReasoning | None:
-    if level == ThinkingLevel.NA:
-        return None
-    if level == ThinkingLevel.OFF:
-        return AnthropicReasoning(thinking_level=ThinkingLevel.OFF)
-    if level == ThinkingLevel.BUDGET:
-        return AnthropicReasoning(
-            thinking_level=ThinkingLevel.BUDGET,
-            budget_tokens=BUDGET_TOKENS,
-        )
-    if level == ThinkingLevel.ADAPTIVE:
-        return AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
-    raise ValueError(f"unsupported thinking level: {level!r}")
+def _supported_codex_thinking_levels(model: str) -> list[ThinkingLevel]:
+    return _supported_openai_style_thinking_levels(
+        supports_configurable=codex_supports_configurable_thinking(model),
+        supports_off=codex_supports_off_thinking(model),
+        supports_minimal=codex_supports_minimal_thinking(model),
+        supports_xhigh=codex_supports_xhigh_thinking(model),
+    )
+
+
+def _supported_openai_style_thinking_levels(
+    *,
+    supports_configurable: bool,
+    supports_off: bool,
+    supports_minimal: bool,
+    supports_xhigh: bool,
+) -> list[ThinkingLevel]:
+    if not supports_configurable:
+        return [ThinkingLevel.NA]
+    levels = [ThinkingLevel.NA]
+    if supports_off:
+        levels.append(ThinkingLevel.OFF)
+    elif supports_minimal:
+        levels.append(ThinkingLevel.MINIMAL)
+    levels.extend(
+        [
+            ThinkingLevel.LOW,
+            ThinkingLevel.MEDIUM,
+            ThinkingLevel.HIGH,
+        ]
+    )
+    if supports_xhigh:
+        levels.append(ThinkingLevel.XHIGH)
+    return levels
 
 
 def default_thinking_for_model(provider: str, model: str) -> ThinkingLevel:
-    if provider == "anthropic":
-        return anthropic_default_thinking_for_model(model)
-    if provider == "claude-code":
-        return claude_code_default_thinking_for_model(model)
+    levels = supported_thinking_levels(provider, model)
+    if ThinkingLevel.OFF in levels:
+        return ThinkingLevel.OFF
+    if ThinkingLevel.MINIMAL in levels:
+        return ThinkingLevel.MINIMAL
+    if ThinkingLevel.LOW in levels:
+        return ThinkingLevel.LOW
+    return ThinkingLevel.NA
+
+
+def reasoning_for_level(
+    provider: str,
+    thinking_level: ThinkingLevel,
+) -> OpenAIReasoning | CodexReasoning | None:
+    if thinking_level == ThinkingLevel.NA:
+        return None
+    if provider == "openai":
+        return OpenAIReasoning(thinking_level=thinking_level)
+    if provider == "codex":
+        return CodexReasoning(thinking_level=thinking_level)
     raise ValueError(f"unsupported provider: {provider!r}")
-
-
-def default_thinking_for_effort_sweep(provider: str, model: str) -> ThinkingLevel:
-    if provider == "anthropic":
-        return anthropic_default_thinking_for_effort_sweep(model)
-    if provider == "claude-code":
-        return claude_code_default_thinking_for_effort_sweep(model)
-    raise ValueError(f"unsupported provider: {provider!r}")
-
-
-def default_effort_for_model(provider: str, model: str) -> EffortSpec:
-    if provider == "anthropic":
-        return anthropic_default_effort_for_model(model)
-    if provider == "claude-code":
-        return claude_code_default_effort_for_model(model)
-    raise ValueError(f"unsupported provider: {provider!r}")
-
-
-def default_effort_for_thinking_sweep(provider: str, model: str) -> EffortSpec:
-    if provider == "anthropic":
-        return anthropic_default_effort_for_thinking_sweep(model)
-    if provider == "claude-code":
-        return claude_code_default_effort_for_thinking_sweep(model)
-    raise ValueError(f"unsupported provider: {provider!r}")
-
-
-def format_thinking(level: ThinkingLevel) -> str:
-    if level == ThinkingLevel.BUDGET:
-        return f"{level.name}({BUDGET_TOKENS})"
-    return level.name
-
-
-def format_effort(level: EffortSpec) -> str:
-    return level.name
 
 
 def format_attempt(
     provider: str,
     model: str,
     thinking_level: ThinkingLevel,
-    effort: EffortSpec,
 ) -> str:
-    return (
-        f"{provider} | {model} | "
-        f"thinking={format_thinking(thinking_level)} | "
-        f"effort={format_effort(effort)}"
-    )
+    return f"{provider} | {model} | thinking={thinking_level.name}"
 
 
 def availability_detail(missing: tuple[str, ...]) -> str:
@@ -237,11 +162,11 @@ def availability_detail(missing: tuple[str, ...]) -> str:
     return ", ".join(missing)
 
 
-def ensure_required_providers_available() -> None:
+def ensure_required_providers_available(providers: list[str]) -> None:
     registry = build_default_registry()
     try:
         missing: list[str] = []
-        for provider in ("anthropic", "claude-code"):
+        for provider in providers:
             status = registry.availability_status(provider)
             if status.available:
                 continue
@@ -269,15 +194,12 @@ def make_request(
     provider: str,
     model: str,
     thinking_level: ThinkingLevel,
-    effort: EffortSpec,
 ) -> LlmRequest:
     return LlmRequest(
         provider=provider,
         model=model,
         messages=[Message(role="user", content=PROMPT)],
-        max_tokens=ANTHROPIC_MAX_TOKENS if provider == "anthropic" else None,
-        effort=effort,
-        reasoning=reasoning_for_thinking_level(thinking_level),
+        reasoning=reasoning_for_level(provider, thinking_level),
     )
 
 
@@ -288,20 +210,18 @@ def run_attempt(
     model: str,
     phase: str,
     thinking_level: ThinkingLevel,
-    effort: EffortSpec,
     counts: dict[tuple[str, str], SummaryCounts],
 ) -> None:
     key = (provider, phase)
     summary = counts[key]
     summary.attempted += 1
-    print(format_attempt(provider, model, thinking_level, effort))
+    print(format_attempt(provider, model, thinking_level))
 
     try:
         request = make_request(
             provider=provider,
             model=model,
             thinking_level=thinking_level,
-            effort=effort,
         )
     except (ValidationError, ValueError) as exc:
         summary.failed += 1
@@ -325,17 +245,17 @@ def run_attempt(
 def run_model_sweep(
     registry: ProviderRegistry,
     counts: dict[tuple[str, str], SummaryCounts],
+    providers: list[str],
 ) -> None:
     print("\n== models ==")
-    for provider, models in PROVIDER_MODELS.items():
-        for model in models:
+    for provider in providers:
+        for model in PROVIDER_MODELS[provider]:
             run_attempt(
                 registry=registry,
                 provider=provider,
                 model=model,
                 phase="models",
                 thinking_level=default_thinking_for_model(provider, model),
-                effort=default_effort_for_model(provider, model),
                 counts=counts,
             )
 
@@ -343,11 +263,11 @@ def run_model_sweep(
 def run_thinking_sweep(
     registry: ProviderRegistry,
     counts: dict[tuple[str, str], SummaryCounts],
+    providers: list[str],
 ) -> None:
     print("\n== thinking ==")
-    for provider, models in PROVIDER_MODELS.items():
-        for model in models:
-            effort = default_effort_for_thinking_sweep(provider, model)
+    for provider in providers:
+        for model in PROVIDER_MODELS[provider]:
             for thinking_level in supported_thinking_levels(provider, model):
                 run_attempt(
                     registry=registry,
@@ -355,34 +275,16 @@ def run_thinking_sweep(
                     model=model,
                     phase="thinking",
                     thinking_level=thinking_level,
-                    effort=effort,
                     counts=counts,
                 )
 
 
-def run_effort_sweep(
-    registry: ProviderRegistry,
+def print_summary(
     counts: dict[tuple[str, str], SummaryCounts],
+    providers: list[str],
 ) -> None:
-    print("\n== effort ==")
-    for provider, models in PROVIDER_MODELS.items():
-        for model in models:
-            thinking_level = default_thinking_for_effort_sweep(provider, model)
-            for effort in supported_effort_levels(provider, model):
-                run_attempt(
-                    registry=registry,
-                    provider=provider,
-                    model=model,
-                    phase="effort",
-                    thinking_level=thinking_level,
-                    effort=effort,
-                    counts=counts,
-                )
-
-
-def print_summary(counts: dict[tuple[str, str], SummaryCounts]) -> None:
     print("\n== summary ==")
-    for provider in ("anthropic", "claude-code"):
+    for provider in providers:
         print(provider)
         for phase in PHASES:
             summary = counts[(provider, phase)]
@@ -396,15 +298,27 @@ def print_summary(counts: dict[tuple[str, str], SummaryCounts]) -> None:
 
 
 @app.command()
-def main() -> None:
-    ensure_required_providers_available()
+def main(
+    provider: list[str] | None = typer.Option(
+        None,
+        "--provider",
+        help="Providers to include in the sweep. Repeatable.",
+    ),
+) -> None:
+    providers = provider or sorted(PROVIDER_MODELS)
+    unsupported = [name for name in providers if name not in PROVIDER_MODELS]
+    if unsupported:
+        raise typer.BadParameter(
+            f"Unsupported provider(s): {', '.join(sorted(unsupported))}"
+        )
+
+    ensure_required_providers_available(providers)
     counts: dict[tuple[str, str], SummaryCounts] = defaultdict(SummaryCounts)
     registry = build_default_registry()
     try:
-        run_model_sweep(registry, counts)
-        run_thinking_sweep(registry, counts)
-        run_effort_sweep(registry, counts)
-        print_summary(counts)
+        run_model_sweep(registry, counts, providers)
+        run_thinking_sweep(registry, counts, providers)
+        print_summary(counts, providers)
     finally:
         registry.close()
 

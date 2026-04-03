@@ -7,7 +7,6 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import ReasoningWarning
@@ -26,7 +25,7 @@ class OpenAICompatRequest(BaseModel):
     temperature: float | None = None
     top_p: float | None = None
     max_tokens: int | None = None
-    reasoning: dict[str, Any] | None = None
+    reasoning_effort: str | None = None
     base_url: str = Field(exclude=True)
     chat_path: str = Field(exclude=True)
     api_key_env: str = Field(exclude=True)
@@ -43,13 +42,7 @@ class OpenAICompatRequest(BaseModel):
         reasoning_mapping = OpenAICompatReasoningConfig.from_base(
             request.reasoning,
         )
-        reasoning_payload = reasoning_mapping.to_payload()
-        if request.effort != EffortSpec.NA:
-            if reasoning_payload:
-                raise ProviderSemanticError(
-                    "OpenAI-compatible requests cannot combine top-level effort with reasoning payload"
-                )
-            reasoning_payload = {"effort": request.effort}
+        reasoning_effort = reasoning_mapping.to_reasoning_effort()
         return cls(
             provider=request.provider,
             model=request.model,
@@ -57,7 +50,7 @@ class OpenAICompatRequest(BaseModel):
             temperature=request.temperature,
             top_p=request.top_p,
             max_tokens=request.max_tokens,
-            reasoning=reasoning_payload or None,
+            reasoning_effort=reasoning_effort,
             base_url=config.base_url,
             chat_path=config.chat_path,
             api_key_env=config.api_key_env,

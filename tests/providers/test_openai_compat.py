@@ -6,12 +6,12 @@ import httpx
 import pytest
 
 from dr_llm.errors import ProviderTransportError
-from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.models import Message
 from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
 from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.providers.openai_compat.request import OpenAICompatRequest
 from dr_llm.providers.openai_compat.response import OpenAICompatResponse
+from dr_llm.providers.reasoning import OpenAIReasoning, ThinkingLevel
 from tests.conftest import make_request
 from tests.providers.conftest import make_http_client
 
@@ -57,11 +57,11 @@ def test_forwards_reasoning_and_parses_cost() -> None:
         request = make_request(
             provider="openrouter",
             model="openai/gpt-5",
-            effort=EffortSpec.HIGH,
+            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.HIGH),
         )
         result = adapter.generate(request)
 
-    assert captured["payload"]["reasoning"] == {"effort": "high"}
+    assert captured["payload"]["reasoning_effort"] == "high"
     assert result.reasoning == "internal trace"
     assert result.usage.reasoning_tokens == 22
     assert result.cost is not None
@@ -112,7 +112,9 @@ def test_request_builds_endpoint_and_headers() -> None:
     )
     provider_request = OpenAICompatRequest.from_llm_request(request, _CONFIG)
 
-    assert provider_request.endpoint() == "https://openrouter.ai/api/v1/chat/completions"
+    assert (
+        provider_request.endpoint() == "https://openrouter.ai/api/v1/chat/completions"
+    )
     assert provider_request.headers()["Idempotency-Key"] == "fixed-key"
     assert provider_request.messages == [{"role": "user", "content": "hi"}]
 
@@ -121,6 +123,12 @@ def test_request_generates_idempotency_key_when_missing() -> None:
     request = make_request(provider="openrouter", model="some-model")
     provider_request = OpenAICompatRequest.from_llm_request(request, _CONFIG)
     assert provider_request.idempotency_key
+
+
+def test_request_omits_reasoning_when_not_configured() -> None:
+    request = make_request(provider="openrouter", model="openai/gpt-4o-mini")
+    provider_request = OpenAICompatRequest.from_llm_request(request, _CONFIG)
+    assert provider_request.reasoning_effort is None
 
 
 # ---------------------------------------------------------------------------

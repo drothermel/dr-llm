@@ -4,6 +4,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from dr_llm.providers.headless.codex_thinking import (
+    codex_supports_configurable_thinking,
+)
+from dr_llm.providers.openai_compat.thinking import (
+    openai_supports_configurable_thinking,
+)
+
 GoogleThinkingLevel = Literal["minimal", "low", "medium", "high"]
 ReasoningMode = Literal[
     "unsupported",
@@ -14,7 +21,7 @@ ReasoningMode = Literal[
     "anthropic_effort",
     "anthropic_effort_and_budget",
     "claude_cli_effort",
-    "codex_headless",
+    "codex_cli_effort",
 ]
 
 
@@ -29,7 +36,7 @@ class ReasoningCapabilities(BaseModel):
 
     @property
     def supports_reasoning(self) -> bool:
-        return self.mode not in {"unsupported", "codex_headless"}
+        return self.mode != "unsupported"
 
 
 class ReasoningCapabilityRule(BaseModel):
@@ -57,9 +64,6 @@ class ReasoningCapabilityRule(BaseModel):
         return model.startswith(self.model_prefix)
 
 
-_OPENAI_CAPS_GPT5 = ReasoningCapabilities(mode="openai_effort")
-_OPENAI_CAPS_GPT5_1 = ReasoningCapabilities(mode="openai_effort")
-_OPENAI_CAPS_GPT5_2_PLUS = ReasoningCapabilities(mode="openai_effort")
 _GOOGLE_25_FLASH_CAPS = ReasoningCapabilities(
     mode="google_budget",
     min_budget_tokens=1,
@@ -95,81 +99,9 @@ _ANTHROPIC_OPUS_45_CAPS = ReasoningCapabilities(
 )
 _ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(mode="anthropic_effort")
 _CLAUDE_HEADLESS_CAPS = ReasoningCapabilities(mode="claude_cli_effort")
-_CODEX_HEADLESS_CAPS = ReasoningCapabilities(mode="codex_headless")
+_CODEX_CLI_EFFORT_CAPS = ReasoningCapabilities(mode="codex_cli_effort")
 
 CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
-    ReasoningCapabilityRule(
-        provider="openai", exact_model="gpt-5", capabilities=_OPENAI_CAPS_GPT5
-    ),
-    ReasoningCapabilityRule(
-        provider="openai", exact_model="gpt-5-mini", capabilities=_OPENAI_CAPS_GPT5
-    ),
-    ReasoningCapabilityRule(
-        provider="openai", exact_model="gpt-5.1", capabilities=_OPENAI_CAPS_GPT5_1
-    ),
-    ReasoningCapabilityRule(
-        provider="openai", model_prefix="gpt-5.1-", capabilities=_OPENAI_CAPS_GPT5_1
-    ),
-    ReasoningCapabilityRule(
-        provider="openai",
-        exact_model="gpt-5.2",
-        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
-    ),
-    ReasoningCapabilityRule(
-        provider="openai",
-        model_prefix="gpt-5.2-",
-        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
-    ),
-    ReasoningCapabilityRule(
-        provider="openai",
-        exact_model="gpt-5.3",
-        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
-    ),
-    ReasoningCapabilityRule(
-        provider="openai",
-        model_prefix="gpt-5.3-",
-        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
-    ),
-    ReasoningCapabilityRule(
-        provider="openai",
-        exact_model="gpt-5.4",
-        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
-    ),
-    ReasoningCapabilityRule(
-        provider="openai",
-        model_prefix="gpt-5.4-",
-        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
-    ),
-    ReasoningCapabilityRule(
-        provider="openrouter",
-        exact_model="openai/gpt-5",
-        capabilities=_OPENAI_CAPS_GPT5,
-    ),
-    ReasoningCapabilityRule(
-        provider="openrouter",
-        exact_model="openai/gpt-5-mini",
-        capabilities=_OPENAI_CAPS_GPT5,
-    ),
-    ReasoningCapabilityRule(
-        provider="openrouter",
-        exact_model="openai/gpt-5.1",
-        capabilities=_OPENAI_CAPS_GPT5_1,
-    ),
-    ReasoningCapabilityRule(
-        provider="openrouter",
-        exact_model="openai/gpt-5.2",
-        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
-    ),
-    ReasoningCapabilityRule(
-        provider="openrouter",
-        exact_model="openai/gpt-5.3",
-        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
-    ),
-    ReasoningCapabilityRule(
-        provider="openrouter",
-        exact_model="openai/gpt-5.4",
-        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
-    ),
     ReasoningCapabilityRule(
         provider="google",
         model_prefix="gemini-2.5-flash-lite-preview",
@@ -258,9 +190,6 @@ CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
         model_prefix="kimi-",
         capabilities=_CLAUDE_HEADLESS_CAPS,
     ),
-    ReasoningCapabilityRule(
-        provider="codex", model_prefix="gpt-", capabilities=_CODEX_HEADLESS_CAPS
-    ),
 )
 
 
@@ -269,6 +198,12 @@ def reasoning_capabilities_for_model(
     provider: str,
     model: str,
 ) -> ReasoningCapabilities | None:
+    if provider in {"openai", "openrouter"} and openai_supports_configurable_thinking(
+        model
+    ):
+        return ReasoningCapabilities(mode="openai_effort")
+    if provider == "codex" and codex_supports_configurable_thinking(model):
+        return _CODEX_CLI_EFFORT_CAPS
     exact_rules = [
         rule for rule in CURATED_REASONING_CAPABILITY_RULES if rule.exact_model
     ]

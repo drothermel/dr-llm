@@ -41,6 +41,11 @@ def test_thinking_level_values() -> None:
     assert ThinkingLevel.OFF == "off"
     assert ThinkingLevel.BUDGET == "budget"
     assert ThinkingLevel.ADAPTIVE == "adaptive"
+    assert ThinkingLevel.MINIMAL == "minimal"
+    assert ThinkingLevel.LOW == "low"
+    assert ThinkingLevel.MEDIUM == "medium"
+    assert ThinkingLevel.HIGH == "high"
+    assert ThinkingLevel.XHIGH == "xhigh"
 
 
 def test_google_reasoning_requires_exactly_one_mode() -> None:
