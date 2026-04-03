@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_config import LlmConfig
+from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import (
     AnthropicReasoning,
@@ -107,6 +108,43 @@ def test_to_request_with_effort() -> None:
     request = config.to_request(messages)
 
     assert request.effort == EffortSpec.MEDIUM
+
+
+def test_rejects_non_na_effort_for_unsupported_provider() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-4.1-mini",
+            effort=EffortSpec.MEDIUM,
+        )
+
+
+def test_rejects_na_effort_for_supported_anthropic_model() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            effort=EffortSpec.NA,
+        )
+
+
+def test_rejects_non_na_effort_for_unsupported_anthropic_model() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="anthropic",
+            model="claude-sonnet-4-5-20250929",
+            effort=EffortSpec.MEDIUM,
+        )
+
+
+def test_llm_request_rejects_na_effort_for_supported_anthropic_model() -> None:
+    with pytest.raises(ValidationError):
+        LlmRequest(
+            provider="anthropic",
+            model="claude-opus-4-6",
+            messages=[Message(role="user", content="Hello")],
+            effort=EffortSpec.NA,
+        )
 
 
 def test_model_dump_roundtrip() -> None:

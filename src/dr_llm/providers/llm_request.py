@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from dr_llm.providers.effort import EffortSpec
+from dr_llm.providers.effort import EffortSpec, validate_effort
 from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import ReasoningSpec, validate_reasoning
 
@@ -24,6 +24,11 @@ class LlmRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_reasoning(self) -> LlmRequest:
+        validate_effort(
+            provider=self.provider,
+            model=self.model,
+            effort=self.effort,
+        )
         validate_reasoning(
             provider=self.provider,
             model=self.model,
