@@ -9,7 +9,6 @@ from dr_llm.providers.reasoning import ReasoningWarning
 from dr_llm.providers.reasoning import (
     AnthropicReasoning,
     ReasoningBudget,
-    ReasoningEffort,
     ReasoningSpec,
 )
 
@@ -18,7 +17,6 @@ class AnthropicReasoningConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     thinking: dict[str, Any] = Field(default_factory=dict)
-    output_config: dict[str, Any] = Field(default_factory=dict)
     warnings: list[ReasoningWarning] = Field(default_factory=list)
 
     @classmethod
@@ -29,20 +27,14 @@ class AnthropicReasoningConfig(BaseModel):
         if config is None:
             return cls()
         match config:
-            case ReasoningEffort(level=level):
-                return cls(output_config={"effort": level})
             case ReasoningBudget(tokens=tokens):
                 return cls(thinking={"type": "enabled", "budget_tokens": tokens})
             case AnthropicReasoning(
-                effort=effort,
                 budget_tokens=budget_tokens,
                 thinking_mode=thinking_mode,
                 display=display,
             ):
                 thinking: dict[str, Any] = {}
-                output_config: dict[str, Any] = {}
-                if effort is not None:
-                    output_config["effort"] = effort
                 if (
                     budget_tokens is not None
                     or thinking_mode is not None
@@ -54,7 +46,7 @@ class AnthropicReasoningConfig(BaseModel):
                         thinking["budget_tokens"] = budget_tokens
                     if display is not None:
                         thinking["display"] = display
-                return cls(thinking=thinking, output_config=output_config)
+                return cls(thinking=thinking)
             case _:
                 raise ProviderSemanticError(
                     f"anthropic reasoning serializer received unsupported config kind={config.kind!r}"
@@ -62,6 +54,3 @@ class AnthropicReasoningConfig(BaseModel):
 
     def thinking_payload(self) -> dict[str, Any]:
         return self.thinking
-
-    def output_config_payload(self) -> dict[str, Any]:
-        return self.output_config

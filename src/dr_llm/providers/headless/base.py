@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.logging import emit_generation_event
+from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.headless.config import HeadlessProviderConfig
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.llm_response import LlmResponse
@@ -40,6 +41,7 @@ class HeadlessRequestPayload(BaseModel):
     temperature: float | None = None
     top_p: float | None = None
     max_tokens: int | None = None
+    effort: EffortSpec = EffortSpec.NA
     reasoning: ReasoningSpec | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -52,6 +54,7 @@ class HeadlessRequestPayload(BaseModel):
             temperature=request.temperature,
             top_p=request.top_p,
             max_tokens=request.max_tokens,
+            effort=request.effort,
             reasoning=request.reasoning,
             metadata=request.metadata,
         )

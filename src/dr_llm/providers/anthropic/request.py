@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.providers.anthropic.reasoning import AnthropicReasoningConfig
+from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import ReasoningWarning
@@ -47,6 +48,9 @@ class AnthropicRequest(BaseModel):
         config: AnthropicConfig,
     ) -> AnthropicRequest:
         reasoning_mapping = AnthropicReasoningConfig.from_base(request.reasoning)
+        output_config = (
+            {"effort": request.effort} if request.effort != EffortSpec.NA else None
+        )
         system = "\n".join(
             message.content for message in request.messages if message.role == "system"
         )
@@ -59,7 +63,7 @@ class AnthropicRequest(BaseModel):
             temperature=request.temperature,
             top_p=request.top_p,
             thinking=reasoning_mapping.thinking_payload() or None,
-            output_config=reasoning_mapping.output_config_payload() or None,
+            output_config=output_config,
             base_url=config.base_url,
             api_key=cls._resolve_api_key(config=config),
             anthropic_version=config.anthropic_version,

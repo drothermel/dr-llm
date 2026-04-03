@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.providers.reasoning import ReasoningWarning
-from dr_llm.providers.reasoning import ReasoningEffort, ReasoningSpec
+from dr_llm.providers.reasoning import ReasoningSpec
 
 
 class ClaudeHeadlessReasoningConfig(BaseModel):
@@ -20,13 +20,9 @@ class ClaudeHeadlessReasoningConfig(BaseModel):
     ) -> ClaudeHeadlessReasoningConfig:
         if config is None:
             return cls()
-        match config:
-            case ReasoningEffort(level=level):
-                return cls(cli_args=["--effort", level])
-            case _:
-                raise HeadlessExecutionError(
-                    f"claude headless reasoning serializer received unsupported config kind={config.kind!r}"
-                )
+        raise HeadlessExecutionError(
+            f"claude headless reasoning serializer received unsupported config kind={config.kind!r}"
+        )
 
     def to_cli_args(self) -> list[str]:
         return self.cli_args

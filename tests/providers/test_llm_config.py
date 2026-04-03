@@ -137,6 +137,24 @@ def test_rejects_non_na_effort_for_unsupported_anthropic_model() -> None:
         )
 
 
+def test_rejects_na_effort_for_supported_claude_code_model() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="claude-code",
+            model="claude-sonnet-4-6",
+            effort=EffortSpec.NA,
+        )
+
+
+def test_rejects_non_na_effort_for_unsupported_claude_code_model() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="claude-code",
+            model="claude-haiku-4-5-20251001",
+            effort=EffortSpec.MEDIUM,
+        )
+
+
 def test_llm_request_rejects_na_effort_for_supported_anthropic_model() -> None:
     with pytest.raises(ValidationError):
         LlmRequest(
@@ -214,6 +232,7 @@ def test_anthropic_adaptive_requires_model_support_not_effort() -> None:
     LlmConfig(
         provider="anthropic",
         model="claude-sonnet-4-6",
+        effort=EffortSpec.MEDIUM,
         reasoning=AnthropicReasoning(thinking_mode="adaptive"),
     )
     with pytest.raises(ValidationError):

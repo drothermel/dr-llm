@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 import httpx
 import pytest
@@ -8,8 +8,9 @@ import pytest
 from dr_llm.errors import ProviderTransportError
 from dr_llm.providers.anthropic.adapter import AnthropicAdapter
 from dr_llm.providers.anthropic.config import AnthropicConfig
+from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import AnthropicReasoning, ReasoningEffort
+from dr_llm.providers.reasoning import AnthropicReasoning
 from tests.conftest import make_request
 from tests.providers.conftest import make_http_client
 
@@ -59,7 +60,7 @@ def test_payload_serializes_effort_output_config() -> None:
     request = make_request(
         provider="anthropic",
         model="claude-sonnet-4-6",
-        reasoning=ReasoningEffort(level="medium"),
+        effort=EffortSpec.MEDIUM,
     )
     adapter.generate(request)
 

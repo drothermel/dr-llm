@@ -34,10 +34,9 @@ def test_openai_compat_rejects_provider_specific_shape() -> None:
         OpenAICompatReasoningConfig.from_base(GoogleReasoning(thinking_level="low"))
 
 
-def test_anthropic_serializes_effort_to_output_config() -> None:
-    result = AnthropicReasoningConfig.from_base(ReasoningEffort(level="medium"))
-    assert result.output_config_payload() == {"effort": "medium"}
-    assert result.thinking_payload() == {}
+def test_anthropic_rejects_reasoning_effort() -> None:
+    with pytest.raises(ProviderSemanticError):
+        AnthropicReasoningConfig.from_base(ReasoningEffort(level="medium"))
 
 
 def test_anthropic_serializes_manual_thinking() -> None:
@@ -48,7 +47,6 @@ def test_anthropic_serializes_manual_thinking() -> None:
             display="omitted",
         )
     )
-    assert result.output_config_payload() == {}
     assert result.thinking_payload() == {
         "type": "enabled",
         "budget_tokens": 2048,
@@ -72,8 +70,8 @@ def test_google_serializes_level() -> None:
 
 
 def test_claude_headless_serializes_max_effort() -> None:
-    result = ClaudeHeadlessReasoningConfig.from_base(ReasoningEffort(level="max"))
-    assert result.to_cli_args() == ["--effort", "max"]
+    with pytest.raises(HeadlessExecutionError):
+        ClaudeHeadlessReasoningConfig.from_base(ReasoningEffort(level="max"))
 
 
 def test_codex_headless_rejects_reasoning() -> None:

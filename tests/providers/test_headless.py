@@ -2,18 +2,18 @@ from __future__ import annotations
 
 import json
 import subprocess
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from pydantic import ValidationError
 
+from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
 from dr_llm.providers.headless.claude_presets import (
     ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
 )
 from dr_llm.providers.headless.codex import CodexHeadlessAdapter
-from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import ReasoningEffort
 from tests.conftest import make_request
 from tests.providers.conftest import make_subprocess_mock
@@ -55,7 +55,11 @@ def test_claude_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     adapter = ClaudeHeadlessAdapter()
-    request = make_request(provider="claude-code", model="claude-sonnet-4-6")
+    request = make_request(
+        provider="claude-code",
+        model="claude-sonnet-4-6",
+        effort=EffortSpec.MEDIUM,
+    )
     response = adapter.generate(request)
 
     command = cast(list[str], captured["command"])
@@ -88,12 +92,12 @@ def test_claude_command_includes_effort(monkeypatch: pytest.MonkeyPatch) -> None
     request = make_request(
         provider="claude-code",
         model="claude-sonnet-4-6",
-        reasoning=ReasoningEffort(level="max"),
+        effort=EffortSpec.HIGH,
     )
     adapter.generate(request)
 
     command = cast(list[str], captured["command"])
-    assert command[command.index("--effort") + 1] == "max"
+    assert command[command.index("--effort") + 1] == "high"
 
 
 def test_claude_minimax_preset_maps_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -158,7 +162,6 @@ def test_codex_rejects_reasoning_before_subprocess(monkeypatch: pytest.MonkeyPat
     captured, fake_run = make_subprocess_mock(stdout)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    adapter = CodexHeadlessAdapter()
     with pytest.raises(ValidationError):
         make_request(
             provider="codex",

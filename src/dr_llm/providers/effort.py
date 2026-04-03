@@ -4,6 +4,8 @@ from enum import StrEnum
 
 from dr_llm.providers.anthropic.effort import ANTHROPIC_EFFORT_SUPPORTED_MODELS
 
+EFFORT_ENABLED_PROVIDERS = frozenset({"anthropic", "claude-code"})
+
 
 class EffortSpec(StrEnum):
     NA = "na"
@@ -13,7 +15,7 @@ class EffortSpec(StrEnum):
 
 
 def validate_effort(*, provider: str, model: str, effort: EffortSpec) -> None:
-    if provider != "anthropic":
+    if provider not in EFFORT_ENABLED_PROVIDERS:
         if effort != EffortSpec.NA:
             raise ValueError(
                 f"effort is not supported for provider={provider!r} model={model!r}"

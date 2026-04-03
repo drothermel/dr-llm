@@ -7,6 +7,7 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
+from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.headless.base import (
     BaseHeadlessAdapter,
     HEADLESS_DEFAULT_EMPTY_PROMPT,
@@ -173,7 +174,9 @@ class ClaudeHeadlessAdapter(BaseHeadlessAdapter):
             )
         command = [*self._config.command]
         command.extend(["--model", request.model])
-        if reasoning_mapping.cli_args:
+        if request.effort != EffortSpec.NA:
+            command.extend(["--effort", request.effort])
+        elif reasoning_mapping.cli_args:
             command.extend(reasoning_mapping.cli_args)
         return command
 
