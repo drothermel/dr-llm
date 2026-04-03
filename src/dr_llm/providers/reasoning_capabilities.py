@@ -4,17 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-GenericEffortLevel = Literal[
-    "none",
-    "minimal",
-    "low",
-    "medium",
-    "high",
-    "xhigh",
-    "max",
-]
 GoogleThinkingLevel = Literal["minimal", "low", "medium", "high"]
-AnthropicEffortLevel = Literal["low", "medium", "high", "max"]
 ReasoningMode = Literal[
     "unsupported",
     "openai_effort",
@@ -32,16 +22,10 @@ class ReasoningCapabilities(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     mode: ReasoningMode = "unsupported"
-    generic_effort_levels: tuple[GenericEffortLevel, ...] = ()
     google_levels: tuple[GoogleThinkingLevel, ...] = ()
-    anthropic_effort_levels: tuple[AnthropicEffortLevel, ...] = ()
     min_budget_tokens: int | None = None
     max_budget_tokens: int | None = None
-    supports_off: bool = False
     supports_dynamic: bool = False
-    supports_display: bool = False
-    supports_adaptive: bool = False
-    notes: tuple[str, ...] = ()
 
     @property
     def supports_reasoning(self) -> bool:
@@ -73,79 +57,44 @@ class ReasoningCapabilityRule(BaseModel):
         return model.startswith(self.model_prefix)
 
 
-_OPENAI_CAPS_GPT5 = ReasoningCapabilities(
-    mode="openai_effort",
-    generic_effort_levels=("minimal", "low", "medium", "high"),
-    supports_off=False,
-)
-_OPENAI_CAPS_GPT5_1 = ReasoningCapabilities(
-    mode="openai_effort",
-    generic_effort_levels=("none", "low", "medium", "high"),
-    supports_off=True,
-)
-_OPENAI_CAPS_GPT5_2_PLUS = ReasoningCapabilities(
-    mode="openai_effort",
-    generic_effort_levels=("none", "low", "medium", "high", "xhigh"),
-    supports_off=True,
-)
+_OPENAI_CAPS_GPT5 = ReasoningCapabilities(mode="openai_effort")
+_OPENAI_CAPS_GPT5_1 = ReasoningCapabilities(mode="openai_effort")
+_OPENAI_CAPS_GPT5_2_PLUS = ReasoningCapabilities(mode="openai_effort")
 _GOOGLE_25_FLASH_CAPS = ReasoningCapabilities(
     mode="google_budget",
     min_budget_tokens=1,
     max_budget_tokens=24576,
-    supports_off=True,
     supports_dynamic=True,
 )
 _GOOGLE_25_FLASH_LITE_CAPS = ReasoningCapabilities(
     mode="google_budget",
     min_budget_tokens=512,
     max_budget_tokens=24576,
-    supports_off=True,
     supports_dynamic=True,
 )
 _GOOGLE_25_PRO_CAPS = ReasoningCapabilities(
     mode="google_budget",
     min_budget_tokens=128,
     max_budget_tokens=32768,
-    supports_off=False,
     supports_dynamic=True,
 )
 _GOOGLE_3_CAPS = ReasoningCapabilities(
     mode="google_level",
-    generic_effort_levels=("low", "medium", "high"),
     google_levels=("minimal", "low", "medium", "high"),
 )
 _ANTHROPIC_BUDGET_CAPS = ReasoningCapabilities(
     mode="anthropic_budget",
     min_budget_tokens=1024,
     max_budget_tokens=128000,
-    supports_display=True,
 )
-_ANTHROPIC_SONNET_46_CAPS = ReasoningCapabilities(
-    mode="anthropic_effort",
-    generic_effort_levels=("low", "medium", "high"),
-    anthropic_effort_levels=("low", "medium", "high"),
-    supports_display=True,
-    supports_adaptive=True,
-)
+_ANTHROPIC_SONNET_46_CAPS = ReasoningCapabilities(mode="anthropic_effort")
 _ANTHROPIC_OPUS_45_CAPS = ReasoningCapabilities(
     mode="anthropic_effort_and_budget",
-    generic_effort_levels=("low", "medium", "high"),
-    anthropic_effort_levels=("low", "medium", "high"),
     min_budget_tokens=1024,
     max_budget_tokens=128000,
-    supports_display=True,
 )
-_ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(
-    mode="anthropic_effort",
-    generic_effort_levels=("low", "medium", "high", "max"),
-    anthropic_effort_levels=("low", "medium", "high", "max"),
-    supports_display=True,
-    supports_adaptive=True,
-)
-_CLAUDE_HEADLESS_CAPS = ReasoningCapabilities(
-    mode="claude_cli_effort",
-    generic_effort_levels=("low", "medium", "high", "max"),
-)
+_ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(mode="anthropic_effort")
+_CLAUDE_HEADLESS_CAPS = ReasoningCapabilities(mode="claude_cli_effort")
 _CODEX_HEADLESS_CAPS = ReasoningCapabilities(mode="codex_headless")
 
 CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (

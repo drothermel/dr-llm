@@ -159,7 +159,7 @@ def validate_reasoning(
         )
         return
     if provider == "anthropic" and isinstance(reasoning, ReasoningBudget):
-        if not _anthropic_model_supports_budget(model):
+        if model not in ANTHROPIC_BUDGET_THINKING_SUPPORTED:
             raise ValueError(
                 f"anthropic budget thinking is not supported for model={model!r}"
             )
@@ -209,7 +209,7 @@ def _validate_against_capabilities(
             )
         case ReasoningBudget(tokens=tokens):
             if provider == "anthropic":
-                if not _anthropic_model_supports_budget(model):
+                if model not in ANTHROPIC_BUDGET_THINKING_SUPPORTED:
                     raise ValueError(
                         f"anthropic budget thinking is not supported for model={model!r}"
                     )
@@ -294,13 +294,13 @@ def _validate_anthropic_reasoning(
         if thinking_level in {ThinkingLevel.NA, ThinkingLevel.OFF}:
             return
         if thinking_level == ThinkingLevel.ADAPTIVE:
-            if not _anthropic_model_supports_adaptive(model):
+            if model not in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
                 raise ValueError(
                     f"anthropic adaptive thinking is not supported for model={model!r}"
                 )
             return
         if thinking_level == ThinkingLevel.BUDGET:
-            if not _anthropic_model_supports_budget(model):
+            if model not in ANTHROPIC_BUDGET_THINKING_SUPPORTED:
                 raise ValueError(
                     f"anthropic budget thinking is not supported for model={model!r}"
                 )
@@ -319,7 +319,7 @@ def _validate_anthropic_reasoning(
     if provider == "claude-code":
         if display is not None:
             raise ValueError("claude-code does not support anthropic display controls")
-        if _anthropic_model_supports_adaptive(model):
+        if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
             if thinking_level != ThinkingLevel.ADAPTIVE:
                 raise ValueError(
                     f"claude-code model {model!r} only supports anthropic thinking_level='adaptive'"
@@ -339,14 +339,6 @@ def _validate_anthropic_reasoning(
         raise ValueError(
             f"anthropic reasoning fields are not supported for provider={provider!r}"
         )
-
-
-def _anthropic_model_supports_budget(model: str) -> bool:
-    return model in ANTHROPIC_BUDGET_THINKING_SUPPORTED
-
-
-def _anthropic_model_supports_adaptive(model: str) -> bool:
-    return model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED
 
 
 def _validate_anthropic_budget_range(

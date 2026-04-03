@@ -45,11 +45,7 @@ def fetch_openai_compat_models(
                 "reasoning" in normalized or "reasoning.effort" in normalized
             )
             if supports_reasoning and reasoning_capabilities is None:
-                reasoning_capabilities = ReasoningCapabilities(
-                    mode="openai_effort",
-                    generic_effort_levels=("low", "medium", "high", "xhigh"),
-                    supports_off=True,
-                )
+                reasoning_capabilities = ReasoningCapabilities(mode="openai_effort")
         out.append(
             ModelCatalogEntry(
                 provider=adapter.name,
