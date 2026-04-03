@@ -177,6 +177,7 @@ dr-llm providers [--json]
 # Model catalog (file-based, no DB needed)
 dr-llm models sync [--provider NAME] [--verbose]
 dr-llm models list [--provider NAME] [--supports-reasoning] [--model-contains TEXT] [--json]
+dr-llm models sync-list [--provider NAME] [--supports-reasoning] [--model-contains TEXT] [--json]
 dr-llm models show --provider NAME --model NAME
 
 # Query

@@ -47,10 +47,10 @@ class ModelCatalogEntry(BaseModel):
     @model_validator(mode="after")
     def _derive_supports_reasoning(self) -> ModelCatalogEntry:
         if self.reasoning_capabilities is not None:
-            return self.model_copy(
-                update={
-                    "supports_reasoning": self.reasoning_capabilities.supports_reasoning
-                }
+            object.__setattr__(
+                self,
+                "supports_reasoning",
+                self.reasoning_capabilities.supports_reasoning,
             )
         return self
 

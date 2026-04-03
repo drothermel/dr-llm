@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from dr_llm.catalog.model_blacklist import filter_blacklisted_entries
 from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,8 @@ class FileCatalogStore:
             return []
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            return [ModelCatalogEntry.model_validate(item) for item in data]
+            entries = [ModelCatalogEntry.model_validate(item) for item in data]
+            return filter_blacklisted_entries(entries)
         except (OSError, json.JSONDecodeError, ValidationError) as exc:
             logger.warning("Skipping corrupt catalog cache %s: %s", path, exc)
             return []
@@ -93,7 +95,10 @@ class FileCatalogStore:
         for path in sorted(self._cache_dir.glob("*.json")):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                entries.extend(ModelCatalogEntry.model_validate(item) for item in data)
+                provider_entries = [
+                    ModelCatalogEntry.model_validate(item) for item in data
+                ]
+                entries.extend(filter_blacklisted_entries(provider_entries))
             except (OSError, json.JSONDecodeError, ValidationError) as exc:
                 logger.warning("Skipping corrupt catalog cache %s: %s", path, exc)
         return entries

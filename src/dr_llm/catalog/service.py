@@ -9,6 +9,7 @@ from dr_llm.catalog.models import (
     ModelCatalogQuery,
     ModelCatalogSyncResult,
 )
+from dr_llm.catalog.model_blacklist import filter_blacklisted_entries
 from dr_llm.catalog.fetchers import (
     fetch_models_for_adapter,
     fetch_out_of_registry_provider_models,
@@ -67,6 +68,7 @@ class ModelCatalogService:
         for target in targets:
             try:
                 entries, raw_payload = self._fetch_provider(target)
+                entries = filter_blacklisted_entries(entries)
                 snapshot_id: str | None = None
                 if self._repository is not None:
                     snapshot_id = self._repository.record_model_catalog_snapshot(

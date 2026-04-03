@@ -151,3 +151,21 @@ def test_file_exists_after_replace(store: FileCatalogStore, tmp_path: Path) -> N
         provider="openai", entries=[_entry("openai", "gpt-4.1")]
     )
     assert (tmp_path / "openai.json").exists()
+
+
+def test_read_filters_blacklisted_models(store: FileCatalogStore) -> None:
+    store.replace_provider_models(
+        provider="anthropic",
+        entries=[
+            _entry("anthropic", "claude-3-haiku-20240307"),
+            _entry("anthropic", "claude-haiku-4-5-20251001"),
+        ],
+    )
+
+    result = store.list_models(query=ModelCatalogQuery(provider="anthropic"))
+    assert [entry.model for entry in result] == ["claude-haiku-4-5-20251001"]
+    assert store.count_models(query=ModelCatalogQuery(provider="anthropic")) == 1
+    assert (
+        store.get_model(provider="anthropic", model="claude-3-haiku-20240307")
+        is None
+    )
