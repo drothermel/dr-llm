@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from dr_llm.catalog.model_blacklist import OPENAI_LANGUAGE_MODEL_PRICING
+from dr_llm.catalog.model_blacklist import (
+    AVOID_MORE_EXPENSIVE_BUT_FASTER_MODELS,
+    GOOGLE_IRRELEVANT_MODELS,
+    IRRELEVANT_FOR_RESEARCH,
+    OPENAI_LANGUAGE_MODEL_PRICING,
+    blacklist_reason,
+)
 
 
 def test_openai_language_model_pricing_contains_requested_models() -> None:
@@ -62,3 +68,15 @@ def test_openai_language_model_pricing_values() -> None:
     assert OPENAI_LANGUAGE_MODEL_PRICING["gpt-4"].output_cost_per_1m == 60.0
     assert OPENAI_LANGUAGE_MODEL_PRICING["gpt-5.1-codex-mini"].input_cost_per_1m == 0.25
     assert OPENAI_LANGUAGE_MODEL_PRICING["gpt-5.1-codex-mini"].output_cost_per_1m == 2.0
+
+
+def test_google_irrelevant_models_are_blacklisted() -> None:
+    for model in GOOGLE_IRRELEVANT_MODELS:
+        assert blacklist_reason(provider="google", model=model) == IRRELEVANT_FOR_RESEARCH
+
+
+def test_glm_5_turbo_is_blacklisted() -> None:
+    assert (
+        blacklist_reason(provider="glm", model="glm-5-turbo")
+        == AVOID_MORE_EXPENSIVE_BUT_FASTER_MODELS
+    )

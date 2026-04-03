@@ -3,10 +3,8 @@ from __future__ import annotations
 from enum import StrEnum
 
 from dr_llm.providers.anthropic.effort import ANTHROPIC_EFFORT_SUPPORTED_MODELS
-from dr_llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
 
 _ANTHROPIC_EFFORT_PROVIDERS = frozenset({"anthropic", "claude-code"})
-_OPENAI_EFFORT_PROVIDERS = frozenset({"openai", "openrouter"})
 
 
 class EffortSpec(StrEnum):
@@ -23,16 +21,6 @@ def validate_effort(*, provider: str, model: str, effort: EffortSpec) -> None:
                 raise ValueError(
                     f"effort is required for provider={provider!r} model={model!r}"
                 )
-            return
-        if effort != EffortSpec.NA:
-            raise ValueError(
-                f"effort is not supported for provider={provider!r} model={model!r}"
-            )
-        return
-
-    if provider in _OPENAI_EFFORT_PROVIDERS:
-        capabilities = reasoning_capabilities_for_model(provider=provider, model=model)
-        if capabilities is not None and capabilities.mode == "openai_effort":
             return
         if effort != EffortSpec.NA:
             raise ValueError(

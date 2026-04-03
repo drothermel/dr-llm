@@ -21,6 +21,10 @@ class OpenAIModelPrice(BaseModel):
 
 
 IRRELEVANT_TO_LLM_RESEARCH = "Irrelevant to LLM research."
+IRRELEVANT_FOR_RESEARCH = "Irrelevant for Research"
+AVOID_MORE_EXPENSIVE_BUT_FASTER_MODELS = (
+    "Avoid calling more expensive but faster models."
+)
 
 OPENAI_IRRELEVANT_MODELS: tuple[str, ...] = (
     "davinci-002",
@@ -100,6 +104,45 @@ OPENAI_IRRELEVANT_MODELS: tuple[str, ...] = (
     "gpt-5.3-chat-latest",
 )
 
+GOOGLE_IRRELEVANT_MODELS: tuple[str, ...] = (
+    "gemini-flash-latest",
+    "gemini-flash-lite-latest",
+    "gemini-pro-latest",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-2.5-flash-image",
+    "gemini-3.1-pro-preview-customtools",
+    "gemini-3-pro-image-preview",
+    "nano-banana-pro-preview",
+    "gemini-3.1-flash-image-preview",
+    "lyria-3-clip-preview",
+    "lyria-3-pro-preview",
+    "gemini-robotics-er-1.5-preview",
+    "gemini-2.5-computer-use-preview-10-2025",
+    "deep-research-pro-preview-12-2025",
+    "gemini-embedding-001",
+    "gemini-embedding-2-preview",
+    "aqa",
+    "imagen-4.0-generate-001",
+    "imagen-4.0-ultra-generate-001",
+    "imagen-4.0-fast-generate-001",
+    "veo-2.0-generate-001",
+    "veo-3.0-generate-001",
+    "veo-3.0-fast-generate-001",
+    "veo-3.1-generate-preview",
+    "veo-3.1-fast-generate-preview",
+    "veo-3.1-lite-generate-preview",
+    "gemini-2.5-flash-native-audio-latest",
+    "gemini-2.5-flash-native-audio-preview-09-2025",
+    "gemini-2.5-flash-native-audio-preview-12-2025",
+    "gemini-2.5-flash-preview-tts",
+    "gemini-2.5-pro-preview-tts",
+    "gemini-3.1-flash-live-preview",
+    "gemini-3.1-pro-preview",
+    "gemini-3-pro-preview",
+    "gemini-2.5-pro",
+)
+
 
 MODEL_BLACKLIST: dict[tuple[str, str], str] = {
     (
@@ -109,14 +152,20 @@ MODEL_BLACKLIST: dict[tuple[str, str], str] = {
         "Deprecated by Anthropic on 2026-02-19 and scheduled to retire on 2026-04-20. "
         "Recommended replacement: claude-haiku-4-5-20251001."
     ),
+    ("glm", "glm-5-turbo"): AVOID_MORE_EXPENSIVE_BUT_FASTER_MODELS,
     **{
         ("openai", model): IRRELEVANT_TO_LLM_RESEARCH
         for model in OPENAI_IRRELEVANT_MODELS
     },
+    **{
+        ("google", model): IRRELEVANT_FOR_RESEARCH for model in GOOGLE_IRRELEVANT_MODELS
+    },
 }
 
 
-# Verified against official OpenAI model docs and pricing on 2026-04-02.
+# Verified against official OpenAI model docs and pricing on 2026-04-03.
+# OpenAI has not published public API token pricing for `gpt-5.3-codex-spark`
+# as of 2026-04-03, so it is intentionally omitted from this table.
 OPENAI_LANGUAGE_MODEL_PRICING: dict[str, OpenAIModelPrice] = {
     "gpt-5.4-2026-03-05": OpenAIModelPrice(
         input_cost_per_1m=2.5,

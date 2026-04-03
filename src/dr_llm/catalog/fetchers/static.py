@@ -26,7 +26,7 @@ CODEX_MODELS = [
     ("gpt-5.1-codex", "GPT-5.1 Codex"),
     ("gpt-5.1", "GPT-5.1"),
     ("gpt-5-codex", "GPT-5 Codex"),
-    ("gpt-5-codex-mini", "GPT-5 Codex Mini"),
+    ("gpt-5.1-codex-mini", "GPT-5.1 Codex Mini"),
     ("gpt-5", "GPT-5"),
 ]
 
