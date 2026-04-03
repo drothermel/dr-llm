@@ -89,10 +89,10 @@ class AnthropicReasoning(BaseModel):
             raise ValueError(
                 "anthropic budget_tokens are only allowed with thinking_level='budget'"
             )
-        if (
-            self.display is not None
-            and self.thinking_level not in {ThinkingLevel.BUDGET, ThinkingLevel.ADAPTIVE}
-        ):
+        if self.display is not None and self.thinking_level not in {
+            ThinkingLevel.BUDGET,
+            ThinkingLevel.ADAPTIVE,
+        }:
             raise ValueError(
                 "anthropic display requires thinking_level='budget' or thinking_level='adaptive'"
             )
@@ -129,9 +129,7 @@ class GoogleReasoning(BaseModel):
 
 
 ReasoningSpec = Annotated[
-    ReasoningBudget
-    | AnthropicReasoning
-    | GoogleReasoning,
+    ReasoningBudget | AnthropicReasoning | GoogleReasoning,
     Field(discriminator="kind"),
 ]
 REASONING_SPEC_ADAPTER = TypeAdapter(ReasoningSpec)
