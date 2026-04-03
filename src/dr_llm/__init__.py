@@ -27,7 +27,6 @@ from dr_llm.providers.reasoning import (
     GoogleReasoning,
     ReasoningWarning,
     ReasoningBudget,
-    ReasoningEffort,
     ReasoningOff,
     ReasoningSpec,
 )
@@ -57,7 +56,6 @@ __all__ = [
     "AnthropicReasoning",
     "GoogleReasoning",
     "ReasoningBudget",
-    "ReasoningEffort",
     "ReasoningOff",
     "ReasoningSpec",
     "ReasoningWarning",

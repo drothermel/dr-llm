@@ -14,8 +14,6 @@ from pydantic import (
 
 from dr_llm.providers.models import CallMode
 from dr_llm.providers.reasoning_capabilities import (
-    AnthropicEffortLevel,
-    GenericEffortLevel,
     GoogleThinkingLevel,
     ReasoningCapabilities,
     reasoning_capabilities_for_model,
@@ -43,14 +41,6 @@ class ReasoningOff(BaseModel):
 
     kind: Literal["off"] = "off"
 
-
-class ReasoningEffort(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    kind: Literal["effort"] = "effort"
-    level: GenericEffortLevel
-
-
 class ReasoningBudget(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -69,7 +59,6 @@ class AnthropicReasoning(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal["anthropic"] = "anthropic"
-    effort: AnthropicEffortLevel | None = None
     budget_tokens: int | None = None
     thinking_mode: Literal["adaptive", "enabled"] | None = None
     display: Literal["summarized", "omitted"] | None = None
@@ -84,8 +73,7 @@ class AnthropicReasoning(BaseModel):
     @model_validator(mode="after")
     def _validate_shape(self) -> AnthropicReasoning:
         if (
-            self.effort is None
-            and self.budget_tokens is None
+            self.budget_tokens is None
             and self.thinking_mode is None
             and self.display is None
         ):
@@ -140,7 +128,6 @@ class GoogleReasoning(BaseModel):
 
 ReasoningSpec = Annotated[
     ReasoningOff
-    | ReasoningEffort
     | ReasoningBudget
     | AnthropicReasoning
     | GoogleReasoning,
@@ -192,11 +179,6 @@ def _validate_against_capabilities(
                 raise ValueError(
                     f"reasoning kind='off' is not supported for provider={provider!r} model={model!r}"
                 )
-        case ReasoningEffort(level=level):
-            if level not in capabilities.generic_effort_levels:
-                raise ValueError(
-                    f"reasoning effort {level!r} is not supported for provider={provider!r} model={model!r}"
-                )
         case ReasoningBudget(tokens=tokens):
             _validate_budget_range(
                 provider=provider,
@@ -243,25 +225,13 @@ def _validate_against_capabilities(
                 capabilities=capabilities,
             )
         case AnthropicReasoning(
-            effort=effort,
             budget_tokens=budget_tokens,
             thinking_mode=thinking_mode,
             display=display,
         ):
-            if capabilities.mode not in {
-                "anthropic_budget",
-                "anthropic_effort",
-                "anthropic_effort_and_budget",
-            }:
+            if capabilities.mode not in {"anthropic_budget", "anthropic_effort_and_budget"}:
                 raise ValueError(
                     f"anthropic reasoning is not supported for provider={provider!r} model={model!r}"
-                )
-            if (
-                effort is not None
-                and effort not in capabilities.anthropic_effort_levels
-            ):
-                raise ValueError(
-                    f"anthropic effort {effort!r} is not supported for model={model!r}"
                 )
             if budget_tokens is not None:
                 _validate_budget_range(

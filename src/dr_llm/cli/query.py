@@ -36,7 +36,7 @@ def query(
     effort: EffortSpec = typer.Option(EffortSpec.NA),
     reasoning_json: str | None = typer.Option(
         None,
-        help='JSON reasoning config (e.g. {"kind":"effort","level":"high"}).',
+        help='JSON reasoning config (e.g. {"kind":"budget","tokens":1024}).',
     ),
     metadata_json: str | None = typer.Option(None, help="JSON object metadata."),
     run_id: str | None = typer.Option(None),

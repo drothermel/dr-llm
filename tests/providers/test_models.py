@@ -40,7 +40,7 @@ def test_google_reasoning_requires_exactly_one_mode() -> None:
         GoogleReasoning(thinking_level="low", thinking_budget=512)
 
 
-def test_anthropic_adaptive_allows_omitted_effort() -> None:
+def test_anthropic_adaptive_allows_minimal_shape() -> None:
     reasoning = AnthropicReasoning(thinking_mode="adaptive")
     assert reasoning.thinking_mode == "adaptive"
 

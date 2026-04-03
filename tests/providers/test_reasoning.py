@@ -14,14 +14,8 @@ from dr_llm.providers.reasoning import (
     AnthropicReasoning,
     GoogleReasoning,
     ReasoningBudget,
-    ReasoningEffort,
     ReasoningOff,
 )
-
-
-def test_openai_compat_serializes_effort() -> None:
-    result = OpenAICompatReasoningConfig.from_base(ReasoningEffort(level="high"))
-    assert result.to_payload() == {"effort": "high"}
 
 
 def test_openai_compat_serializes_off() -> None:
@@ -34,9 +28,9 @@ def test_openai_compat_rejects_provider_specific_shape() -> None:
         OpenAICompatReasoningConfig.from_base(GoogleReasoning(thinking_level="low"))
 
 
-def test_anthropic_rejects_reasoning_effort() -> None:
+def test_anthropic_rejects_non_anthropic_reasoning_config() -> None:
     with pytest.raises(ProviderSemanticError):
-        AnthropicReasoningConfig.from_base(ReasoningEffort(level="medium"))
+        AnthropicReasoningConfig.from_base(ReasoningOff())
 
 
 def test_anthropic_serializes_manual_thinking() -> None:
@@ -64,16 +58,16 @@ def test_google_serializes_budget_and_dynamic() -> None:
 
 
 def test_google_serializes_level() -> None:
-    assert GoogleReasoningConfig.from_base(ReasoningEffort(level="low")).to_payload() == {
-        "thinkingLevel": "low"
-    }
+    assert GoogleReasoningConfig.from_base(
+        GoogleReasoning(thinking_level="low")
+    ).to_payload() == {"thinkingLevel": "low"}
 
 
-def test_claude_headless_serializes_max_effort() -> None:
+def test_claude_headless_rejects_reasoning_config() -> None:
     with pytest.raises(HeadlessExecutionError):
-        ClaudeHeadlessReasoningConfig.from_base(ReasoningEffort(level="max"))
+        ClaudeHeadlessReasoningConfig.from_base(ReasoningBudget(tokens=1024))
 
 
 def test_codex_headless_rejects_reasoning() -> None:
     with pytest.raises(HeadlessExecutionError):
-        CodexHeadlessReasoningConfig.from_base(ReasoningEffort(level="high"))
+        CodexHeadlessReasoningConfig.from_base(ReasoningBudget(tokens=1024))

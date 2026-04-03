@@ -14,7 +14,7 @@ from dr_llm.providers.headless.claude_presets import (
     ClaudeHeadlessMiniMaxAdapter,
 )
 from dr_llm.providers.headless.codex import CodexHeadlessAdapter
-from dr_llm.providers.reasoning import ReasoningEffort
+from dr_llm.providers.reasoning import ReasoningBudget
 from tests.conftest import make_request
 from tests.providers.conftest import make_subprocess_mock
 
@@ -166,6 +166,6 @@ def test_codex_rejects_reasoning_before_subprocess(monkeypatch: pytest.MonkeyPat
         make_request(
             provider="codex",
             model="gpt-5-codex",
-            reasoning=ReasoningEffort(level="high"),
+            reasoning=ReasoningBudget(tokens=1024),
         )
     assert "command" not in captured

@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.reasoning import ReasoningWarning
-from dr_llm.providers.reasoning import ReasoningEffort, ReasoningOff, ReasoningSpec
+from dr_llm.providers.reasoning import ReasoningOff, ReasoningSpec
 
 
 class OpenAICompatReasoningConfig(BaseModel):
@@ -23,8 +23,6 @@ class OpenAICompatReasoningConfig(BaseModel):
         if config is None:
             return cls()
         match config:
-            case ReasoningEffort(level=level):
-                return cls(payload={"effort": level})
             case ReasoningOff():
                 return cls(payload={"effort": "none"})
             case _:

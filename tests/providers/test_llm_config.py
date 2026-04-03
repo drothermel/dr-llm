@@ -11,7 +11,6 @@ from dr_llm.providers.reasoning import (
     AnthropicReasoning,
     GoogleReasoning,
     ReasoningBudget,
-    ReasoningEffort,
     ReasoningOff,
 )
 
@@ -29,10 +28,10 @@ def test_basic_construction() -> None:
 
 
 def test_construction_with_all_fields() -> None:
-    reasoning = ReasoningEffort(level="high")
+    reasoning = GoogleReasoning(thinking_level="low")
     config = LlmConfig(
-        provider="openai",
-        model="gpt-5-mini",
+        provider="google",
+        model="gemini-3-flash-preview",
         temperature=0.7,
         top_p=0.9,
         max_tokens=1024,
@@ -43,7 +42,7 @@ def test_construction_with_all_fields() -> None:
     assert config.top_p == 0.9
     assert config.max_tokens == 1024
     assert config.reasoning is not None
-    assert config.reasoning.kind == "effort"
+    assert config.reasoning.kind == "google"
 
 
 def test_frozen() -> None:
@@ -183,7 +182,7 @@ def test_rejects_reasoning_for_unsupported_model() -> None:
         LlmConfig(
             provider="openai",
             model="gpt-4.1-mini",
-            reasoning=ReasoningEffort(level="high"),
+            reasoning=ReasoningBudget(tokens=1024),
         )
 
 
@@ -196,36 +195,33 @@ def test_rejects_provider_specific_reasoning_on_wrong_provider() -> None:
         )
 
 
-def test_openai_gpt5_family_uses_version_specific_effort_levels() -> None:
+def test_openai_gpt5_family_allows_top_level_effort() -> None:
     LlmConfig(
         provider="openai",
         model="gpt-5-mini",
-        reasoning=ReasoningEffort(level="minimal"),
+        effort=EffortSpec.HIGH,
     )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider="openai",
-            model="gpt-5-mini",
-            reasoning=ReasoningEffort(level="xhigh"),
-        )
-
-    LlmConfig(
-        provider="openai",
-        model="gpt-5.1",
-        reasoning=ReasoningEffort(level="none"),
-    )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider="openai",
-            model="gpt-5.1",
-            reasoning=ReasoningEffort(level="minimal"),
-        )
 
     LlmConfig(
         provider="openai",
         model="gpt-5.2",
-        reasoning=ReasoningEffort(level="xhigh"),
+        effort=EffortSpec.LOW,
     )
+    LlmConfig(
+        provider="openrouter",
+        model="openai/gpt-5.1",
+        effort=EffortSpec.MEDIUM,
+    )
+
+
+def test_rejects_combining_effort_with_reasoning_off() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5-mini",
+            effort=EffortSpec.HIGH,
+            reasoning=ReasoningOff(),
+        )
 
 
 def test_anthropic_adaptive_requires_model_support_not_effort() -> None:

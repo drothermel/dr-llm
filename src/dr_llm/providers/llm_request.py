@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from dr_llm.providers.effort import EffortSpec, validate_effort
 from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import ReasoningSpec, validate_reasoning
+from dr_llm.providers.reasoning import ReasoningOff, ReasoningSpec, validate_reasoning
 
 
 class LlmRequest(BaseModel):
@@ -29,6 +29,8 @@ class LlmRequest(BaseModel):
             model=self.model,
             effort=self.effort,
         )
+        if self.effort != EffortSpec.NA and isinstance(self.reasoning, ReasoningOff):
+            raise ValueError("effort cannot be combined with reasoning kind='off'")
         validate_reasoning(
             provider=self.provider,
             model=self.model,

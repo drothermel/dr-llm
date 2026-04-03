@@ -9,7 +9,6 @@ from dr_llm.providers.reasoning import ReasoningWarning
 from dr_llm.providers.reasoning import (
     GoogleReasoning,
     ReasoningBudget,
-    ReasoningEffort,
     ReasoningOff,
     ReasoningSpec,
 )
@@ -33,8 +32,6 @@ class GoogleReasoningConfig(BaseModel):
                 return cls(payload={"thinkingBudget": 0})
             case ReasoningBudget(tokens=tokens):
                 return cls(payload={"thinkingBudget": tokens})
-            case ReasoningEffort(level=level):
-                return cls(payload={"thinkingLevel": level})
             case GoogleReasoning(
                 thinking_level=thinking_level,
                 thinking_budget=thinking_budget,

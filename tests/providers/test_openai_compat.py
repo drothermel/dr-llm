@@ -6,12 +6,12 @@ import httpx
 import pytest
 
 from dr_llm.errors import ProviderTransportError
+from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.models import Message
 from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
 from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.providers.openai_compat.request import OpenAICompatRequest
 from dr_llm.providers.openai_compat.response import OpenAICompatResponse
-from dr_llm.providers.reasoning import ReasoningEffort
 from tests.conftest import make_request
 from tests.providers.conftest import make_http_client
 
@@ -57,7 +57,7 @@ def test_forwards_reasoning_and_parses_cost() -> None:
         request = make_request(
             provider="openrouter",
             model="openai/gpt-5",
-            reasoning=ReasoningEffort(level="high"),
+            effort=EffortSpec.HIGH,
         )
         result = adapter.generate(request)
 
