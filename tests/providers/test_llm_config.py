@@ -6,9 +6,11 @@ from pydantic import ValidationError
 from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import (
+    AnthropicReasoning,
     GoogleReasoning,
     ReasoningBudget,
     ReasoningEffort,
+    ReasoningOff,
 )
 
 
@@ -120,3 +122,63 @@ def test_rejects_provider_specific_reasoning_on_wrong_provider() -> None:
             model="gpt-5-mini",
             reasoning=GoogleReasoning(thinking_level="low"),
         )
+
+
+def test_openai_gpt5_family_uses_version_specific_effort_levels() -> None:
+    LlmConfig(
+        provider="openai",
+        model="gpt-5-mini",
+        reasoning=ReasoningEffort(level="minimal"),
+    )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5-mini",
+            reasoning=ReasoningEffort(level="xhigh"),
+        )
+
+    LlmConfig(
+        provider="openai",
+        model="gpt-5.1",
+        reasoning=ReasoningEffort(level="none"),
+    )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5.1",
+            reasoning=ReasoningEffort(level="minimal"),
+        )
+
+    LlmConfig(
+        provider="openai",
+        model="gpt-5.2",
+        reasoning=ReasoningEffort(level="xhigh"),
+    )
+
+
+def test_anthropic_adaptive_requires_model_support_not_effort() -> None:
+    LlmConfig(
+        provider="anthropic",
+        model="claude-sonnet-4-6",
+        reasoning=AnthropicReasoning(thinking_mode="adaptive"),
+    )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="anthropic",
+            model="claude-opus-4-5",
+            reasoning=AnthropicReasoning(thinking_mode="adaptive"),
+        )
+
+
+def test_google_flash_budget_zero_is_not_manual_budget() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="google",
+            model="gemini-2.5-flash",
+            reasoning=GoogleReasoning(thinking_budget=0),
+        )
+    LlmConfig(
+        provider="google",
+        model="gemini-2.5-flash",
+        reasoning=ReasoningOff(),
+    )

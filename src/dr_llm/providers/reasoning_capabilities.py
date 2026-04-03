@@ -4,7 +4,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-GenericEffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
+GenericEffortLevel = Literal[
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+]
 GoogleThinkingLevel = Literal["minimal", "low", "medium", "high"]
 AnthropicEffortLevel = Literal["low", "medium", "high", "max"]
 ReasoningMode = Literal[
@@ -32,6 +40,7 @@ class ReasoningCapabilities(BaseModel):
     supports_off: bool = False
     supports_dynamic: bool = False
     supports_display: bool = False
+    supports_adaptive: bool = False
     notes: tuple[str, ...] = ()
 
     @property
@@ -64,14 +73,24 @@ class ReasoningCapabilityRule(BaseModel):
         return model.startswith(self.model_prefix)
 
 
-_OPENAI_CAPS = ReasoningCapabilities(
+_OPENAI_CAPS_GPT5 = ReasoningCapabilities(
     mode="openai_effort",
-    generic_effort_levels=("low", "medium", "high", "xhigh"),
+    generic_effort_levels=("minimal", "low", "medium", "high"),
+    supports_off=False,
+)
+_OPENAI_CAPS_GPT5_1 = ReasoningCapabilities(
+    mode="openai_effort",
+    generic_effort_levels=("none", "low", "medium", "high"),
+    supports_off=True,
+)
+_OPENAI_CAPS_GPT5_2_PLUS = ReasoningCapabilities(
+    mode="openai_effort",
+    generic_effort_levels=("none", "low", "medium", "high", "xhigh"),
     supports_off=True,
 )
 _GOOGLE_25_FLASH_CAPS = ReasoningCapabilities(
     mode="google_budget",
-    min_budget_tokens=0,
+    min_budget_tokens=1,
     max_budget_tokens=24576,
     supports_off=True,
     supports_dynamic=True,
@@ -108,6 +127,15 @@ _ANTHROPIC_EFFORT_AND_BUDGET_CAPS = ReasoningCapabilities(
     min_budget_tokens=1024,
     max_budget_tokens=128000,
     supports_display=True,
+    supports_adaptive=True,
+)
+_ANTHROPIC_OPUS_45_CAPS = ReasoningCapabilities(
+    mode="anthropic_effort_and_budget",
+    generic_effort_levels=("low", "medium", "high"),
+    anthropic_effort_levels=("low", "medium", "high"),
+    min_budget_tokens=1024,
+    max_budget_tokens=128000,
+    supports_display=True,
 )
 _ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(
     mode="anthropic_effort_and_budget",
@@ -116,6 +144,7 @@ _ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(
     min_budget_tokens=1024,
     max_budget_tokens=128000,
     supports_display=True,
+    supports_adaptive=True,
 )
 _CLAUDE_HEADLESS_CAPS = ReasoningCapabilities(
     mode="claude_cli_effort",
@@ -125,15 +154,76 @@ _CODEX_HEADLESS_CAPS = ReasoningCapabilities(mode="codex_headless")
 
 CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
-        provider="openai", model_prefix="gpt-5", capabilities=_OPENAI_CAPS
+        provider="openai", exact_model="gpt-5", capabilities=_OPENAI_CAPS_GPT5
     ),
     ReasoningCapabilityRule(
-        provider="openrouter", exact_model="openai/gpt-5", capabilities=_OPENAI_CAPS
+        provider="openai", exact_model="gpt-5-mini", capabilities=_OPENAI_CAPS_GPT5
+    ),
+    ReasoningCapabilityRule(
+        provider="openai", exact_model="gpt-5.1", capabilities=_OPENAI_CAPS_GPT5_1
+    ),
+    ReasoningCapabilityRule(
+        provider="openai", model_prefix="gpt-5.1-", capabilities=_OPENAI_CAPS_GPT5_1
+    ),
+    ReasoningCapabilityRule(
+        provider="openai",
+        exact_model="gpt-5.2",
+        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
+    ),
+    ReasoningCapabilityRule(
+        provider="openai",
+        model_prefix="gpt-5.2-",
+        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
+    ),
+    ReasoningCapabilityRule(
+        provider="openai",
+        exact_model="gpt-5.3",
+        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
+    ),
+    ReasoningCapabilityRule(
+        provider="openai",
+        model_prefix="gpt-5.3-",
+        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
+    ),
+    ReasoningCapabilityRule(
+        provider="openai",
+        exact_model="gpt-5.4",
+        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
+    ),
+    ReasoningCapabilityRule(
+        provider="openai",
+        model_prefix="gpt-5.4-",
+        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
+    ),
+    ReasoningCapabilityRule(
+        provider="openrouter",
+        exact_model="openai/gpt-5",
+        capabilities=_OPENAI_CAPS_GPT5,
     ),
     ReasoningCapabilityRule(
         provider="openrouter",
         exact_model="openai/gpt-5-mini",
-        capabilities=_OPENAI_CAPS,
+        capabilities=_OPENAI_CAPS_GPT5,
+    ),
+    ReasoningCapabilityRule(
+        provider="openrouter",
+        exact_model="openai/gpt-5.1",
+        capabilities=_OPENAI_CAPS_GPT5_1,
+    ),
+    ReasoningCapabilityRule(
+        provider="openrouter",
+        exact_model="openai/gpt-5.2",
+        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
+    ),
+    ReasoningCapabilityRule(
+        provider="openrouter",
+        exact_model="openai/gpt-5.3",
+        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
+    ),
+    ReasoningCapabilityRule(
+        provider="openrouter",
+        exact_model="openai/gpt-5.4",
+        capabilities=_OPENAI_CAPS_GPT5_2_PLUS,
     ),
     ReasoningCapabilityRule(
         provider="google",
@@ -176,7 +266,7 @@ CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
         provider="anthropic",
         model_prefix="claude-opus-4-5",
-        capabilities=_ANTHROPIC_EFFORT_AND_BUDGET_CAPS,
+        capabilities=_ANTHROPIC_OPUS_45_CAPS,
     ),
     ReasoningCapabilityRule(
         provider="anthropic",

@@ -74,10 +74,6 @@ class AnthropicReasoning(BaseModel):
             raise ValueError(
                 "anthropic reasoning requires at least one configured field"
             )
-        if self.thinking_mode == "adaptive" and self.effort is None:
-            raise ValueError(
-                "anthropic adaptive thinking requires effort so the depth is explicit"
-            )
         if self.thinking_mode == "adaptive" and self.budget_tokens is not None:
             raise ValueError(
                 "anthropic adaptive thinking does not accept budget_tokens"
@@ -261,10 +257,7 @@ def _validate_against_capabilities(
                 raise ValueError(
                     f"anthropic display controls are not supported for model={model!r}"
                 )
-            if thinking_mode == "adaptive" and capabilities.mode not in {
-                "anthropic_effort",
-                "anthropic_effort_and_budget",
-            }:
+            if thinking_mode == "adaptive" and not capabilities.supports_adaptive:
                 raise ValueError(
                     f"anthropic adaptive thinking is not supported for model={model!r}"
                 )

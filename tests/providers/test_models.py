@@ -4,7 +4,11 @@ import pytest
 from pydantic import ValidationError
 
 from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import AnthropicReasoning, GoogleReasoning, ReasoningBudget
+from dr_llm.providers.reasoning import (
+    AnthropicReasoning,
+    GoogleReasoning,
+    ReasoningBudget,
+)
 from dr_llm.providers.usage import TokenUsage
 
 
@@ -28,9 +32,14 @@ def test_google_reasoning_requires_exactly_one_mode() -> None:
         GoogleReasoning(thinking_level="low", thinking_budget=512)
 
 
-def test_anthropic_adaptive_requires_effort() -> None:
+def test_anthropic_adaptive_allows_omitted_effort() -> None:
+    reasoning = AnthropicReasoning(thinking_mode="adaptive")
+    assert reasoning.thinking_mode == "adaptive"
+
+
+def test_anthropic_adaptive_rejects_budget_tokens() -> None:
     with pytest.raises(ValidationError):
-        AnthropicReasoning(thinking_mode="adaptive")
+        AnthropicReasoning(thinking_mode="adaptive", budget_tokens=2048)
 
 
 def test_token_usage_computed_total() -> None:
