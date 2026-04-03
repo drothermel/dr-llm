@@ -32,6 +32,7 @@ def test_payload_serializes_messages() -> None:
     request = make_request(
         provider="anthropic",
         model="claude-3-5-haiku-20241022",
+        max_tokens=256,
         messages=[
             Message(role="system", content="You are helpful."),
             Message(role="user", content="hello"),
@@ -60,6 +61,7 @@ def test_payload_serializes_effort_output_config() -> None:
     request = make_request(
         provider="anthropic",
         model="claude-sonnet-4-6",
+        max_tokens=256,
         effort=EffortSpec.MEDIUM,
     )
     adapter.generate(request)
@@ -75,6 +77,7 @@ def test_payload_serializes_manual_thinking() -> None:
     request = make_request(
         provider="anthropic",
         model="claude-sonnet-4-5-20250929",
+        max_tokens=4096,
         reasoning=AnthropicReasoning(
             thinking_level=ThinkingLevel.BUDGET,
             budget_tokens=2048,
@@ -98,6 +101,7 @@ def test_payload_omits_thinking_for_off() -> None:
     request = make_request(
         provider="anthropic",
         model="claude-sonnet-4-6",
+        max_tokens=256,
         effort=EffortSpec.MEDIUM,
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
     )
@@ -115,4 +119,10 @@ def test_invalid_json_raises_transport_error() -> None:
     adapter = AnthropicAdapter(config=_make_config(), client=client)
 
     with pytest.raises(ProviderTransportError, match="invalid JSON response"):
-        adapter.generate(make_request(provider="anthropic", model="claude-3-5-haiku-20241022"))
+        adapter.generate(
+            make_request(
+                provider="anthropic",
+                model="claude-3-5-haiku-20241022",
+                max_tokens=256,
+            )
+        )

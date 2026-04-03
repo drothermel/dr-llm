@@ -50,7 +50,11 @@ def test_dict_grid_stores_ids_in_key_values_and_values_in_payload() -> None:
     typed_store = cast(PoolStore, store)
 
     config_a = LlmConfig(provider="openai", model="gpt-4.1-mini")
-    config_b = LlmConfig(provider="anthropic", model="claude-sonnet-4-6-20250514")
+    config_b = LlmConfig(
+        provider="anthropic",
+        model="claude-sonnet-4-6-20250514",
+        max_tokens=256,
+    )
     messages_x = [Message(role="user", content="Hello")]
     messages_y = [Message(role="user", content="Bye")]
 

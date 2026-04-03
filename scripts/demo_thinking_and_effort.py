@@ -28,6 +28,7 @@ app = typer.Typer()
 
 PROMPT = "Reply with exactly OK."
 BUDGET_TOKENS = 2048
+ANTHROPIC_MAX_TOKENS = 4096
 THINKING_LEVELS = [
     ThinkingLevel.NA,
     ThinkingLevel.OFF,
@@ -274,6 +275,7 @@ def make_request(
         provider=provider,
         model=model,
         messages=[Message(role="user", content=PROMPT)],
+        max_tokens=ANTHROPIC_MAX_TOKENS if provider == "anthropic" else None,
         effort=effort,
         reasoning=reasoning_for_thinking_level(thinking_level),
     )

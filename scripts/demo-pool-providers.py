@@ -55,6 +55,7 @@ DEFAULT_PROMPT = "What is 2+2? Answer in one sentence."
 DEFAULT_PROJECT = "demo-pool"
 API_TIMEOUT = 120
 HEADLESS_TIMEOUT = 300
+ANTHROPIC_MAX_TOKENS = 256
 
 
 DEFAULT_MODELS: dict[str, str] = {
@@ -186,7 +187,7 @@ def query_provider(
 ) -> dict[str, Any]:
     """Query a provider via CLI, returning the response dict."""
     timeout = HEADLESS_TIMEOUT if is_headless else API_TIMEOUT
-    return run_cli(
+    args = [
         "--project",
         project,
         "query",
@@ -197,6 +198,11 @@ def query_provider(
         "--message",
         prompt,
         "--no-record",
+    ]
+    if provider == "anthropic":
+        args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
+    return run_cli(
+        *args,
         timeout=timeout,
     )
 

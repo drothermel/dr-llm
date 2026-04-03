@@ -47,6 +47,8 @@ class AnthropicRequest(BaseModel):
         request: LlmRequest,
         config: AnthropicConfig,
     ) -> AnthropicRequest:
+        if request.max_tokens is None:
+            raise ProviderSemanticError("anthropic requests require max_tokens")
         reasoning_mapping = AnthropicReasoningConfig.from_base(request.reasoning)
         output_config = (
             {"effort": request.effort} if request.effort != EffortSpec.NA else None
@@ -58,7 +60,7 @@ class AnthropicRequest(BaseModel):
             provider=request.provider,
             model=request.model,
             messages=cls._to_anthropic_messages(request.messages),
-            max_tokens=request.max_tokens or 1024,
+            max_tokens=request.max_tokens,
             system=system or None,
             temperature=request.temperature,
             top_p=request.top_p,

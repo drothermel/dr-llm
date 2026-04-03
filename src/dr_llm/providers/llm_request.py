@@ -9,6 +9,11 @@ from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import ReasoningSpec, validate_reasoning
 
 
+def validate_max_tokens(*, provider: str, max_tokens: int | None) -> None:
+    if provider == "anthropic" and max_tokens is None:
+        raise ValueError("max_tokens is required for provider='anthropic'")
+
+
 class LlmRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -24,6 +29,10 @@ class LlmRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_reasoning(self) -> LlmRequest:
+        validate_max_tokens(
+            provider=self.provider,
+            max_tokens=self.max_tokens,
+        )
         validate_effort(
             provider=self.provider,
             model=self.model,

@@ -100,6 +100,7 @@ def test_to_request_with_effort() -> None:
     config = LlmConfig(
         provider="anthropic",
         model="claude-sonnet-4-6",
+        max_tokens=256,
         effort=EffortSpec.MEDIUM,
     )
     messages = [Message(role="user", content="Think about this")]
@@ -123,6 +124,7 @@ def test_rejects_na_effort_for_supported_anthropic_model() -> None:
         LlmConfig(
             provider="anthropic",
             model="claude-sonnet-4-6",
+            max_tokens=256,
             effort=EffortSpec.NA,
         )
 
@@ -132,6 +134,7 @@ def test_rejects_non_na_effort_for_unsupported_anthropic_model() -> None:
         LlmConfig(
             provider="anthropic",
             model="claude-sonnet-4-5-20250929",
+            max_tokens=256,
             effort=EffortSpec.MEDIUM,
         )
 
@@ -160,7 +163,27 @@ def test_llm_request_rejects_na_effort_for_supported_anthropic_model() -> None:
             provider="anthropic",
             model="claude-opus-4-6",
             messages=[Message(role="user", content="Hello")],
+            max_tokens=256,
             effort=EffortSpec.NA,
+        )
+
+
+def test_anthropic_config_requires_max_tokens() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            effort=EffortSpec.MEDIUM,
+        )
+
+
+def test_anthropic_request_requires_max_tokens() -> None:
+    with pytest.raises(ValidationError):
+        LlmRequest(
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            messages=[Message(role="user", content="Hello")],
+            effort=EffortSpec.MEDIUM,
         )
 
 
@@ -218,6 +241,7 @@ def test_allows_combining_effort_with_anthropic_off() -> None:
     LlmConfig(
         provider="anthropic",
         model="claude-sonnet-4-6",
+        max_tokens=256,
         effort=EffortSpec.HIGH,
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
     )
@@ -227,6 +251,7 @@ def test_anthropic_adaptive_requires_model_support_not_effort() -> None:
     LlmConfig(
         provider="anthropic",
         model="claude-sonnet-4-6",
+        max_tokens=256,
         effort=EffortSpec.MEDIUM,
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
     )
@@ -234,6 +259,7 @@ def test_anthropic_adaptive_requires_model_support_not_effort() -> None:
         LlmConfig(
             provider="anthropic",
             model="claude-opus-4-5",
+            max_tokens=256,
             reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
         )
 
@@ -253,6 +279,7 @@ def test_anthropic_budget_requires_budget_supported_model() -> None:
         LlmConfig(
             provider="anthropic",
             model="claude-sonnet-4-6",
+            max_tokens=4096,
             effort=EffortSpec.MEDIUM,
             reasoning=AnthropicReasoning(
                 thinking_level=ThinkingLevel.BUDGET,
