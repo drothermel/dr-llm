@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Demo: live verification of OpenAI/Codex thinking-level controls.
+"""Demo: live verification of OpenAI/Codex/GLM thinking-level controls.
 
 Usage:
   uv run python scripts/demo_thinking_and_effort.py
   uv run python scripts/demo_thinking_and_effort.py --provider openai
   uv run python scripts/demo_thinking_and_effort.py --provider codex
+  uv run python scripts/demo_thinking_and_effort.py --provider glm
 """
 
 from __future__ import annotations
@@ -29,7 +30,13 @@ from dr_llm.providers.openai_compat.thinking import (
     openai_supports_off_thinking,
     openai_supports_xhigh_thinking,
 )
-from dr_llm.providers.reasoning import CodexReasoning, OpenAIReasoning, ThinkingLevel
+from dr_llm.providers.reasoning import (
+    CodexReasoning,
+    GlmReasoning,
+    OpenAIReasoning,
+    ThinkingLevel,
+)
+from dr_llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
 from dr_llm.providers.registry import ProviderRegistry
 
 app = typer.Typer()
@@ -58,9 +65,19 @@ CODEX_MODELS = [
     "gpt-5.4-mini",
     "gpt-5.1-codex-mini",
 ]
+GLM_MODELS = [
+    "glm-4.5",
+    "glm-4.5-air",
+    "glm-4.6",
+    "glm-4.7",
+    "glm-5",
+    "glm-5-turbo",
+    "glm-5.1",
+]
 PROVIDER_MODELS = {
     "openai": OPENAI_MODELS,
     "codex": CODEX_MODELS,
+    "glm": GLM_MODELS,
 }
 PHASES = ["models", "thinking"]
 
@@ -77,6 +94,8 @@ def supported_thinking_levels(provider: str, model: str) -> list[ThinkingLevel]:
         return _supported_openai_thinking_levels(model)
     if provider == "codex":
         return _supported_codex_thinking_levels(model)
+    if provider == "glm":
+        return _supported_glm_thinking_levels(model)
     raise ValueError(f"unsupported provider: {provider!r}")
 
 
@@ -96,6 +115,13 @@ def _supported_codex_thinking_levels(model: str) -> list[ThinkingLevel]:
         supports_minimal=codex_supports_minimal_thinking(model),
         supports_xhigh=codex_supports_xhigh_thinking(model),
     )
+
+
+def _supported_glm_thinking_levels(model: str) -> list[ThinkingLevel]:
+    capabilities = reasoning_capabilities_for_model(provider="glm", model=model)
+    if capabilities is None or capabilities.mode != "glm":
+        return [ThinkingLevel.NA]
+    return [ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE]
 
 
 def _supported_openai_style_thinking_levels(
@@ -138,13 +164,15 @@ def default_thinking_for_model(provider: str, model: str) -> ThinkingLevel:
 def reasoning_for_level(
     provider: str,
     thinking_level: ThinkingLevel,
-) -> OpenAIReasoning | CodexReasoning | None:
+) -> OpenAIReasoning | CodexReasoning | GlmReasoning | None:
     if thinking_level == ThinkingLevel.NA:
         return None
     if provider == "openai":
         return OpenAIReasoning(thinking_level=thinking_level)
     if provider == "codex":
         return CodexReasoning(thinking_level=thinking_level)
+    if provider == "glm":
+        return GlmReasoning(thinking_level=thinking_level)
     raise ValueError(f"unsupported provider: {provider!r}")
 
 

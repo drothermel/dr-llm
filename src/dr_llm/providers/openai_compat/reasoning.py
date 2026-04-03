@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.reasoning import ReasoningWarning
-from dr_llm.providers.reasoning import OpenAIReasoning, ReasoningSpec, ThinkingLevel
+from dr_llm.providers.reasoning import (
+    GlmReasoning,
+    OpenAIReasoning,
+    ReasoningSpec,
+    ThinkingLevel,
+)
 
 
 class OpenAICompatReasoningConfig(BaseModel):
@@ -15,6 +20,7 @@ class OpenAICompatReasoningConfig(BaseModel):
     reasoning_effort: (
         Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None
     ) = None
+    extra_body: dict[str, Any] = Field(default_factory=dict)
     warnings: list[ReasoningWarning] = Field(default_factory=list)
 
     @classmethod
@@ -39,9 +45,16 @@ class OpenAICompatReasoningConfig(BaseModel):
                 return cls(reasoning_effort="high")
             case OpenAIReasoning(thinking_level=ThinkingLevel.XHIGH):
                 return cls(reasoning_effort="xhigh")
+            case GlmReasoning(thinking_level=ThinkingLevel.OFF):
+                return cls(extra_body={"thinking": {"type": "disabled"}})
+            case GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE):
+                return cls(extra_body={"thinking": {"type": "enabled"}})
         raise ProviderSemanticError(
             f"OpenAI-compatible reasoning serializer received unsupported config kind={config.kind!r}"
         )
 
     def to_reasoning_effort(self) -> str | None:
         return self.reasoning_effort
+
+    def to_extra_body(self) -> dict[str, Any]:
+        return self.extra_body

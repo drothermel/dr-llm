@@ -26,6 +26,7 @@ class OpenAICompatRequest(BaseModel):
     top_p: float | None = None
     max_tokens: int | None = None
     reasoning_effort: str | None = None
+    extra_body: dict[str, Any] = Field(default_factory=dict)
     base_url: str = Field(exclude=True)
     chat_path: str = Field(exclude=True)
     api_key_env: str = Field(exclude=True)
@@ -43,6 +44,7 @@ class OpenAICompatRequest(BaseModel):
             request.reasoning,
         )
         reasoning_effort = reasoning_mapping.to_reasoning_effort()
+        extra_body = reasoning_mapping.to_extra_body()
         return cls(
             provider=request.provider,
             model=request.model,
@@ -51,6 +53,7 @@ class OpenAICompatRequest(BaseModel):
             top_p=request.top_p,
             max_tokens=request.max_tokens,
             reasoning_effort=reasoning_effort,
+            extra_body=extra_body,
             base_url=config.base_url,
             chat_path=config.chat_path,
             api_key_env=config.api_key_env,
@@ -96,4 +99,8 @@ class OpenAICompatRequest(BaseModel):
         }
 
     def json_payload(self) -> dict[str, Any]:
-        return self.model_dump(mode="json", exclude_none=True)
+        payload = self.model_dump(
+            mode="json", exclude_none=True, exclude={"extra_body"}
+        )
+        payload.update(self.extra_body)
+        return payload

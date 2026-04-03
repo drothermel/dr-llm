@@ -11,7 +11,7 @@ from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
 from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.providers.openai_compat.request import OpenAICompatRequest
 from dr_llm.providers.openai_compat.response import OpenAICompatResponse
-from dr_llm.providers.reasoning import OpenAIReasoning, ThinkingLevel
+from dr_llm.providers.reasoning import GlmReasoning, OpenAIReasoning, ThinkingLevel
 from tests.conftest import make_request
 from tests.providers.conftest import make_http_client
 
@@ -129,6 +129,22 @@ def test_request_omits_reasoning_when_not_configured() -> None:
     request = make_request(provider="openrouter", model="openai/gpt-4o-mini")
     provider_request = OpenAICompatRequest.from_llm_request(request, _CONFIG)
     assert provider_request.reasoning_effort is None
+
+
+def test_glm_request_serializes_native_thinking_payload() -> None:
+    glm_config = OpenAICompatConfig(
+        name="glm",
+        base_url="https://api.z.ai/api/coding/paas/v4",
+        api_key="x",
+    )
+    request = make_request(
+        provider="glm",
+        model="glm-4.5",
+        reasoning=GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+    )
+    provider_request = OpenAICompatRequest.from_llm_request(request, glm_config)
+    assert provider_request.reasoning_effort is None
+    assert provider_request.json_payload()["thinking"] == {"type": "enabled"}
 
 
 # ---------------------------------------------------------------------------

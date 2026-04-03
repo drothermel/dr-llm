@@ -24,7 +24,10 @@ from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.providers.models import CallMode, Message
 from dr_llm.providers.reasoning import (
     AnthropicReasoning,
+    CodexReasoning,
+    GlmReasoning,
     GoogleReasoning,
+    OpenAIReasoning,
     ReasoningWarning,
     ReasoningBudget,
     ReasoningSpec,
@@ -54,7 +57,10 @@ __all__ = [
     "PoolService",
     "PoolStore",
     "AnthropicReasoning",
+    "CodexReasoning",
+    "GlmReasoning",
     "GoogleReasoning",
+    "OpenAIReasoning",
     "ReasoningBudget",
     "ReasoningSpec",
     "ReasoningWarning",

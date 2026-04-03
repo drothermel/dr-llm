@@ -130,6 +130,24 @@ class CodexReasoning(BaseModel):
     thinking_level: ThinkingLevel = ThinkingLevel.NA
 
 
+class GlmReasoning(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["glm"] = "glm"
+    thinking_level: ThinkingLevel = ThinkingLevel.NA
+
+    @model_validator(mode="after")
+    def _validate_shape(self) -> GlmReasoning:
+        _validate_allowed_thinking_levels(
+            provider="glm",
+            model="<config-shape>",
+            thinking_level=self.thinking_level,
+            allowed_levels={ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE},
+            allow_na=False,
+        )
+        return self
+
+
 class GoogleReasoning(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -164,6 +182,7 @@ ReasoningSpec = Annotated[
     | AnthropicReasoning
     | OpenAIReasoning
     | CodexReasoning
+    | GlmReasoning
     | GoogleReasoning,
     Field(discriminator="kind"),
 ]
@@ -180,7 +199,12 @@ def validate_reasoning(
     model: str,
     reasoning: ReasoningSpec | None,
 ) -> None:
+    capabilities = reasoning_capabilities_for_model(provider=provider, model=model)
     if reasoning is None:
+        if _requires_explicit_reasoning(provider=provider, capabilities=capabilities):
+            raise ValueError(
+                f"reasoning is required for provider={provider!r} model={model!r}"
+            )
         return
     if isinstance(reasoning, AnthropicReasoning):
         _validate_anthropic_reasoning(
@@ -205,6 +229,13 @@ def validate_reasoning(
             thinking_level=reasoning.thinking_level,
         )
         return
+    if isinstance(reasoning, GlmReasoning):
+        _validate_glm_reasoning(
+            provider=provider,
+            model=model,
+            thinking_level=reasoning.thinking_level,
+        )
+        return
     if provider == "anthropic" and isinstance(reasoning, ReasoningBudget):
         if model not in ANTHROPIC_BUDGET_THINKING_SUPPORTED:
             raise ValueError(
@@ -221,7 +252,6 @@ def validate_reasoning(
         raise ValueError(
             f"claude-code does not support budget thinking for model={model!r}"
         )
-    capabilities = reasoning_capabilities_for_model(provider=provider, model=model)
     if capabilities is None:
         raise ValueError(
             f"Reasoning is not allowed for provider={provider!r} model={model!r}: reasoning capabilities are unknown"
@@ -262,6 +292,12 @@ def _validate_against_capabilities(
             )
         case CodexReasoning(thinking_level=thinking_level):
             _validate_codex_reasoning(
+                provider=provider,
+                model=model,
+                thinking_level=thinking_level,
+            )
+        case GlmReasoning(thinking_level=thinking_level):
+            _validate_glm_reasoning(
                 provider=provider,
                 model=model,
                 thinking_level=thinking_level,
@@ -440,6 +476,23 @@ def _validate_codex_reasoning(
     )
 
 
+def _validate_glm_reasoning(
+    *,
+    provider: str,
+    model: str,
+    thinking_level: ThinkingLevel,
+) -> None:
+    if provider != "glm":
+        raise ValueError(f"glm thinking is not supported for provider={provider!r}")
+    _validate_allowed_thinking_levels(
+        provider=provider,
+        model=model,
+        thinking_level=thinking_level,
+        allowed_levels={ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE},
+        allow_na=False,
+    )
+
+
 def _validate_openai_style_thinking_level(
     *,
     provider: str,
@@ -478,6 +531,36 @@ def _validate_openai_style_thinking_level(
     raise ValueError(
         f"thinking_level {thinking_level!r} is not supported for provider={provider!r} model={model!r}"
     )
+
+
+def _validate_allowed_thinking_levels(
+    *,
+    provider: str,
+    model: str,
+    thinking_level: ThinkingLevel,
+    allowed_levels: set[ThinkingLevel],
+    allow_na: bool,
+) -> None:
+    if thinking_level == ThinkingLevel.NA:
+        if allow_na:
+            return
+        raise ValueError(
+            f"thinking_level='na' is not supported for provider={provider!r} model={model!r}"
+        )
+    if thinking_level in allowed_levels:
+        return
+    allowed = ", ".join(level.value for level in sorted(allowed_levels))
+    raise ValueError(
+        f"thinking_level {thinking_level!r} is not supported for provider={provider!r} model={model!r}; allowed levels: {allowed}"
+    )
+
+
+def _requires_explicit_reasoning(
+    *,
+    provider: str,
+    capabilities: ReasoningCapabilities | None,
+) -> bool:
+    return provider == "glm" and capabilities is not None and capabilities.mode == "glm"
 
 
 def _validate_anthropic_budget_range(

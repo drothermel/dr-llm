@@ -15,6 +15,7 @@ GoogleThinkingLevel = Literal["minimal", "low", "medium", "high"]
 ReasoningMode = Literal[
     "unsupported",
     "openai_effort",
+    "glm",
     "google_budget",
     "google_level",
     "anthropic_budget",
@@ -100,6 +101,7 @@ _ANTHROPIC_OPUS_45_CAPS = ReasoningCapabilities(
 _ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(mode="anthropic_effort")
 _CLAUDE_HEADLESS_CAPS = ReasoningCapabilities(mode="claude_cli_effort")
 _CODEX_CLI_EFFORT_CAPS = ReasoningCapabilities(mode="codex_cli_effort")
+_GLM_THINKING_CAPS = ReasoningCapabilities(mode="glm")
 
 CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
@@ -129,6 +131,26 @@ CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ),
     ReasoningCapabilityRule(
         provider="google", model_prefix="gemini-3", capabilities=_GOOGLE_3_CAPS
+    ),
+    ReasoningCapabilityRule(
+        provider="glm",
+        model_prefix="glm-5",
+        capabilities=_GLM_THINKING_CAPS,
+    ),
+    ReasoningCapabilityRule(
+        provider="glm",
+        model_prefix="glm-4.7",
+        capabilities=_GLM_THINKING_CAPS,
+    ),
+    ReasoningCapabilityRule(
+        provider="glm",
+        model_prefix="glm-4.6",
+        capabilities=_GLM_THINKING_CAPS,
+    ),
+    ReasoningCapabilityRule(
+        provider="glm",
+        model_prefix="glm-4.5",
+        capabilities=_GLM_THINKING_CAPS,
     ),
     ReasoningCapabilityRule(
         provider="anthropic",

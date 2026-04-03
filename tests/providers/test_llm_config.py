@@ -10,6 +10,7 @@ from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
+    GlmReasoning,
     GoogleReasoning,
     OpenAIReasoning,
     ReasoningBudget,
@@ -189,6 +190,15 @@ def test_anthropic_request_requires_max_tokens() -> None:
         )
 
 
+def test_glm_request_requires_explicit_reasoning() -> None:
+    with pytest.raises(ValidationError):
+        LlmRequest(
+            provider="glm",
+            model="glm-4.5",
+            messages=[Message(role="user", content="Hello")],
+        )
+
+
 def test_model_dump_roundtrip() -> None:
     config = LlmConfig(
         provider="google",
@@ -346,6 +356,49 @@ def test_openai_and_codex_reject_top_level_effort() -> None:
             provider="codex",
             model="gpt-5.1-codex-mini",
             effort=EffortSpec.HIGH,
+        )
+
+
+def test_glm_requires_explicit_reasoning_and_rejects_effort() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="glm",
+            model="glm-4.5",
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="glm",
+            model="glm-4.5",
+            effort=EffortSpec.HIGH,
+            reasoning=GlmReasoning(thinking_level=ThinkingLevel.OFF),
+        )
+
+
+def test_glm_accepts_explicit_off_and_adaptive() -> None:
+    LlmConfig(
+        provider="glm",
+        model="glm-4.5",
+        reasoning=GlmReasoning(thinking_level=ThinkingLevel.OFF),
+    )
+    LlmConfig(
+        provider="glm",
+        model="glm-4.5",
+        reasoning=GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+    )
+
+
+def test_glm_rejects_unsupported_thinking_levels_and_wrong_kinds() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="glm",
+            model="glm-4.5",
+            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="glm",
+            model="glm-4.5",
+            reasoning=GlmReasoning(thinking_level=ThinkingLevel.HIGH),
         )
 
 

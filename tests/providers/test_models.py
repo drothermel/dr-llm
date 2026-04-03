@@ -7,6 +7,7 @@ from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.models import Message
 from dr_llm.providers.reasoning import (
     AnthropicReasoning,
+    GlmReasoning,
     GoogleReasoning,
     ReasoningBudget,
     ThinkingLevel,
@@ -64,6 +65,28 @@ def test_anthropic_adaptive_rejects_budget_tokens() -> None:
             thinking_level=ThinkingLevel.ADAPTIVE,
             budget_tokens=2048,
         )
+
+
+def test_glm_reasoning_accepts_only_off_and_adaptive() -> None:
+    assert GlmReasoning(thinking_level=ThinkingLevel.OFF).thinking_level == ThinkingLevel.OFF
+    assert (
+        GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE).thinking_level
+        == ThinkingLevel.ADAPTIVE
+    )
+
+
+def test_glm_reasoning_rejects_na_and_other_levels() -> None:
+    for thinking_level in (
+        ThinkingLevel.NA,
+        ThinkingLevel.MINIMAL,
+        ThinkingLevel.LOW,
+        ThinkingLevel.MEDIUM,
+        ThinkingLevel.HIGH,
+        ThinkingLevel.XHIGH,
+        ThinkingLevel.BUDGET,
+    ):
+        with pytest.raises(ValidationError):
+            GlmReasoning(thinking_level=thinking_level)
 
 
 def test_token_usage_computed_total() -> None:

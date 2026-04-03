@@ -13,6 +13,7 @@ from dr_llm.providers.openai_compat.reasoning import OpenAICompatReasoningConfig
 from dr_llm.providers.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
+    GlmReasoning,
     GoogleReasoning,
     OpenAIReasoning,
     ReasoningBudget,
@@ -56,6 +57,18 @@ def test_openai_compat_serializes_thinking_levels() -> None:
             OpenAIReasoning(thinking_level=ThinkingLevel.XHIGH)
         ).to_reasoning_effort()
         == "xhigh"
+    )
+    assert (
+        OpenAICompatReasoningConfig.from_base(
+            GlmReasoning(thinking_level=ThinkingLevel.OFF)
+        ).to_extra_body()
+        == {"thinking": {"type": "disabled"}}
+    )
+    assert (
+        OpenAICompatReasoningConfig.from_base(
+            GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
+        ).to_extra_body()
+        == {"thinking": {"type": "enabled"}}
     )
 
 
