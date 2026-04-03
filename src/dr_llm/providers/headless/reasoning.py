@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.providers.reasoning import ReasoningWarning
-from dr_llm.providers.reasoning import ReasoningSpec
+from dr_llm.providers.reasoning import AnthropicReasoning, ReasoningSpec, ThinkingLevel
 
 
 class ClaudeHeadlessReasoningConfig(BaseModel):
@@ -20,6 +20,15 @@ class ClaudeHeadlessReasoningConfig(BaseModel):
     ) -> ClaudeHeadlessReasoningConfig:
         if config is None:
             return cls()
+        match config:
+            case AnthropicReasoning(thinking_level=ThinkingLevel.NA, display=None):
+                return cls()
+            case AnthropicReasoning(
+                thinking_level=ThinkingLevel.ADAPTIVE,
+                budget_tokens=None,
+                display=None,
+            ):
+                return cls()
         raise HeadlessExecutionError(
             f"claude headless reasoning serializer received unsupported config kind={config.kind!r}"
         )

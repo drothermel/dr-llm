@@ -14,13 +14,15 @@ from dr_llm.providers.reasoning import (
     AnthropicReasoning,
     GoogleReasoning,
     ReasoningBudget,
-    ReasoningOff,
+    ThinkingLevel,
 )
 
 
-def test_openai_compat_serializes_off() -> None:
-    result = OpenAICompatReasoningConfig.from_base(ReasoningOff())
-    assert result.to_payload() == {"effort": "none"}
+def test_openai_compat_rejects_anthropic_reasoning_shape() -> None:
+    with pytest.raises(ProviderSemanticError):
+        OpenAICompatReasoningConfig.from_base(
+            AnthropicReasoning(thinking_level=ThinkingLevel.OFF)
+        )
 
 
 def test_openai_compat_rejects_provider_specific_shape() -> None:
@@ -30,14 +32,14 @@ def test_openai_compat_rejects_provider_specific_shape() -> None:
 
 def test_anthropic_rejects_non_anthropic_reasoning_config() -> None:
     with pytest.raises(ProviderSemanticError):
-        AnthropicReasoningConfig.from_base(ReasoningOff())
+        AnthropicReasoningConfig.from_base(GoogleReasoning(thinking_level="low"))
 
 
 def test_anthropic_serializes_manual_thinking() -> None:
     result = AnthropicReasoningConfig.from_base(
         AnthropicReasoning(
+            thinking_level=ThinkingLevel.BUDGET,
             budget_tokens=2048,
-            thinking_mode="enabled",
             display="omitted",
         )
     )
@@ -46,6 +48,22 @@ def test_anthropic_serializes_manual_thinking() -> None:
         "budget_tokens": 2048,
         "display": "omitted",
     }
+
+
+def test_anthropic_off_omits_thinking() -> None:
+    result = AnthropicReasoningConfig.from_base(
+        AnthropicReasoning(thinking_level=ThinkingLevel.OFF)
+    )
+    assert result.thinking_payload() == {}
+
+
+def test_claude_headless_accepts_adaptive_and_na() -> None:
+    assert ClaudeHeadlessReasoningConfig.from_base(
+        AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
+    ).to_cli_args() == []
+    assert ClaudeHeadlessReasoningConfig.from_base(
+        AnthropicReasoning(thinking_level=ThinkingLevel.NA)
+    ).to_cli_args() == []
 
 
 def test_google_serializes_budget_and_dynamic() -> None:
@@ -65,7 +83,9 @@ def test_google_serializes_level() -> None:
 
 def test_claude_headless_rejects_reasoning_config() -> None:
     with pytest.raises(HeadlessExecutionError):
-        ClaudeHeadlessReasoningConfig.from_base(ReasoningBudget(tokens=1024))
+        ClaudeHeadlessReasoningConfig.from_base(
+            AnthropicReasoning(thinking_level=ThinkingLevel.BUDGET, budget_tokens=1024)
+        )
 
 
 def test_codex_headless_rejects_reasoning() -> None:

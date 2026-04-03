@@ -27,8 +27,8 @@ from dr_llm.providers.reasoning import (
     GoogleReasoning,
     ReasoningWarning,
     ReasoningBudget,
-    ReasoningOff,
     ReasoningSpec,
+    ThinkingLevel,
 )
 from dr_llm.providers.usage import CostInfo, TokenUsage
 
@@ -56,10 +56,10 @@ __all__ = [
     "AnthropicReasoning",
     "GoogleReasoning",
     "ReasoningBudget",
-    "ReasoningOff",
     "ReasoningSpec",
     "ReasoningWarning",
     "RunStatus",
+    "ThinkingLevel",
     "TokenUsage",
     "make_llm_process_fn",
 ]

@@ -120,12 +120,10 @@ _ANTHROPIC_BUDGET_CAPS = ReasoningCapabilities(
     max_budget_tokens=128000,
     supports_display=True,
 )
-_ANTHROPIC_EFFORT_AND_BUDGET_CAPS = ReasoningCapabilities(
-    mode="anthropic_effort_and_budget",
+_ANTHROPIC_SONNET_46_CAPS = ReasoningCapabilities(
+    mode="anthropic_effort",
     generic_effort_levels=("low", "medium", "high"),
     anthropic_effort_levels=("low", "medium", "high"),
-    min_budget_tokens=1024,
-    max_budget_tokens=128000,
     supports_display=True,
     supports_adaptive=True,
 )
@@ -138,11 +136,9 @@ _ANTHROPIC_OPUS_45_CAPS = ReasoningCapabilities(
     supports_display=True,
 )
 _ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(
-    mode="anthropic_effort_and_budget",
+    mode="anthropic_effort",
     generic_effort_levels=("low", "medium", "high", "max"),
     anthropic_effort_levels=("low", "medium", "high", "max"),
-    min_budget_tokens=1024,
-    max_budget_tokens=128000,
     supports_display=True,
     supports_adaptive=True,
 )
@@ -261,7 +257,7 @@ CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
         provider="anthropic",
         model_prefix="claude-sonnet-4-6",
-        capabilities=_ANTHROPIC_EFFORT_AND_BUDGET_CAPS,
+        capabilities=_ANTHROPIC_SONNET_46_CAPS,
     ),
     ReasoningCapabilityRule(
         provider="anthropic",

@@ -11,7 +11,7 @@ from dr_llm.providers.reasoning import (
     AnthropicReasoning,
     GoogleReasoning,
     ReasoningBudget,
-    ReasoningOff,
+    ThinkingLevel,
 )
 
 
@@ -214,14 +214,13 @@ def test_openai_gpt5_family_allows_top_level_effort() -> None:
     )
 
 
-def test_rejects_combining_effort_with_reasoning_off() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider="openai",
-            model="gpt-5-mini",
-            effort=EffortSpec.HIGH,
-            reasoning=ReasoningOff(),
-        )
+def test_allows_combining_effort_with_anthropic_off() -> None:
+    LlmConfig(
+        provider="anthropic",
+        model="claude-sonnet-4-6",
+        effort=EffortSpec.HIGH,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
+    )
 
 
 def test_anthropic_adaptive_requires_model_support_not_effort() -> None:
@@ -229,13 +228,13 @@ def test_anthropic_adaptive_requires_model_support_not_effort() -> None:
         provider="anthropic",
         model="claude-sonnet-4-6",
         effort=EffortSpec.MEDIUM,
-        reasoning=AnthropicReasoning(thinking_mode="adaptive"),
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
     )
     with pytest.raises(ValidationError):
         LlmConfig(
             provider="anthropic",
             model="claude-opus-4-5",
-            reasoning=AnthropicReasoning(thinking_mode="adaptive"),
+            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
         )
 
 
@@ -246,8 +245,47 @@ def test_google_flash_budget_zero_is_not_manual_budget() -> None:
             model="gemini-2.5-flash",
             reasoning=GoogleReasoning(thinking_budget=0),
         )
+    LlmConfig(provider="google", model="gemini-2.5-flash")
+
+
+def test_anthropic_budget_requires_budget_supported_model() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            effort=EffortSpec.MEDIUM,
+            reasoning=AnthropicReasoning(
+                thinking_level=ThinkingLevel.BUDGET,
+                budget_tokens=2048,
+            ),
+        )
+
+
+def test_claude_code_accepts_adaptive_only_for_46_models() -> None:
     LlmConfig(
-        provider="google",
-        model="gemini-2.5-flash",
-        reasoning=ReasoningOff(),
+        provider="claude-code",
+        model="claude-sonnet-4-6",
+        effort=EffortSpec.MEDIUM,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
     )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="claude-code",
+            model="claude-sonnet-4-6",
+            effort=EffortSpec.MEDIUM,
+            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
+        )
+
+
+def test_claude_code_haiku_accepts_na_only() -> None:
+    LlmConfig(
+        provider="claude-code",
+        model="claude-haiku-4-5-20251001",
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.NA),
+    )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="claude-code",
+            model="claude-haiku-4-5-20251001",
+            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+        )

@@ -10,6 +10,7 @@ from dr_llm.providers.reasoning import (
     AnthropicReasoning,
     ReasoningBudget,
     ReasoningSpec,
+    ThinkingLevel,
 )
 
 
@@ -30,22 +31,18 @@ class AnthropicReasoningConfig(BaseModel):
             case ReasoningBudget(tokens=tokens):
                 return cls(thinking={"type": "enabled", "budget_tokens": tokens})
             case AnthropicReasoning(
+                thinking_level=thinking_level,
                 budget_tokens=budget_tokens,
-                thinking_mode=thinking_mode,
                 display=display,
             ):
                 thinking: dict[str, Any] = {}
-                if (
-                    budget_tokens is not None
-                    or thinking_mode is not None
-                    or display is not None
-                ):
-                    thinking_type = thinking_mode or "enabled"
-                    thinking["type"] = thinking_type
-                    if budget_tokens is not None:
-                        thinking["budget_tokens"] = budget_tokens
-                    if display is not None:
-                        thinking["display"] = display
+                if thinking_level == ThinkingLevel.BUDGET:
+                    assert budget_tokens is not None
+                    thinking = {"type": "enabled", "budget_tokens": budget_tokens}
+                elif thinking_level == ThinkingLevel.ADAPTIVE:
+                    thinking = {"type": "adaptive"}
+                if display is not None:
+                    thinking["display"] = display
                 return cls(thinking=thinking)
             case _:
                 raise ProviderSemanticError(

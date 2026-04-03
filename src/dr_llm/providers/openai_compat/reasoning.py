@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.reasoning import ReasoningWarning
-from dr_llm.providers.reasoning import ReasoningOff, ReasoningSpec
+from dr_llm.providers.reasoning import ReasoningSpec
 
 
 class OpenAICompatReasoningConfig(BaseModel):
@@ -22,13 +22,9 @@ class OpenAICompatReasoningConfig(BaseModel):
     ) -> OpenAICompatReasoningConfig:
         if config is None:
             return cls()
-        match config:
-            case ReasoningOff():
-                return cls(payload={"effort": "none"})
-            case _:
-                raise ProviderSemanticError(
-                    f"OpenAI-compatible reasoning serializer received unsupported config kind={config.kind!r}"
-                )
+        raise ProviderSemanticError(
+            f"OpenAI-compatible reasoning serializer received unsupported config kind={config.kind!r}"
+        )
 
     def to_payload(self) -> dict[str, Any]:
         return self.payload

@@ -9,6 +9,7 @@ from dr_llm.providers.reasoning import (
     AnthropicReasoning,
     GoogleReasoning,
     ReasoningBudget,
+    ThinkingLevel,
 )
 from dr_llm.providers.usage import TokenUsage
 
@@ -35,19 +36,29 @@ def test_reasoning_budget_rejects_non_positive_tokens() -> None:
         ReasoningBudget(tokens=0)
 
 
+def test_thinking_level_values() -> None:
+    assert ThinkingLevel.NA == "na"
+    assert ThinkingLevel.OFF == "off"
+    assert ThinkingLevel.BUDGET == "budget"
+    assert ThinkingLevel.ADAPTIVE == "adaptive"
+
+
 def test_google_reasoning_requires_exactly_one_mode() -> None:
     with pytest.raises(ValidationError):
         GoogleReasoning(thinking_level="low", thinking_budget=512)
 
 
 def test_anthropic_adaptive_allows_minimal_shape() -> None:
-    reasoning = AnthropicReasoning(thinking_mode="adaptive")
-    assert reasoning.thinking_mode == "adaptive"
+    reasoning = AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
+    assert reasoning.thinking_level == ThinkingLevel.ADAPTIVE
 
 
 def test_anthropic_adaptive_rejects_budget_tokens() -> None:
     with pytest.raises(ValidationError):
-        AnthropicReasoning(thinking_mode="adaptive", budget_tokens=2048)
+        AnthropicReasoning(
+            thinking_level=ThinkingLevel.ADAPTIVE,
+            budget_tokens=2048,
+        )
 
 
 def test_token_usage_computed_total() -> None:

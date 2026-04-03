@@ -10,7 +10,7 @@ from dr_llm.providers.anthropic.adapter import AnthropicAdapter
 from dr_llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import AnthropicReasoning
+from dr_llm.providers.reasoning import AnthropicReasoning, ThinkingLevel
 from tests.conftest import make_request
 from tests.providers.conftest import make_http_client
 
@@ -76,8 +76,8 @@ def test_payload_serializes_manual_thinking() -> None:
         provider="anthropic",
         model="claude-sonnet-4-5-20250929",
         reasoning=AnthropicReasoning(
+            thinking_level=ThinkingLevel.BUDGET,
             budget_tokens=2048,
-            thinking_mode="enabled",
             display="omitted",
         ),
     )
@@ -89,6 +89,22 @@ def test_payload_serializes_manual_thinking() -> None:
         "budget_tokens": 2048,
         "display": "omitted",
     }
+
+
+def test_payload_omits_thinking_for_off() -> None:
+    captured, client = make_http_client(_MOCK_RESPONSE)
+    adapter = AnthropicAdapter(config=_make_config(), client=client)
+
+    request = make_request(
+        provider="anthropic",
+        model="claude-sonnet-4-6",
+        effort=EffortSpec.MEDIUM,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
+    )
+    adapter.generate(request)
+
+    payload = captured["payload"]
+    assert "thinking" not in payload
 
 
 def test_invalid_json_raises_transport_error() -> None:
