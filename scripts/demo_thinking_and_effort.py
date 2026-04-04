@@ -123,12 +123,7 @@ def _supported_google_thinking_levels(model: str) -> list[ThinkingLevel]:
     if capabilities.mode == "google_budget":
         return [ThinkingLevel.ADAPTIVE, ThinkingLevel.OFF, ThinkingLevel.BUDGET]
     if capabilities.mode == "google_level":
-        return [
-            ThinkingLevel.MINIMAL,
-            ThinkingLevel.LOW,
-            ThinkingLevel.MEDIUM,
-            ThinkingLevel.HIGH,
-        ]
+        return [ThinkingLevel(level) for level in capabilities.google_levels]
     raise ValueError(f"unexpected google reasoning mode: {capabilities.mode!r}")
 
 

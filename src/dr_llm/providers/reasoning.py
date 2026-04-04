@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Annotated, Literal
+from typing import Any, Annotated, Literal, cast
 
 from pydantic import (
     BaseModel,
@@ -537,16 +537,15 @@ def _validate_google_reasoning(
             f"google model {model!r} does not support thinking_level={thinking_level!r}; use off, adaptive, or budget"
         )
     if capabilities.mode == "google_level":
+        allowed_levels = {
+            _google_literal_to_thinking_level(level)
+            for level in capabilities.google_levels
+        }
         _validate_allowed_thinking_levels(
             provider=provider,
             model=model,
             thinking_level=thinking_level,
-            allowed_levels={
-                ThinkingLevel.MINIMAL,
-                ThinkingLevel.LOW,
-                ThinkingLevel.MEDIUM,
-                ThinkingLevel.HIGH,
-            },
+            allowed_levels=allowed_levels,
             allow_na=False,
         )
         return
@@ -609,6 +608,18 @@ def _validate_allowed_thinking_levels(
     allowed = ", ".join(level.value for level in sorted(allowed_levels))
     raise ValueError(
         f"thinking_level {thinking_level!r} is not supported for provider={provider!r} model={model!r}; allowed levels: {allowed}"
+    )
+
+
+def _google_literal_to_thinking_level(level: str) -> ThinkingLevel:
+    return cast(
+        ThinkingLevel,
+        {
+            "minimal": ThinkingLevel.MINIMAL,
+            "low": ThinkingLevel.LOW,
+            "medium": ThinkingLevel.MEDIUM,
+            "high": ThinkingLevel.HIGH,
+        }[level],
     )
 
 

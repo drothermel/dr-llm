@@ -22,6 +22,7 @@ class _GoogleGenerationConfig(BaseModel):
 class _GoogleThinkingConfig(BaseModel):
     thinkingBudget: int | None = None
     thinkingLevel: str | None = None
+    includeThoughts: bool | None = None
 
 
 class _GoogleRequestPart(BaseModel):
@@ -150,6 +151,11 @@ class GoogleRequest(BaseModel):
             thinkingLevel=(
                 str(reasoning_payload["thinkingLevel"])
                 if "thinkingLevel" in reasoning_payload
+                else None
+            ),
+            includeThoughts=(
+                bool(reasoning_payload["includeThoughts"])
+                if "includeThoughts" in reasoning_payload
                 else None
             ),
         )

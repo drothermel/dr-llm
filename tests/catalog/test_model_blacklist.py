@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dr_llm.catalog.model_blacklist import (
     AVOID_MORE_EXPENSIVE_BUT_FASTER_MODELS,
+    GOOGLE_GEMINI_20_FLASH_UNAVAILABLE,
     GOOGLE_IRRELEVANT_MODELS,
     IRRELEVANT_FOR_RESEARCH,
     OPENAI_LANGUAGE_MODEL_PRICING,
@@ -73,6 +74,19 @@ def test_openai_language_model_pricing_values() -> None:
 def test_google_irrelevant_models_are_blacklisted() -> None:
     for model in GOOGLE_IRRELEVANT_MODELS:
         assert blacklist_reason(provider="google", model=model) == IRRELEVANT_FOR_RESEARCH
+
+
+def test_google_gemini_20_flash_models_are_blacklisted_as_unavailable() -> None:
+    for model in (
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-001",
+        "gemini-2.0-flash-lite",
+        "gemini-2.0-flash-lite-001",
+    ):
+        assert (
+            blacklist_reason(provider="google", model=model)
+            == GOOGLE_GEMINI_20_FLASH_UNAVAILABLE
+        )
 
 
 def test_glm_5_turbo_is_blacklisted() -> None:

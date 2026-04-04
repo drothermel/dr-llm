@@ -17,9 +17,7 @@ from dr_llm.providers.reasoning import (
 class OpenAICompatReasoningConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    reasoning_effort: (
-        Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None
-    ) = None
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
     extra_body: dict[str, Any] = Field(default_factory=dict)
     warnings: list[ReasoningWarning] = Field(default_factory=list)
 
@@ -43,8 +41,6 @@ class OpenAICompatReasoningConfig(BaseModel):
                 return cls(reasoning_effort="medium")
             case OpenAIReasoning(thinking_level=ThinkingLevel.HIGH):
                 return cls(reasoning_effort="high")
-            case OpenAIReasoning(thinking_level=ThinkingLevel.XHIGH):
-                return cls(reasoning_effort="xhigh")
             case GlmReasoning(thinking_level=ThinkingLevel.OFF):
                 return cls(extra_body={"thinking": {"type": "disabled"}})
             case GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE):

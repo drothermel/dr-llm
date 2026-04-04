@@ -63,6 +63,7 @@ def test_payload_serializes_effort_output_config() -> None:
         model="claude-sonnet-4-6",
         max_tokens=256,
         effort=EffortSpec.MEDIUM,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
     )
     adapter.generate(request)
 

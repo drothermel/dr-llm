@@ -153,6 +153,13 @@ def test_google_uses_budget_or_level_controls_by_model_family() -> None:
     assert unsupported_levels == [ThinkingLevel.NA]
     assert default_thinking_for_model("google", "gemma-3-1b-it") == ThinkingLevel.NA
 
+    gemma_4_levels = supported_thinking_levels("google", "gemma-4-31b-it")
+    assert gemma_4_levels == [
+        ThinkingLevel.MINIMAL,
+        ThinkingLevel.HIGH,
+    ]
+    assert default_thinking_for_model("google", "gemma-4-31b-it") == ThinkingLevel.MINIMAL
+
     budget_reasoning = reasoning_for_level("google", ThinkingLevel.BUDGET)
     level_reasoning = reasoning_for_level("google", ThinkingLevel.LOW)
     assert isinstance(budget_reasoning, GoogleReasoning)

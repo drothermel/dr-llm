@@ -10,6 +10,7 @@ from dr_llm.providers.reasoning import (
     GoogleReasoning,
     ReasoningBudget,
     ReasoningSpec,
+    ThinkingLevel,
 )
 
 
@@ -31,18 +32,33 @@ class GoogleReasoningConfig(BaseModel):
                 return cls(payload={"thinkingBudget": tokens})
             case GoogleReasoning(
                 thinking_level=thinking_level,
-                thinking_budget=thinking_budget,
-                dynamic=dynamic,
+                budget_tokens=budget_tokens,
+                include_thoughts=include_thoughts,
             ):
-                if thinking_level is not None:
-                    return cls(payload={"thinkingLevel": thinking_level})
-                if thinking_budget is not None:
-                    return cls(payload={"thinkingBudget": thinking_budget})
-                if dynamic:
-                    return cls(payload={"thinkingBudget": -1})
-                raise ProviderSemanticError(
-                    "google reasoning config did not contain a serializable setting"
-                )
+                payload: dict[str, Any] = {}
+                if thinking_level == ThinkingLevel.NA:
+                    return cls()
+                if thinking_level == ThinkingLevel.OFF:
+                    payload["thinkingBudget"] = 0
+                elif thinking_level == ThinkingLevel.ADAPTIVE:
+                    payload["thinkingBudget"] = -1
+                elif thinking_level == ThinkingLevel.BUDGET:
+                    assert budget_tokens is not None
+                    payload["thinkingBudget"] = budget_tokens
+                elif thinking_level in {
+                    ThinkingLevel.MINIMAL,
+                    ThinkingLevel.LOW,
+                    ThinkingLevel.MEDIUM,
+                    ThinkingLevel.HIGH,
+                }:
+                    payload["thinkingLevel"] = str(thinking_level)
+                else:
+                    raise ProviderSemanticError(
+                        "google reasoning config did not contain a serializable setting"
+                    )
+                if include_thoughts is not None:
+                    payload["includeThoughts"] = include_thoughts
+                return cls(payload=payload)
             case _:
                 raise ProviderSemanticError(
                     f"google reasoning serializer received unsupported config kind={config.kind!r}"

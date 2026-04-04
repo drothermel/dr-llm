@@ -25,6 +25,10 @@ IRRELEVANT_FOR_RESEARCH = "Irrelevant for Research"
 AVOID_MORE_EXPENSIVE_BUT_FASTER_MODELS = (
     "Avoid calling more expensive but faster models."
 )
+GOOGLE_GEMINI_20_FLASH_UNAVAILABLE = (
+    "No longer available to new users via the Google API as of 2026-04-03. "
+    "Use a newer Gemini Flash model instead."
+)
 
 OPENAI_IRRELEVANT_MODELS: tuple[str, ...] = (
     "davinci-002",
@@ -108,8 +112,6 @@ GOOGLE_IRRELEVANT_MODELS: tuple[str, ...] = (
     "gemini-flash-latest",
     "gemini-flash-lite-latest",
     "gemini-pro-latest",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
     "gemini-2.5-flash-image",
     "gemini-3.1-pro-preview-customtools",
     "gemini-3-pro-image-preview",
@@ -160,6 +162,10 @@ MODEL_BLACKLIST: dict[tuple[str, str], str] = {
     **{
         ("google", model): IRRELEVANT_FOR_RESEARCH for model in GOOGLE_IRRELEVANT_MODELS
     },
+    ("google", "gemini-2.0-flash"): GOOGLE_GEMINI_20_FLASH_UNAVAILABLE,
+    ("google", "gemini-2.0-flash-001"): GOOGLE_GEMINI_20_FLASH_UNAVAILABLE,
+    ("google", "gemini-2.0-flash-lite"): GOOGLE_GEMINI_20_FLASH_UNAVAILABLE,
+    ("google", "gemini-2.0-flash-lite-001"): GOOGLE_GEMINI_20_FLASH_UNAVAILABLE,
 }
 
 

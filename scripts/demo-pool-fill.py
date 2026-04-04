@@ -38,10 +38,9 @@ from dr_llm.pool import (
 from dr_llm.pool.sample_models import WorkerSnapshot
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.providers import build_default_registry
-from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import GoogleReasoning
+from dr_llm.providers.reasoning import GoogleReasoning, OpenAIReasoning, ThinkingLevel
 
 app = typer.Typer()
 
@@ -51,13 +50,16 @@ LLM_CONFIGS: dict[str, LlmConfig] = {
         model="gpt-5-mini",
         temperature=0.7,
         max_tokens=64,
-        effort=EffortSpec.LOW,
+        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
     ),
     "gemini-flash-budget": LlmConfig(
         provider="google",
         model="gemini-2.5-flash",
         max_tokens=64,
-        reasoning=GoogleReasoning(thinking_budget=512),
+        reasoning=GoogleReasoning(
+            thinking_level=ThinkingLevel.BUDGET,
+            budget_tokens=512,
+        ),
     ),
 }
 

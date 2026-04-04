@@ -87,6 +87,10 @@ _GOOGLE_3_CAPS = ReasoningCapabilities(
     mode="google_level",
     google_levels=("minimal", "low", "medium", "high"),
 )
+_GEMMA_4_CAPS = ReasoningCapabilities(
+    mode="google_level",
+    google_levels=("minimal", "high"),
+)
 _ANTHROPIC_BUDGET_CAPS = ReasoningCapabilities(
     mode="anthropic_budget",
     min_budget_tokens=1024,
@@ -131,6 +135,9 @@ CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ),
     ReasoningCapabilityRule(
         provider="google", model_prefix="gemini-3", capabilities=_GOOGLE_3_CAPS
+    ),
+    ReasoningCapabilityRule(
+        provider="google", model_prefix="gemma-4", capabilities=_GEMMA_4_CAPS
     ),
     ReasoningCapabilityRule(
         provider="glm",

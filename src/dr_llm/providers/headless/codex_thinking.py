@@ -26,14 +26,6 @@ CODEX_OFF_THINKING_SUPPORTED_MODELS = [
     "gpt-5.4-mini",
 ]
 
-CODEX_XHIGH_THINKING_SUPPORTED_MODELS = [
-    "gpt-5.2-codex",
-    "gpt-5.3-codex",
-    "gpt-5.3-codex-spark",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-]
-
 
 def codex_supports_configurable_thinking(model: str) -> bool:
     return _matches_family(normalized=model, families=CODEX_THINKING_SUPPORTED_MODELS)
@@ -50,13 +42,6 @@ def codex_supports_off_thinking(model: str) -> bool:
     return _matches_family(
         normalized=model,
         families=CODEX_OFF_THINKING_SUPPORTED_MODELS,
-    )
-
-
-def codex_supports_xhigh_thinking(model: str) -> bool:
-    return _matches_family(
-        normalized=model,
-        families=CODEX_XHIGH_THINKING_SUPPORTED_MODELS,
     )
 
 

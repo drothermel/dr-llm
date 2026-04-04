@@ -49,12 +49,6 @@ OPENAI_OFF_THINKING_SUPPORTED_MODELS = [
     "gpt-5.4-nano",
 ]
 
-OPENAI_XHIGH_THINKING_SUPPORTED_MODELS = [
-    "gpt-5.4",
-    "gpt-5.4-mini",
-    "gpt-5.4-nano",
-]
-
 
 def normalize_openai_reasoning_model(model: str) -> str:
     if model.startswith("openai/"):
@@ -83,14 +77,6 @@ def openai_supports_off_thinking(model: str) -> bool:
     return _matches_family(
         normalized=normalized,
         families=OPENAI_OFF_THINKING_SUPPORTED_MODELS,
-    )
-
-
-def openai_supports_xhigh_thinking(model: str) -> bool:
-    normalized = normalize_openai_reasoning_model(model)
-    return _matches_family(
-        normalized=normalized,
-        families=OPENAI_XHIGH_THINKING_SUPPORTED_MODELS,
     )
 
 

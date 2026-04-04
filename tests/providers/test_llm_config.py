@@ -496,6 +496,11 @@ def test_google_level_models_accept_only_level_controls() -> None:
         model="gemma-4-31b-it",
         reasoning=GoogleReasoning(thinking_level=ThinkingLevel.HIGH),
     )
+    LlmConfig(
+        provider="google",
+        model="gemma-4-31b-it",
+        reasoning=GoogleReasoning(thinking_level=ThinkingLevel.MINIMAL),
+    )
     with pytest.raises(ValidationError):
         LlmConfig(
             provider="google",
@@ -510,6 +515,18 @@ def test_google_level_models_accept_only_level_controls() -> None:
                 thinking_level=ThinkingLevel.BUDGET,
                 budget_tokens=1024,
             ),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="google",
+            model="gemma-4-31b-it",
+            reasoning=GoogleReasoning(thinking_level=ThinkingLevel.LOW),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="google",
+            model="gemma-4-31b-it",
+            reasoning=GoogleReasoning(thinking_level=ThinkingLevel.MEDIUM),
         )
 
 

@@ -30,7 +30,9 @@ def test_openai_compat_rejects_anthropic_reasoning_shape() -> None:
 
 def test_openai_compat_rejects_provider_specific_shape() -> None:
     with pytest.raises(ProviderSemanticError):
-        OpenAICompatReasoningConfig.from_base(GoogleReasoning(thinking_level="low"))
+        OpenAICompatReasoningConfig.from_base(
+            GoogleReasoning(thinking_level=ThinkingLevel.LOW)
+        )
 
 
 def test_openai_compat_serializes_thinking_levels() -> None:
@@ -54,12 +56,6 @@ def test_openai_compat_serializes_thinking_levels() -> None:
     )
     assert (
         OpenAICompatReasoningConfig.from_base(
-            OpenAIReasoning(thinking_level=ThinkingLevel.XHIGH)
-        ).to_reasoning_effort()
-        == "xhigh"
-    )
-    assert (
-        OpenAICompatReasoningConfig.from_base(
             GlmReasoning(thinking_level=ThinkingLevel.OFF)
         ).to_extra_body()
         == {"thinking": {"type": "disabled"}}
@@ -74,7 +70,9 @@ def test_openai_compat_serializes_thinking_levels() -> None:
 
 def test_anthropic_rejects_non_anthropic_reasoning_config() -> None:
     with pytest.raises(ProviderSemanticError):
-        AnthropicReasoningConfig.from_base(GoogleReasoning(thinking_level="low"))
+        AnthropicReasoningConfig.from_base(
+            GoogleReasoning(thinking_level=ThinkingLevel.LOW)
+        )
 
 
 def test_anthropic_serializes_manual_thinking() -> None:
@@ -114,18 +112,28 @@ def test_claude_headless_accepts_adaptive_and_na() -> None:
     )
 
 
-def test_google_serializes_budget_and_dynamic() -> None:
+def test_google_serializes_budget_family_controls() -> None:
     assert GoogleReasoningConfig.from_base(
         ReasoningBudget(tokens=512)
     ).to_payload() == {"thinkingBudget": 512}
     assert GoogleReasoningConfig.from_base(
-        GoogleReasoning(dynamic=True)
+        GoogleReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
     ).to_payload() == {"thinkingBudget": -1}
+    assert GoogleReasoningConfig.from_base(
+        GoogleReasoning(thinking_level=ThinkingLevel.OFF)
+    ).to_payload() == {"thinkingBudget": 0}
+    assert GoogleReasoningConfig.from_base(
+        GoogleReasoning(
+            thinking_level=ThinkingLevel.BUDGET,
+            budget_tokens=1024,
+            include_thoughts=True,
+        )
+    ).to_payload() == {"thinkingBudget": 1024, "includeThoughts": True}
 
 
 def test_google_serializes_level() -> None:
     assert GoogleReasoningConfig.from_base(
-        GoogleReasoning(thinking_level="low")
+        GoogleReasoning(thinking_level=ThinkingLevel.LOW)
     ).to_payload() == {"thinkingLevel": "low"}
 
 
@@ -149,9 +157,6 @@ def test_codex_headless_serializes_reasoning_levels() -> None:
     assert CodexHeadlessReasoningConfig.from_base(
         CodexReasoning(thinking_level=ThinkingLevel.HIGH)
     ).to_cli_args() == ["-c", 'model_reasoning_effort="high"']
-    assert CodexHeadlessReasoningConfig.from_base(
-        CodexReasoning(thinking_level=ThinkingLevel.XHIGH)
-    ).to_cli_args() == ["-c", 'model_reasoning_effort="xhigh"']
 
 
 def test_codex_headless_rejects_non_codex_reasoning() -> None:

@@ -65,7 +65,6 @@ class CodexHeadlessReasoningConfig(BaseModel):
                 | ThinkingLevel.LOW
                 | ThinkingLevel.MEDIUM
                 | ThinkingLevel.HIGH
-                | ThinkingLevel.XHIGH
             ):
                 thinking_level = config.thinking_level
                 return cls(
