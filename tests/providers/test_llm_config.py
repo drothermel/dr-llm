@@ -13,6 +13,7 @@ from dr_llm.providers.reasoning import (
     GlmReasoning,
     GoogleReasoning,
     OpenAIReasoning,
+    OpenRouterReasoning,
     ReasoningBudget,
     ThinkingLevel,
 )
@@ -411,9 +412,72 @@ def test_openai_gpt5_family_accepts_provider_shaped_reasoning() -> None:
     )
     LlmConfig(
         provider="openrouter",
-        model="openai/gpt-5.1",
-        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MEDIUM),
+        model="openai/gpt-oss-20b",
+        reasoning=OpenRouterReasoning(effort="medium"),
     )
+
+
+def test_openrouter_requires_allowlisted_models() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openrouter",
+            model="openai/gpt-4.1",
+        )
+
+
+def test_openrouter_validates_manual_reasoning_modes() -> None:
+    LlmConfig(
+        provider="openrouter",
+        model="deepseek/deepseek-chat-v3.1",
+        reasoning=OpenRouterReasoning(enabled=False),
+    )
+    LlmConfig(
+        provider="openrouter",
+        model="deepseek/deepseek-r1",
+        reasoning=OpenRouterReasoning(enabled=True),
+    )
+    LlmConfig(
+        provider="openrouter",
+        model="deepseek/deepseek-chat",
+    )
+
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openrouter",
+            model="deepseek/deepseek-chat-v3.1",
+            reasoning=OpenRouterReasoning(effort="low"),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openrouter",
+            model="deepseek/deepseek-r1",
+            reasoning=OpenRouterReasoning(enabled=False),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openrouter",
+            model="deepseek/deepseek-chat",
+            reasoning=OpenRouterReasoning(enabled=True),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openrouter",
+            model="openai/gpt-oss-20b",
+            reasoning=OpenRouterReasoning(enabled=True),
+        )
+
+
+def test_openrouter_supported_models_require_explicit_reasoning() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openrouter",
+            model="deepseek/deepseek-chat-v3.1",
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openrouter",
+            model="openai/gpt-oss-20b",
+        )
 
 
 def test_openai_gpt5_rejects_off_before_51() -> None:

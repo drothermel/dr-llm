@@ -42,6 +42,8 @@ class OpenAICompatRequest(BaseModel):
     ) -> OpenAICompatRequest:
         reasoning_mapping = OpenAICompatReasoningConfig.from_base(
             request.reasoning,
+            provider=request.provider,
+            model=request.model,
         )
         reasoning_effort = reasoning_mapping.to_reasoning_effort()
         extra_body = reasoning_mapping.to_extra_body()

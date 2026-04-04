@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from dr_llm.catalog.model_blacklist import filter_blacklisted_entries
 from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
+from dr_llm.providers.openrouter.catalog import apply_openrouter_model_policies
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class FileCatalogStore:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             entries = [ModelCatalogEntry.model_validate(item) for item in data]
-            return filter_blacklisted_entries(entries)
+            return apply_openrouter_model_policies(filter_blacklisted_entries(entries))
         except (OSError, json.JSONDecodeError, ValidationError) as exc:
             logger.warning("Skipping corrupt catalog cache %s: %s", path, exc)
             return []
@@ -98,7 +99,11 @@ class FileCatalogStore:
                 provider_entries = [
                     ModelCatalogEntry.model_validate(item) for item in data
                 ]
-                entries.extend(filter_blacklisted_entries(provider_entries))
+                entries.extend(
+                    apply_openrouter_model_policies(
+                        filter_blacklisted_entries(provider_entries)
+                    )
+                )
             except (OSError, json.JSONDecodeError, ValidationError) as exc:
                 logger.warning("Skipping corrupt catalog cache %s: %s", path, exc)
         return entries

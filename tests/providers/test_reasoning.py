@@ -17,6 +17,7 @@ from dr_llm.providers.reasoning import (
     GlmReasoning,
     GoogleReasoning,
     OpenAIReasoning,
+    OpenRouterReasoning,
     ReasoningBudget,
     ThinkingLevel,
 )
@@ -67,6 +68,19 @@ def test_openai_compat_serializes_thinking_levels() -> None:
         ).to_extra_body()
         == {"thinking": {"type": "enabled"}}
     )
+
+
+def test_openrouter_serializes_reasoning_payloads() -> None:
+    assert OpenAICompatReasoningConfig.from_base(
+        OpenRouterReasoning(enabled=False),
+        provider="openrouter",
+        model="deepseek/deepseek-chat-v3.1",
+    ).to_extra_body() == {"reasoning": {"enabled": False}}
+    assert OpenAICompatReasoningConfig.from_base(
+        OpenRouterReasoning(effort="low"),
+        provider="openrouter",
+        model="openai/gpt-oss-20b",
+    ).to_extra_body() == {"reasoning": {"effort": "low"}}
 
 
 def test_anthropic_rejects_non_anthropic_reasoning_config() -> None:

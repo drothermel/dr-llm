@@ -15,6 +15,7 @@ from dr_llm.catalog.fetchers import (
     fetch_out_of_registry_provider_models,
 )
 from dr_llm.catalog.fetchers.kimi import KIMI_PROVIDER_NAME
+from dr_llm.providers.openrouter.catalog import apply_openrouter_model_policies
 from dr_llm.providers.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,7 @@ class ModelCatalogService:
             try:
                 entries, raw_payload = self._fetch_provider(target)
                 entries = filter_blacklisted_entries(entries)
+                entries = apply_openrouter_model_policies(entries)
                 snapshot_id: str | None = None
                 if self._repository is not None:
                     snapshot_id = self._repository.record_model_catalog_snapshot(

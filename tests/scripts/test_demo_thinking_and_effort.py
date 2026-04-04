@@ -3,12 +3,14 @@ from __future__ import annotations
 import runpy
 from pathlib import Path
 
+from dr_llm.providers.openrouter import openrouter_allowed_models
 from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
     GoogleReasoning,
     OpenAIReasoning,
+    OpenRouterReasoning,
     ThinkingLevel,
 )
 
@@ -60,6 +62,7 @@ def test_provider_model_sweeps_match_expected_snapshot() -> None:
         "gemma-4-26b-a4b-it",
         "gemma-4-31b-it",
     ]
+    assert SCRIPT_GLOBALS["OPENROUTER_MODELS"] == list(openrouter_allowed_models())
     assert SCRIPT_GLOBALS["PHASES"] == ["models", "thinking", "effort"]
 
 
@@ -268,3 +271,37 @@ def test_google_uses_budget_or_level_controls_by_model_family() -> None:
     assert budget_reasoning.budget_tokens == SCRIPT_GLOBALS["GOOGLE_FIXED_BUDGET"]
     assert isinstance(level_reasoning, GoogleReasoning)
     assert level_reasoning.thinking_level == ThinkingLevel.LOW
+
+
+def test_openrouter_uses_minimum_policy_reasoning_in_model_sweep() -> None:
+    default_reasoning_override = SCRIPT_GLOBALS["default_reasoning_override"]
+    supported_thinking_levels = SCRIPT_GLOBALS["supported_thinking_levels"]
+
+    assert supported_thinking_levels("openrouter", "deepseek/deepseek-chat-v3.1") == [
+        ThinkingLevel.NA
+    ]
+
+    hybrid_reasoning = default_reasoning_override(
+        "openrouter",
+        "deepseek/deepseek-chat-v3.1",
+    )
+    reasoning_only = default_reasoning_override(
+        "openrouter",
+        "deepseek/deepseek-r1",
+    )
+    unsupported_reasoning = default_reasoning_override(
+        "openrouter",
+        "deepseek/deepseek-chat",
+    )
+    effort_reasoning = default_reasoning_override(
+        "openrouter",
+        "openai/gpt-oss-20b",
+    )
+
+    assert isinstance(hybrid_reasoning, OpenRouterReasoning)
+    assert hybrid_reasoning.enabled is False
+    assert isinstance(reasoning_only, OpenRouterReasoning)
+    assert reasoning_only.enabled is True
+    assert unsupported_reasoning is None
+    assert isinstance(effort_reasoning, OpenRouterReasoning)
+    assert effort_reasoning.effort == "low"

@@ -3,6 +3,7 @@
 
 Usage:
   uv run python scripts/demo_thinking_and_effort.py
+  uv run python scripts/demo_thinking_and_effort.py --provider openrouter
   uv run python scripts/demo_thinking_and_effort.py --provider openai
   uv run python scripts/demo_thinking_and_effort.py --provider codex
   uv run python scripts/demo_thinking_and_effort.py --provider google
@@ -33,6 +34,11 @@ from dr_llm.providers.headless.codex_thinking import (
 )
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.models import Message
+from dr_llm.providers.openrouter import (
+    OpenRouterReasoningRequestStyle,
+    openrouter_allowed_models,
+    openrouter_model_policy,
+)
 from dr_llm.providers.openai_compat.thinking import (
     openai_supports_configurable_thinking,
     openai_supports_minimal_thinking,
@@ -43,6 +49,8 @@ from dr_llm.providers.reasoning import (
     CodexReasoning,
     GoogleReasoning,
     OpenAIReasoning,
+    OpenRouterReasoning,
+    ReasoningSpec,
     ThinkingLevel,
 )
 from dr_llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
@@ -83,10 +91,12 @@ GOOGLE_MODELS = [
     "gemma-4-26b-a4b-it",
     "gemma-4-31b-it",
 ]
+OPENROUTER_MODELS = list(openrouter_allowed_models())
 PROVIDER_MODELS = {
     "claude-code": CLAUDE_MODELS,
     "minimax": MINIMAX_MODELS,
     "kimi-code": KIMI_CODE_MODELS,
+    "openrouter": OPENROUTER_MODELS,
     "openai": OPENAI_MODELS,
     "codex": CODEX_MODELS,
     "google": GOOGLE_MODELS,
@@ -114,6 +124,8 @@ def supported_thinking_levels(provider: str, model: str) -> list[ThinkingLevel]:
         return _supported_codex_thinking_levels(model)
     if provider == "google":
         return _supported_google_thinking_levels(model)
+    if provider == "openrouter":
+        return [ThinkingLevel.NA]
     raise ValueError(f"unsupported provider: {provider!r}")
 
 
@@ -198,6 +210,24 @@ def default_effort_for_model(provider: str, model: str) -> EffortSpec:
     return EffortSpec.NA
 
 
+def default_reasoning_override(
+    provider: str,
+    model: str,
+) -> ReasoningSpec | None:
+    if provider != "openrouter":
+        return None
+    policy = openrouter_model_policy(model)
+    if policy is None:
+        raise ValueError(f"missing openrouter policy for model={model!r}")
+    if policy.request_style == OpenRouterReasoningRequestStyle.NONE:
+        return None
+    if policy.request_style == OpenRouterReasoningRequestStyle.ENABLED_FLAG:
+        if policy.supports_disable:
+            return OpenRouterReasoning(enabled=False)
+        return OpenRouterReasoning(enabled=True)
+    return OpenRouterReasoning(effort=policy.allowed_efforts[0])
+
+
 def reasoning_for_level(
     provider: str,
     thinking_level: ThinkingLevel,
@@ -250,7 +280,18 @@ def format_attempt(
     model: str,
     thinking_level: ThinkingLevel,
     effort: EffortSpec,
+    reasoning_override: ReasoningSpec | None = None,
 ) -> str:
+    if provider == "openrouter":
+        detail = f"{provider} | {model}"
+        match reasoning_override:
+            case OpenRouterReasoning(effort=override_effort) if override_effort is not None:
+                detail += f" | reasoning=effort({override_effort})"
+            case OpenRouterReasoning(enabled=enabled) if enabled is not None:
+                detail += f" | reasoning=enabled({str(enabled).lower()})"
+            case _:
+                detail += " | reasoning=none"
+        return detail
     detail = f"{provider} | {model} | thinking={thinking_level.name}"
     if provider == "google" and thinking_level == ThinkingLevel.BUDGET:
         detail = (
@@ -308,6 +349,7 @@ def make_request(
     effort: EffortSpec,
     *,
     explicit_reasoning: bool = False,
+    reasoning_override: ReasoningSpec | None = None,
 ) -> LlmRequest:
     max_tokens = KIMI_CODE_MAX_TOKENS if provider == "kimi-code" else None
     return LlmRequest(
@@ -316,7 +358,8 @@ def make_request(
         messages=[Message(role="user", content=PROMPT)],
         max_tokens=max_tokens,
         effort=effort,
-        reasoning=reasoning_for_level(
+        reasoning=reasoning_override
+        or reasoning_for_level(
             provider,
             thinking_level,
             explicit=explicit_reasoning,
@@ -334,11 +377,20 @@ def run_attempt(
     effort: EffortSpec,
     explicit_reasoning: bool,
     counts: dict[tuple[str, str], SummaryCounts],
+    reasoning_override: ReasoningSpec | None = None,
 ) -> None:
     key = (provider, phase)
     summary = counts[key]
     summary.attempted += 1
-    print(format_attempt(provider, model, thinking_level, effort))
+    print(
+        format_attempt(
+            provider,
+            model,
+            thinking_level,
+            effort,
+            reasoning_override,
+        )
+    )
 
     try:
         request = make_request(
@@ -347,6 +399,7 @@ def run_attempt(
             thinking_level=thinking_level,
             effort=effort,
             explicit_reasoning=explicit_reasoning,
+            reasoning_override=reasoning_override,
         )
     except (ValidationError, ValueError) as exc:
         summary.failed += 1
@@ -388,6 +441,7 @@ def run_model_sweep(
                 effort=default_effort_for_model(provider, model),
                 explicit_reasoning=requires_explicit_reasoning(provider),
                 counts=counts,
+                reasoning_override=default_reasoning_override(provider, model),
             )
 
 
@@ -398,6 +452,8 @@ def run_thinking_sweep(
 ) -> None:
     print("\n== thinking ==")
     for provider in providers:
+        if provider == "openrouter":
+            continue
         for model in PROVIDER_MODELS[provider]:
             for thinking_level in supported_thinking_levels(provider, model):
                 run_attempt(
@@ -419,6 +475,8 @@ def run_effort_sweep(
 ) -> None:
     print("\n== effort ==")
     for provider in providers:
+        if provider == "openrouter":
+            continue
         for model in PROVIDER_MODELS[provider]:
             for effort in supported_effort_levels(provider=provider, model=model):
                 run_attempt(

@@ -45,11 +45,8 @@ openrouter,ByteDance,bytedance-seed/seed-1.6,$0.250,$2.000,$0.6875,Yes,MoE,23B,2
 openrouter,DeepSeek,deepseek/deepseek-r1-distill-qwen-32b,$0.290,$0.290,$0.2900,Yes,Dense,32B,32B,,0.270
 openrouter,DeepSeek,deepseek/deepseek-v3.2,$0.260,$0.380,$0.2900,Yes,MoE,37B,671B,36.7,0.862
 openrouter,DeepSeek,deepseek/deepseek-chat-v3.1,$0.150,$0.750,$0.3000,Yes,MoE,37B,671B,,
-openrouter,DeepSeek,deepseek/deepseek-v3.2-exp,$0.270,$0.410,$0.3050,Yes,MoE,37B,671B,,
 openrouter,DeepSeek,deepseek/deepseek-chat-v3-0324,$0.200,$0.770,$0.3425,Yes,MoE,37B,671B,,
-openrouter,DeepSeek,deepseek/deepseek-v3.1-terminus,$0.210,$0.790,$0.3550,Yes,MoE,37B,671B,,
 openrouter,DeepSeek,deepseek/deepseek-chat,$0.320,$0.890,$0.4625,No,MoE,37B,671B,16.4,0.359
-openrouter,DeepSeek,deepseek/deepseek-v3.2-speciale,$0.400,$1.200,$0.6000,Yes,MoE,37B,671B,37.9,0.896
 openrouter,DeepSeek,deepseek/deepseek-r1-distill-llama-70b,$0.700,$0.800,$0.7250,Yes,Dense,70B,70B,11.4,0.266
 openrouter,DeepSeek,deepseek/deepseek-r1-0528,$0.450,$2.150,$0.8750,Yes,MoE,37B,671B,,
 openrouter,DeepSeek,deepseek/deepseek-r1,$0.700,$2.500,$1.1500,Yes,MoE,37B,671B,24.0,0.770
@@ -98,11 +95,9 @@ openrouter,OpenAI,openai/gpt-oss-20b,$0.030,$0.110,$0.0500,Effort levels,Dense,2
 openrouter,OpenAI,openai/gpt-oss-120b,$0.039,$0.190,$0.0767,Effort levels,MoE,NA,120B,28.6,0.878
 openrouter,Qwen,qwen/qwen2.5-coder-7b-instruct,$0.030,$0.090,$0.0450,No,Dense,7B,7B,,0.126
 openrouter,Qwen,qwen/qwen-2.5-7b-instruct,$0.040,$0.100,$0.0550,No,Dense,7B,7B,,
-openrouter,Qwen,qwen/qwen-turbo,$0.033,$0.130,$0.0569,No,MoE,NA,NA,,
 openrouter,Qwen,qwen/qwen3.5-9b,$0.050,$0.150,$0.0750,Yes,Dense,9B,9B,25.3,
 openrouter,Qwen,qwen/qwen3-235b-a22b-2507,$0.071,$0.100,$0.0782,Effort levels,MoE,22B,235B,,
 openrouter,Qwen,qwen/qwen3-14b,$0.060,$0.240,$0.1050,Yes,Dense,14B,14B,,
-openrouter,Qwen,qwen/qwen3.5-flash-02-23,$0.065,$0.260,$0.1138,Yes,MoE,NA,NA,,
 openrouter,Qwen,qwen/qwen3-32b,$0.080,$0.240,$0.1200,Yes,Dense,32B,32B,,
 openrouter,Qwen,qwen/qwen3-coder-30b-a3b-instruct,$0.070,$0.270,$0.1200,No,MoE,3B,30B,,
 openrouter,Qwen,qwen/qwen3-30b-a3b,$0.080,$0.280,$0.1300,Yes,MoE,3B,30B,,
@@ -114,20 +109,14 @@ openrouter,Qwen,qwen/qwq-32b,$0.150,$0.580,$0.2575,Yes,Dense,32B,32B,,0.631
 openrouter,Qwen,qwen/qwen3-next-80b-a3b-thinking,$0.098,$0.780,$0.2681,Yes,MoE,3B,80B,,
 openrouter,Qwen,qwen/qwen3-coder-next,$0.120,$0.750,$0.2775,No,MoE,NA,NA,,
 openrouter,Qwen,qwen/qwen3-next-80b-a3b-instruct,$0.090,$1.100,$0.3425,No,MoE,3B,80B,,
-openrouter,Qwen,qwen/qwen3-coder-flash,$0.195,$0.975,$0.3900,No,MoE,NA,NA,,
-openrouter,Qwen,qwen/qwen-plus-2025-07-28:thinking,$0.260,$0.780,$0.3900,Yes,MoE,NA,NA,,
-openrouter,Qwen,qwen/qwen-plus-2025-07-28,$0.260,$0.780,$0.3900,No,MoE,NA,NA,,
-openrouter,Qwen,qwen/qwen-plus,$0.260,$0.780,$0.3900,No,MoE,NA,NA,,
 openrouter,Qwen,qwen/qwen3-coder,$0.220,$1.000,$0.4150,No,MoE,NA,NA,,
 openrouter,Qwen,qwen/qwen3.5-35b-a3b,$0.163,$1.300,$0.4469,Yes,MoE,3B,35B,,
 openrouter,Qwen,qwen/qwen3-235b-a22b-thinking-2507,$0.150,$1.495,$0.4859,Yes,MoE,22B,235B,,
 openrouter,Qwen,qwen/qwen3.5-27b,$0.195,$1.560,$0.5363,Yes,Dense,27B,27B,,
-openrouter,Qwen,qwen/qwen3.5-plus-02-15,$0.260,$1.560,$0.5850,Yes,MoE,NA,NA,,
 openrouter,Qwen,qwen/qwen3.5-122b-a10b,$0.260,$2.080,$0.7150,Yes,MoE,10B,122B,,
 openrouter,Qwen,qwen/qwen-2.5-coder-32b-instruct,$0.660,$1.000,$0.7450,No,Dense,32B,32B,,
 openrouter,Qwen,qwen/qwen3-235b-a22b,$0.455,$1.820,$0.7962,Yes,MoE,22B,235B,,
 openrouter,Qwen,qwen/qwen3.5-397b-a17b,$0.390,$2.340,$0.8775,Yes,MoE,17B,397B,,
-openrouter,Qwen,qwen/qwen3-coder-plus,$0.650,$3.250,$1.3000,No,MoE,NA,NA,,
 openrouter,Qwen,qwen/qwen3-max-thinking,$0.780,$3.900,$1.5600,Yes,MoE,NA,NA,,
 openrouter,Qwen,qwen/qwen3-max,$0.780,$3.900,$1.5600,No,MoE,NA,NA,,
 openrouter,StepFun,stepfun/step-3.5-flash,$0.100,$0.300,$0.1500,Yes,MoE,11B,196B,31.6,

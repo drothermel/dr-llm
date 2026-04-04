@@ -24,6 +24,11 @@ from dr_llm.providers.headless.codex_thinking import (
     codex_supports_off_thinking,
 )
 from dr_llm.providers.models import CallMode
+from dr_llm.providers.openrouter.policy import (
+    OpenRouterEffortLevel,
+    OpenRouterReasoningRequestStyle,
+    openrouter_model_policy,
+)
 from dr_llm.providers.openai_compat.thinking import (
     openai_supports_configurable_thinking,
     openai_supports_minimal_thinking,
@@ -144,6 +149,22 @@ class GlmReasoning(BaseModel):
         return self
 
 
+class OpenRouterReasoning(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["openrouter"] = "openrouter"
+    enabled: bool | None = None
+    effort: OpenRouterEffortLevel | None = None
+
+    @model_validator(mode="after")
+    def _validate_shape(self) -> OpenRouterReasoning:
+        if (self.enabled is None) == (self.effort is None):
+            raise ValueError(
+                "openrouter reasoning requires exactly one of enabled or effort"
+            )
+        return self
+
+
 class GoogleReasoning(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -186,6 +207,7 @@ ReasoningSpec = Annotated[
     | OpenAIReasoning
     | CodexReasoning
     | GlmReasoning
+    | OpenRouterReasoning
     | GoogleReasoning,
     Field(discriminator="kind"),
 ]
@@ -202,6 +224,8 @@ def validate_reasoning(
     model: str,
     reasoning: ReasoningSpec | None,
 ) -> None:
+    if provider == "openrouter" and openrouter_model_policy(model) is None:
+        raise ValueError(f"openrouter model={model!r} is not in the curated allowlist")
     capabilities = reasoning_capabilities_for_model(provider=provider, model=model)
     if reasoning is None:
         if _requires_explicit_reasoning(
@@ -249,6 +273,14 @@ def validate_reasoning(
             model=model,
             thinking_level=reasoning.thinking_level,
             budget_tokens=reasoning.budget_tokens,
+        )
+        return
+    if isinstance(reasoning, OpenRouterReasoning):
+        _validate_openrouter_reasoning(
+            provider=provider,
+            model=model,
+            enabled=reasoning.enabled,
+            effort=reasoning.effort,
         )
         return
     if provider == "anthropic" and isinstance(reasoning, ReasoningBudget):
@@ -363,6 +395,13 @@ def _validate_against_capabilities(
                 model=model,
                 thinking_level=thinking_level,
                 budget_tokens=budget_tokens,
+            )
+        case OpenRouterReasoning(enabled=enabled, effort=effort):
+            _validate_openrouter_reasoning(
+                provider=provider,
+                model=model,
+                enabled=enabled,
+                effort=effort,
             )
         case _:
             raise ValueError(
@@ -503,6 +542,45 @@ def _validate_openai_reasoning(
         supports_off=openai_supports_off_thinking(model),
         supports_minimal=openai_supports_minimal_thinking(model),
     )
+
+
+def _validate_openrouter_reasoning(
+    *,
+    provider: str,
+    model: str,
+    enabled: bool | None,
+    effort: OpenRouterEffortLevel | None,
+) -> None:
+    if provider != "openrouter":
+        raise ValueError(
+            f"openrouter reasoning is not supported for provider={provider!r}"
+        )
+    policy = openrouter_model_policy(model)
+    if policy is None:
+        raise ValueError(f"openrouter reasoning is not supported for model={model!r}")
+    if policy.request_style == OpenRouterReasoningRequestStyle.NONE:
+        raise ValueError(f"openrouter reasoning is not supported for model={model!r}")
+    if policy.request_style == OpenRouterReasoningRequestStyle.ENABLED_FLAG:
+        if effort is not None:
+            raise ValueError(
+                f"openrouter effort controls are not supported for model={model!r}"
+            )
+        assert enabled is not None
+        if not enabled and not policy.supports_disable:
+            raise ValueError(
+                f"openrouter reasoning cannot be disabled for model={model!r}"
+            )
+        return
+    if enabled is not None:
+        raise ValueError(
+            f"openrouter enabled controls are not supported for model={model!r}"
+        )
+    assert effort is not None
+    if effort not in policy.allowed_efforts:
+        allowed = ", ".join(policy.allowed_efforts)
+        raise ValueError(
+            f"openrouter effort={effort!r} is not supported for model={model!r}; allowed levels: {allowed}"
+        )
 
 
 def _validate_codex_reasoning(

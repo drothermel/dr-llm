@@ -7,6 +7,10 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from dr_llm.providers.headless.codex_thinking import (
     codex_supports_configurable_thinking,
 )
+from dr_llm.providers.openrouter.policy import (
+    OpenRouterReasoningRequestStyle,
+    openrouter_model_policy,
+)
 from dr_llm.providers.openai_compat.thinking import (
     openai_supports_configurable_thinking,
 )
@@ -15,6 +19,8 @@ GoogleThinkingLevel = Literal["minimal", "low", "medium", "high"]
 ReasoningMode = Literal[
     "unsupported",
     "openai_effort",
+    "openrouter_toggle",
+    "openrouter_effort",
     "glm",
     "google_budget",
     "google_level",
@@ -235,9 +241,16 @@ def reasoning_capabilities_for_model(
     provider: str,
     model: str,
 ) -> ReasoningCapabilities | None:
-    if provider in {"openai", "openrouter"} and openai_supports_configurable_thinking(
-        model
-    ):
+    if provider == "openrouter":
+        policy = openrouter_model_policy(model)
+        if policy is None:
+            return None
+        if policy.request_style == OpenRouterReasoningRequestStyle.ENABLED_FLAG:
+            return ReasoningCapabilities(mode="openrouter_toggle")
+        if policy.request_style == OpenRouterReasoningRequestStyle.EFFORT:
+            return ReasoningCapabilities(mode="openrouter_effort")
+        return ReasoningCapabilities(mode="unsupported")
+    if provider == "openai" and openai_supports_configurable_thinking(model):
         return ReasoningCapabilities(mode="openai_effort")
     if provider == "codex" and codex_supports_configurable_thinking(model):
         return _CODEX_CLI_EFFORT_CAPS

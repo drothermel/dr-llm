@@ -11,7 +11,11 @@ from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
 from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.providers.openai_compat.request import OpenAICompatRequest
 from dr_llm.providers.openai_compat.response import OpenAICompatResponse
-from dr_llm.providers.reasoning import GlmReasoning, OpenAIReasoning, ThinkingLevel
+from dr_llm.providers.reasoning import (
+    GlmReasoning,
+    OpenRouterReasoning,
+    ThinkingLevel,
+)
 from tests.conftest import make_request
 from tests.providers.conftest import make_http_client
 
@@ -56,12 +60,12 @@ def test_forwards_reasoning_and_parses_cost() -> None:
     with OpenAICompatAdapter(config=_CONFIG, client=client) as adapter:
         request = make_request(
             provider="openrouter",
-            model="openai/gpt-5",
-            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.HIGH),
+            model="openai/gpt-oss-20b",
+            reasoning=OpenRouterReasoning(effort="high"),
         )
         result = adapter.generate(request)
 
-    assert captured["payload"]["reasoning_effort"] == "high"
+    assert captured["payload"]["reasoning"] == {"effort": "high"}
     assert result.reasoning == "internal trace"
     assert result.usage.reasoning_tokens == 22
     assert result.cost is not None
@@ -76,7 +80,9 @@ def test_invalid_json_raises_transport_error() -> None:
     adapter = OpenAICompatAdapter(config=_CONFIG, client=client)
 
     with pytest.raises(ProviderTransportError, match="invalid JSON response"):
-        adapter.generate(make_request(provider="openrouter", model="some-model"))
+        adapter.generate(
+            make_request(provider="openrouter", model="deepseek/deepseek-chat")
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +112,7 @@ def test_close_closes_adapter_owned_client() -> None:
 def test_request_builds_endpoint_and_headers() -> None:
     request = make_request(
         provider="openrouter",
-        model="some-model",
+        model="deepseek/deepseek-chat",
         messages=[Message(role="user", content="hi")],
         metadata={"idempotency_key": "fixed-key"},
     )
@@ -120,15 +126,16 @@ def test_request_builds_endpoint_and_headers() -> None:
 
 
 def test_request_generates_idempotency_key_when_missing() -> None:
-    request = make_request(provider="openrouter", model="some-model")
+    request = make_request(provider="openrouter", model="deepseek/deepseek-chat")
     provider_request = OpenAICompatRequest.from_llm_request(request, _CONFIG)
     assert provider_request.idempotency_key
 
 
 def test_request_omits_reasoning_when_not_configured() -> None:
-    request = make_request(provider="openrouter", model="openai/gpt-4o-mini")
+    request = make_request(provider="openrouter", model="deepseek/deepseek-chat")
     provider_request = OpenAICompatRequest.from_llm_request(request, _CONFIG)
     assert provider_request.reasoning_effort is None
+    assert "reasoning" not in provider_request.json_payload()
 
 
 def test_glm_request_serializes_native_thinking_payload() -> None:
@@ -156,7 +163,7 @@ def test_response_parses_reasoning_and_cost() -> None:
     http_response = httpx.Response(status_code=200, json=_REASONING_RESPONSE_JSON)
     provider_response = OpenAICompatResponse.from_http_response(http_response)
 
-    request = make_request(provider="openrouter", model="some-model")
+    request = make_request(provider="openrouter", model="deepseek/deepseek-chat")
     result = provider_response.to_llm_response(request, latency_ms=42, warnings=[])
 
     assert result.text == "final answer"

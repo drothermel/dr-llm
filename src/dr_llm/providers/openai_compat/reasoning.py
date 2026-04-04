@@ -9,6 +9,7 @@ from dr_llm.providers.reasoning import ReasoningWarning
 from dr_llm.providers.reasoning import (
     GlmReasoning,
     OpenAIReasoning,
+    OpenRouterReasoning,
     ReasoningSpec,
     ThinkingLevel,
 )
@@ -25,6 +26,9 @@ class OpenAICompatReasoningConfig(BaseModel):
     def from_base(
         cls,
         config: ReasoningSpec | None,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
     ) -> OpenAICompatReasoningConfig:
         if config is None:
             return cls()
@@ -45,6 +49,21 @@ class OpenAICompatReasoningConfig(BaseModel):
                 return cls(extra_body={"thinking": {"type": "disabled"}})
             case GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE):
                 return cls(extra_body={"thinking": {"type": "enabled"}})
+            case OpenRouterReasoning(enabled=enabled, effort=effort):
+                if provider != "openrouter":
+                    raise ProviderSemanticError(
+                        "OpenRouter reasoning serializer requires provider='openrouter'"
+                    )
+                reasoning_payload: dict[str, Any]
+                if enabled is not None:
+                    reasoning_payload = {"enabled": enabled}
+                elif effort is not None:
+                    reasoning_payload = {"effort": effort}
+                else:
+                    raise ProviderSemanticError(
+                        f"OpenRouter reasoning serializer received invalid config for model={model!r}"
+                    )
+                return cls(extra_body={"reasoning": reasoning_payload})
         raise ProviderSemanticError(
             f"OpenAI-compatible reasoning serializer received unsupported config kind={config.kind!r}"
         )
