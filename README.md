@@ -223,7 +223,7 @@ Provider endpoint defaults:
 ```bash
 uv run ruff format && uv run ruff check --fix .
 uv run ty check
-./scripts/run-tests-non-integration.sh
+uv run pytest tests/ -v -m "not integration"
 ```
 
 ### Integration tests (requires Docker)
@@ -232,7 +232,7 @@ uv run ty check
 ./scripts/run-tests-local.sh
 ```
 
-`run-tests-non-integration.sh` uses `pytest-xdist` for the safe non-integration suite. `run-tests-local.sh` auto-creates a temporary Docker Postgres project, runs `pytest -m integration`, and destroys it on exit. Pass extra pytest args for targeted runs: `./scripts/run-tests-local.sh -k test_pool_fill`.
+`pytest` now defaults to `pytest-xdist`, so `uv run pytest tests/ -v -m "not integration"` runs the safe non-integration suite in parallel. `run-tests-local.sh` forces `-n 0`, auto-creates a temporary Docker Postgres project, runs `pytest -m integration`, and destroys it on exit. Pass extra pytest args for targeted runs: `./scripts/run-tests-local.sh -k test_pool_fill`.
 
 ## Demo Scripts
 
