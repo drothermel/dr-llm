@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Demo: live verification of OpenAI/Codex/GLM thinking-level controls.
+"""Demo: live verification of provider thinking and effort controls.
 
 Usage:
   uv run python scripts/demo_thinking_and_effort.py
   uv run python scripts/demo_thinking_and_effort.py --provider openai
   uv run python scripts/demo_thinking_and_effort.py --provider codex
-  uv run python scripts/demo_thinking_and_effort.py --provider glm
+  uv run python scripts/demo_thinking_and_effort.py --provider google
+  uv run python scripts/demo_thinking_and_effort.py --provider claude-code-minimax
 """
 
 from __future__ import annotations
@@ -15,12 +16,13 @@ from collections import defaultdict
 import typer
 from pydantic import BaseModel, ValidationError
 
+from dr_llm.catalog.fetchers.static import MINIMAX_TEXT_MODELS
 from dr_llm.providers import build_default_registry
+from dr_llm.providers.effort import EffortSpec, supported_effort_levels
 from dr_llm.providers.headless.codex_thinking import (
     codex_supports_configurable_thinking,
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
-    codex_supports_xhigh_thinking,
 )
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.models import Message
@@ -28,11 +30,11 @@ from dr_llm.providers.openai_compat.thinking import (
     openai_supports_configurable_thinking,
     openai_supports_minimal_thinking,
     openai_supports_off_thinking,
-    openai_supports_xhigh_thinking,
 )
 from dr_llm.providers.reasoning import (
+    AnthropicReasoning,
     CodexReasoning,
-    GlmReasoning,
+    GoogleReasoning,
     OpenAIReasoning,
     ThinkingLevel,
 )
@@ -52,34 +54,31 @@ OPENAI_MODELS = [
     "gpt-4.1-nano-2025-04-14",
 ]
 CODEX_MODELS = [
-    "gpt-5.4",
-    "gpt-5.2",
-    "gpt-5.1",
-    "gpt-5",
-    "gpt-5.3-codex-spark",
-    "gpt-5.3-codex",
-    "gpt-5.2-codex",
-    "gpt-5.1-codex-max",
-    "gpt-5.1-codex",
-    "gpt-5-codex",
-    "gpt-5.4-mini",
     "gpt-5.1-codex-mini",
 ]
-GLM_MODELS = [
-    "glm-4.5",
-    "glm-4.5-air",
-    "glm-4.6",
-    "glm-4.7",
-    "glm-5",
-    "glm-5-turbo",
-    "glm-5.1",
+MINIMAX_MODELS = [model_id for model_id, _display_name in MINIMAX_TEXT_MODELS]
+GOOGLE_FIXED_BUDGET = 1024
+GOOGLE_MODELS = [
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-flash-lite",
+    "gemma-3-1b-it",
+    "gemma-3-4b-it",
+    "gemma-3-12b-it",
+    "gemma-3-27b-it",
+    "gemma-3n-e4b-it",
+    "gemma-3n-e2b-it",
+    "gemma-4-26b-a4b-it",
+    "gemma-4-31b-it",
 ]
 PROVIDER_MODELS = {
+    "claude-code-minimax": MINIMAX_MODELS,
     "openai": OPENAI_MODELS,
     "codex": CODEX_MODELS,
-    "glm": GLM_MODELS,
+    "google": GOOGLE_MODELS,
 }
-PHASES = ["models", "thinking"]
+PHASES = ["models", "thinking", "effort"]
 
 
 class SummaryCounts(BaseModel):
@@ -90,12 +89,14 @@ class SummaryCounts(BaseModel):
 
 
 def supported_thinking_levels(provider: str, model: str) -> list[ThinkingLevel]:
+    if provider == "claude-code-minimax":
+        return [ThinkingLevel.NA]
     if provider == "openai":
         return _supported_openai_thinking_levels(model)
     if provider == "codex":
         return _supported_codex_thinking_levels(model)
-    if provider == "glm":
-        return _supported_glm_thinking_levels(model)
+    if provider == "google":
+        return _supported_google_thinking_levels(model)
     raise ValueError(f"unsupported provider: {provider!r}")
 
 
@@ -104,7 +105,6 @@ def _supported_openai_thinking_levels(model: str) -> list[ThinkingLevel]:
         supports_configurable=openai_supports_configurable_thinking(model),
         supports_off=openai_supports_off_thinking(model),
         supports_minimal=openai_supports_minimal_thinking(model),
-        supports_xhigh=openai_supports_xhigh_thinking(model),
     )
 
 
@@ -113,15 +113,23 @@ def _supported_codex_thinking_levels(model: str) -> list[ThinkingLevel]:
         supports_configurable=codex_supports_configurable_thinking(model),
         supports_off=codex_supports_off_thinking(model),
         supports_minimal=codex_supports_minimal_thinking(model),
-        supports_xhigh=codex_supports_xhigh_thinking(model),
     )
 
 
-def _supported_glm_thinking_levels(model: str) -> list[ThinkingLevel]:
-    capabilities = reasoning_capabilities_for_model(provider="glm", model=model)
-    if capabilities is None or capabilities.mode != "glm":
+def _supported_google_thinking_levels(model: str) -> list[ThinkingLevel]:
+    capabilities = reasoning_capabilities_for_model(provider="google", model=model)
+    if capabilities is None or capabilities.mode == "unsupported":
         return [ThinkingLevel.NA]
-    return [ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE]
+    if capabilities.mode == "google_budget":
+        return [ThinkingLevel.ADAPTIVE, ThinkingLevel.OFF, ThinkingLevel.BUDGET]
+    if capabilities.mode == "google_level":
+        return [
+            ThinkingLevel.MINIMAL,
+            ThinkingLevel.LOW,
+            ThinkingLevel.MEDIUM,
+            ThinkingLevel.HIGH,
+        ]
+    raise ValueError(f"unexpected google reasoning mode: {capabilities.mode!r}")
 
 
 def _supported_openai_style_thinking_levels(
@@ -129,11 +137,10 @@ def _supported_openai_style_thinking_levels(
     supports_configurable: bool,
     supports_off: bool,
     supports_minimal: bool,
-    supports_xhigh: bool,
 ) -> list[ThinkingLevel]:
     if not supports_configurable:
         return [ThinkingLevel.NA]
-    levels = [ThinkingLevel.NA]
+    levels: list[ThinkingLevel] = []
     if supports_off:
         levels.append(ThinkingLevel.OFF)
     elif supports_minimal:
@@ -145,8 +152,6 @@ def _supported_openai_style_thinking_levels(
             ThinkingLevel.HIGH,
         ]
     )
-    if supports_xhigh:
-        levels.append(ThinkingLevel.XHIGH)
     return levels
 
 
@@ -161,18 +166,36 @@ def default_thinking_for_model(provider: str, model: str) -> ThinkingLevel:
     return ThinkingLevel.NA
 
 
+def default_effort_for_model(provider: str, model: str) -> EffortSpec:
+    levels = supported_effort_levels(provider=provider, model=model)
+    if levels:
+        return levels[0]
+    return EffortSpec.NA
+
+
 def reasoning_for_level(
     provider: str,
     thinking_level: ThinkingLevel,
-) -> OpenAIReasoning | CodexReasoning | GlmReasoning | None:
+    *,
+    explicit: bool = False,
+) -> AnthropicReasoning | OpenAIReasoning | CodexReasoning | GoogleReasoning | None:
+    if provider == "claude-code-minimax":
+        if explicit:
+            return AnthropicReasoning(thinking_level=ThinkingLevel.NA)
+        return None
     if thinking_level == ThinkingLevel.NA:
         return None
     if provider == "openai":
         return OpenAIReasoning(thinking_level=thinking_level)
     if provider == "codex":
         return CodexReasoning(thinking_level=thinking_level)
-    if provider == "glm":
-        return GlmReasoning(thinking_level=thinking_level)
+    if provider == "google":
+        if thinking_level == ThinkingLevel.BUDGET:
+            return GoogleReasoning(
+                thinking_level=thinking_level,
+                budget_tokens=GOOGLE_FIXED_BUDGET,
+            )
+        return GoogleReasoning(thinking_level=thinking_level)
     raise ValueError(f"unsupported provider: {provider!r}")
 
 
@@ -180,8 +203,17 @@ def format_attempt(
     provider: str,
     model: str,
     thinking_level: ThinkingLevel,
+    effort: EffortSpec,
 ) -> str:
-    return f"{provider} | {model} | thinking={thinking_level.name}"
+    detail = f"{provider} | {model} | thinking={thinking_level.name}"
+    if provider == "google" and thinking_level == ThinkingLevel.BUDGET:
+        detail = (
+            f"{provider} | {model} | "
+            f"thinking={thinking_level.name}({GOOGLE_FIXED_BUDGET})"
+        )
+    if effort != EffortSpec.NA:
+        detail += f" | effort={effort.name}"
+    return detail
 
 
 def availability_detail(missing: tuple[str, ...]) -> str:
@@ -222,12 +254,20 @@ def make_request(
     provider: str,
     model: str,
     thinking_level: ThinkingLevel,
+    effort: EffortSpec,
+    *,
+    explicit_reasoning: bool = False,
 ) -> LlmRequest:
     return LlmRequest(
         provider=provider,
         model=model,
         messages=[Message(role="user", content=PROMPT)],
-        reasoning=reasoning_for_level(provider, thinking_level),
+        effort=effort,
+        reasoning=reasoning_for_level(
+            provider,
+            thinking_level,
+            explicit=explicit_reasoning,
+        ),
     )
 
 
@@ -238,18 +278,22 @@ def run_attempt(
     model: str,
     phase: str,
     thinking_level: ThinkingLevel,
+    effort: EffortSpec,
+    explicit_reasoning: bool,
     counts: dict[tuple[str, str], SummaryCounts],
 ) -> None:
     key = (provider, phase)
     summary = counts[key]
     summary.attempted += 1
-    print(format_attempt(provider, model, thinking_level))
+    print(format_attempt(provider, model, thinking_level, effort))
 
     try:
         request = make_request(
             provider=provider,
             model=model,
             thinking_level=thinking_level,
+            effort=effort,
+            explicit_reasoning=explicit_reasoning,
         )
     except (ValidationError, ValueError) as exc:
         summary.failed += 1
@@ -284,6 +328,8 @@ def run_model_sweep(
                 model=model,
                 phase="models",
                 thinking_level=default_thinking_for_model(provider, model),
+                effort=default_effort_for_model(provider, model),
+                explicit_reasoning=False,
                 counts=counts,
             )
 
@@ -303,6 +349,29 @@ def run_thinking_sweep(
                     model=model,
                     phase="thinking",
                     thinking_level=thinking_level,
+                    effort=default_effort_for_model(provider, model),
+                    explicit_reasoning=True,
+                    counts=counts,
+                )
+
+
+def run_effort_sweep(
+    registry: ProviderRegistry,
+    counts: dict[tuple[str, str], SummaryCounts],
+    providers: list[str],
+) -> None:
+    print("\n== effort ==")
+    for provider in providers:
+        for model in PROVIDER_MODELS[provider]:
+            for effort in supported_effort_levels(provider=provider, model=model):
+                run_attempt(
+                    registry=registry,
+                    provider=provider,
+                    model=model,
+                    phase="effort",
+                    thinking_level=default_thinking_for_model(provider, model),
+                    effort=effort,
+                    explicit_reasoning=False,
                     counts=counts,
                 )
 
@@ -346,6 +415,7 @@ def main(
     try:
         run_model_sweep(registry, counts, providers)
         run_thinking_sweep(registry, counts, providers)
+        run_effort_sweep(registry, counts, providers)
         print_summary(counts, providers)
     finally:
         registry.close()

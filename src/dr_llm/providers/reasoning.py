@@ -22,17 +22,14 @@ from dr_llm.providers.headless.codex_thinking import (
     codex_supports_configurable_thinking,
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
-    codex_supports_xhigh_thinking,
 )
 from dr_llm.providers.models import CallMode
 from dr_llm.providers.openai_compat.thinking import (
     openai_supports_configurable_thinking,
     openai_supports_minimal_thinking,
     openai_supports_off_thinking,
-    openai_supports_xhigh_thinking,
 )
 from dr_llm.providers.reasoning_capabilities import (
-    GoogleThinkingLevel,
     ReasoningCapabilities,
     reasoning_capabilities_for_model,
 )
@@ -63,7 +60,6 @@ class ThinkingLevel(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
-    XHIGH = "xhigh"
 
 
 class ReasoningBudget(BaseModel):
@@ -152,27 +148,34 @@ class GoogleReasoning(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal["google"] = "google"
-    thinking_level: GoogleThinkingLevel | None = None
-    thinking_budget: int | None = None
-    dynamic: bool | None = None
+    thinking_level: ThinkingLevel = ThinkingLevel.NA
+    budget_tokens: int | None = None
+    include_thoughts: bool | None = None
 
-    @field_validator("thinking_budget")
+    @field_validator("budget_tokens")
     @classmethod
     def _validate_budget(cls, value: int | None) -> int | None:
         if value is not None and value < 0:
-            raise ValueError("google thinking_budget must be >= 0")
+            raise ValueError("google reasoning budget_tokens must be >= 0")
         return value
 
     @model_validator(mode="after")
     def _validate_shape(self) -> GoogleReasoning:
-        configured = [
-            self.thinking_level is not None,
-            self.thinking_budget is not None,
-            self.dynamic is True,
-        ]
-        if sum(configured) != 1:
+        if self.thinking_level == ThinkingLevel.BUDGET and self.budget_tokens is None:
+            raise ValueError("google budget thinking requires budget_tokens")
+        if (
+            self.thinking_level != ThinkingLevel.BUDGET
+            and self.budget_tokens is not None
+        ):
             raise ValueError(
-                "google reasoning requires exactly one of thinking_level, thinking_budget, or dynamic=true"
+                "google budget_tokens are only allowed with thinking_level='budget'"
+            )
+        if (
+            self.include_thoughts is not None
+            and self.thinking_level == ThinkingLevel.NA
+        ):
+            raise ValueError(
+                "google include_thoughts requires an explicit thinking_level"
             )
         return self
 
@@ -201,7 +204,11 @@ def validate_reasoning(
 ) -> None:
     capabilities = reasoning_capabilities_for_model(provider=provider, model=model)
     if reasoning is None:
-        if _requires_explicit_reasoning(provider=provider, capabilities=capabilities):
+        if _requires_explicit_reasoning(
+            provider=provider,
+            model=model,
+            capabilities=capabilities,
+        ):
             raise ValueError(
                 f"reasoning is required for provider={provider!r} model={model!r}"
             )
@@ -234,6 +241,14 @@ def validate_reasoning(
             provider=provider,
             model=model,
             thinking_level=reasoning.thinking_level,
+        )
+        return
+    if isinstance(reasoning, GoogleReasoning):
+        _validate_google_reasoning(
+            provider=provider,
+            model=model,
+            thinking_level=reasoning.thinking_level,
+            budget_tokens=reasoning.budget_tokens,
         )
         return
     if provider == "anthropic" and isinstance(reasoning, ReasoningBudget):
@@ -331,45 +346,13 @@ def _validate_against_capabilities(
                 capabilities=capabilities,
             )
         case GoogleReasoning(
-            thinking_level=thinking_level,
-            thinking_budget=thinking_budget,
-            dynamic=dynamic,
+            thinking_level=thinking_level, budget_tokens=budget_tokens
         ):
-            if capabilities.mode == "unsupported":
-                raise ValueError(
-                    f"Reasoning is not supported for provider={provider!r} model={model!r}"
-                )
-            if capabilities.mode == "google_level":
-                if thinking_level is None:
-                    raise ValueError(
-                        f"google model {model!r} requires thinking_level-based reasoning"
-                    )
-                if thinking_level not in capabilities.google_levels:
-                    raise ValueError(
-                        f"google thinking level {thinking_level!r} is not supported for model={model!r}"
-                    )
-                return
-            if capabilities.mode != "google_budget":
-                raise ValueError(
-                    f"google reasoning is not supported for provider={provider!r} model={model!r}"
-                )
-            if thinking_level is not None:
-                raise ValueError(
-                    f"google model {model!r} does not support thinking_level; use thinking_budget or dynamic"
-                )
-            if dynamic:
-                if not capabilities.supports_dynamic:
-                    raise ValueError(
-                        f"google dynamic reasoning is not supported for model={model!r}"
-                    )
-                return
-            assert thinking_budget is not None
-            _validate_budget_range(
+            _validate_google_reasoning(
                 provider=provider,
                 model=model,
-                label="google thinking_budget",
-                tokens=thinking_budget,
-                capabilities=capabilities,
+                thinking_level=thinking_level,
+                budget_tokens=budget_tokens,
             )
         case _:
             raise ValueError(
@@ -386,7 +369,16 @@ def _validate_anthropic_reasoning(
     display: Literal["summarized", "omitted"] | None,
 ) -> None:
     if provider == "anthropic":
-        if thinking_level in {ThinkingLevel.NA, ThinkingLevel.OFF}:
+        if thinking_level == ThinkingLevel.NA:
+            if model in (
+                set(ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED)
+                | set(ANTHROPIC_BUDGET_THINKING_SUPPORTED)
+            ):
+                raise ValueError(
+                    f"thinking_level='na' is not supported for provider={provider!r} model={model!r}"
+                )
+            return
+        if thinking_level == ThinkingLevel.OFF:
             return
         if thinking_level == ThinkingLevel.ADAPTIVE:
             if model not in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
@@ -426,6 +418,19 @@ def _validate_anthropic_reasoning(
             )
         return
 
+    if provider in {"claude-code-minimax", "claude-code-kimi"}:
+        if display is not None:
+            raise ValueError(f"{provider} does not support anthropic display controls")
+        if budget_tokens is not None:
+            raise ValueError(
+                f"{provider} does not support anthropic budget thinking controls"
+            )
+        if thinking_level != ThinkingLevel.NA:
+            raise ValueError(
+                f"{provider} does not support explicit anthropic thinking; use thinking_level='na'"
+            )
+        return
+
     if thinking_level != ThinkingLevel.NA:
         raise ValueError(
             f"anthropic thinking_level {thinking_level!r} is not supported for provider={provider!r}"
@@ -452,7 +457,6 @@ def _validate_openai_reasoning(
         thinking_level=thinking_level,
         supports_off=openai_supports_off_thinking(model),
         supports_minimal=openai_supports_minimal_thinking(model),
-        supports_xhigh=openai_supports_xhigh_thinking(model),
     )
 
 
@@ -472,7 +476,6 @@ def _validate_codex_reasoning(
         thinking_level=thinking_level,
         supports_off=codex_supports_off_thinking(model),
         supports_minimal=codex_supports_minimal_thinking(model),
-        supports_xhigh=codex_supports_xhigh_thinking(model),
     )
 
 
@@ -493,6 +496,65 @@ def _validate_glm_reasoning(
     )
 
 
+def _validate_google_reasoning(
+    *,
+    provider: str,
+    model: str,
+    thinking_level: ThinkingLevel,
+    budget_tokens: int | None,
+) -> None:
+    if provider != "google":
+        raise ValueError(f"google thinking is not supported for provider={provider!r}")
+    capabilities = reasoning_capabilities_for_model(provider=provider, model=model)
+    if capabilities is None or capabilities.mode == "unsupported":
+        if thinking_level == ThinkingLevel.NA:
+            return
+        raise ValueError(f"google thinking is not supported for model={model!r}")
+    if thinking_level == ThinkingLevel.NA:
+        raise ValueError(
+            f"thinking_level='na' is not supported for provider={provider!r} model={model!r}"
+        )
+    if capabilities.mode == "google_budget":
+        if thinking_level == ThinkingLevel.OFF:
+            return
+        if thinking_level == ThinkingLevel.ADAPTIVE:
+            if capabilities.supports_dynamic:
+                return
+            raise ValueError(
+                f"google dynamic thinking is not supported for model={model!r}"
+            )
+        if thinking_level == ThinkingLevel.BUDGET:
+            assert budget_tokens is not None
+            _validate_budget_range(
+                provider=provider,
+                model=model,
+                label="google thinking_budget",
+                tokens=budget_tokens,
+                capabilities=capabilities,
+            )
+            return
+        raise ValueError(
+            f"google model {model!r} does not support thinking_level={thinking_level!r}; use off, adaptive, or budget"
+        )
+    if capabilities.mode == "google_level":
+        _validate_allowed_thinking_levels(
+            provider=provider,
+            model=model,
+            thinking_level=thinking_level,
+            allowed_levels={
+                ThinkingLevel.MINIMAL,
+                ThinkingLevel.LOW,
+                ThinkingLevel.MEDIUM,
+                ThinkingLevel.HIGH,
+            },
+            allow_na=False,
+        )
+        return
+    raise ValueError(
+        f"google reasoning is not supported for provider={provider!r} model={model!r}"
+    )
+
+
 def _validate_openai_style_thinking_level(
     *,
     provider: str,
@@ -500,10 +562,11 @@ def _validate_openai_style_thinking_level(
     thinking_level: ThinkingLevel,
     supports_off: bool,
     supports_minimal: bool,
-    supports_xhigh: bool,
 ) -> None:
     if thinking_level == ThinkingLevel.NA:
-        return
+        raise ValueError(
+            f"thinking_level='na' is not supported for provider={provider!r} model={model!r}"
+        )
     if thinking_level == ThinkingLevel.OFF:
         if supports_off:
             return
@@ -522,12 +585,6 @@ def _validate_openai_style_thinking_level(
         ThinkingLevel.HIGH,
     }:
         return
-    if thinking_level == ThinkingLevel.XHIGH:
-        if supports_xhigh:
-            return
-        raise ValueError(
-            f"thinking_level='xhigh' is not supported for provider={provider!r} model={model!r}"
-        )
     raise ValueError(
         f"thinking_level {thinking_level!r} is not supported for provider={provider!r} model={model!r}"
     )
@@ -557,10 +614,17 @@ def _validate_allowed_thinking_levels(
 
 def _requires_explicit_reasoning(
     *,
+    model: str,
     provider: str,
     capabilities: ReasoningCapabilities | None,
 ) -> bool:
-    return provider == "glm" and capabilities is not None and capabilities.mode == "glm"
+    if capabilities is None or capabilities.mode == "unsupported":
+        return False
+    if provider in {"openai", "openrouter", "codex", "glm", "google", "anthropic"}:
+        return True
+    if provider == "claude-code":
+        return model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED
+    return False
 
 
 def _validate_anthropic_budget_range(

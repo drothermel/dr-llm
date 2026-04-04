@@ -14,7 +14,12 @@ from dr_llm.providers.headless.claude_presets import (
     ClaudeHeadlessMiniMaxAdapter,
 )
 from dr_llm.providers.headless.codex import CodexHeadlessAdapter
-from dr_llm.providers.reasoning import CodexReasoning, ReasoningBudget, ThinkingLevel
+from dr_llm.providers.reasoning import (
+    AnthropicReasoning,
+    CodexReasoning,
+    ReasoningBudget,
+    ThinkingLevel,
+)
 from tests.conftest import make_request
 from tests.providers.conftest import make_subprocess_mock
 
@@ -29,13 +34,17 @@ def test_codex_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     adapter = CodexHeadlessAdapter()
-    request = make_request(provider="codex", model="gpt-5-codex")
+    request = make_request(
+        provider="codex",
+        model="gpt-5.1-codex-mini",
+        reasoning=CodexReasoning(thinking_level=ThinkingLevel.LOW),
+    )
     response = adapter.generate(request)
 
     command = cast(list[str], captured["command"])
     assert command[:3] == ["codex", "exec", "--json"]
     assert "-m" in command
-    assert command[command.index("-m") + 1] == "gpt-5-codex"
+    assert command[command.index("-m") + 1] == "gpt-5.1-codex-mini"
     assert captured["input"] == "user: hello"
     assert response.text == "OK"
     assert response.usage.prompt_tokens == 2
@@ -89,6 +98,7 @@ def test_claude_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
         provider="claude-code",
         model="claude-sonnet-4-6",
         effort=EffortSpec.MEDIUM,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
     )
     response = adapter.generate(request)
 
@@ -123,6 +133,7 @@ def test_claude_command_includes_effort(monkeypatch: pytest.MonkeyPatch) -> None
         provider="claude-code",
         model="claude-sonnet-4-6",
         effort=EffortSpec.HIGH,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
     )
     adapter.generate(request)
 
@@ -144,12 +155,45 @@ def test_claude_minimax_preset_maps_env(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     adapter = ClaudeHeadlessMiniMaxAdapter(command=["claude", "-p", "--output-format", "json"])
-    request = make_request(provider="claude-code-minimax", model="MiniMax-M2.1")
+    request = make_request(
+        provider="claude-code-minimax",
+        model="MiniMax-M2.1",
+        effort=EffortSpec.LOW,
+    )
     adapter.generate(request)
 
     env = cast(dict[str, str], captured["env"])
     assert env["ANTHROPIC_BASE_URL"] == "https://api.minimax.io/anthropic"
     assert env["ANTHROPIC_AUTH_TOKEN"] == "minimax-test-key"
+
+
+def test_claude_minimax_command_includes_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MINIMAX_API_KEY", "minimax-test-key")
+    stdout = json.dumps({
+        "type": "result",
+        "subtype": "success",
+        "is_error": False,
+        "result": "OK",
+        "usage": {"input_tokens": 1, "output_tokens": 2},
+        "total_cost_usd": 0.0,
+    })
+    captured, fake_run = make_subprocess_mock(stdout)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    adapter = ClaudeHeadlessMiniMaxAdapter(
+        command=["claude", "-p", "--output-format", "json"]
+    )
+    request = make_request(
+        provider="claude-code-minimax",
+        model="MiniMax-M2.7",
+        effort=EffortSpec.MAX,
+    )
+    adapter.generate(request)
+
+    command = cast(list[str], captured["command"])
+    assert command[command.index("--effort") + 1] == "max"
 
 
 def test_claude_kimi_preset_maps_env(monkeypatch: pytest.MonkeyPatch) -> None:

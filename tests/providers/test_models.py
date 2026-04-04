@@ -30,6 +30,7 @@ def test_effort_spec_values() -> None:
     assert EffortSpec.LOW == "low"
     assert EffortSpec.MEDIUM == "medium"
     assert EffortSpec.HIGH == "high"
+    assert EffortSpec.MAX == "max"
 
 
 def test_reasoning_budget_rejects_non_positive_tokens() -> None:
@@ -46,12 +47,16 @@ def test_thinking_level_values() -> None:
     assert ThinkingLevel.LOW == "low"
     assert ThinkingLevel.MEDIUM == "medium"
     assert ThinkingLevel.HIGH == "high"
-    assert ThinkingLevel.XHIGH == "xhigh"
 
 
-def test_google_reasoning_requires_exactly_one_mode() -> None:
+def test_google_reasoning_budget_requires_budget_tokens() -> None:
     with pytest.raises(ValidationError):
-        GoogleReasoning(thinking_level="low", thinking_budget=512)
+        GoogleReasoning(thinking_level=ThinkingLevel.BUDGET)
+    with pytest.raises(ValidationError):
+        GoogleReasoning(
+            thinking_level=ThinkingLevel.LOW,
+            budget_tokens=512,
+        )
 
 
 def test_anthropic_adaptive_allows_minimal_shape() -> None:
@@ -82,7 +87,6 @@ def test_glm_reasoning_rejects_na_and_other_levels() -> None:
         ThinkingLevel.LOW,
         ThinkingLevel.MEDIUM,
         ThinkingLevel.HIGH,
-        ThinkingLevel.XHIGH,
         ThinkingLevel.BUDGET,
     ):
         with pytest.raises(ValidationError):
