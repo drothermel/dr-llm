@@ -81,9 +81,10 @@ OPENROUTER_MODEL_POLICIES: dict[str, OpenRouterModelPolicy] = {
     "deepseek/deepseek-r1-distill-qwen-32b": OpenRouterModelPolicy(
         model="deepseek/deepseek-r1-distill-qwen-32b",
         request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
-        supports_disable=True,
+        supports_disable=False,
         allowed_efforts=(),
-        default_enabled=None,
+        default_enabled=True,
+        notes="Inferred from the R1-distill family after the demo failed with enabled=false; enabled=true should be the safer default.",
     ),
     "deepseek/deepseek-v3.2": OpenRouterModelPolicy(
         model="deepseek/deepseek-v3.2",

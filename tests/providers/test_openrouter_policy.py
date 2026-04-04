@@ -28,6 +28,10 @@ def test_openrouter_policy_applies_verified_overrides() -> None:
         OPENROUTER_MODEL_POLICIES["deepseek/deepseek-r1"].supports_disable is False
     )
     assert (
+        OPENROUTER_MODEL_POLICIES["deepseek/deepseek-r1-distill-qwen-32b"].supports_disable
+        is False
+    )
+    assert (
         OPENROUTER_MODEL_POLICIES["baidu/ernie-4.5-21b-a3b-thinking"].supports_disable
         is False
     )
