@@ -7,7 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.providers.anthropic.reasoning import AnthropicReasoningConfig
+from dr_llm.providers.anthropic.reasoning import (
+    AnthropicReasoningConfig,
+    KimiCodeReasoningConfig,
+)
 from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.models import Message
@@ -49,7 +52,10 @@ class AnthropicRequest(BaseModel):
     ) -> AnthropicRequest:
         if request.max_tokens is None:
             raise ProviderSemanticError("anthropic requests require max_tokens")
-        reasoning_mapping = AnthropicReasoningConfig.from_base(request.reasoning)
+        if request.provider == "kimi-code":
+            reasoning_mapping = KimiCodeReasoningConfig.from_base(request.reasoning)
+        else:
+            reasoning_mapping = AnthropicReasoningConfig.from_base(request.reasoning)
         output_config = (
             {"effort": request.effort} if request.effort != EffortSpec.NA else None
         )

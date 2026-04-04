@@ -68,7 +68,7 @@ DEFAULT_MODELS: dict[str, str] = {
     "claude-code": "claude-sonnet-4-6",
     "codex": "gpt-5.4-mini",
     "claude-code-minimax": "MiniMax-M2",
-    "claude-code-kimi": "kimi-for-coding",
+    "kimi-code": "kimi-for-coding",
 }
 
 POOL_SCHEMA = PoolSchema(
@@ -199,7 +199,7 @@ def query_provider(
         prompt,
         "--no-record",
     ]
-    if provider == "anthropic":
+    if provider in {"anthropic", "kimi-code"}:
         args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
     return run_cli(
         *args,

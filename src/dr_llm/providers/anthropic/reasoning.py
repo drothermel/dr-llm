@@ -51,3 +51,51 @@ class AnthropicReasoningConfig(BaseModel):
 
     def thinking_payload(self) -> dict[str, Any]:
         return self.thinking
+
+
+class KimiCodeReasoningConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    thinking: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[ReasoningWarning] = Field(default_factory=list)
+
+    @classmethod
+    def from_base(
+        cls,
+        config: ReasoningSpec | None,
+    ) -> KimiCodeReasoningConfig:
+        if config is None:
+            return cls()
+        match config:
+            case AnthropicReasoning(
+                thinking_level=ThinkingLevel.NA,
+                budget_tokens=None,
+                display=None,
+            ):
+                return cls()
+            case AnthropicReasoning(
+                thinking_level=ThinkingLevel.OFF,
+                budget_tokens=None,
+                display=None,
+            ):
+                return cls(thinking={"type": "disabled"})
+            case AnthropicReasoning(
+                thinking_level=ThinkingLevel.ADAPTIVE,
+                budget_tokens=None,
+                display=None,
+            ):
+                return cls(thinking={"type": "adaptive"})
+            case AnthropicReasoning(
+                thinking_level=ThinkingLevel.BUDGET,
+                budget_tokens=budget_tokens,
+                display=None,
+            ):
+                assert budget_tokens is not None
+                return cls(thinking={"type": "enabled", "budget_tokens": budget_tokens})
+            case _:
+                raise ProviderSemanticError(
+                    f"kimi-code reasoning serializer received unsupported config kind={config.kind!r}"
+                )
+
+    def thinking_payload(self) -> dict[str, Any]:
+        return self.thinking

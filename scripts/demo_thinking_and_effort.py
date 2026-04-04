@@ -6,7 +6,8 @@ Usage:
   uv run python scripts/demo_thinking_and_effort.py --provider openai
   uv run python scripts/demo_thinking_and_effort.py --provider codex
   uv run python scripts/demo_thinking_and_effort.py --provider google
-  uv run python scripts/demo_thinking_and_effort.py --provider claude-code-minimax
+  uv run python scripts/demo_thinking_and_effort.py --provider claude-code
+  uv run python scripts/demo_thinking_and_effort.py --provider kimi-code
 """
 
 from __future__ import annotations
@@ -16,8 +17,9 @@ from collections import defaultdict
 import typer
 from pydantic import BaseModel, ValidationError
 
-from dr_llm.catalog.fetchers.static import MINIMAX_TEXT_MODELS
+from dr_llm.catalog.fetchers.static import CLAUDE_CODE_MODELS, KIMI_CODING_MODELS
 from dr_llm.providers import build_default_registry
+from dr_llm.providers.anthropic.thinking import ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED
 from dr_llm.providers.effort import EffortSpec, supported_effort_levels
 from dr_llm.providers.headless.codex_thinking import (
     codex_supports_configurable_thinking,
@@ -56,8 +58,11 @@ OPENAI_MODELS = [
 CODEX_MODELS = [
     "gpt-5.1-codex-mini",
 ]
-MINIMAX_MODELS = [model_id for model_id, _display_name in MINIMAX_TEXT_MODELS]
+CLAUDE_MODELS = [model_id for model_id, _display_name in CLAUDE_CODE_MODELS]
+KIMI_CODE_MODELS = [model_id for model_id, _display_name in KIMI_CODING_MODELS]
 GOOGLE_FIXED_BUDGET = 1024
+KIMI_CODE_FIXED_BUDGET = 1024
+KIMI_CODE_MAX_TOKENS = 2048
 GOOGLE_MODELS = [
     "gemini-3-flash-preview",
     "gemini-2.5-flash",
@@ -73,7 +78,8 @@ GOOGLE_MODELS = [
     "gemma-4-31b-it",
 ]
 PROVIDER_MODELS = {
-    "claude-code-minimax": MINIMAX_MODELS,
+    "claude-code": CLAUDE_MODELS,
+    "kimi-code": KIMI_CODE_MODELS,
     "openai": OPENAI_MODELS,
     "codex": CODEX_MODELS,
     "google": GOOGLE_MODELS,
@@ -89,8 +95,10 @@ class SummaryCounts(BaseModel):
 
 
 def supported_thinking_levels(provider: str, model: str) -> list[ThinkingLevel]:
-    if provider == "claude-code-minimax":
-        return [ThinkingLevel.NA]
+    if provider == "claude-code":
+        return _supported_claude_code_thinking_levels(model)
+    if provider == "kimi-code":
+        return [ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE, ThinkingLevel.BUDGET]
     if provider == "openai":
         return _supported_openai_thinking_levels(model)
     if provider == "codex":
@@ -114,6 +122,12 @@ def _supported_codex_thinking_levels(model: str) -> list[ThinkingLevel]:
         supports_off=codex_supports_off_thinking(model),
         supports_minimal=codex_supports_minimal_thinking(model),
     )
+
+
+def _supported_claude_code_thinking_levels(model: str) -> list[ThinkingLevel]:
+    if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
+        return [ThinkingLevel.ADAPTIVE]
+    return [ThinkingLevel.NA]
 
 
 def _supported_google_thinking_levels(model: str) -> list[ThinkingLevel]:
@@ -151,6 +165,13 @@ def _supported_openai_style_thinking_levels(
 
 
 def default_thinking_for_model(provider: str, model: str) -> ThinkingLevel:
+    if provider == "kimi-code":
+        return ThinkingLevel.NA
+    if provider == "claude-code":
+        levels = supported_thinking_levels(provider, model)
+        if ThinkingLevel.ADAPTIVE in levels:
+            return ThinkingLevel.ADAPTIVE
+        return ThinkingLevel.NA
     levels = supported_thinking_levels(provider, model)
     if ThinkingLevel.OFF in levels:
         return ThinkingLevel.OFF
@@ -174,10 +195,25 @@ def reasoning_for_level(
     *,
     explicit: bool = False,
 ) -> AnthropicReasoning | OpenAIReasoning | CodexReasoning | GoogleReasoning | None:
-    if provider == "claude-code-minimax":
-        if explicit:
+    if provider == "claude-code":
+        if thinking_level == ThinkingLevel.ADAPTIVE:
+            return AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
+        if thinking_level == ThinkingLevel.NA and explicit:
             return AnthropicReasoning(thinking_level=ThinkingLevel.NA)
-        return None
+        if thinking_level == ThinkingLevel.NA:
+            return None
+        raise ValueError(
+            f"unsupported claude-code thinking level: {thinking_level!r}"
+        )
+    if provider == "kimi-code":
+        if thinking_level == ThinkingLevel.NA:
+            return None
+        if thinking_level == ThinkingLevel.BUDGET:
+            return AnthropicReasoning(
+                thinking_level=thinking_level,
+                budget_tokens=KIMI_CODE_FIXED_BUDGET,
+            )
+        return AnthropicReasoning(thinking_level=thinking_level)
     if thinking_level == ThinkingLevel.NA:
         return None
     if provider == "openai":
@@ -205,6 +241,11 @@ def format_attempt(
         detail = (
             f"{provider} | {model} | "
             f"thinking={thinking_level.name}({GOOGLE_FIXED_BUDGET})"
+        )
+    if provider == "kimi-code" and thinking_level == ThinkingLevel.BUDGET:
+        detail = (
+            f"{provider} | {model} | "
+            f"thinking={thinking_level.name}({KIMI_CODE_FIXED_BUDGET})"
         )
     if effort != EffortSpec.NA:
         detail += f" | effort={effort.name}"
@@ -253,10 +294,12 @@ def make_request(
     *,
     explicit_reasoning: bool = False,
 ) -> LlmRequest:
+    max_tokens = KIMI_CODE_MAX_TOKENS if provider == "kimi-code" else None
     return LlmRequest(
         provider=provider,
         model=model,
         messages=[Message(role="user", content=PROMPT)],
+        max_tokens=max_tokens,
         effort=effort,
         reasoning=reasoning_for_level(
             provider,

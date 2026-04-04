@@ -267,6 +267,11 @@ def validate_reasoning(
         raise ValueError(
             f"claude-code does not support budget thinking for model={model!r}"
         )
+    if provider == "kimi-code" and isinstance(reasoning, ReasoningBudget):
+        raise ValueError(
+            "kimi-code requires anthropic reasoning configs; "
+            "use AnthropicReasoning(thinking_level='budget', budget_tokens=...)"
+        )
     if capabilities is None:
         raise ValueError(
             f"Reasoning is not allowed for provider={provider!r} model={model!r}: reasoning capabilities are unknown"
@@ -418,7 +423,7 @@ def _validate_anthropic_reasoning(
             )
         return
 
-    if provider in {"claude-code-minimax", "claude-code-kimi"}:
+    if provider == "claude-code-minimax":
         if display is not None:
             raise ValueError(f"{provider} does not support anthropic display controls")
         if budget_tokens is not None:
@@ -430,6 +435,41 @@ def _validate_anthropic_reasoning(
                 f"{provider} does not support explicit anthropic thinking; use thinking_level='na'"
             )
         return
+
+    if provider == "kimi-code":
+        if display is not None:
+            raise ValueError("kimi-code does not support anthropic display controls")
+        if thinking_level == ThinkingLevel.NA:
+            if budget_tokens is not None:
+                raise ValueError(
+                    "kimi-code budget_tokens require thinking_level='budget'"
+                )
+            return
+        if thinking_level == ThinkingLevel.OFF:
+            if budget_tokens is not None:
+                raise ValueError(
+                    "kimi-code budget_tokens require thinking_level='budget'"
+                )
+            return
+        if thinking_level == ThinkingLevel.ADAPTIVE:
+            if budget_tokens is not None:
+                raise ValueError(
+                    "kimi-code budget_tokens require thinking_level='budget'"
+                )
+            return
+        if thinking_level == ThinkingLevel.BUDGET:
+            if budget_tokens is None:
+                raise ValueError("kimi-code budget thinking requires budget_tokens")
+            _validate_anthropic_budget_range(
+                provider=provider,
+                model=model,
+                label="kimi-code budget_tokens",
+                tokens=budget_tokens,
+            )
+            return
+        raise ValueError(
+            f"Unsupported kimi-code thinking level {thinking_level!r} for model={model!r}"
+        )
 
     if thinking_level != ThinkingLevel.NA:
         raise ValueError(

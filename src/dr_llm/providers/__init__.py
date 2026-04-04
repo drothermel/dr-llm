@@ -3,10 +3,10 @@ from dr_llm.providers.api_provider_config import APIProviderConfig
 from dr_llm.providers.google.adapter import GoogleAdapter
 from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
 from dr_llm.providers.headless.claude_presets import (
-    ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
 )
 from dr_llm.providers.headless.codex import CodexHeadlessAdapter
+from dr_llm.providers.kimi_code import KimiCodeAdapter
 from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
 from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.providers.registry import ProviderRegistry
@@ -63,5 +63,5 @@ def build_default_registry() -> ProviderRegistry:
     registry.register(CodexHeadlessAdapter())
     registry.register(ClaudeHeadlessAdapter())
     registry.register(ClaudeHeadlessMiniMaxAdapter())
-    registry.register(ClaudeHeadlessKimiAdapter())
+    registry.register(KimiCodeAdapter())
     return registry

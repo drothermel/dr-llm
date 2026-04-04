@@ -10,8 +10,8 @@ from dr_llm.providers.reasoning import ReasoningSpec, validate_reasoning
 
 
 def validate_max_tokens(*, provider: str, max_tokens: int | None) -> None:
-    if provider == "anthropic" and max_tokens is None:
-        raise ValueError("max_tokens is required for provider='anthropic'")
+    if provider in {"anthropic", "kimi-code"} and max_tokens is None:
+        raise ValueError(f"max_tokens is required for provider={provider!r}")
 
 
 class LlmRequest(BaseModel):

@@ -4,6 +4,7 @@ import pytest
 
 from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
 from dr_llm.providers.anthropic.reasoning import AnthropicReasoningConfig
+from dr_llm.providers.anthropic.reasoning import KimiCodeReasoningConfig
 from dr_llm.providers.google.reasoning import GoogleReasoningConfig
 from dr_llm.providers.headless.reasoning import (
     ClaudeHeadlessReasoningConfig,
@@ -95,6 +96,27 @@ def test_anthropic_off_omits_thinking() -> None:
         AnthropicReasoning(thinking_level=ThinkingLevel.OFF)
     )
     assert result.thinking_payload() == {}
+
+
+def test_kimi_code_serializes_supported_reasoning_controls() -> None:
+    assert (
+        KimiCodeReasoningConfig.from_base(
+            AnthropicReasoning(thinking_level=ThinkingLevel.NA)
+        ).thinking_payload()
+        == {}
+    )
+    assert KimiCodeReasoningConfig.from_base(
+        AnthropicReasoning(thinking_level=ThinkingLevel.OFF)
+    ).thinking_payload() == {"type": "disabled"}
+    assert KimiCodeReasoningConfig.from_base(
+        AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
+    ).thinking_payload() == {"type": "adaptive"}
+    assert KimiCodeReasoningConfig.from_base(
+        AnthropicReasoning(
+            thinking_level=ThinkingLevel.BUDGET,
+            budget_tokens=1024,
+        )
+    ).thinking_payload() == {"type": "enabled", "budget_tokens": 1024}
 
 
 def test_claude_headless_accepts_adaptive_and_na() -> None:

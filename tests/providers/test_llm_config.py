@@ -233,6 +233,63 @@ def test_claude_code_minimax_rejects_explicit_thinking_controls() -> None:
         )
 
 
+def test_kimi_code_requires_effort_and_max_tokens() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="kimi-code",
+            model="kimi-for-coding",
+            max_tokens=256,
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="kimi-code",
+            model="kimi-for-coding",
+            effort=EffortSpec.HIGH,
+        )
+
+
+def test_kimi_code_accepts_off_adaptive_and_budget_with_effort() -> None:
+    for reasoning in (
+        None,
+        AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
+        AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+        AnthropicReasoning(
+            thinking_level=ThinkingLevel.BUDGET,
+            budget_tokens=1024,
+        ),
+    ):
+        LlmConfig(
+            provider="kimi-code",
+            model="kimi-for-coding",
+            max_tokens=2048,
+            effort=EffortSpec.HIGH,
+            reasoning=reasoning,
+        )
+
+
+def test_kimi_code_rejects_display_and_top_level_budget() -> None:
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="kimi-code",
+            model="kimi-for-coding",
+            max_tokens=2048,
+            effort=EffortSpec.HIGH,
+            reasoning=AnthropicReasoning(
+                thinking_level=ThinkingLevel.BUDGET,
+                budget_tokens=1024,
+                display="omitted",
+            ),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="kimi-code",
+            model="kimi-for-coding",
+            max_tokens=2048,
+            effort=EffortSpec.HIGH,
+            reasoning=ReasoningBudget(tokens=1024),
+        )
+
+
 def test_llm_request_rejects_na_effort_for_supported_anthropic_model() -> None:
     with pytest.raises(ValidationError):
         LlmRequest(

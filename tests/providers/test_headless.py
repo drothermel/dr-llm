@@ -10,7 +10,6 @@ from pydantic import ValidationError
 from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
 from dr_llm.providers.headless.claude_presets import (
-    ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
 )
 from dr_llm.providers.headless.codex import CodexHeadlessAdapter
@@ -194,28 +193,6 @@ def test_claude_minimax_command_includes_effort(
 
     command = cast(list[str], captured["command"])
     assert command[command.index("--effort") + 1] == "max"
-
-
-def test_claude_kimi_preset_maps_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("KIMI_API_KEY", "kimi-test-key")
-    stdout = json.dumps({
-        "type": "result",
-        "subtype": "success",
-        "is_error": False,
-        "result": "OK",
-        "usage": {"input_tokens": 1, "output_tokens": 2},
-        "total_cost_usd": 0.0,
-    })
-    captured, fake_run = make_subprocess_mock(stdout)
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    adapter = ClaudeHeadlessKimiAdapter(command=["claude", "-p", "--output-format", "json"])
-    request = make_request(provider="claude-code-kimi", model="kimi-for-coding")
-    adapter.generate(request)
-
-    env = cast(dict[str, str], captured["env"])
-    assert env["ANTHROPIC_BASE_URL"] == "https://api.kimi.com/coding/"
-    assert env["ANTHROPIC_AUTH_TOKEN"] == "kimi-test-key"
 
 
 def test_codex_rejects_reasoning_before_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:

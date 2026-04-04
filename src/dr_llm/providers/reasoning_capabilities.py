@@ -23,6 +23,7 @@ ReasoningMode = Literal[
     "anthropic_effort_and_budget",
     "claude_cli_effort",
     "codex_cli_effort",
+    "kimi_code_effort_and_budget",
 ]
 
 
@@ -106,6 +107,11 @@ _ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(mode="anthropic_effort")
 _CLAUDE_HEADLESS_CAPS = ReasoningCapabilities(mode="claude_cli_effort")
 _CODEX_CLI_EFFORT_CAPS = ReasoningCapabilities(mode="codex_cli_effort")
 _GLM_THINKING_CAPS = ReasoningCapabilities(mode="glm")
+_KIMI_CODE_CAPS = ReasoningCapabilities(
+    mode="kimi_code_effort_and_budget",
+    min_budget_tokens=1024,
+    max_budget_tokens=128000,
+)
 
 CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
@@ -215,9 +221,9 @@ CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
         capabilities=_CLAUDE_HEADLESS_CAPS,
     ),
     ReasoningCapabilityRule(
-        provider="claude-code-kimi",
-        model_prefix="kimi-",
-        capabilities=_CLAUDE_HEADLESS_CAPS,
+        provider="kimi-code",
+        exact_model="kimi-for-coding",
+        capabilities=_KIMI_CODE_CAPS,
     ),
 )
 

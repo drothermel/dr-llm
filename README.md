@@ -62,9 +62,9 @@ Catalog data is cached locally at `~/.dr_llm/catalog_cache/`. No database requir
 | `codex` | Codex CLI (headless) | `codex` executable |
 | `claude-code` | Claude Code CLI (headless) | `claude` executable |
 | `claude-code-minimax` | Claude Code via MiniMax | `claude` + `MINIMAX_API_KEY` |
-| `claude-code-kimi` | Claude Code via Kimi | `claude` + `KIMI_API_KEY` |
+| `kimi-code` | Kimi Code API (Anthropic-compatible) | `KIMI_API_KEY` |
 
-Headless providers shell out to CLI tools. MiniMax/Kimi variants point Claude Code at third-party Anthropic-compatible endpoints.
+Headless providers shell out to CLI tools. `claude-code-minimax` points Claude Code at a third-party Anthropic-compatible endpoint, while `kimi-code` calls Kimi Code's Anthropic-compatible `/messages` API directly.
 
 Some providers use static model lists for `models sync` (no `/models` endpoint). The CLI notes when a list may be out of date and links to docs.
 
@@ -216,14 +216,14 @@ Provider endpoint defaults:
 - GLM: `https://api.z.ai/api/coding/paas/v4`
 - MiniMax API: `https://api.minimax.io/v1`
 - Claude headless MiniMax: `https://api.minimax.io/anthropic`
-- Claude headless Kimi: `https://api.kimi.com/coding/`
+- Kimi Code API: `https://api.kimi.com/coding/v1/messages`
 
 ## Testing
 
 ```bash
 uv run ruff format && uv run ruff check --fix .
 uv run ty check
-uv run pytest tests/ -v
+./scripts/run-tests-non-integration.sh
 ```
 
 ### Integration tests (requires Docker)
@@ -232,7 +232,7 @@ uv run pytest tests/ -v
 ./scripts/run-tests-local.sh
 ```
 
-Auto-creates a temporary Docker Postgres project, runs `pytest -m integration`, and destroys it on exit. Pass extra pytest args for targeted runs: `./scripts/run-tests-local.sh -k test_pool_fill`.
+`run-tests-non-integration.sh` uses `pytest-xdist` for the safe non-integration suite. `run-tests-local.sh` auto-creates a temporary Docker Postgres project, runs `pytest -m integration`, and destroys it on exit. Pass extra pytest args for targeted runs: `./scripts/run-tests-local.sh -k test_pool_fill`.
 
 ## Demo Scripts
 
@@ -260,4 +260,4 @@ uv run python scripts/demo-pool-fill.py
 
 Auto-creates a Docker Postgres project, seeds a pending queue for an `(llm_config, prompt)` pool using `LlmConfig` and `Message` objects, starts workers that make real LLM calls via `make_llm_process_fn`, prints progress, shows response snippets, and destroys the project on exit. Pass `--dsn` to use an existing database instead. Run with `--help` for options.
 
-Reasoning configs are validated before dispatch. For example, `{"kind":"effort","level":"high"}` is valid for `gpt-5-mini`, while Google 2.5 models require budget-style reasoning such as `{"kind":"google","thinking_budget":512}`.
+Reasoning configs are validated before dispatch. For example, Google 2.5 models require budget-style reasoning such as `{"kind":"google","thinking_budget":512}`, while `kimi-code` uses Anthropic-compatible reasoning like `{"kind":"anthropic","thinking_level":"adaptive"}` together with an explicit `--effort` and `--max-tokens`.

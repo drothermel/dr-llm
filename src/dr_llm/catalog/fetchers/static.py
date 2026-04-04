@@ -5,7 +5,6 @@ from typing import Any
 
 from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
 from dr_llm.providers.headless.claude_presets import (
-    ClaudeHeadlessKimiAdapter,
     ClaudeHeadlessMiniMaxAdapter,
 )
 from dr_llm.providers.headless.codex import CodexHeadlessAdapter
@@ -38,8 +37,6 @@ CLAUDE_CODE_MODELS = [
     ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
 ]
 
-KIMI_CODING_DOCS_URL = "https://www.kimi.com/code/docs/en/more/third-party-agents.html"
-
 KIMI_CODING_MODELS = [
     ("kimi-for-coding", "Kimi For Coding"),
 ]
@@ -57,8 +54,7 @@ MINIMAX_TEXT_MODELS = [
 def fetch_static_headless_models(
     adapter: CodexHeadlessAdapter
     | ClaudeHeadlessAdapter
-    | ClaudeHeadlessMiniMaxAdapter
-    | ClaudeHeadlessKimiAdapter,
+    | ClaudeHeadlessMiniMaxAdapter,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     now = datetime.now(timezone.utc)
     if isinstance(adapter, CodexHeadlessAdapter):
@@ -97,25 +93,6 @@ def fetch_static_headless_models(
                 metadata=source_meta,
             )
             for model_id, display_name in MINIMAX_TEXT_MODELS
-        ]
-        return entries, source_meta
-    if isinstance(adapter, ClaudeHeadlessKimiAdapter):
-        source_meta = {"source": "static", "docs_url": KIMI_CODING_DOCS_URL}
-        entries = [
-            ModelCatalogEntry(
-                provider=adapter.name,
-                model=model_id,
-                display_name=display_name,
-                reasoning_capabilities=reasoning_capabilities_for_model(
-                    provider=adapter.name,
-                    model=model_id,
-                ),
-                supports_vision=True,
-                source_quality="static",
-                fetched_at=now,
-                metadata=source_meta,
-            )
-            for model_id, display_name in KIMI_CODING_MODELS
         ]
         return entries, source_meta
     # Default: ClaudeHeadlessAdapter (native Anthropic)

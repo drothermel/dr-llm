@@ -20,11 +20,10 @@ SCRIPT_GLOBALS = runpy.run_path(str(SCRIPT_PATH))
 
 
 def test_provider_model_sweeps_match_expected_snapshot() -> None:
-    assert SCRIPT_GLOBALS["MINIMAX_MODELS"] == [
-        "MiniMax-M2.7",
-        "MiniMax-M2.5",
-        "MiniMax-M2.1",
-        "MiniMax-M2",
+    assert SCRIPT_GLOBALS["CLAUDE_MODELS"] == [
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
     ]
     assert SCRIPT_GLOBALS["OPENAI_MODELS"] == [
         "gpt-5.4-mini-2026-03-17",
@@ -37,6 +36,9 @@ def test_provider_model_sweeps_match_expected_snapshot() -> None:
     ]
     assert SCRIPT_GLOBALS["CODEX_MODELS"] == [
         "gpt-5.1-codex-mini",
+    ]
+    assert SCRIPT_GLOBALS["KIMI_CODE_MODELS"] == [
+        "kimi-for-coding",
     ]
     assert SCRIPT_GLOBALS["GOOGLE_MODELS"] == [
         "gemini-3-flash-preview",
@@ -55,22 +57,22 @@ def test_provider_model_sweeps_match_expected_snapshot() -> None:
     assert SCRIPT_GLOBALS["PHASES"] == ["models", "thinking", "effort"]
 
 
-def test_claude_code_minimax_uses_na_thinking_and_explicit_effort_levels() -> None:
+def test_claude_code_uses_model_specific_thinking_and_effort_levels() -> None:
     supported_thinking_levels = SCRIPT_GLOBALS["supported_thinking_levels"]
     default_thinking_for_model = SCRIPT_GLOBALS["default_thinking_for_model"]
     default_effort_for_model = SCRIPT_GLOBALS["default_effort_for_model"]
     reasoning_for_level = SCRIPT_GLOBALS["reasoning_for_level"]
 
-    minimax_levels = supported_thinking_levels("claude-code-minimax", "MiniMax-M2.7")
-    assert minimax_levels == [ThinkingLevel.NA]
+    opus_levels = supported_thinking_levels("claude-code", "claude-opus-4-6")
+    assert opus_levels == [ThinkingLevel.ADAPTIVE]
     assert (
-        default_thinking_for_model("claude-code-minimax", "MiniMax-M2.7")
-        == ThinkingLevel.NA
+        default_thinking_for_model("claude-code", "claude-opus-4-6")
+        == ThinkingLevel.ADAPTIVE
     )
-    assert default_effort_for_model("claude-code-minimax", "MiniMax-M2.7") == EffortSpec.LOW
+    assert default_effort_for_model("claude-code", "claude-opus-4-6") == EffortSpec.LOW
     assert SCRIPT_GLOBALS["supported_effort_levels"](
-        provider="claude-code-minimax",
-        model="MiniMax-M2.7",
+        provider="claude-code",
+        model="claude-opus-4-6",
     ) == (
         EffortSpec.LOW,
         EffortSpec.MEDIUM,
@@ -78,14 +80,75 @@ def test_claude_code_minimax_uses_na_thinking_and_explicit_effort_levels() -> No
         EffortSpec.MAX,
     )
 
-    minimax_reasoning = reasoning_for_level(
-        "claude-code-minimax",
+    haiku_levels = supported_thinking_levels(
+        "claude-code",
+        "claude-haiku-4-5-20251001",
+    )
+    assert haiku_levels == [ThinkingLevel.NA]
+    assert (
+        default_thinking_for_model("claude-code", "claude-haiku-4-5-20251001")
+        == ThinkingLevel.NA
+    )
+    assert (
+        default_effort_for_model("claude-code", "claude-haiku-4-5-20251001")
+        == EffortSpec.NA
+    )
+    assert SCRIPT_GLOBALS["supported_effort_levels"](
+        provider="claude-code",
+        model="claude-haiku-4-5-20251001",
+    ) == ()
+
+    adaptive_reasoning = reasoning_for_level(
+        "claude-code",
+        ThinkingLevel.ADAPTIVE,
+    )
+    assert isinstance(adaptive_reasoning, AnthropicReasoning)
+    assert adaptive_reasoning.thinking_level == ThinkingLevel.ADAPTIVE
+
+    explicit_na_reasoning = reasoning_for_level(
+        "claude-code",
         ThinkingLevel.NA,
         explicit=True,
     )
-    assert isinstance(minimax_reasoning, AnthropicReasoning)
-    assert minimax_reasoning.thinking_level == ThinkingLevel.NA
-    assert reasoning_for_level("claude-code-minimax", ThinkingLevel.NA) is None
+    assert isinstance(explicit_na_reasoning, AnthropicReasoning)
+    assert explicit_na_reasoning.thinking_level == ThinkingLevel.NA
+    assert reasoning_for_level("claude-code", ThinkingLevel.NA) is None
+
+
+def test_kimi_code_uses_explicit_reasoning_and_required_effort() -> None:
+    supported_thinking_levels = SCRIPT_GLOBALS["supported_thinking_levels"]
+    default_thinking_for_model = SCRIPT_GLOBALS["default_thinking_for_model"]
+    default_effort_for_model = SCRIPT_GLOBALS["default_effort_for_model"]
+    reasoning_for_level = SCRIPT_GLOBALS["reasoning_for_level"]
+
+    kimi_levels = supported_thinking_levels("kimi-code", "kimi-for-coding")
+    assert kimi_levels == [
+        ThinkingLevel.OFF,
+        ThinkingLevel.ADAPTIVE,
+        ThinkingLevel.BUDGET,
+    ]
+    assert default_thinking_for_model("kimi-code", "kimi-for-coding") == ThinkingLevel.NA
+    assert default_effort_for_model("kimi-code", "kimi-for-coding") == EffortSpec.LOW
+    assert SCRIPT_GLOBALS["supported_effort_levels"](
+        provider="kimi-code",
+        model="kimi-for-coding",
+    ) == (
+        EffortSpec.LOW,
+        EffortSpec.MEDIUM,
+        EffortSpec.HIGH,
+        EffortSpec.MAX,
+    )
+
+    off_reasoning = reasoning_for_level("kimi-code", ThinkingLevel.OFF)
+    adaptive_reasoning = reasoning_for_level("kimi-code", ThinkingLevel.ADAPTIVE)
+    budget_reasoning = reasoning_for_level("kimi-code", ThinkingLevel.BUDGET)
+    assert isinstance(off_reasoning, AnthropicReasoning)
+    assert off_reasoning.thinking_level == ThinkingLevel.OFF
+    assert isinstance(adaptive_reasoning, AnthropicReasoning)
+    assert adaptive_reasoning.thinking_level == ThinkingLevel.ADAPTIVE
+    assert isinstance(budget_reasoning, AnthropicReasoning)
+    assert budget_reasoning.thinking_level == ThinkingLevel.BUDGET
+    assert budget_reasoning.budget_tokens == SCRIPT_GLOBALS["KIMI_CODE_FIXED_BUDGET"]
 
 
 def test_openai_and_codex_use_explicit_thinking_levels_only() -> None:
