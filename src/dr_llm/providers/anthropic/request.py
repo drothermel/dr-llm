@@ -10,6 +10,7 @@ from dr_llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.providers.anthropic.reasoning import (
     AnthropicReasoningConfig,
     KimiCodeReasoningConfig,
+    MiniMaxReasoningConfig,
 )
 from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_request import LlmRequest
@@ -33,7 +34,7 @@ class AnthropicRequest(BaseModel):
     provider: str = Field(exclude=True)
     model: str
     messages: list[_AnthropicRequestMessage]
-    max_tokens: int
+    max_tokens: int | None = None
     system: str | None = None
     temperature: float | None = None
     top_p: float | None = None
@@ -51,9 +52,12 @@ class AnthropicRequest(BaseModel):
         config: AnthropicConfig,
     ) -> AnthropicRequest:
         if request.max_tokens is None:
-            raise ProviderSemanticError("anthropic requests require max_tokens")
+            if request.provider != "minimax":
+                raise ProviderSemanticError("anthropic requests require max_tokens")
         if request.provider == "kimi-code":
             reasoning_mapping = KimiCodeReasoningConfig.from_base(request.reasoning)
+        elif request.provider == "minimax":
+            reasoning_mapping = MiniMaxReasoningConfig.from_base(request.reasoning)
         else:
             reasoning_mapping = AnthropicReasoningConfig.from_base(request.reasoning)
         output_config = (

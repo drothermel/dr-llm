@@ -24,6 +24,7 @@ ReasoningMode = Literal[
     "claude_cli_effort",
     "codex_cli_effort",
     "kimi_code_effort_and_budget",
+    "minimax_effort",
 ]
 
 
@@ -112,6 +113,7 @@ _KIMI_CODE_CAPS = ReasoningCapabilities(
     min_budget_tokens=1024,
     max_budget_tokens=128000,
 )
+_MINIMAX_CAPS = ReasoningCapabilities(mode="minimax_effort")
 
 CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
@@ -216,14 +218,14 @@ CURATED_REASONING_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
         capabilities=_CLAUDE_HEADLESS_CAPS,
     ),
     ReasoningCapabilityRule(
-        provider="claude-code-minimax",
-        model_prefix="MiniMax-",
-        capabilities=_CLAUDE_HEADLESS_CAPS,
-    ),
-    ReasoningCapabilityRule(
         provider="kimi-code",
         exact_model="kimi-for-coding",
         capabilities=_KIMI_CODE_CAPS,
+    ),
+    ReasoningCapabilityRule(
+        provider="minimax",
+        model_prefix="MiniMax-",
+        capabilities=_MINIMAX_CAPS,
     ),
 )
 

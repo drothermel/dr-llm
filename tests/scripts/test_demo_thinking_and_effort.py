@@ -40,6 +40,12 @@ def test_provider_model_sweeps_match_expected_snapshot() -> None:
     assert SCRIPT_GLOBALS["KIMI_CODE_MODELS"] == [
         "kimi-for-coding",
     ]
+    assert SCRIPT_GLOBALS["MINIMAX_MODELS"] == [
+        "MiniMax-M2.7",
+        "MiniMax-M2.5",
+        "MiniMax-M2.1",
+        "MiniMax-M2",
+    ]
     assert SCRIPT_GLOBALS["GOOGLE_MODELS"] == [
         "gemini-3-flash-preview",
         "gemini-2.5-flash",
@@ -149,6 +155,38 @@ def test_kimi_code_uses_explicit_reasoning_and_required_effort() -> None:
     assert isinstance(budget_reasoning, AnthropicReasoning)
     assert budget_reasoning.thinking_level == ThinkingLevel.BUDGET
     assert budget_reasoning.budget_tokens == SCRIPT_GLOBALS["KIMI_CODE_FIXED_BUDGET"]
+
+
+def test_minimax_requires_explicit_na_reasoning_and_effort() -> None:
+    supported_thinking_levels = SCRIPT_GLOBALS["supported_thinking_levels"]
+    default_thinking_for_model = SCRIPT_GLOBALS["default_thinking_for_model"]
+    default_effort_for_model = SCRIPT_GLOBALS["default_effort_for_model"]
+    reasoning_for_level = SCRIPT_GLOBALS["reasoning_for_level"]
+    requires_explicit_reasoning = SCRIPT_GLOBALS["requires_explicit_reasoning"]
+
+    minimax_levels = supported_thinking_levels("minimax", "MiniMax-M2.7")
+    assert minimax_levels == [ThinkingLevel.NA]
+    assert default_thinking_for_model("minimax", "MiniMax-M2.7") == ThinkingLevel.NA
+    assert default_effort_for_model("minimax", "MiniMax-M2.7") == EffortSpec.LOW
+    assert SCRIPT_GLOBALS["supported_effort_levels"](
+        provider="minimax",
+        model="MiniMax-M2.7",
+    ) == (
+        EffortSpec.LOW,
+        EffortSpec.MEDIUM,
+        EffortSpec.HIGH,
+        EffortSpec.MAX,
+    )
+
+    explicit_reasoning = reasoning_for_level(
+        "minimax",
+        ThinkingLevel.NA,
+        explicit=True,
+    )
+    assert isinstance(explicit_reasoning, AnthropicReasoning)
+    assert explicit_reasoning.thinking_level == ThinkingLevel.NA
+    assert reasoning_for_level("minimax", ThinkingLevel.NA) is None
+    assert requires_explicit_reasoning("minimax") is True
 
 
 def test_openai_and_codex_use_explicit_thinking_levels_only() -> None:

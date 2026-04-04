@@ -170,15 +170,21 @@ def test_claude_code_accepts_max_effort() -> None:
     )
 
 
-def test_claude_code_minimax_requires_effort() -> None:
+def test_minimax_requires_effort_and_reasoning() -> None:
     with pytest.raises(ValidationError):
         LlmConfig(
-            provider="claude-code-minimax",
+            provider="minimax",
             model="MiniMax-M2.7",
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="minimax",
+            model="MiniMax-M2.7",
+            effort=EffortSpec.LOW,
         )
 
 
-def test_claude_code_minimax_accepts_all_effort_levels() -> None:
+def test_minimax_accepts_all_effort_levels() -> None:
     for effort in (
         EffortSpec.LOW,
         EffortSpec.MEDIUM,
@@ -186,49 +192,62 @@ def test_claude_code_minimax_accepts_all_effort_levels() -> None:
         EffortSpec.MAX,
     ):
         LlmConfig(
-            provider="claude-code-minimax",
+            provider="minimax",
             model="MiniMax-M2.7",
             effort=effort,
+            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.NA),
         )
 
 
-def test_claude_code_minimax_accepts_omitted_or_explicit_na_reasoning() -> None:
+def test_minimax_accepts_optional_max_tokens_and_explicit_na_reasoning() -> None:
     LlmConfig(
-        provider="claude-code-minimax",
+        provider="minimax",
         model="MiniMax-M2.7",
         effort=EffortSpec.LOW,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.NA),
     )
     LlmConfig(
-        provider="claude-code-minimax",
+        provider="minimax",
         model="MiniMax-M2.7",
+        max_tokens=4096,
         effort=EffortSpec.LOW,
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.NA),
     )
 
 
-def test_claude_code_minimax_rejects_explicit_thinking_controls() -> None:
+def test_minimax_rejects_explicit_thinking_controls() -> None:
     with pytest.raises(ValidationError):
         LlmConfig(
-            provider="claude-code-minimax",
+            provider="minimax",
             model="MiniMax-M2.7",
             effort=EffortSpec.LOW,
             reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
         )
     with pytest.raises(ValidationError):
         LlmConfig(
-            provider="claude-code-minimax",
+            provider="minimax",
             model="MiniMax-M2.7",
             effort=EffortSpec.LOW,
             reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
         )
     with pytest.raises(ValidationError):
         LlmConfig(
-            provider="claude-code-minimax",
+            provider="minimax",
             model="MiniMax-M2.7",
             effort=EffortSpec.LOW,
             reasoning=AnthropicReasoning(
                 thinking_level=ThinkingLevel.BUDGET,
                 budget_tokens=2048,
+            ),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="minimax",
+            model="MiniMax-M2.7",
+            effort=EffortSpec.LOW,
+            reasoning=AnthropicReasoning(
+                thinking_level=ThinkingLevel.NA,
+                display="omitted",
             ),
         )
 

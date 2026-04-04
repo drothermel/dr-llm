@@ -7,6 +7,7 @@ Usage:
   uv run python scripts/demo_thinking_and_effort.py --provider codex
   uv run python scripts/demo_thinking_and_effort.py --provider google
   uv run python scripts/demo_thinking_and_effort.py --provider claude-code
+  uv run python scripts/demo_thinking_and_effort.py --provider minimax
   uv run python scripts/demo_thinking_and_effort.py --provider kimi-code
 """
 
@@ -17,7 +18,11 @@ from collections import defaultdict
 import typer
 from pydantic import BaseModel, ValidationError
 
-from dr_llm.catalog.fetchers.static import CLAUDE_CODE_MODELS, KIMI_CODING_MODELS
+from dr_llm.catalog.fetchers.static import (
+    CLAUDE_CODE_MODELS,
+    KIMI_CODING_MODELS,
+    MINIMAX_TEXT_MODELS,
+)
 from dr_llm.providers import build_default_registry
 from dr_llm.providers.anthropic.thinking import ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED
 from dr_llm.providers.effort import EffortSpec, supported_effort_levels
@@ -60,6 +65,7 @@ CODEX_MODELS = [
 ]
 CLAUDE_MODELS = [model_id for model_id, _display_name in CLAUDE_CODE_MODELS]
 KIMI_CODE_MODELS = [model_id for model_id, _display_name in KIMI_CODING_MODELS]
+MINIMAX_MODELS = [model_id for model_id, _display_name in MINIMAX_TEXT_MODELS]
 GOOGLE_FIXED_BUDGET = 1024
 KIMI_CODE_FIXED_BUDGET = 1024
 KIMI_CODE_MAX_TOKENS = 2048
@@ -79,6 +85,7 @@ GOOGLE_MODELS = [
 ]
 PROVIDER_MODELS = {
     "claude-code": CLAUDE_MODELS,
+    "minimax": MINIMAX_MODELS,
     "kimi-code": KIMI_CODE_MODELS,
     "openai": OPENAI_MODELS,
     "codex": CODEX_MODELS,
@@ -97,6 +104,8 @@ class SummaryCounts(BaseModel):
 def supported_thinking_levels(provider: str, model: str) -> list[ThinkingLevel]:
     if provider == "claude-code":
         return _supported_claude_code_thinking_levels(model)
+    if provider == "minimax":
+        return [ThinkingLevel.NA]
     if provider == "kimi-code":
         return [ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE, ThinkingLevel.BUDGET]
     if provider == "openai":
@@ -165,7 +174,7 @@ def _supported_openai_style_thinking_levels(
 
 
 def default_thinking_for_model(provider: str, model: str) -> ThinkingLevel:
-    if provider == "kimi-code":
+    if provider in {"minimax", "kimi-code"}:
         return ThinkingLevel.NA
     if provider == "claude-code":
         levels = supported_thinking_levels(provider, model)
@@ -205,6 +214,12 @@ def reasoning_for_level(
         raise ValueError(
             f"unsupported claude-code thinking level: {thinking_level!r}"
         )
+    if provider == "minimax":
+        if thinking_level == ThinkingLevel.NA and explicit:
+            return AnthropicReasoning(thinking_level=ThinkingLevel.NA)
+        if thinking_level == ThinkingLevel.NA:
+            return None
+        raise ValueError(f"unsupported minimax thinking level: {thinking_level!r}")
     if provider == "kimi-code":
         if thinking_level == ThinkingLevel.NA:
             return None
@@ -352,6 +367,10 @@ def run_attempt(
     print(f"  text: {response.text!r}")
 
 
+def requires_explicit_reasoning(provider: str) -> bool:
+    return provider == "minimax"
+
+
 def run_model_sweep(
     registry: ProviderRegistry,
     counts: dict[tuple[str, str], SummaryCounts],
@@ -367,7 +386,7 @@ def run_model_sweep(
                 phase="models",
                 thinking_level=default_thinking_for_model(provider, model),
                 effort=default_effort_for_model(provider, model),
-                explicit_reasoning=False,
+                explicit_reasoning=requires_explicit_reasoning(provider),
                 counts=counts,
             )
 
@@ -409,7 +428,7 @@ def run_effort_sweep(
                     phase="effort",
                     thinking_level=default_thinking_for_model(provider, model),
                     effort=effort,
-                    explicit_reasoning=False,
+                    explicit_reasoning=requires_explicit_reasoning(provider),
                     counts=counts,
                 )
 

@@ -99,3 +99,34 @@ class KimiCodeReasoningConfig(BaseModel):
 
     def thinking_payload(self) -> dict[str, Any]:
         return self.thinking
+
+
+class MiniMaxReasoningConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    thinking: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[ReasoningWarning] = Field(default_factory=list)
+
+    @classmethod
+    def from_base(
+        cls,
+        config: ReasoningSpec | None,
+    ) -> MiniMaxReasoningConfig:
+        if config is None:
+            raise ProviderSemanticError(
+                "minimax requires explicit AnthropicReasoning(thinking_level='na')"
+            )
+        match config:
+            case AnthropicReasoning(
+                thinking_level=ThinkingLevel.NA,
+                budget_tokens=None,
+                display=None,
+            ):
+                return cls()
+            case _:
+                raise ProviderSemanticError(
+                    f"minimax reasoning serializer received unsupported config kind={config.kind!r}"
+                )
+
+    def thinking_payload(self) -> dict[str, Any]:
+        return self.thinking

@@ -7,6 +7,7 @@ from dr_llm.providers.anthropic.adapter import AnthropicAdapter
 from dr_llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.providers.google.adapter import GoogleAdapter
 from dr_llm.providers.kimi_code import KimiCodeAdapter
+from dr_llm.providers.minimax import MiniMaxAdapter
 from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
 from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.providers.provider_config import ProviderAvailabilityStatus, ProviderConfig
@@ -117,8 +118,16 @@ def test_available_names_accepts_precomputed_statuses() -> None:
                 api_key="inline-key",
             )
         ),
+        lambda: MiniMaxAdapter(
+            config=AnthropicConfig(
+                name="minimax",
+                base_url="https://api.minimax.io/anthropic/v1/messages",
+                api_key_env="MINIMAX_API_KEY",
+                api_key="inline-key",
+            )
+        ),
     ],
-    ids=["openai_compat", "anthropic", "google", "kimi_code"],
+    ids=["openai_compat", "anthropic", "google", "kimi_code", "minimax"],
 )
 def test_inline_api_key_suppresses_env_requirement(adapter_factory: object) -> None:
     adapter = adapter_factory()  # type: ignore[operator]

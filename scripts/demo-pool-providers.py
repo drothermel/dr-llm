@@ -67,7 +67,6 @@ DEFAULT_MODELS: dict[str, str] = {
     "minimax": "MiniMax-M2",
     "claude-code": "claude-sonnet-4-6",
     "codex": "gpt-5.4-mini",
-    "claude-code-minimax": "MiniMax-M2",
     "kimi-code": "kimi-for-coding",
 }
 

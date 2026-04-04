@@ -6,13 +6,13 @@ from dr_llm.providers.anthropic.effort import ANTHROPIC_EFFORT_SUPPORTED_MODELS
 from dr_llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
 
 _DIRECT_ANTHROPIC_EFFORT_MODELS = frozenset(ANTHROPIC_EFFORT_SUPPORTED_MODELS)
-_CLAUDE_CODE_FULL_EFFORT_PROVIDERS = frozenset({"claude-code-minimax"})
 _EFFORT_CAPABILITY_MODES = frozenset(
     {
         "anthropic_effort",
         "anthropic_effort_and_budget",
         "claude_cli_effort",
         "kimi_code_effort_and_budget",
+        "minimax_effort",
     }
 )
 
@@ -48,7 +48,7 @@ def supported_effort_levels(*, provider: str, model: str) -> tuple[EffortSpec, .
             EffortSpec.MAX,
         )
 
-    if provider in _CLAUDE_CODE_FULL_EFFORT_PROVIDERS:
+    if provider == "minimax":
         return (
             EffortSpec.LOW,
             EffortSpec.MEDIUM,

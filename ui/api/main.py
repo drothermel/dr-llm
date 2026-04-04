@@ -114,7 +114,6 @@ _GLM_COMMON_MODELS = [
 STATIC_MODELS: dict[str, list[tuple[str, str]]] = {
     "codex": CODEX_MODELS,
     "claude-code": CLAUDE_CODE_MODELS,
-    "claude-code-minimax": MINIMAX_TEXT_MODELS,
     "kimi-code": KIMI_CODING_MODELS,
     "minimax": MINIMAX_TEXT_MODELS,
     "openrouter": _OPENROUTER_COMMON_MODELS,

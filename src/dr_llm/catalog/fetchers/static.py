@@ -3,11 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
-from dr_llm.providers.headless.claude_presets import (
-    ClaudeHeadlessMiniMaxAdapter,
-)
 from dr_llm.providers.headless.codex import CodexHeadlessAdapter
+from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
 from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.catalog.models import ModelCatalogEntry
 from dr_llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
@@ -52,9 +49,7 @@ MINIMAX_TEXT_MODELS = [
 
 
 def fetch_static_headless_models(
-    adapter: CodexHeadlessAdapter
-    | ClaudeHeadlessAdapter
-    | ClaudeHeadlessMiniMaxAdapter,
+    adapter: CodexHeadlessAdapter | ClaudeHeadlessAdapter,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     now = datetime.now(timezone.utc)
     if isinstance(adapter, CodexHeadlessAdapter):
@@ -74,25 +69,6 @@ def fetch_static_headless_models(
                 metadata=source_meta,
             )
             for model_id, display_name in CODEX_MODELS
-        ]
-        return entries, source_meta
-    if isinstance(adapter, ClaudeHeadlessMiniMaxAdapter):
-        source_meta = {"source": "static", "docs_url": MINIMAX_DOCS_URL}
-        entries = [
-            ModelCatalogEntry(
-                provider=adapter.name,
-                model=model_id,
-                display_name=display_name,
-                reasoning_capabilities=reasoning_capabilities_for_model(
-                    provider=adapter.name,
-                    model=model_id,
-                ),
-                supports_vision=None,
-                source_quality="static",
-                fetched_at=now,
-                metadata=source_meta,
-            )
-            for model_id, display_name in MINIMAX_TEXT_MODELS
         ]
         return entries, source_meta
     # Default: ClaudeHeadlessAdapter (native Anthropic)

@@ -272,6 +272,11 @@ def validate_reasoning(
             "kimi-code requires anthropic reasoning configs; "
             "use AnthropicReasoning(thinking_level='budget', budget_tokens=...)"
         )
+    if provider == "minimax" and isinstance(reasoning, ReasoningBudget):
+        raise ValueError(
+            "minimax requires anthropic reasoning configs; "
+            "use AnthropicReasoning(thinking_level='na')"
+        )
     if capabilities is None:
         raise ValueError(
             f"Reasoning is not allowed for provider={provider!r} model={model!r}: reasoning capabilities are unknown"
@@ -423,7 +428,7 @@ def _validate_anthropic_reasoning(
             )
         return
 
-    if provider == "claude-code-minimax":
+    if provider == "minimax":
         if display is not None:
             raise ValueError(f"{provider} does not support anthropic display controls")
         if budget_tokens is not None:
@@ -671,7 +676,15 @@ def _requires_explicit_reasoning(
 ) -> bool:
     if capabilities is None or capabilities.mode == "unsupported":
         return False
-    if provider in {"openai", "openrouter", "codex", "glm", "google", "anthropic"}:
+    if provider in {
+        "openai",
+        "openrouter",
+        "codex",
+        "glm",
+        "google",
+        "anthropic",
+        "minimax",
+    }:
         return True
     if provider == "claude-code":
         return model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED

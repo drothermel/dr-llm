@@ -55,16 +55,15 @@ Catalog data is cached locally at `~/.dr_llm/catalog_cache/`. No database requir
 |---|---|---|
 | `openai` | OpenAI API | `OPENAI_API_KEY` |
 | `openrouter` | OpenRouter API | `OPENROUTER_API_KEY` |
-| `minimax` | MiniMax API | `MINIMAX_API_KEY` |
+| `minimax` | MiniMax Anthropic-compatible API | `MINIMAX_API_KEY` |
 | `anthropic` | Anthropic API | `ANTHROPIC_API_KEY` |
 | `google` | Google Gemini API | `GOOGLE_API_KEY` |
 | `glm` | GLM (ZAI) API | `ZAI_API_KEY` |
 | `codex` | Codex CLI (headless) | `codex` executable |
 | `claude-code` | Claude Code CLI (headless) | `claude` executable |
-| `claude-code-minimax` | Claude Code via MiniMax | `claude` + `MINIMAX_API_KEY` |
 | `kimi-code` | Kimi Code API (Anthropic-compatible) | `KIMI_API_KEY` |
 
-Headless providers shell out to CLI tools. `claude-code-minimax` points Claude Code at a third-party Anthropic-compatible endpoint, while `kimi-code` calls Kimi Code's Anthropic-compatible `/messages` API directly.
+Headless providers shell out to CLI tools. `minimax` and `kimi-code` are direct Anthropic-compatible `/messages` API providers.
 
 Some providers use static model lists for `models sync` (no `/models` endpoint). The CLI notes when a list may be out of date and links to docs.
 
@@ -214,8 +213,7 @@ Generation transcript logging (default on):
 
 Provider endpoint defaults:
 - GLM: `https://api.z.ai/api/coding/paas/v4`
-- MiniMax API: `https://api.minimax.io/v1`
-- Claude headless MiniMax: `https://api.minimax.io/anthropic`
+- MiniMax API: `https://api.minimax.io/anthropic/v1/messages`
 - Kimi Code API: `https://api.kimi.com/coding/v1/messages`
 
 ## Testing
@@ -260,4 +258,4 @@ uv run python scripts/demo-pool-fill.py
 
 Auto-creates a Docker Postgres project, seeds a pending queue for an `(llm_config, prompt)` pool using `LlmConfig` and `Message` objects, starts workers that make real LLM calls via `make_llm_process_fn`, prints progress, shows response snippets, and destroys the project on exit. Pass `--dsn` to use an existing database instead. Run with `--help` for options.
 
-Reasoning configs are validated before dispatch. For example, Google 2.5 models require budget-style reasoning such as `{"kind":"google","thinking_budget":512}`, while `kimi-code` uses Anthropic-compatible reasoning like `{"kind":"anthropic","thinking_level":"adaptive"}` together with an explicit `--effort` and `--max-tokens`.
+Reasoning configs are validated before dispatch. For example, Google 2.5 models require budget-style reasoning such as `{"kind":"google","thinking_budget":512}`, `minimax` requires `{"kind":"anthropic","thinking_level":"na"}` together with an explicit `--effort`, and `kimi-code` uses Anthropic-compatible reasoning like `{"kind":"anthropic","thinking_level":"adaptive"}` together with an explicit `--effort` and `--max-tokens`.

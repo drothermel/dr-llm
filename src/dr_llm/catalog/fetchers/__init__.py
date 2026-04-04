@@ -13,11 +13,9 @@ from dr_llm.catalog.fetchers.static import (
 from dr_llm.providers.anthropic.adapter import AnthropicAdapter
 from dr_llm.providers.google.adapter import GoogleAdapter
 from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
-from dr_llm.providers.headless.claude_presets import (
-    ClaudeHeadlessMiniMaxAdapter,
-)
 from dr_llm.providers.headless.codex import CodexHeadlessAdapter
 from dr_llm.providers.kimi_code import KimiCodeAdapter
+from dr_llm.providers.minimax import MiniMaxAdapter
 from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
 from dr_llm.providers.provider_adapter import ProviderAdapter
 from dr_llm.catalog.models import ModelCatalogEntry
@@ -26,9 +24,9 @@ from dr_llm.catalog.models import ModelCatalogEntry
 def fetch_models_for_adapter(
     adapter: ProviderAdapter,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+    if isinstance(adapter, MiniMaxAdapter):
+        return fetch_static_minimax_models(adapter)
     if isinstance(adapter, OpenAICompatAdapter):
-        if adapter.name == "minimax":
-            return fetch_static_minimax_models(adapter)
         return fetch_openai_compat_models(adapter)
     if isinstance(adapter, KimiCodeAdapter):
         return fetch_kimi_models(
@@ -44,7 +42,6 @@ def fetch_models_for_adapter(
         (
             CodexHeadlessAdapter,
             ClaudeHeadlessAdapter,
-            ClaudeHeadlessMiniMaxAdapter,
         ),
     ):
         return fetch_static_headless_models(adapter)

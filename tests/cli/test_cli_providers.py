@@ -34,7 +34,6 @@ def test_providers_json() -> None:
     assert "glm" in providers
     assert "kimi-code" in providers
     assert "minimax" in providers
-    assert "claude-code-minimax" in providers
     for item in payload["providers"]:
         assert isinstance(item["available"], bool)
         assert isinstance(item["missing_env_vars"], list | tuple)
