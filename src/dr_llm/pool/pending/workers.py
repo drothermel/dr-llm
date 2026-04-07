@@ -6,20 +6,22 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from itertools import product
 from typing import Any
 from uuid import uuid4
-
-from pydantic import BaseModel
 
 from dr_llm.pool.db.call_recorder import CallRecorder
 from dr_llm.pool.errors import PoolSchemaError
 from dr_llm.pool.pending.models import (
     PendingSample,
-    PendingStatusCounts,
+)
+from dr_llm.pool.pending.pool_worker_controller import PoolWorkerController
+from dr_llm.pool.pending.threadsafe_worker_stats import (
+    ThreadsafeWorkerStats,
     WorkerSnapshot,
 )
+from dr_llm.pool.pending.utils import serialize_payload_value
 from dr_llm.pool.results import InsertResult
 from dr_llm.pool.sample_store import PoolStore
 from dr_llm.providers.llm_config import LlmConfig
@@ -29,116 +31,6 @@ from dr_llm.providers.registry import ProviderRegistry
 logger = logging.getLogger(__name__)
 
 ProcessFn = Callable[[PendingSample], dict[str, Any]]
-
-
-class _WorkerStats:
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._counts = {
-            "claimed": 0,
-            "promoted": 0,
-            "failed": 0,
-            "retried": 0,
-            "process_errors": 0,
-            "idle_polls": 0,
-        }
-
-    def incr(self, key: str, amount: int = 1) -> None:
-        with self._lock:
-            self._counts[key] += amount
-
-    def snapshot(
-        self,
-        *,
-        worker_count: int,
-        stop_requested: bool,
-        status_counts: PendingStatusCounts,
-    ) -> WorkerSnapshot:
-        with self._lock:
-            counts = dict(self._counts)
-        return WorkerSnapshot(
-            worker_count=worker_count,
-            stop_requested=stop_requested,
-            claimed=counts["claimed"],
-            promoted=counts["promoted"],
-            failed=counts["failed"],
-            retried=counts["retried"],
-            process_errors=counts["process_errors"],
-            idle_polls=counts["idle_polls"],
-            status_counts=status_counts,
-        )
-
-
-class PoolWorkerController:
-    """Manage background workers draining a pool's pending queue."""
-
-    def __init__(
-        self,
-        *,
-        store: PoolStore,
-        executor: ThreadPoolExecutor,
-        futures: list[Future[None]],
-        stop_event: threading.Event,
-        stats: _WorkerStats,
-        worker_count: int,
-        key_filter: dict[str, Any] | None,
-    ) -> None:
-        self._store = store
-        self._executor = executor
-        self._futures = futures
-        self._stop_event = stop_event
-        self._stats = stats
-        self._worker_count = worker_count
-        self._key_filter = key_filter
-        self._joined = False
-
-    def stop(self) -> None:
-        """Request graceful worker shutdown."""
-        self._stop_event.set()
-
-    def snapshot(self) -> WorkerSnapshot:
-        """Return cumulative worker stats plus current queue status counts."""
-        return self._stats.snapshot(
-            worker_count=self._worker_count,
-            stop_requested=self._stop_event.is_set(),
-            status_counts=self._store.pending.status_counts(
-                key_filter=self._key_filter
-            ),
-        )
-
-    def join(self, timeout: float | None = None) -> WorkerSnapshot:
-        """Wait for workers to exit, returning a final snapshot."""
-        deadline = None if timeout is None else time.monotonic() + timeout
-        timed_out = False
-        try:
-            for future in self._futures:
-                remaining = None
-                if deadline is not None:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        timed_out = True
-                        raise TimeoutError("Timed out waiting for workers to stop")
-                future.result(timeout=remaining)
-        except TimeoutError:
-            if not self._joined:
-                self._executor.shutdown(wait=False, cancel_futures=False)
-                self._joined = True
-            raise
-        if not self._joined:
-            self._executor.shutdown(wait=not timed_out, cancel_futures=False)
-            self._joined = True
-        return self.snapshot()
-
-
-def _serialize_payload_value(value: Any) -> Any:
-    """Serialize a payload value for JSON storage."""
-    if isinstance(value, BaseModel):
-        return value.model_dump()
-    if isinstance(value, list):
-        return [
-            item.model_dump() if isinstance(item, BaseModel) else item for item in value
-        ]
-    return value
 
 
 def _parse_key_grid(
@@ -211,7 +103,7 @@ def seed_pending(
         payload: dict[str, Any] = {}
         for name, col_value in key_values.items():
             if name in rich_columns:
-                payload[name] = _serialize_payload_value(rich_columns[name][col_value])
+                payload[name] = serialize_payload_value(rich_columns[name][col_value])
         for sample_idx in range(n):
             did_insert = store.pending.insert_pending(
                 PendingSample(
@@ -259,7 +151,7 @@ def start_workers(
     store.init_schema()
 
     stop_event = threading.Event()
-    stats = _WorkerStats()
+    stats = ThreadsafeWorkerStats()
     executor = ThreadPoolExecutor(
         max_workers=num_workers, thread_name_prefix="pool-fill"
     )
@@ -310,7 +202,7 @@ def _worker_loop(
     process_fn: ProcessFn,
     worker_id: str,
     stop_event: threading.Event,
-    stats: _WorkerStats,
+    stats: ThreadsafeWorkerStats,
     lease_seconds: int,
     min_poll_interval_s: float,
     max_poll_interval_s: float,
@@ -374,7 +266,7 @@ def _handle_process_error(
     worker_id: str,
     exc: Exception,
     max_retries: int,
-    stats: _WorkerStats,
+    stats: ThreadsafeWorkerStats,
 ) -> None:
     if pending_sample.attempt_count <= max_retries:
         store.pending.release_pending_lease(

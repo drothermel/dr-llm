@@ -31,7 +31,7 @@ from dr_llm.pool import (
     PoolStore,
 )
 from dr_llm.pool.db import DbConfig, DbRuntime
-from dr_llm.pool.pending import WorkerSnapshot
+from dr_llm.pool.pending.threadsafe_worker_stats import WorkerSnapshot
 from dr_llm.pool.pending.workers import (
     make_llm_process_fn,
     seed_pending,
@@ -72,11 +72,12 @@ PROMPTS: dict[str, list[Message]] = {
 
 def _print_progress(snapshot: WorkerSnapshot) -> None:
     counts = snapshot.status_counts
+    worker_counts = snapshot.counts
     print(
         "Progress: "
-        f"claimed={snapshot.claimed} "
-        f"promoted={snapshot.promoted} "
-        f"failed={snapshot.failed} "
+        f"claimed={worker_counts.claimed} "
+        f"promoted={worker_counts.promoted} "
+        f"failed={worker_counts.failed} "
         f"pending={counts.pending} "
         f"leased={counts.leased}"
     )
@@ -120,10 +121,11 @@ def _run_demo(dsn: str, pool_name: str, num_workers: int, samples_per_cell: int)
             last_progress: tuple[int, int, int, int, int] | None = None
             while True:
                 snapshot = controller.snapshot()
+                worker_counts = snapshot.counts
                 current_progress = (
-                    snapshot.claimed,
-                    snapshot.promoted,
-                    snapshot.failed,
+                    worker_counts.claimed,
+                    worker_counts.promoted,
+                    worker_counts.failed,
                     snapshot.status_counts.pending,
                     snapshot.status_counts.leased,
                 )

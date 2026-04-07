@@ -6,7 +6,12 @@ from datetime import UTC, datetime
 
 from dr_llm.pool.db import RecordedCall, RunStatus
 from dr_llm.pool.models import AcquireQuery, AcquireResult, PoolSample, SampleStatus
-from dr_llm.pool.pending import PendingSample, PendingStatus, PendingStatusCounts, WorkerSnapshot
+from dr_llm.pool.pending import (
+    PendingSample,
+    PendingStatus,
+    PendingStatusCounts,
+)
+from dr_llm.pool.pending.threadsafe_worker_stats import WorkerSnapshot
 from dr_llm.pool.results import InsertResult
 from dr_llm.providers.models import CallMode
 
@@ -59,6 +64,7 @@ def test_acquire_query_auto_request_id() -> None:
 def test_worker_snapshot_defaults() -> None:
     snapshot = WorkerSnapshot(worker_count=2)
     assert snapshot.stop_requested is False
+    assert snapshot.counts.claimed == 0
     assert snapshot.status_counts.total == 0
 
 

@@ -13,11 +13,8 @@ from psycopg import sql
 
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.db import DbConfig, DbRuntime, KeyColumn, PoolSchema
-from dr_llm.pool.pending.workers import (
-    PoolWorkerController,
-    seed_pending,
-    start_workers,
-)
+from dr_llm.pool.pending.pool_worker_controller import PoolWorkerController
+from dr_llm.pool.pending.workers import seed_pending, start_workers
 from dr_llm.pool.sample_store import PoolStore
 
 
@@ -138,9 +135,9 @@ def test_start_workers_promote_seeded_grid(fill_store: PoolStore) -> None:
     finally:
         _stop_controller(controller)
 
-    assert snapshot.claimed == 8
-    assert snapshot.promoted == 8
-    assert snapshot.failed == 0
+    assert snapshot.counts.claimed == 8
+    assert snapshot.counts.promoted == 8
+    assert snapshot.counts.failed == 0
     assert snapshot.status_counts.pending == 0
     assert snapshot.status_counts.leased == 0
     assert snapshot.status_counts.promoted == 8
@@ -175,10 +172,10 @@ def test_start_workers_retry_then_fail(fill_store: PoolStore) -> None:
     finally:
         _stop_controller(controller)
 
-    assert snapshot.claimed == 2
-    assert snapshot.retried == 1
-    assert snapshot.failed == 1
-    assert snapshot.process_errors == 2
+    assert snapshot.counts.claimed == 2
+    assert snapshot.counts.retried == 1
+    assert snapshot.counts.failed == 1
+    assert snapshot.counts.process_errors == 2
     assert snapshot.status_counts.failed == 1
     assert fill_store.cell_depth(
         key_values={"model": "retry-model", "prompt": "fail-prompt"}
@@ -215,11 +212,11 @@ def test_start_workers_retry_then_promote(fill_store: PoolStore) -> None:
     finally:
         _stop_controller(controller)
 
-    assert snapshot.claimed == 2
-    assert snapshot.retried == 1
-    assert snapshot.failed == 0
-    assert snapshot.promoted == 1
-    assert snapshot.process_errors == 1
+    assert snapshot.counts.claimed == 2
+    assert snapshot.counts.retried == 1
+    assert snapshot.counts.failed == 0
+    assert snapshot.counts.promoted == 1
+    assert snapshot.counts.process_errors == 1
     assert snapshot.status_counts.promoted == 1
     assert fill_store.cell_depth(
         key_values={"model": "retry-model", "prompt": "eventual-success"}
@@ -250,7 +247,7 @@ def test_start_workers_respects_key_filter(fill_store: PoolStore) -> None:
         _stop_controller(controller)
     all_counts = fill_store.pending.status_counts()
 
-    assert snapshot.promoted == 2
+    assert snapshot.counts.promoted == 2
     assert snapshot.status_counts.pending == 0
     assert snapshot.status_counts.promoted == 2
     assert all_counts.pending == 2
@@ -320,8 +317,8 @@ def test_seed_pending_rich_grid_with_workers(fill_store: PoolStore) -> None:
         finally:
             _stop_controller(controller)
 
-        assert snapshot.promoted == 2
-        assert snapshot.failed == 0
+        assert snapshot.counts.promoted == 2
+        assert snapshot.counts.failed == 0
         samples = rich_store.bulk_load()
         assert len(samples) == 2
         assert all(s.payload["text"] == "fake response" for s in samples)
