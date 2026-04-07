@@ -6,13 +6,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from dr_llm.logging import generation_log_context
-from dr_llm.pool.pending.pending_sample import PendingSample
-import dr_llm.pool.pending.workers as pool_workers
-from dr_llm.pool.pending.workers import make_llm_process_fn
 from dr_llm.llm.config import LlmConfig
-from dr_llm.llm.response import LlmResponse
 from dr_llm.llm.messages import CallMode, Message
 from dr_llm.llm.providers.usage import TokenUsage
+from dr_llm.llm.response import LlmResponse
+import dr_llm.pool.llm_pool_adapter as llm_pool_adapter
+from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
+from dr_llm.pool.pending.pending_sample import PendingSample
 
 
 def _make_sample(payload: dict[str, Any]) -> PendingSample:
@@ -100,7 +100,7 @@ def test_emits_worker_logging_events(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        pool_workers,
+        llm_pool_adapter,
         "emit_generation_event",
         lambda *, event_type, stage, payload: events.append(
             {"event_type": event_type, "stage": stage, "payload": payload}
@@ -136,7 +136,7 @@ def test_failed_worker_call_emits_failure_event(
     events: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        pool_workers,
+        llm_pool_adapter,
         "emit_generation_event",
         lambda *, event_type, stage, payload: events.append(
             {"event_type": event_type, "stage": stage, "payload": payload}

@@ -6,7 +6,6 @@ from dr_llm.pool.models import (
 )
 from dr_llm.pool.pool_service import PoolService
 from dr_llm.pool.sample_store import PoolStore
-from dr_llm.pool.pending.workers import make_llm_process_fn
 
 __all__ = [
     "ColumnType",
@@ -17,5 +16,4 @@ __all__ = [
     "PoolSchema",
     "PoolService",
     "PoolStore",
-    "make_llm_process_fn",
 ]

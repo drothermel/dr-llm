@@ -27,17 +27,14 @@ import typer
 
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
+from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
 from dr_llm.pool.pending.threadsafe_worker_stats import WorkerSnapshot
-from dr_llm.pool.pending.workers import (
-    make_llm_process_fn,
-    seed_pending,
-    start_workers,
-)
+from dr_llm.pool.pending.workers import seed_pending, start_workers
 from dr_llm.pool.sample_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
-from dr_llm.llm.providers.registry import build_default_registry
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.registry import build_default_registry
 from dr_llm.llm.providers.reasoning import GoogleReasoning, OpenAIReasoning, ThinkingLevel
 
 app = typer.Typer()

@@ -95,8 +95,9 @@ print(response.text)
 The recommended way to populate a pool: define `LlmConfig`s and prompts, seed the pending queue, and let parallel workers make the actual provider calls. Docker is used to auto-manage a Postgres project.
 
 ```python
-from dr_llm import DbConfig, KeyColumn, PoolSchema, PoolStore, make_llm_process_fn
+from dr_llm import DbConfig, KeyColumn, PoolSchema, PoolStore
 from dr_llm.pool.db.runtime import DbRuntime
+from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
 from dr_llm.pool.pending.workers import seed_pending, start_workers
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.llm import build_default_registry
