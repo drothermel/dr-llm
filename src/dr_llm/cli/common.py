@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
+from dr_llm.catalog.model_blacklist import BlacklistedModel
 from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogSyncResult
 from dr_llm.pool.db import PoolDb
 from dr_llm.pool.runtime import DbConfig
@@ -133,6 +134,27 @@ def _render_models_list(
         if item.display_name and item.display_name != item.model:
             label = f"{label} ({item.display_name})"
         typer.echo(f"- {label}")
+
+
+def _render_blacklist(
+    grouped_blacklist: dict[str, list[BlacklistedModel]],
+    provider: str | None,
+) -> None:
+    if not grouped_blacklist:
+        return
+
+    typer.echo("")
+    if provider is not None:
+        typer.echo(f"Blacklisted Models for {provider}")
+        for item in grouped_blacklist.get(provider, []):
+            typer.echo(f"- {item.model}: {item.reason}")
+        return
+
+    typer.echo("Blacklisted Models")
+    for provider_name, items in grouped_blacklist.items():
+        typer.echo(f"{provider_name}:")
+        for item in items:
+            typer.echo(f"- {item.model}: {item.reason}")
 
 
 def _parse_json(

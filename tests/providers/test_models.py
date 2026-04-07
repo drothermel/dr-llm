@@ -3,8 +3,15 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.reasoning import (
+    AnthropicReasoning,
+    GlmReasoning,
+    GoogleReasoning,
+    ReasoningBudget,
+    ThinkingLevel,
+)
 from dr_llm.providers.usage import TokenUsage
 
 
@@ -18,14 +25,72 @@ def test_message_rejects_extra_fields() -> None:
         Message(role="assistant", content="hi", tool_calls=[])  # type: ignore[call-arg]
 
 
-def test_reasoning_config_rejects_effort_with_max_tokens() -> None:
+def test_effort_spec_values() -> None:
+    assert EffortSpec.NA == "na"
+    assert EffortSpec.LOW == "low"
+    assert EffortSpec.MEDIUM == "medium"
+    assert EffortSpec.HIGH == "high"
+    assert EffortSpec.MAX == "max"
+
+
+def test_reasoning_budget_rejects_non_positive_tokens() -> None:
     with pytest.raises(ValidationError):
-        ReasoningConfig(effort="high", max_tokens=100)
+        ReasoningBudget(tokens=0)
 
 
-def test_reasoning_config_effective_enabled() -> None:
-    assert ReasoningConfig(effort="low").effective_enabled
-    assert not ReasoningConfig(enabled=False).effective_enabled
+def test_thinking_level_values() -> None:
+    assert ThinkingLevel.NA == "na"
+    assert ThinkingLevel.OFF == "off"
+    assert ThinkingLevel.BUDGET == "budget"
+    assert ThinkingLevel.ADAPTIVE == "adaptive"
+    assert ThinkingLevel.MINIMAL == "minimal"
+    assert ThinkingLevel.LOW == "low"
+    assert ThinkingLevel.MEDIUM == "medium"
+    assert ThinkingLevel.HIGH == "high"
+
+
+def test_google_reasoning_budget_requires_budget_tokens() -> None:
+    with pytest.raises(ValidationError):
+        GoogleReasoning(thinking_level=ThinkingLevel.BUDGET)
+    with pytest.raises(ValidationError):
+        GoogleReasoning(
+            thinking_level=ThinkingLevel.LOW,
+            budget_tokens=512,
+        )
+
+
+def test_anthropic_adaptive_allows_minimal_shape() -> None:
+    reasoning = AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
+    assert reasoning.thinking_level == ThinkingLevel.ADAPTIVE
+
+
+def test_anthropic_adaptive_rejects_budget_tokens() -> None:
+    with pytest.raises(ValidationError):
+        AnthropicReasoning(
+            thinking_level=ThinkingLevel.ADAPTIVE,
+            budget_tokens=2048,
+        )
+
+
+def test_glm_reasoning_accepts_only_off_and_adaptive() -> None:
+    assert GlmReasoning(thinking_level=ThinkingLevel.OFF).thinking_level == ThinkingLevel.OFF
+    assert (
+        GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE).thinking_level
+        == ThinkingLevel.ADAPTIVE
+    )
+
+
+def test_glm_reasoning_rejects_na_and_other_levels() -> None:
+    for thinking_level in (
+        ThinkingLevel.NA,
+        ThinkingLevel.MINIMAL,
+        ThinkingLevel.LOW,
+        ThinkingLevel.MEDIUM,
+        ThinkingLevel.HIGH,
+        ThinkingLevel.BUDGET,
+    ):
+        with pytest.raises(ValidationError):
+            GlmReasoning(thinking_level=thinking_level)
 
 
 def test_token_usage_computed_total() -> None:

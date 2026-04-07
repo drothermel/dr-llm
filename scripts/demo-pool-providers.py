@@ -55,6 +55,7 @@ DEFAULT_PROMPT = "What is 2+2? Answer in one sentence."
 DEFAULT_PROJECT = "demo-pool"
 API_TIMEOUT = 120
 HEADLESS_TIMEOUT = 300
+ANTHROPIC_MAX_TOKENS = 256
 
 
 DEFAULT_MODELS: dict[str, str] = {
@@ -66,8 +67,7 @@ DEFAULT_MODELS: dict[str, str] = {
     "minimax": "MiniMax-M2",
     "claude-code": "claude-sonnet-4-6",
     "codex": "gpt-5.4-mini",
-    "claude-code-minimax": "MiniMax-M2",
-    "claude-code-kimi": "kimi-for-coding",
+    "kimi-code": "kimi-for-coding",
 }
 
 POOL_SCHEMA = PoolSchema(
@@ -186,7 +186,7 @@ def query_provider(
 ) -> dict[str, Any]:
     """Query a provider via CLI, returning the response dict."""
     timeout = HEADLESS_TIMEOUT if is_headless else API_TIMEOUT
-    return run_cli(
+    args = [
         "--project",
         project,
         "query",
@@ -197,6 +197,11 @@ def query_provider(
         "--message",
         prompt,
         "--no-record",
+    ]
+    if provider in {"anthropic", "kimi-code"}:
+        args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
+    return run_cli(
+        *args,
         timeout=timeout,
     )
 

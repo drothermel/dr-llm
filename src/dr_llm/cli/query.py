@@ -9,8 +9,9 @@ from pydantic import ValidationError
 
 from dr_llm.logging import emit_generation_event, generation_log_context
 from dr_llm.providers import build_default_registry
+from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.reasoning import parse_reasoning_spec
 from dr_llm.pool.db import PoolDb
 
 from . import common
@@ -32,9 +33,10 @@ def query(
     temperature: float | None = typer.Option(None),
     top_p: float | None = typer.Option(None),
     max_tokens: int | None = typer.Option(None),
+    effort: EffortSpec = typer.Option(EffortSpec.NA),
     reasoning_json: str | None = typer.Option(
         None,
-        help='JSON reasoning config (e.g. {"effort":"high"} or {"max_tokens":2000}).',
+        help='JSON reasoning config (e.g. {"kind":"budget","tokens":1024}).',
     ),
     metadata_json: str | None = typer.Option(None, help="JSON object metadata."),
     run_id: str | None = typer.Option(None),
@@ -53,7 +55,7 @@ def query(
     )
     try:
         reasoning = (
-            ReasoningConfig(**reasoning_payload)
+            parse_reasoning_spec(reasoning_payload)
             if isinstance(reasoning_payload, dict)
             else None
         )
@@ -69,6 +71,7 @@ def query(
             temperature=temperature,
             top_p=top_p,
             max_tokens=max_tokens,
+            effort=effort,
             reasoning=reasoning,
             metadata=metadata,
         )

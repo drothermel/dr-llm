@@ -1,0 +1,124 @@
+Source,Provider,Model,$/M In,$/M Out,Blended $/M,Thinking/Reasoning,Type (MoE/Dense),Active Size,Total Size,AA Coding Index,AA LiveCodeBench
+anthropic api,Anthropic,haiku-4.5,$1.000,$5.000,$2.0000,Yes,Dense,NA,NA,,
+claude code (plan),Anthropic,sonnet-4.6,$3.000,$15.000,$6.0000,Effort levels,Dense,NA,NA,,
+claude code (plan),Anthropic,opus-4.6,$5.000,$25.000,$10.0000,Effort levels,Dense,NA,NA,,
+codex cli (plan),OpenAI,gpt-5.1-codex-mini,$0.250,$2.000,$0.6875,Effort levels,Dense,NA,NA,,
+codex cli (plan),OpenAI,gpt-5.4-mini,$0.750,$4.500,$1.6875,Effort levels,Dense,NA,NA,,
+codex cli (plan),OpenAI,gpt-5.1,$1.250,$10.000,$3.4375,Effort levels,Dense,NA,NA,,
+codex cli (plan),OpenAI,gpt-5,$1.250,$10.000,$3.4375,No,Dense,NA,NA,,
+codex cli (plan),OpenAI,gpt-5.1-codex-max,$1.250,$10.000,$3.4375,Effort levels,Dense,NA,NA,,
+codex cli (plan),OpenAI,gpt-5.1-codex,$1.250,$10.000,$3.4375,Effort levels,Dense,NA,NA,,
+codex cli (plan),OpenAI,gpt-5-codex,$1.250,$10.000,$3.4375,Effort levels,Dense,NA,NA,,
+codex cli (plan),OpenAI,gpt-5.2,$1.750,$14.000,$4.8125,Effort levels,Dense,NA,NA,,
+codex cli (plan),OpenAI,gpt-5.3-codex,$1.750,$14.000,$4.8125,Effort levels,Dense,NA,NA,,
+codex cli (plan),OpenAI,gpt-5.2-codex,$1.750,$14.000,$4.8125,Effort levels,Dense,NA,NA,,
+codex cli (plan),OpenAI,gpt-5.4,$2.500,$15.000,$5.6250,Effort levels,Dense,NA,NA,,
+glm (plan),Z AI,glm-4.5-air,$0.200,$1.100,$0.4250,Yes,MoE,NA,NA,,
+glm (plan),Z AI,glm-4.5,$0.600,$2.200,$1.0000,Yes,MoE,NA,NA,,
+glm (plan),Z AI,glm-4.6,$0.600,$2.200,$1.0000,Yes,Dense,NA,NA,,
+glm (plan),Z AI,glm-4.7,$0.600,$2.200,$1.0000,Yes,Dense,NA,NA,,
+glm (plan),Z AI,glm-5,$1.000,$3.200,$1.5500,Yes,MoE,NA,NA,,
+google (api),Google,gemini-2.5-flash-lite,$0.100,$0.400,$0.1750,Yes (budget),MoE,NA,NA,,
+google (api),Google,gemini-3.1-flash-lite-preview,$0.250,$1.500,$0.5625,Effort levels,MoE,NA,NA,,
+google (api),Google,gemini-2.5-flash,$0.300,$2.500,$0.8500,Yes (budget),MoE,NA,NA,,
+google (api),Google,gemini-3-flash-preview,$0.500,$3.000,$1.1250,Effort levels,MoE,NA,NA,,
+kimi (plan),Kimi,kimi-k2.5,$0.600,$2.500,$1.0750,Yes,MoE,32B,1T,,
+minimax (plan),MiniMax,minimax-m2.7,$0.300,$1.200,$0.5250,Yes,MoE,NA,NA,,
+minimax (plan),MiniMax,minimax-m2.5,$0.300,$1.200,$0.5250,Yes,MoE,NA,NA,,
+minimax (plan),MiniMax,minimax-m2.1,$0.300,$1.200,$0.5250,Yes,MoE,NA,NA,,
+minimax (plan),MiniMax,minimax-m2,$0.300,$1.200,$0.5250,Yes,MoE,NA,NA,,
+openai (api),OpenAI,gpt-5-nano,$0.050,$0.400,$0.1375,Effort levels,Dense,NA,NA,,
+openai (api),OpenAI,gpt-4.1-nano,$0.100,$0.400,$0.1750,No,Dense,NA,NA,,
+openai (api),OpenAI,gpt-4o-mini,$0.150,$0.600,$0.2625,No,Dense,NA,NA,,
+openai (api),OpenAI,gpt-5.4-nano,$0.200,$1.250,$0.4625,Effort levels,Dense,NA,NA,,
+openai (api),OpenAI,gpt-5-mini,$0.250,$2.000,$0.6875,Effort levels,Dense,NA,NA,,
+openai (api),OpenAI,gpt-5.1-codex-mini,$0.250,$2.000,$0.6875,Effort levels,Dense,NA,NA,,
+openai (api),OpenAI,gpt-4.1-mini,$0.400,$1.600,$0.7000,No,Dense,NA,NA,,
+openai (api),OpenAI,gpt-5.4-mini,$0.750,$4.500,$1.6875,Effort levels,Dense,NA,NA,,
+openrouter,Baidu,baidu/ernie-4.5-21b-a3b-thinking,$0.070,$0.280,$0.1225,Yes,MoE,3B,21B,,
+openrouter,Baidu,baidu/ernie-4.5-21b-a3b,$0.070,$0.280,$0.1225,No,MoE,3B,21B,,
+openrouter,Baidu,baidu/ernie-4.5-300b-a47b,$0.280,$1.100,$0.4850,No,MoE,47B,300B,14.5,0.467
+openrouter,ByteDance,bytedance-seed/seed-1.6-flash,$0.075,$0.300,$0.1312,Yes,MoE,NA,NA,,
+openrouter,ByteDance,bytedance-seed/seed-2.0-mini,$0.100,$0.400,$0.1750,Yes,MoE,NA,NA,,
+openrouter,ByteDance,bytedance-seed/seed-2.0-lite,$0.250,$2.000,$0.6875,Yes,MoE,NA,NA,,
+openrouter,ByteDance,bytedance-seed/seed-1.6,$0.250,$2.000,$0.6875,Yes,MoE,23B,230B,,
+openrouter,DeepSeek,deepseek/deepseek-r1-distill-qwen-32b,$0.290,$0.290,$0.2900,Yes,Dense,32B,32B,,0.270
+openrouter,DeepSeek,deepseek/deepseek-v3.2,$0.260,$0.380,$0.2900,Yes,MoE,37B,671B,36.7,0.862
+openrouter,DeepSeek,deepseek/deepseek-chat-v3.1,$0.150,$0.750,$0.3000,Yes,MoE,37B,671B,,
+openrouter,DeepSeek,deepseek/deepseek-chat-v3-0324,$0.200,$0.770,$0.3425,Yes,MoE,37B,671B,,
+openrouter,DeepSeek,deepseek/deepseek-chat,$0.320,$0.890,$0.4625,No,MoE,37B,671B,16.4,0.359
+openrouter,DeepSeek,deepseek/deepseek-r1-distill-llama-70b,$0.700,$0.800,$0.7250,Yes,Dense,70B,70B,11.4,0.266
+openrouter,DeepSeek,deepseek/deepseek-r1-0528,$0.450,$2.150,$0.8750,Yes,MoE,37B,671B,,
+openrouter,DeepSeek,deepseek/deepseek-r1,$0.700,$2.500,$1.1500,Yes,MoE,37B,671B,24.0,0.770
+openrouter,Google,google/gemma-3n-e4b-it,$0.020,$0.040,$0.0250,No,MoE,4B,8B,,
+openrouter,Google,google/gemma-2-9b-it,$0.030,$0.090,$0.0450,No,Dense,9B,9B,,
+openrouter,Google,google/gemma-3-4b-it,$0.040,$0.080,$0.0500,No,Dense,4B,4B,,
+openrouter,Google,google/gemma-3-12b-it,$0.040,$0.130,$0.0625,No,Dense,12B,12B,,
+openrouter,Google,google/gemma-3-27b-it,$0.080,$0.160,$0.1000,No,Dense,27B,27B,,
+openrouter,Google,google/gemma-4-26b-a4b-it,$0.130,$0.400,$0.1975,Yes,MoE,4B,26B,,
+openrouter,Google,google/gemma-4-31b-it,$0.140,$0.400,$0.2050,Yes,Dense,31B,31B,,
+openrouter,Meta,meta-llama/llama-3.1-8b-instruct,$0.020,$0.050,$0.0275,No,Dense,8B,8B,4.9,0.116
+openrouter,Meta,meta-llama/llama-3-8b-instruct,$0.030,$0.040,$0.0325,No,Dense,8B,8B,,
+openrouter,Meta,meta-llama/llama-3.2-1b-instruct,$0.027,$0.200,$0.0702,No,Dense,1B,1B,,
+openrouter,Meta,meta-llama/llama-3.2-3b-instruct,$0.051,$0.340,$0.1232,No,Dense,3B,3B,,
+openrouter,Meta,meta-llama/llama-4-scout,$0.080,$0.300,$0.1350,No,MoE,17B,109B,6.7,0.299
+openrouter,Meta,meta-llama/llama-3.3-70b-instruct,$0.100,$0.320,$0.1550,No,Dense,70B,70B,10.7,0.288
+openrouter,Meta,meta-llama/llama-4-maverick,$0.150,$0.600,$0.2625,No,MoE,17B,400B,15.6,0.397
+openrouter,Meta,meta-llama/llama-3.1-70b-instruct,$0.400,$0.400,$0.4000,No,Dense,70B,70B,,
+openrouter,Meta,meta-llama/llama-3-70b-instruct,$0.510,$0.740,$0.5675,No,Dense,70B,70B,,
+openrouter,Mistral,mistralai/mistral-nemo,$0.020,$0.040,$0.0250,No,Dense,12B,12B,,
+openrouter,Mistral,mistralai/mistral-small-3.1-24b-instruct,$0.030,$0.110,$0.0500,No,Dense,24B,24B,13.9,0.212
+openrouter,Mistral,mistralai/mistral-small-24b-instruct-2501,$0.050,$0.080,$0.0575,No,Dense,24B,24B,,
+openrouter,Mistral,mistralai/ministral-3b-2512,$0.100,$0.100,$0.1000,No,Dense,3B,3B,4.8,0.247
+openrouter,Mistral,mistralai/mistral-small-3.2-24b-instruct,$0.075,$0.200,$0.1062,No,Dense,24B,24B,13.3,0.275
+openrouter,Mistral,mistralai/mistral-7b-instruct-v0.1,$0.110,$0.190,$0.1300,No,Dense,7B,7B,,
+openrouter,Mistral,mistralai/mistral-small-creative,$0.100,$0.300,$0.1500,No,Dense,24B,24B,,
+openrouter,Mistral,mistralai/ministral-8b-2512,$0.150,$0.150,$0.1500,No,Dense,8B,8B,10.0,0.303
+openrouter,Mistral,mistralai/devstral-small,$0.100,$0.300,$0.1500,No,Dense,24B,24B,20.7,0.348
+openrouter,Mistral,mistralai/ministral-14b-2512,$0.200,$0.200,$0.2000,No,Dense,14B,14B,10.9,0.351
+openrouter,Mistral,mistralai/mistral-small-2603,$0.150,$0.600,$0.2625,Yes,Dense,24B,24B,24.3,
+openrouter,Mistral,mistralai/mistral-saba,$0.200,$0.600,$0.3000,No,Dense,24B,24B,,
+openrouter,Mistral,mistralai/codestral-2508,$0.300,$0.900,$0.4500,No,Dense,NA,NA,,
+openrouter,Mistral,mistralai/mixtral-8x7b-instruct,$0.540,$0.540,$0.5400,No,MoE,13B,47B,,0.066
+openrouter,Mistral,mistralai/mistral-large-2512,$0.500,$1.500,$0.7500,No,Dense,NA,123B,,
+openrouter,Mistral,mistralai/devstral-2512,$0.400,$2.000,$0.8000,No,Dense,NA,NA,,
+openrouter,Mistral,mistralai/mistral-medium-3.1,$0.400,$2.000,$0.8000,No,Dense,NA,NA,,
+openrouter,Mistral,mistralai/devstral-medium,$0.400,$2.000,$0.8000,No,Dense,NA,NA,,
+openrouter,Mistral,mistralai/mistral-medium-3,$0.400,$2.000,$0.8000,No,Dense,NA,NA,,
+openrouter,NVIDIA,nvidia/nemotron-nano-9b-v2,$0.040,$0.160,$0.0700,Yes,MoE,NA,9B,8.3,0.724
+openrouter,NVIDIA,nvidia/nemotron-3-nano-30b-a3b,$0.050,$0.200,$0.0875,Yes,MoE,3.5B,30B,19.0,0.741
+openrouter,NVIDIA,nvidia/llama-3.3-nemotron-super-49b-v1.5,$0.100,$0.400,$0.1750,Yes,MoE,NA,49B,15.2,0.737
+openrouter,NVIDIA,nvidia/nemotron-3-super-120b-a12b,$0.100,$0.500,$0.2000,Yes,MoE,12B,120B,31.2,
+openrouter,NVIDIA,nvidia/nemotron-nano-12b-v2-vl,$0.200,$0.600,$0.3000,Yes,MoE,NA,12B,,
+openrouter,NVIDIA,nvidia/llama-3.1-nemotron-ultra-253b-v1,$0.600,$1.800,$0.9000,Yes,MoE,NA,253B,13.1,0.641
+openrouter,OpenAI,openai/gpt-oss-20b,$0.030,$0.110,$0.0500,Effort levels,Dense,20B,20B,18.5,0.777
+openrouter,OpenAI,openai/gpt-oss-120b,$0.039,$0.190,$0.0767,Effort levels,MoE,NA,120B,28.6,0.878
+openrouter,Qwen,qwen/qwen2.5-coder-7b-instruct,$0.030,$0.090,$0.0450,No,Dense,7B,7B,,0.126
+openrouter,Qwen,qwen/qwen-2.5-7b-instruct,$0.040,$0.100,$0.0550,No,Dense,7B,7B,,
+openrouter,Qwen,qwen/qwen3.5-9b,$0.050,$0.150,$0.0750,Yes,Dense,9B,9B,25.3,
+openrouter,Qwen,qwen/qwen3-235b-a22b-2507,$0.071,$0.100,$0.0782,Effort levels,MoE,22B,235B,,
+openrouter,Qwen,qwen/qwen3-14b,$0.060,$0.240,$0.1050,Yes,Dense,14B,14B,,
+openrouter,Qwen,qwen/qwen3-32b,$0.080,$0.240,$0.1200,Yes,Dense,32B,32B,,
+openrouter,Qwen,qwen/qwen3-coder-30b-a3b-instruct,$0.070,$0.270,$0.1200,No,MoE,3B,30B,,
+openrouter,Qwen,qwen/qwen3-30b-a3b,$0.080,$0.280,$0.1300,Yes,MoE,3B,30B,,
+openrouter,Qwen,qwen/qwen3-8b,$0.050,$0.400,$0.1375,Yes,Dense,8B,8B,,
+openrouter,Qwen,qwen/qwen3-30b-a3b-instruct-2507,$0.090,$0.300,$0.1425,No,MoE,3B,30B,,
+openrouter,Qwen,qwen/qwen3-30b-a3b-thinking-2507,$0.080,$0.400,$0.1600,Yes,MoE,3B,30B,,
+openrouter,Qwen,qwen/qwen-2.5-72b-instruct,$0.120,$0.390,$0.1875,No,Dense,72B,72B,,
+openrouter,Qwen,qwen/qwq-32b,$0.150,$0.580,$0.2575,Yes,Dense,32B,32B,,0.631
+openrouter,Qwen,qwen/qwen3-next-80b-a3b-thinking,$0.098,$0.780,$0.2681,Yes,MoE,3B,80B,,
+openrouter,Qwen,qwen/qwen3-coder-next,$0.120,$0.750,$0.2775,No,MoE,NA,NA,,
+openrouter,Qwen,qwen/qwen3-next-80b-a3b-instruct,$0.090,$1.100,$0.3425,No,MoE,3B,80B,,
+openrouter,Qwen,qwen/qwen3-coder,$0.220,$1.000,$0.4150,No,MoE,NA,NA,,
+openrouter,Qwen,qwen/qwen3.5-35b-a3b,$0.163,$1.300,$0.4469,Yes,MoE,3B,35B,,
+openrouter,Qwen,qwen/qwen3-235b-a22b-thinking-2507,$0.150,$1.495,$0.4859,Yes,MoE,22B,235B,,
+openrouter,Qwen,qwen/qwen3.5-27b,$0.195,$1.560,$0.5363,Yes,Dense,27B,27B,,
+openrouter,Qwen,qwen/qwen3.5-122b-a10b,$0.260,$2.080,$0.7150,Yes,MoE,10B,122B,,
+openrouter,Qwen,qwen/qwen-2.5-coder-32b-instruct,$0.660,$1.000,$0.7450,No,Dense,32B,32B,,
+openrouter,Qwen,qwen/qwen3-235b-a22b,$0.455,$1.820,$0.7962,Yes,MoE,22B,235B,,
+openrouter,Qwen,qwen/qwen3.5-397b-a17b,$0.390,$2.340,$0.8775,Yes,MoE,17B,397B,,
+openrouter,Qwen,qwen/qwen3-max-thinking,$0.780,$3.900,$1.5600,Yes,MoE,NA,NA,,
+openrouter,Qwen,qwen/qwen3-max,$0.780,$3.900,$1.5600,No,MoE,NA,NA,,
+openrouter,StepFun,stepfun/step-3.5-flash,$0.100,$0.300,$0.1500,Yes,MoE,11B,196B,31.6,
+openrouter,Xiaomi,xiaomi/mimo-v2-flash,$0.090,$0.290,$0.1400,Yes,MoE,15B,309B,33.5,0.868
+openrouter,Xiaomi,xiaomi/mimo-v2-pro,$1.000,$3.000,$1.5000,Yes,Dense,NA,NA,,

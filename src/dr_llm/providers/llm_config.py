@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
-from dr_llm.providers.llm_request import LlmRequest
+from dr_llm.providers.effort import EffortSpec, validate_effort
+from dr_llm.providers.llm_request import LlmRequest, validate_max_tokens
 from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import ReasoningConfig
+from dr_llm.providers.reasoning import ReasoningSpec, validate_reasoning
 
 
 class LlmConfig(BaseModel):
@@ -15,7 +16,26 @@ class LlmConfig(BaseModel):
     temperature: float | None = None
     top_p: float | None = None
     max_tokens: int | None = None
-    reasoning: ReasoningConfig | None = None
+    effort: EffortSpec = EffortSpec.NA
+    reasoning: ReasoningSpec | None = None
+
+    @model_validator(mode="after")
+    def _validate_reasoning(self) -> LlmConfig:
+        validate_max_tokens(
+            provider=self.provider,
+            max_tokens=self.max_tokens,
+        )
+        validate_effort(
+            provider=self.provider,
+            model=self.model,
+            effort=self.effort,
+        )
+        validate_reasoning(
+            provider=self.provider,
+            model=self.model,
+            reasoning=self.reasoning,
+        )
+        return self
 
     def to_request(self, messages: list[Message]) -> LlmRequest:
         return LlmRequest(
@@ -25,5 +45,6 @@ class LlmConfig(BaseModel):
             temperature=self.temperature,
             top_p=self.top_p,
             max_tokens=self.max_tokens,
+            effort=self.effort,
             reasoning=self.reasoning,
         )

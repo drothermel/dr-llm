@@ -151,3 +151,51 @@ def test_file_exists_after_replace(store: FileCatalogStore, tmp_path: Path) -> N
         provider="openai", entries=[_entry("openai", "gpt-4.1")]
     )
     assert (tmp_path / "openai.json").exists()
+
+
+def test_read_filters_blacklisted_models(store: FileCatalogStore) -> None:
+    store.replace_provider_models(
+        provider="anthropic",
+        entries=[
+            _entry("anthropic", "claude-3-haiku-20240307"),
+            _entry("anthropic", "claude-haiku-4-5-20251001"),
+        ],
+    )
+
+    result = store.list_models(query=ModelCatalogQuery(provider="anthropic"))
+    assert [entry.model for entry in result] == ["claude-haiku-4-5-20251001"]
+    assert store.count_models(query=ModelCatalogQuery(provider="anthropic")) == 1
+    assert (
+        store.get_model(provider="anthropic", model="claude-3-haiku-20240307")
+        is None
+    )
+
+
+def test_read_filters_and_overrides_openrouter_models(store: FileCatalogStore) -> None:
+    store.replace_provider_models(
+        provider="openrouter",
+        entries=[
+            _entry(
+                "openrouter",
+                "deepseek/deepseek-chat-v3.1",
+                supports_reasoning=False,
+            ),
+            _entry(
+                "openrouter",
+                "deepseek/deepseek-chat",
+                supports_reasoning=True,
+            ),
+            _entry(
+                "openrouter",
+                "unknown/model",
+            ),
+        ],
+    )
+
+    result = store.list_models(query=ModelCatalogQuery(provider="openrouter"))
+    assert [entry.model for entry in result] == [
+        "deepseek/deepseek-chat-v3.1",
+        "deepseek/deepseek-chat",
+    ]
+    assert result[0].supports_reasoning is True
+    assert result[1].supports_reasoning is False

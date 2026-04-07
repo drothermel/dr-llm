@@ -6,6 +6,10 @@ from typing import Any
 from dr_llm.catalog.fetchers.common import api_key_from_env, get_json
 from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
 from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogPricing
+from dr_llm.providers.reasoning_capabilities import (
+    ReasoningCapabilities,
+    reasoning_capabilities_for_model,
+)
 
 
 def fetch_openai_compat_models(
@@ -31,11 +35,17 @@ def fetch_openai_compat_models(
         pricing = _parse_pricing(item.get("pricing"))
         supported_params = item.get("supported_parameters")
         supports_reasoning = None
+        reasoning_capabilities = reasoning_capabilities_for_model(
+            provider=adapter.name,
+            model=model_id,
+        )
         if isinstance(supported_params, list):
             normalized = {str(param) for param in supported_params}
             supports_reasoning = (
                 "reasoning" in normalized or "reasoning.effort" in normalized
             )
+            if supports_reasoning and reasoning_capabilities is None:
+                reasoning_capabilities = ReasoningCapabilities(mode="openai_effort")
         out.append(
             ModelCatalogEntry(
                 provider=adapter.name,
@@ -44,6 +54,7 @@ def fetch_openai_compat_models(
                 context_window=_as_int(item.get("context_length")),
                 max_output_tokens=_as_int(item.get("max_output_tokens")),
                 supports_reasoning=supports_reasoning,
+                reasoning_capabilities=reasoning_capabilities,
                 supports_vision=_detect_supports_vision(item),
                 pricing=pricing,
                 metadata=item,

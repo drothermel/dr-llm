@@ -7,9 +7,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.providers.anthropic.reasoning import AnthropicReasoningConfig
+from dr_llm.providers.anthropic.reasoning import (
+    AnthropicReasoningConfig,
+    KimiCodeReasoningConfig,
+    MiniMaxReasoningConfig,
+)
+from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.models import CallMode, Message, ReasoningWarning
+from dr_llm.providers.models import Message
+from dr_llm.providers.reasoning import ReasoningWarning
 
 
 class _AnthropicRequestTextBlock(BaseModel):
@@ -28,11 +34,12 @@ class AnthropicRequest(BaseModel):
     provider: str = Field(exclude=True)
     model: str
     messages: list[_AnthropicRequestMessage]
-    max_tokens: int
+    max_tokens: int | None = None
     system: str | None = None
     temperature: float | None = None
     top_p: float | None = None
     thinking: dict[str, Any] | None = None
+    output_config: dict[str, Any] | None = None
     base_url: str = Field(exclude=True)
     api_key: str = Field(exclude=True, repr=False)
     anthropic_version: str = Field(exclude=True)
@@ -44,11 +51,17 @@ class AnthropicRequest(BaseModel):
         request: LlmRequest,
         config: AnthropicConfig,
     ) -> AnthropicRequest:
-        reasoning_mapping = AnthropicReasoningConfig.from_base(
-            request.reasoning,
-            provider=request.provider,
-            mode=CallMode.api,
-            request_max_tokens=request.max_tokens,
+        if request.max_tokens is None:
+            if request.provider != "minimax":
+                raise ProviderSemanticError("anthropic requests require max_tokens")
+        if request.provider == "kimi-code":
+            reasoning_mapping = KimiCodeReasoningConfig.from_base(request.reasoning)
+        elif request.provider == "minimax":
+            reasoning_mapping = MiniMaxReasoningConfig.from_base(request.reasoning)
+        else:
+            reasoning_mapping = AnthropicReasoningConfig.from_base(request.reasoning)
+        output_config = (
+            {"effort": request.effort} if request.effort != EffortSpec.NA else None
         )
         system = "\n".join(
             message.content for message in request.messages if message.role == "system"
@@ -57,11 +70,12 @@ class AnthropicRequest(BaseModel):
             provider=request.provider,
             model=request.model,
             messages=cls._to_anthropic_messages(request.messages),
-            max_tokens=request.max_tokens or 1024,
+            max_tokens=request.max_tokens,
             system=system or None,
             temperature=request.temperature,
             top_p=request.top_p,
-            thinking=reasoning_mapping.to_payload() or None,
+            thinking=reasoning_mapping.thinking_payload() or None,
+            output_config=output_config,
             base_url=config.base_url,
             api_key=cls._resolve_api_key(config=config),
             anthropic_version=config.anthropic_version,

@@ -258,4 +258,20 @@ def parse_reasoning(
         reasoning_details = [
             item for item in reasoning_details_raw if isinstance(item, dict)
         ]
+    if reasoning_text is None:
+        content_raw = message_raw.get("content")
+        if isinstance(content_raw, list):
+            thinking_items = [
+                item
+                for item in content_raw
+                if isinstance(item, dict) and item.get("type") == "thinking"
+            ]
+            if thinking_items:
+                reasoning_chunks = [
+                    str(item.get("thinking")).strip()
+                    for item in thinking_items
+                    if _as_str(item.get("thinking")) is not None
+                ]
+                if reasoning_chunks:
+                    reasoning_text = "\n\n".join(reasoning_chunks)
     return reasoning_text, reasoning_details

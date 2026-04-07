@@ -18,6 +18,8 @@ from dr_llm.catalog.fetchers.static import (
 )
 from dr_llm.catalog.models import ModelCatalogEntry
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
+from dr_llm.providers.openrouter import openrouter_allowed_models
+from dr_llm.providers.openrouter.catalog import apply_openrouter_model_policies
 from dr_llm.providers import build_default_registry
 from dr_llm.providers.registry import ProviderRegistry
 
@@ -99,11 +101,7 @@ _GOOGLE_COMMON_MODELS = [
     ("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite"),
 ]
 
-_OPENROUTER_COMMON_MODELS = [
-    ("openai/o3-mini", "OpenAI o3-mini"),
-    ("openai/gpt-4.1", "OpenAI GPT-4.1"),
-    ("anthropic/claude-3.7-sonnet", "Anthropic Claude 3.7 Sonnet"),
-]
+_OPENROUTER_COMMON_MODELS = [(model_id, model_id) for model_id in openrouter_allowed_models()]
 
 _GLM_COMMON_MODELS = [
     ("glm-4.5", "GLM 4.5"),
@@ -114,8 +112,7 @@ _GLM_COMMON_MODELS = [
 STATIC_MODELS: dict[str, list[tuple[str, str]]] = {
     "codex": CODEX_MODELS,
     "claude-code": CLAUDE_CODE_MODELS,
-    "claude-code-minimax": MINIMAX_TEXT_MODELS,
-    "claude-code-kimi": KIMI_CODING_MODELS,
+    "kimi-code": KIMI_CODING_MODELS,
     "minimax": MINIMAX_TEXT_MODELS,
     "openrouter": _OPENROUTER_COMMON_MODELS,
     "openai": _OPENAI_COMMON_MODELS,
@@ -236,6 +233,7 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
     # Try live fetch
     try:
         entries, _raw = fetch_models_for_adapter(adapter)
+        entries = apply_openrouter_model_policies(entries)
     except (ProviderTransportError, ProviderSemanticError) as exc:
         # Fall back to static
         static = _static_models_for_provider(provider)
@@ -264,6 +262,7 @@ def sync_provider_models(provider: str, request: Request) -> SyncResultResponse:
 
     try:
         entries, _raw = fetch_models_for_adapter(adapter)
+        entries = apply_openrouter_model_policies(entries)
     except (ProviderTransportError, ProviderSemanticError) as exc:
         error_msg = f"{type(exc).__name__}: {exc}"
         static = _static_models_for_provider(provider)

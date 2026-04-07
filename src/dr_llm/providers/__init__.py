@@ -2,11 +2,9 @@ from dr_llm.providers.anthropic.adapter import AnthropicAdapter
 from dr_llm.providers.api_provider_config import APIProviderConfig
 from dr_llm.providers.google.adapter import GoogleAdapter
 from dr_llm.providers.headless.claude import ClaudeHeadlessAdapter
-from dr_llm.providers.headless.claude_presets import (
-    ClaudeHeadlessKimiAdapter,
-    ClaudeHeadlessMiniMaxAdapter,
-)
 from dr_llm.providers.headless.codex import CodexHeadlessAdapter
+from dr_llm.providers.kimi_code import KimiCodeAdapter
+from dr_llm.providers.minimax import MiniMaxAdapter
 from dr_llm.providers.openai_compat.adapter import OpenAICompatAdapter
 from dr_llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.providers.registry import ProviderRegistry
@@ -32,15 +30,7 @@ def build_default_registry() -> ProviderRegistry:
             ),
         )
     )
-    registry.register(
-        OpenAICompatAdapter(
-            config=OpenAICompatConfig(
-                name="minimax",
-                base_url="https://api.minimax.io/v1",
-                api_key_env="MINIMAX_API_KEY",
-            ),
-        )
-    )
+    registry.register(MiniMaxAdapter())
     registry.register(
         OpenAICompatAdapter(
             config=OpenAICompatConfig(
@@ -62,6 +52,5 @@ def build_default_registry() -> ProviderRegistry:
     )
     registry.register(CodexHeadlessAdapter())
     registry.register(ClaudeHeadlessAdapter())
-    registry.register(ClaudeHeadlessMiniMaxAdapter())
-    registry.register(ClaudeHeadlessKimiAdapter())
+    registry.register(KimiCodeAdapter())
     return registry

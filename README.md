@@ -48,6 +48,8 @@ uv run dr-llm models show --provider openai --model gpt-4.1
 ```
 
 Catalog data is cached locally at `~/.dr_llm/catalog_cache/`. No database required.
+Human-readable and JSON model listings also include the repo's curated blacklist,
+and OpenRouter listings are filtered through the local reasoning-policy allowlist.
 
 ## Available Providers
 
@@ -55,16 +57,15 @@ Catalog data is cached locally at `~/.dr_llm/catalog_cache/`. No database requir
 |---|---|---|
 | `openai` | OpenAI API | `OPENAI_API_KEY` |
 | `openrouter` | OpenRouter API | `OPENROUTER_API_KEY` |
-| `minimax` | MiniMax API | `MINIMAX_API_KEY` |
+| `minimax` | MiniMax Anthropic-compatible API | `MINIMAX_API_KEY` |
 | `anthropic` | Anthropic API | `ANTHROPIC_API_KEY` |
 | `google` | Google Gemini API | `GOOGLE_API_KEY` |
 | `glm` | GLM (ZAI) API | `ZAI_API_KEY` |
 | `codex` | Codex CLI (headless) | `codex` executable |
 | `claude-code` | Claude Code CLI (headless) | `claude` executable |
-| `claude-code-minimax` | Claude Code via MiniMax | `claude` + `MINIMAX_API_KEY` |
-| `claude-code-kimi` | Claude Code via Kimi | `claude` + `KIMI_API_KEY` |
+| `kimi-code` | Kimi Code API (Anthropic-compatible) | `KIMI_API_KEY` |
 
-Headless providers shell out to CLI tools. MiniMax/Kimi variants point Claude Code at third-party Anthropic-compatible endpoints.
+Headless providers shell out to CLI tools. `minimax` and `kimi-code` are direct Anthropic-compatible `/messages` API providers.
 
 Some providers use static model lists for `models sync` (no `/models` endpoint). The CLI notes when a list may be out of date and links to docs.
 
@@ -177,11 +178,14 @@ dr-llm providers [--json]
 # Model catalog (file-based, no DB needed)
 dr-llm models sync [--provider NAME] [--verbose]
 dr-llm models list [--provider NAME] [--supports-reasoning] [--model-contains TEXT] [--json]
+dr-llm models sync-list [--provider NAME] [--supports-reasoning] [--model-contains TEXT] [--json]
 dr-llm models show --provider NAME --model NAME
 
 # Query
 dr-llm query --provider NAME --model NAME --message TEXT [--no-record]
-dr-llm query --provider NAME --model NAME --reasoning-json '{"effort":"high"}' --message TEXT
+dr-llm query --provider openai --model gpt-5-mini --reasoning-json '{"kind":"openai","thinking_level":"high"}' --message TEXT
+dr-llm query --provider google --model gemini-2.5-flash --reasoning-json '{"kind":"google","thinking_level":"budget","budget_tokens":512}' --message TEXT
+dr-llm query --provider openrouter --model openai/gpt-oss-20b --reasoning-json '{"kind":"openrouter","effort":"high"}' --message TEXT
 
 # Runs (requires DB)
 dr-llm run start [--run-type TYPE] [--metadata-json JSON]
@@ -212,16 +216,15 @@ Generation transcript logging (default on):
 
 Provider endpoint defaults:
 - GLM: `https://api.z.ai/api/coding/paas/v4`
-- MiniMax API: `https://api.minimax.io/v1`
-- Claude headless MiniMax: `https://api.minimax.io/anthropic`
-- Claude headless Kimi: `https://api.kimi.com/coding/`
+- MiniMax API: `https://api.minimax.io/anthropic/v1/messages`
+- Kimi Code API: `https://api.kimi.com/coding/v1/messages`
 
 ## Testing
 
 ```bash
 uv run ruff format && uv run ruff check --fix .
 uv run ty check
-uv run pytest tests/ -v
+uv run pytest tests/ -v -m "not integration"
 ```
 
 ### Integration tests (requires Docker)
@@ -230,7 +233,7 @@ uv run pytest tests/ -v
 ./scripts/run-tests-local.sh
 ```
 
-Auto-creates a temporary Docker Postgres project, runs `pytest -m integration`, and destroys it on exit. Pass extra pytest args for targeted runs: `./scripts/run-tests-local.sh -k test_pool_fill`.
+`pytest` now defaults to `pytest-xdist`, so `uv run pytest tests/ -v -m "not integration"` runs the safe non-integration suite in parallel. `run-tests-local.sh` forces `-n 0`, auto-creates a temporary Docker Postgres project, runs `pytest -m integration`, and destroys it on exit. Pass extra pytest args for targeted runs: `./scripts/run-tests-local.sh -k test_pool_fill`.
 
 ## Demo Scripts
 
@@ -257,3 +260,27 @@ uv run python scripts/demo-pool-fill.py
 ```
 
 Auto-creates a Docker Postgres project, seeds a pending queue for an `(llm_config, prompt)` pool using `LlmConfig` and `Message` objects, starts workers that make real LLM calls via `make_llm_process_fn`, prints progress, shows response snippets, and destroys the project on exit. Pass `--dsn` to use an existing database instead. Run with `--help` for options.
+
+### Reasoning and effort demo (live API / CLI checks)
+
+```bash
+uv run python scripts/demo_thinking_and_effort.py
+```
+
+Exercises the branch's provider-specific reasoning and effort validation against
+curated model sets for OpenAI, OpenRouter, Google, Codex, Claude Code, MiniMax,
+and Kimi Code. Use `--provider` to limit the run to one provider.
+
+Reasoning configs are validated before dispatch. For example, OpenAI GPT-5
+family models use configs like `{"kind":"openai","thinking_level":"high"}`,
+Google 2.5 models accept budget configs like
+`{"kind":"google","thinking_level":"budget","budget_tokens":512}`, `minimax`
+requires `{"kind":"anthropic","thinking_level":"na"}` together with an explicit
+`--effort`, `kimi-code` uses Anthropic-compatible reasoning like
+`{"kind":"anthropic","thinking_level":"adaptive"}` together with an explicit
+`--effort` and `--max-tokens`, and OpenRouter reasoning-capable models use
+`{"kind":"openrouter", ...}` with either `enabled` or `effort` depending on the
+repo's curated model policy.
+
+See [`OPEN_ROUTER_REASONING_NOTES.md`](/Users/daniellerothermel/drotherm/repos/dr-llm/OPEN_ROUTER_REASONING_NOTES.md)
+for the direct API observations that informed the OpenRouter policy layer.

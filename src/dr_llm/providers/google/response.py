@@ -10,7 +10,8 @@ from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.providers.google.request import GoogleRequest
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.llm_response import LlmResponse
-from dr_llm.providers.models import CallMode, ReasoningWarning
+from dr_llm.providers.models import CallMode
+from dr_llm.providers.reasoning import ReasoningWarning
 from dr_llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
 
 
@@ -18,6 +19,7 @@ class _GooglePart(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     text: str | None = None
+    thought: bool | None = None
 
 
 class _GoogleContent(BaseModel):
@@ -133,7 +135,13 @@ class GoogleResponse(BaseModel):
     ) -> LlmResponse:
         candidate = self._validated_candidate()
         parts = candidate.content.parts if candidate.content else []
-        text_chunks = [part.text for part in parts if part.text]
+        text_chunks = [part.text for part in parts if part.text and not part.thought]
+        thought_chunks = [part.text for part in parts if part.text and part.thought]
+        thought_details = [
+            part.model_dump(mode="json", exclude_none=True)
+            for part in parts
+            if part.thought
+        ]
         usage_raw = (
             self.usageMetadata.model_dump(mode="json", exclude_none=True)
             if self.usageMetadata
@@ -153,7 +161,9 @@ class GoogleResponse(BaseModel):
             reasoning_tokens=reasoning_tokens,
         )
         raw_json = self.raw_json or {}
-        reasoning, reasoning_details = parse_reasoning(raw_json)
+        fallback_reasoning, fallback_reasoning_details = parse_reasoning(raw_json)
+        reasoning = "\n".join(thought_chunks) if thought_chunks else fallback_reasoning
+        reasoning_details = thought_details or fallback_reasoning_details
         return LlmResponse(
             text="\n".join(text_chunks),
             finish_reason=candidate.finishReason,

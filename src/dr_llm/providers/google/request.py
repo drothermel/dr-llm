@@ -9,15 +9,21 @@ from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.api_provider_config import APIProviderConfig
 from dr_llm.providers.google.reasoning import GoogleReasoningConfig
 from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.models import CallMode, Message, ReasoningWarning
+from dr_llm.providers.models import Message
+from dr_llm.providers.reasoning import ReasoningWarning
 
 
 class _GoogleGenerationConfig(BaseModel):
     temperature: float | None = None
     topP: float | None = None
     maxOutputTokens: int | None = None
+    thinkingConfig: _GoogleThinkingConfig | None = None
+
+
+class _GoogleThinkingConfig(BaseModel):
     thinkingBudget: int | None = None
     thinkingLevel: str | None = None
+    includeThoughts: bool | None = None
 
 
 class _GoogleRequestPart(BaseModel):
@@ -52,11 +58,7 @@ class GoogleRequest(BaseModel):
         request: LlmRequest,
         config: APIProviderConfig,
     ) -> GoogleRequest:
-        reasoning_mapping = GoogleReasoningConfig.from_base(
-            request.reasoning,
-            provider=request.provider,
-            mode=CallMode.api,
-        )
+        reasoning_mapping = GoogleReasoningConfig.from_base(request.reasoning)
         system = "\n".join(
             message.content for message in request.messages if message.role == "system"
         )
@@ -117,38 +119,22 @@ class GoogleRequest(BaseModel):
         request: LlmRequest,
         reasoning_payload: dict[str, Any],
     ) -> _GoogleGenerationConfig | None:
-        generation_config = _GoogleGenerationConfig()
-        has_generation_config = False
+        thinking_config = (
+            _GoogleThinkingConfig(**reasoning_payload) if reasoning_payload else None
+        )
         if (
             request.temperature is not None
             or request.top_p is not None
             or request.max_tokens is not None
+            or thinking_config is not None
         ):
-            generation_config = _GoogleGenerationConfig(
+            return _GoogleGenerationConfig(
                 temperature=request.temperature,
                 topP=request.top_p,
                 maxOutputTokens=request.max_tokens,
+                thinkingConfig=thinking_config,
             )
-            has_generation_config = True
-        if reasoning_payload:
-            generation_config = generation_config.model_copy(
-                update={
-                    "thinkingBudget": (
-                        int(reasoning_payload["thinkingBudget"])
-                        if "thinkingBudget" in reasoning_payload
-                        else generation_config.thinkingBudget
-                    ),
-                    "thinkingLevel": (
-                        str(reasoning_payload["thinkingLevel"])
-                        if "thinkingLevel" in reasoning_payload
-                        else generation_config.thinkingLevel
-                    ),
-                }
-            )
-            has_generation_config = True
-        if not has_generation_config:
-            return None
-        return generation_config
+        return None
 
     def endpoint(self) -> str:
         return f"{self.base_url}/models/{self.model}:generateContent"

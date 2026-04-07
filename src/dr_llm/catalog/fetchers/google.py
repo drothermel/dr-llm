@@ -7,6 +7,7 @@ from dr_llm.catalog.fetchers.common import api_key_from_env, get_json
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.providers.google.adapter import GoogleAdapter
 from dr_llm.catalog.models import ModelCatalogEntry
+from dr_llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
 
 
 def fetch_google_models(
@@ -46,6 +47,10 @@ def fetch_google_models(
                 context_window=_as_int(item.get("inputTokenLimit")),
                 max_output_tokens=_as_int(item.get("outputTokenLimit")),
                 supports_reasoning=supports_reasoning,
+                reasoning_capabilities=reasoning_capabilities_for_model(
+                    provider=adapter.name,
+                    model=model_name,
+                ),
                 supports_vision=supports_vision,
                 metadata=item,
                 fetched_at=now,

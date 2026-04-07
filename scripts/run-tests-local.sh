@@ -42,4 +42,4 @@ echo "Postgres ready at ${DSN}"
 trap cleanup EXIT
 
 echo "Running integration tests..."
-DR_LLM_TEST_DATABASE_URL="${DSN}" uv run pytest tests/ -v -m integration "$@"
+DR_LLM_TEST_DATABASE_URL="${DSN}" uv run pytest tests/ -v -m integration -n 0 "$@"

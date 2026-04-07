@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class CallMode(StrEnum):
@@ -16,22 +16,6 @@ class Message(BaseModel):
 
     role: Literal["system", "user", "assistant"]
     content: str
-
-
-class ReasoningWarningCode(StrEnum):
-    unsupported_for_provider = "unsupported_for_provider"
-    mapped_with_heuristic = "mapped_with_heuristic"
-    partially_supported = "partially_supported"
-
-
-class ReasoningWarning(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    code: ReasoningWarningCode
-    message: str
-    provider: str | None = None
-    mode: CallMode | None = None
-    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class CallError(BaseModel):

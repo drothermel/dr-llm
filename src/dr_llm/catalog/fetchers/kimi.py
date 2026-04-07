@@ -6,14 +6,19 @@ from typing import Any
 from dr_llm.catalog.fetchers.common import api_key_from_env, as_int, get_json
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.catalog.models import ModelCatalogEntry
+from dr_llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
 
 
 KIMI_CATALOG_URL = "https://api.kimi.com/coding/v1/models"
-KIMI_PROVIDER_NAME = "kimi"
+KIMI_PROVIDER_NAME = "kimi-code"
 
 
-def fetch_kimi_models() -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    key = api_key_from_env("KIMI_API_KEY")
+def fetch_kimi_models(
+    *,
+    api_key: str | None = None,
+    provider_name: str = KIMI_PROVIDER_NAME,
+) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+    key = api_key or api_key_from_env("KIMI_API_KEY")
     if not key:
         raise ProviderSemanticError("Missing KIMI_API_KEY for catalog sync")
     payload = get_json(
@@ -32,7 +37,7 @@ def fetch_kimi_models() -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
             continue
         out.append(
             ModelCatalogEntry(
-                provider=KIMI_PROVIDER_NAME,
+                provider=provider_name,
                 model=model_id,
                 display_name=str(item.get("display_name") or model_id),
                 context_window=as_int(item.get("context_length")),
@@ -41,6 +46,10 @@ def fetch_kimi_models() -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
                     bool(item.get("supports_reasoning"))
                     if item.get("supports_reasoning") is not None
                     else None
+                ),
+                reasoning_capabilities=reasoning_capabilities_for_model(
+                    provider=provider_name,
+                    model=model_id,
                 ),
                 supports_vision=True,
                 metadata=item,

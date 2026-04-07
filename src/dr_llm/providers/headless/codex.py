@@ -21,7 +21,6 @@ from dr_llm.providers.headless.base import (
 from dr_llm.providers.headless.config import HeadlessProviderConfig
 from dr_llm.providers.headless.reasoning import CodexHeadlessReasoningConfig
 from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.models import CallMode
 
 
 CODEX_DEFAULT_COMMAND = [
@@ -31,12 +30,12 @@ CODEX_DEFAULT_COMMAND = [
     "--skip-git-repo-check",
     "--sandbox",
     "read-only",
-    "--disable",
-    "web_search_request",
     "-c",
     "include_plan_tool=false",
     "-c",
     "project_doc_max_bytes=0",
+    "-c",
+    'web_search="disabled"',
 ]
 CODEX_PROMPT_SENTINEL = "-"
 CODEX_NEUTRAL_INSTRUCTIONS_CONTENT = "."
@@ -223,9 +222,11 @@ class CodexHeadlessAdapter(BaseHeadlessAdapter):
         payload: HeadlessRequestPayload,
         reasoning_mapping: HeadlessReasoningResult,
     ) -> list[str]:
-        del payload, reasoning_mapping
+        del payload
         command = [*self._config.command]
         command.extend(["-m", request.model])
+        if reasoning_mapping.cli_args:
+            command.extend(reasoning_mapping.cli_args)
         instructions_path = self._ensure_neutral_instructions_file()
         command.extend(
             [
@@ -237,11 +238,7 @@ class CodexHeadlessAdapter(BaseHeadlessAdapter):
         return command
 
     def reasoning_mapping(self, request: LlmRequest) -> HeadlessReasoningResult:
-        return CodexHeadlessReasoningConfig.from_base(
-            request.reasoning,
-            provider=request.provider,
-            mode=CallMode.headless,
-        )
+        return CodexHeadlessReasoningConfig.from_base(request.reasoning)
 
     def stdin_for_request(
         self,

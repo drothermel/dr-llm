@@ -6,6 +6,7 @@ from dr_llm.pool.pool_fill import seed_pending
 from dr_llm.pool.sample_store import PoolStore
 from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.models import Message
+from dr_llm.providers.reasoning import AnthropicReasoning, ThinkingLevel
 
 
 class _FakeSchema:
@@ -50,7 +51,12 @@ def test_dict_grid_stores_ids_in_key_values_and_values_in_payload() -> None:
     typed_store = cast(PoolStore, store)
 
     config_a = LlmConfig(provider="openai", model="gpt-4.1-mini")
-    config_b = LlmConfig(provider="anthropic", model="claude-sonnet-4-6-20250514")
+    config_b = LlmConfig(
+        provider="anthropic",
+        model="claude-sonnet-4-6-20250514",
+        max_tokens=256,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
+    )
     messages_x = [Message(role="user", content="Hello")]
     messages_y = [Message(role="user", content="Bye")]
 
