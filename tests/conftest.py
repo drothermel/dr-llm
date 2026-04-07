@@ -6,12 +6,12 @@ from typing import Any
 
 import pytest
 
-from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.llm_response import LlmResponse
-from dr_llm.providers.models import CallMode, Message
-from dr_llm.providers.provider_adapter import ProviderAdapter
-from dr_llm.providers.provider_config import ProviderConfig
-from dr_llm.providers.usage import TokenUsage
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.response import LlmResponse
+from dr_llm.llm.messages import CallMode, Message
+from dr_llm.llm.providers.base import Provider
+from dr_llm.llm.providers.config import ProviderConfig
+from dr_llm.llm.providers.usage import TokenUsage
 
 os.environ.setdefault(
     "DR_LLM_TEST_DATABASE_URL",
@@ -19,7 +19,7 @@ os.environ.setdefault(
 )
 
 
-class FakeAdapter(ProviderAdapter):
+class FakeProvider(Provider):
     def __init__(
         self,
         name: str = "fake",
@@ -62,5 +62,5 @@ def make_response(**overrides: Any) -> LlmResponse:
 
 
 @pytest.fixture
-def fake_adapter() -> FakeAdapter:
-    return FakeAdapter()
+def fake_adapter() -> FakeProvider:
+    return FakeProvider()

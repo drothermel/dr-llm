@@ -24,9 +24,9 @@ from dr_llm.pool.pending.threadsafe_worker_stats import (
 from dr_llm.pool.pending.utils import serialize_payload_value
 from dr_llm.pool.results import InsertResult
 from dr_llm.pool.sample_store import PoolStore
-from dr_llm.providers.llm_config import LlmConfig
-from dr_llm.providers.models import Message
-from dr_llm.providers.registry import ProviderRegistry
+from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -325,8 +325,8 @@ def make_llm_process_fn(
         messages = [Message(**m) for m in raw_messages]
         request = config.to_request(messages)
 
-        adapter = registry.get(request.provider)
-        response = adapter.generate(request)
+        model_provider = registry.get(request.provider)
+        response = model_provider.generate(request)
 
         call_id: str | None = None
         if recorder is not None:

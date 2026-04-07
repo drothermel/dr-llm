@@ -9,7 +9,7 @@ from dr_llm.pool.models import AcquireQuery, AcquireResult, PoolSample, SampleSt
 from dr_llm.pool.pending.models import PendingSample, PendingStatus, PendingStatusCounts
 from dr_llm.pool.pending.threadsafe_worker_stats import WorkerSnapshot
 from dr_llm.pool.results import InsertResult
-from dr_llm.providers.models import CallMode
+from dr_llm.llm.messages import CallMode
 
 
 def test_pool_sample_defaults() -> None:

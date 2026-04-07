@@ -18,7 +18,7 @@ import subprocess
 
 import typer
 
-from dr_llm.providers import build_default_registry
+from dr_llm.llm.providers.registry import build_default_registry
 
 app = typer.Typer()
 

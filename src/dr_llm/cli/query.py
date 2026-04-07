@@ -9,10 +9,10 @@ from pydantic import ValidationError
 
 from dr_llm.logging import emit_generation_event, generation_log_context
 from dr_llm.pool.db.repository import PoolDb
-from dr_llm.providers import build_default_registry
-from dr_llm.providers.effort import EffortSpec
-from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.reasoning import parse_reasoning_spec
+from dr_llm.llm.providers.effort import EffortSpec
+from dr_llm.llm.providers.registry import build_default_registry
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.providers.reasoning import parse_reasoning_spec
 
 from . import common
 
@@ -80,7 +80,7 @@ def query(
 
     registry = build_default_registry()
     try:
-        adapter = registry.get(provider)
+        model_provider = registry.get(provider)
         call_id = external_call_id or uuid4().hex
 
         repository: PoolDb | None = None
@@ -92,12 +92,12 @@ def query(
             "run_id": run_id,
             "provider": request.provider,
             "model": request.model,
-            "mode": adapter.mode,
+            "mode": model_provider.mode,
         }
         with generation_log_context(log_context):
             emit_generation_event(
                 event_type="llm_call.started",
-                stage="query.before_adapter",
+                stage="query.before_provider",
                 payload={
                     "request": request.model_dump(
                         mode="json",
@@ -107,11 +107,11 @@ def query(
                 },
             )
             try:
-                response = adapter.generate(request)
+                response = model_provider.generate(request)
             except Exception as exc:  # noqa: BLE001
                 emit_generation_event(
                     event_type="llm_call.failed",
-                    stage="query.adapter_exception",
+                    stage="query.provider_exception",
                     payload={
                         "error_type": type(exc).__name__,
                         "message": str(exc),
@@ -124,7 +124,7 @@ def query(
                             response=None,
                             run_id=run_id,
                             status="failed",
-                            mode=adapter.mode,
+                            mode=model_provider.mode,
                             error_text=str(exc),
                             external_call_id=external_call_id,
                             metadata=metadata,
@@ -141,7 +141,7 @@ def query(
 
             emit_generation_event(
                 event_type="llm_call.succeeded",
-                stage="query.after_adapter",
+                stage="query.after_provider",
                 payload={
                     "response": response.model_dump(
                         mode="json",
@@ -157,7 +157,7 @@ def query(
                         response=response,
                         run_id=run_id,
                         status="success",
-                        mode=adapter.mode,
+                        mode=model_provider.mode,
                         external_call_id=external_call_id,
                         metadata=metadata,
                         call_id=call_id,

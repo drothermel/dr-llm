@@ -35,10 +35,10 @@ from dr_llm.pool.pending.workers import (
 )
 from dr_llm.pool.sample_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
-from dr_llm.providers import build_default_registry
-from dr_llm.providers.llm_config import LlmConfig
-from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import GoogleReasoning, OpenAIReasoning, ThinkingLevel
+from dr_llm.llm.providers.registry import build_default_registry
+from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.reasoning import GoogleReasoning, OpenAIReasoning, ThinkingLevel
 
 app = typer.Typer()
 

@@ -19,32 +19,31 @@ from collections import defaultdict
 import typer
 from pydantic import BaseModel, ValidationError
 
-from dr_llm.catalog.fetchers.static import (
+from dr_llm.llm.catalog.fetchers.static import (
     CLAUDE_CODE_MODELS,
     KIMI_CODING_MODELS,
     MINIMAX_TEXT_MODELS,
 )
-from dr_llm.providers import build_default_registry
-from dr_llm.providers.anthropic.thinking import ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED
-from dr_llm.providers.effort import EffortSpec, supported_effort_levels
-from dr_llm.providers.headless.codex_thinking import (
+from dr_llm.llm.providers.anthropic.thinking import ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED
+from dr_llm.llm.providers.effort import EffortSpec, supported_effort_levels
+from dr_llm.llm.providers.headless.codex_thinking import (
     codex_supports_configurable_thinking,
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
 )
-from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.models import Message
-from dr_llm.providers.openrouter import (
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.openrouter.policy import (
     OpenRouterReasoningRequestStyle,
     openrouter_allowed_models,
     openrouter_model_policy,
 )
-from dr_llm.providers.openai_compat.thinking import (
+from dr_llm.llm.providers.openai_compat.thinking import (
     openai_supports_configurable_thinking,
     openai_supports_minimal_thinking,
     openai_supports_off_thinking,
 )
-from dr_llm.providers.reasoning import (
+from dr_llm.llm.providers.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
     GoogleReasoning,
@@ -53,8 +52,9 @@ from dr_llm.providers.reasoning import (
     ReasoningSpec,
     ThinkingLevel,
 )
-from dr_llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
-from dr_llm.providers.registry import ProviderRegistry
+from dr_llm.llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
+from dr_llm.llm.providers.registry import ProviderRegistry
+from dr_llm.llm.providers.registry import build_default_registry
 
 app = typer.Typer()
 
@@ -406,9 +406,9 @@ def run_attempt(
         print(f"  validation failure: {exc}")
         return
 
-    adapter = registry.get(provider)
+    model_provider = registry.get(provider)
     try:
-        response = adapter.generate(request)
+        response = model_provider.generate(request)
     except Exception as exc:  # noqa: BLE001
         summary.failed += 1
         print(f"  runtime failure: {type(exc).__name__}: {exc}")

@@ -10,10 +10,10 @@ from psycopg import sql
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.db.repository import PoolDb
 from dr_llm.pool.db.runtime import DbConfig
-from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.llm_response import LlmResponse
-from dr_llm.providers.models import CallMode, Message
-from dr_llm.providers.usage import TokenUsage
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.response import LlmResponse
+from dr_llm.llm.messages import CallMode, Message
+from dr_llm.llm.providers.usage import TokenUsage
 
 _TEST_TABLES = (
     "artifacts",

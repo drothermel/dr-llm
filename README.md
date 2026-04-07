@@ -74,9 +74,9 @@ Some providers use static model lists for `models sync` (no `/models` endpoint).
 ### Calling a provider
 
 ```python
-from dr_llm.providers import build_default_registry
-from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.models import Message
+from dr_llm.llm import build_default_registry
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.messages import Message
 
 registry = build_default_registry()
 adapter = registry.get("openai")
@@ -101,9 +101,9 @@ from dr_llm.pool import (
     make_llm_process_fn, seed_pending, start_workers,
 )
 from dr_llm.project.project_info import ProjectInfo
-from dr_llm.providers import build_default_registry
-from dr_llm.providers.llm_config import LlmConfig
-from dr_llm.providers.models import Message
+from dr_llm.llm import build_default_registry
+from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.messages import Message
 
 # 1. Create a Docker-managed Postgres project
 project = ProjectInfo.create_new("my_eval")

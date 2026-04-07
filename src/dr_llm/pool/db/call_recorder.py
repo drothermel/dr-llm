@@ -19,9 +19,9 @@ from dr_llm.pool.db.runtime import (
     hash_payload,
     is_retryable_db_error,
 )
-from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.llm_response import LlmResponse
-from dr_llm.providers.models import CallMode
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.response import LlmResponse
+from dr_llm.llm.messages import CallMode
 
 
 class CallRecorder:

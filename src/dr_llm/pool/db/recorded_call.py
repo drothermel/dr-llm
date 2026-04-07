@@ -6,8 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.providers.models import CallMode
-from dr_llm.providers.reasoning import ReasoningWarning
+from dr_llm.llm.messages import CallMode
+from dr_llm.llm.providers.reasoning import ReasoningWarning
 
 
 class RunStatus(StrEnum):

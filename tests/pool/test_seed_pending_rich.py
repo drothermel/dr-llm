@@ -4,9 +4,9 @@ from typing import Any, cast
 
 from dr_llm.pool.pending.workers import seed_pending
 from dr_llm.pool.sample_store import PoolStore
-from dr_llm.providers.llm_config import LlmConfig
-from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import AnthropicReasoning, ThinkingLevel
+from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.reasoning import AnthropicReasoning, ThinkingLevel
 
 
 class _FakeSchema:

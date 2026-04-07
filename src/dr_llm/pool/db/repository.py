@@ -5,9 +5,9 @@ from typing import Any
 from dr_llm.pool.db.call_recorder import CallRecorder
 from dr_llm.pool.db.recorded_call import RecordedCall, RunStatus
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.llm_response import LlmResponse
-from dr_llm.providers.models import CallMode
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.response import LlmResponse
+from dr_llm.llm.messages import CallMode
 
 
 def try_init_db_from_dsn(dsn: str | None = None) -> None:

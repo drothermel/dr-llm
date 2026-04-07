@@ -263,10 +263,10 @@ def test_seed_pending_rich_grid_with_workers(fill_store: PoolStore) -> None:
     from unittest.mock import MagicMock
 
     from dr_llm.pool.pending.workers import make_llm_process_fn, seed_pending
-    from dr_llm.providers.llm_config import LlmConfig
-    from dr_llm.providers.llm_response import LlmResponse
-    from dr_llm.providers.models import CallMode, Message
-    from dr_llm.providers.usage import TokenUsage
+    from dr_llm.llm.config import LlmConfig
+    from dr_llm.llm.response import LlmResponse
+    from dr_llm.llm.messages import CallMode, Message
+    from dr_llm.llm.providers.usage import TokenUsage
 
     # Use a fresh schema with llm_config/prompt columns
     fill_schema = PoolSchema(

@@ -8,13 +8,13 @@ from typer.testing import CliRunner
 
 import dr_llm.cli.query as query_cli
 from dr_llm.cli import app
-from dr_llm.providers.usage import TokenUsage
+from dr_llm.llm.providers.usage import TokenUsage
 from tests.conftest import make_response
 
 runner = CliRunner()
 
 
-class _FakeAdapter:
+class _FakeProvider:
     name = "openai"
     mode = "api"
 
@@ -28,8 +28,8 @@ class _FakeAdapter:
 
 
 class _FakeRegistry:
-    def get(self, name: str) -> _FakeAdapter:
-        return _FakeAdapter()
+    def get(self, name: str) -> _FakeProvider:
+        return _FakeProvider()
 
     def close(self) -> None:
         pass

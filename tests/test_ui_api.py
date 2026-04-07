@@ -3,15 +3,15 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from dr_llm.catalog.models import ModelCatalogEntry
-from dr_llm.providers.provider_config import ProviderConfig
-from dr_llm.providers.registry import ProviderRegistry
-from tests.conftest import FakeAdapter
+from dr_llm.llm.catalog.models import ModelCatalogEntry
+from dr_llm.llm.providers.config import ProviderConfig
+from dr_llm.llm.providers.registry import ProviderRegistry
+from tests.conftest import FakeProvider
 from ui.api import main as ui_api
 
 
 def test_providers_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    adapter = FakeAdapter(
+    adapter = FakeProvider(
         "fake-provider",
         config=ProviderConfig(name="fake-provider", supports_structured_output=True),
     )
@@ -39,14 +39,14 @@ def test_providers_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_openrouter_models_endpoint_applies_policy_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    adapter = FakeAdapter("openrouter", config=ProviderConfig(name="openrouter"))
+    adapter = FakeProvider("openrouter", config=ProviderConfig(name="openrouter"))
     registry = ProviderRegistry()
     registry.register(adapter)
     monkeypatch.setattr(ui_api, "build_default_registry", lambda: registry)
     monkeypatch.setattr(
         ui_api,
-        "fetch_models_for_adapter",
-        lambda _adapter: (
+        "fetch_models_for_provider",
+        lambda _provider: (
             [
                 ModelCatalogEntry(
                     provider="openrouter",
@@ -87,7 +87,7 @@ def test_openrouter_models_endpoint_applies_policy_filter(
 def test_openrouter_static_models_use_curated_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    adapter = FakeAdapter(
+    adapter = FakeProvider(
         "openrouter",
         config=ProviderConfig(name="openrouter", required_env_vars=["MISSING_TEST_ENV"]),
     )

@@ -3,9 +3,9 @@ from __future__ import annotations
 import runpy
 from pathlib import Path
 
-from dr_llm.providers.openrouter import openrouter_allowed_models
-from dr_llm.providers.effort import EffortSpec
-from dr_llm.providers.reasoning import (
+from dr_llm.llm.providers.openrouter.policy import openrouter_allowed_models
+from dr_llm.llm.providers.effort import EffortSpec
+from dr_llm.llm.providers.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
     GoogleReasoning,

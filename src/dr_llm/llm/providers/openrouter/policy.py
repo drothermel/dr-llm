@@ -1,0 +1,656 @@
+from __future__ import annotations
+
+from enum import StrEnum
+from typing import TYPE_CHECKING, Literal
+
+from pydantic import BaseModel, ConfigDict
+
+if TYPE_CHECKING:
+    from dr_llm.llm.catalog.models import ModelCatalogEntry
+
+OpenRouterEffortLevel = Literal["low", "medium", "high"]
+
+
+class OpenRouterReasoningRequestStyle(StrEnum):
+    NONE = "none"
+    ENABLED_FLAG = "enabled_flag"
+    EFFORT = "effort"
+
+
+class OpenRouterModelPolicy(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model: str
+    request_style: OpenRouterReasoningRequestStyle
+    supports_disable: bool
+    allowed_efforts: tuple[OpenRouterEffortLevel, ...] = ()
+    default_enabled: bool | None = None
+    verified: bool = False
+    notes: str | None = None
+
+
+OPENROUTER_MODEL_POLICIES: dict[str, OpenRouterModelPolicy] = {
+    "baidu/ernie-4.5-21b-a3b-thinking": OpenRouterModelPolicy(
+        model="baidu/ernie-4.5-21b-a3b-thinking",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=True,
+        verified=True,
+        notes="Live-tested: reasoning is required and enabled=false is rejected.",
+    ),
+    "baidu/ernie-4.5-21b-a3b": OpenRouterModelPolicy(
+        model="baidu/ernie-4.5-21b-a3b",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "baidu/ernie-4.5-300b-a47b": OpenRouterModelPolicy(
+        model="baidu/ernie-4.5-300b-a47b",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "bytedance-seed/seed-1.6-flash": OpenRouterModelPolicy(
+        model="bytedance-seed/seed-1.6-flash",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "bytedance-seed/seed-2.0-mini": OpenRouterModelPolicy(
+        model="bytedance-seed/seed-2.0-mini",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "bytedance-seed/seed-2.0-lite": OpenRouterModelPolicy(
+        model="bytedance-seed/seed-2.0-lite",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "bytedance-seed/seed-1.6": OpenRouterModelPolicy(
+        model="bytedance-seed/seed-1.6",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "deepseek/deepseek-v3.2": OpenRouterModelPolicy(
+        model="deepseek/deepseek-v3.2",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "deepseek/deepseek-chat-v3.1": OpenRouterModelPolicy(
+        model="deepseek/deepseek-chat-v3.1",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+        verified=True,
+        notes="Live-tested: boolean reasoning toggle works and enabled=false clears tracked reasoning.",
+    ),
+    "deepseek/deepseek-chat-v3-0324": OpenRouterModelPolicy(
+        model="deepseek/deepseek-chat-v3-0324",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "deepseek/deepseek-chat": OpenRouterModelPolicy(
+        model="deepseek/deepseek-chat",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+        verified=True,
+        notes="Live-tested: reasoning params are effectively ignored; no tracked reasoning channel is exposed.",
+    ),
+    "deepseek/deepseek-r1-distill-llama-70b": OpenRouterModelPolicy(
+        model="deepseek/deepseek-r1-distill-llama-70b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "deepseek/deepseek-r1-0528": OpenRouterModelPolicy(
+        model="deepseek/deepseek-r1-0528",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=True,
+        verified=True,
+        notes="Live-tested: reasoning is required and enabled=false is rejected.",
+    ),
+    "deepseek/deepseek-r1": OpenRouterModelPolicy(
+        model="deepseek/deepseek-r1",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=True,
+        verified=True,
+        notes="Live-tested: reasoning is required and enabled=false is rejected.",
+    ),
+    "meta-llama/llama-3.1-8b-instruct": OpenRouterModelPolicy(
+        model="meta-llama/llama-3.1-8b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+        verified=True,
+        notes="Live-tested: no tracked reasoning support was exposed.",
+    ),
+    "meta-llama/llama-3-8b-instruct": OpenRouterModelPolicy(
+        model="meta-llama/llama-3-8b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "meta-llama/llama-3.2-1b-instruct": OpenRouterModelPolicy(
+        model="meta-llama/llama-3.2-1b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "meta-llama/llama-3.2-3b-instruct": OpenRouterModelPolicy(
+        model="meta-llama/llama-3.2-3b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "meta-llama/llama-4-scout": OpenRouterModelPolicy(
+        model="meta-llama/llama-4-scout",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "meta-llama/llama-3.3-70b-instruct": OpenRouterModelPolicy(
+        model="meta-llama/llama-3.3-70b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "meta-llama/llama-4-maverick": OpenRouterModelPolicy(
+        model="meta-llama/llama-4-maverick",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "meta-llama/llama-3.1-70b-instruct": OpenRouterModelPolicy(
+        model="meta-llama/llama-3.1-70b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "meta-llama/llama-3-70b-instruct": OpenRouterModelPolicy(
+        model="meta-llama/llama-3-70b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/mistral-nemo": OpenRouterModelPolicy(
+        model="mistralai/mistral-nemo",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/mistral-small-3.1-24b-instruct": OpenRouterModelPolicy(
+        model="mistralai/mistral-small-3.1-24b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+        verified=True,
+        notes="Live-tested: no tracked reasoning support was exposed.",
+    ),
+    "mistralai/mistral-small-24b-instruct-2501": OpenRouterModelPolicy(
+        model="mistralai/mistral-small-24b-instruct-2501",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/ministral-3b-2512": OpenRouterModelPolicy(
+        model="mistralai/ministral-3b-2512",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/mistral-small-3.2-24b-instruct": OpenRouterModelPolicy(
+        model="mistralai/mistral-small-3.2-24b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/mistral-7b-instruct-v0.1": OpenRouterModelPolicy(
+        model="mistralai/mistral-7b-instruct-v0.1",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/mistral-small-creative": OpenRouterModelPolicy(
+        model="mistralai/mistral-small-creative",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/ministral-8b-2512": OpenRouterModelPolicy(
+        model="mistralai/ministral-8b-2512",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/devstral-small": OpenRouterModelPolicy(
+        model="mistralai/devstral-small",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/ministral-14b-2512": OpenRouterModelPolicy(
+        model="mistralai/ministral-14b-2512",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/mistral-small-2603": OpenRouterModelPolicy(
+        model="mistralai/mistral-small-2603",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+        verified=True,
+        notes="Live-tested: boolean reasoning toggle works.",
+    ),
+    "mistralai/mistral-saba": OpenRouterModelPolicy(
+        model="mistralai/mistral-saba",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/codestral-2508": OpenRouterModelPolicy(
+        model="mistralai/codestral-2508",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/mixtral-8x7b-instruct": OpenRouterModelPolicy(
+        model="mistralai/mixtral-8x7b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/mistral-large-2512": OpenRouterModelPolicy(
+        model="mistralai/mistral-large-2512",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/devstral-2512": OpenRouterModelPolicy(
+        model="mistralai/devstral-2512",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/mistral-medium-3.1": OpenRouterModelPolicy(
+        model="mistralai/mistral-medium-3.1",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/devstral-medium": OpenRouterModelPolicy(
+        model="mistralai/devstral-medium",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "mistralai/mistral-medium-3": OpenRouterModelPolicy(
+        model="mistralai/mistral-medium-3",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "nvidia/nemotron-nano-9b-v2": OpenRouterModelPolicy(
+        model="nvidia/nemotron-nano-9b-v2",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+        verified=True,
+        notes="Live-tested via the :free route: enabled=false still returned tracked reasoning, so route behavior may be inconsistent.",
+    ),
+    "nvidia/nemotron-3-nano-30b-a3b": OpenRouterModelPolicy(
+        model="nvidia/nemotron-3-nano-30b-a3b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5": OpenRouterModelPolicy(
+        model="nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "nvidia/nemotron-3-super-120b-a12b": OpenRouterModelPolicy(
+        model="nvidia/nemotron-3-super-120b-a12b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1": OpenRouterModelPolicy(
+        model="nvidia/llama-3.1-nemotron-ultra-253b-v1",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "openai/gpt-oss-20b": OpenRouterModelPolicy(
+        model="openai/gpt-oss-20b",
+        request_style=OpenRouterReasoningRequestStyle.EFFORT,
+        supports_disable=False,
+        allowed_efforts=("low", "medium", "high"),
+        default_enabled=True,
+        verified=True,
+        notes="Live-tested: accepts reasoning.effort=low|medium|high and rejects disable.",
+    ),
+    "openai/gpt-oss-120b": OpenRouterModelPolicy(
+        model="openai/gpt-oss-120b",
+        request_style=OpenRouterReasoningRequestStyle.EFFORT,
+        supports_disable=False,
+        allowed_efforts=("low", "medium", "high"),
+        default_enabled=True,
+        verified=True,
+        notes="Live-tested: accepts reasoning.effort=low|medium|high and rejects disable.",
+    ),
+    "qwen/qwen2.5-coder-7b-instruct": OpenRouterModelPolicy(
+        model="qwen/qwen2.5-coder-7b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "qwen/qwen-2.5-7b-instruct": OpenRouterModelPolicy(
+        model="qwen/qwen-2.5-7b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "qwen/qwen3.5-9b": OpenRouterModelPolicy(
+        model="qwen/qwen3.5-9b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen3-235b-a22b-2507": OpenRouterModelPolicy(
+        model="qwen/qwen3-235b-a22b-2507",
+        request_style=OpenRouterReasoningRequestStyle.EFFORT,
+        supports_disable=False,
+        allowed_efforts=("low", "medium", "high"),
+        default_enabled=True,
+    ),
+    "qwen/qwen3-14b": OpenRouterModelPolicy(
+        model="qwen/qwen3-14b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen3-32b": OpenRouterModelPolicy(
+        model="qwen/qwen3-32b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen3-coder-30b-a3b-instruct": OpenRouterModelPolicy(
+        model="qwen/qwen3-coder-30b-a3b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "qwen/qwen3-30b-a3b": OpenRouterModelPolicy(
+        model="qwen/qwen3-30b-a3b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen3-8b": OpenRouterModelPolicy(
+        model="qwen/qwen3-8b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen3-30b-a3b-instruct-2507": OpenRouterModelPolicy(
+        model="qwen/qwen3-30b-a3b-instruct-2507",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "qwen/qwen3-30b-a3b-thinking-2507": OpenRouterModelPolicy(
+        model="qwen/qwen3-30b-a3b-thinking-2507",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=True,
+        verified=True,
+        notes="Live-tested: reasoning is required and enabled=false is rejected.",
+    ),
+    "qwen/qwen-2.5-72b-instruct": OpenRouterModelPolicy(
+        model="qwen/qwen-2.5-72b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "qwen/qwq-32b": OpenRouterModelPolicy(
+        model="qwen/qwq-32b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen3-next-80b-a3b-thinking": OpenRouterModelPolicy(
+        model="qwen/qwen3-next-80b-a3b-thinking",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=True,
+        verified=True,
+        notes="Live-tested: reasoning is required and enabled=false is rejected.",
+    ),
+    "qwen/qwen3-coder-next": OpenRouterModelPolicy(
+        model="qwen/qwen3-coder-next",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "qwen/qwen3-next-80b-a3b-instruct": OpenRouterModelPolicy(
+        model="qwen/qwen3-next-80b-a3b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+        verified=True,
+        notes="Live-tested: no tracked reasoning support was exposed.",
+    ),
+    "qwen/qwen3-coder": OpenRouterModelPolicy(
+        model="qwen/qwen3-coder",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "qwen/qwen3.5-35b-a3b": OpenRouterModelPolicy(
+        model="qwen/qwen3.5-35b-a3b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen3-235b-a22b-thinking-2507": OpenRouterModelPolicy(
+        model="qwen/qwen3-235b-a22b-thinking-2507",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=True,
+        verified=True,
+        notes="Live-tested: reasoning is required and enabled=false is rejected.",
+    ),
+    "qwen/qwen3.5-27b": OpenRouterModelPolicy(
+        model="qwen/qwen3.5-27b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen3.5-122b-a10b": OpenRouterModelPolicy(
+        model="qwen/qwen3.5-122b-a10b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen-2.5-coder-32b-instruct": OpenRouterModelPolicy(
+        model="qwen/qwen-2.5-coder-32b-instruct",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "qwen/qwen3-235b-a22b": OpenRouterModelPolicy(
+        model="qwen/qwen3-235b-a22b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen3.5-397b-a17b": OpenRouterModelPolicy(
+        model="qwen/qwen3.5-397b-a17b",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen3-max-thinking": OpenRouterModelPolicy(
+        model="qwen/qwen3-max-thinking",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+    "qwen/qwen3-max": OpenRouterModelPolicy(
+        model="qwen/qwen3-max",
+        request_style=OpenRouterReasoningRequestStyle.NONE,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=False,
+    ),
+    "stepfun/step-3.5-flash": OpenRouterModelPolicy(
+        model="stepfun/step-3.5-flash",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=False,
+        allowed_efforts=(),
+        default_enabled=True,
+        verified=True,
+        notes="Live-tested: reasoning is required and enabled=false is rejected.",
+    ),
+    "xiaomi/mimo-v2-flash": OpenRouterModelPolicy(
+        model="xiaomi/mimo-v2-flash",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+        verified=True,
+        notes="Live-tested: boolean reasoning toggle works.",
+    ),
+    "xiaomi/mimo-v2-pro": OpenRouterModelPolicy(
+        model="xiaomi/mimo-v2-pro",
+        request_style=OpenRouterReasoningRequestStyle.ENABLED_FLAG,
+        supports_disable=True,
+        allowed_efforts=(),
+        default_enabled=None,
+    ),
+}
+
+
+def openrouter_model_policy(model: str) -> OpenRouterModelPolicy | None:
+    return OPENROUTER_MODEL_POLICIES.get(model)
+
+
+def openrouter_allowed_models() -> tuple[str, ...]:
+    return tuple(OPENROUTER_MODEL_POLICIES)
+
+
+def apply_openrouter_model_policies(
+    entries: list[ModelCatalogEntry],
+) -> list[ModelCatalogEntry]:
+    filtered: list[ModelCatalogEntry] = []
+    for entry in entries:
+        if entry.provider != "openrouter":
+            filtered.append(entry)
+            continue
+        policy = openrouter_model_policy(entry.model)
+        if policy is None:
+            continue
+        capabilities = _capabilities_for_policy(policy.request_style)
+        filtered.append(
+            entry.model_copy(
+                update={
+                    "supports_reasoning": capabilities.supports_reasoning,
+                    "reasoning_capabilities": capabilities,
+                }
+            )
+        )
+    return filtered
+
+
+def _capabilities_for_policy(
+    request_style: OpenRouterReasoningRequestStyle,
+):
+    from dr_llm.llm.providers.reasoning_capabilities import ReasoningCapabilities
+
+    if request_style == OpenRouterReasoningRequestStyle.ENABLED_FLAG:
+        return ReasoningCapabilities(mode="openrouter_toggle")
+    if request_style == OpenRouterReasoningRequestStyle.EFFORT:
+        return ReasoningCapabilities(mode="openrouter_effort")
+    return ReasoningCapabilities(mode="unsupported")
