@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from dr_llm.llm.providers.headless.codex import CodexHeadlessProvider
@@ -51,7 +51,7 @@ MINIMAX_TEXT_MODELS = [
 def fetch_static_headless_models(
     provider: CodexHeadlessProvider | ClaudeHeadlessProvider,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if isinstance(provider, CodexHeadlessProvider):
         source_meta = {"source": "static", "docs_url": CODEX_DOCS_URL}
         entries = [
@@ -95,7 +95,7 @@ def fetch_static_headless_models(
 def fetch_static_minimax_models(
     provider: Provider,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     source_meta = {"source": "static", "docs_url": MINIMAX_DOCS_URL}
     entries = [
         ModelCatalogEntry(

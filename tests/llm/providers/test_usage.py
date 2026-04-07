@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dr_llm.llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
 
 

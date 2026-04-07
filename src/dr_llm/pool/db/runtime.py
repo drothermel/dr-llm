@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Generator
 from contextlib import contextmanager
 from os import getenv
 from time import sleep
-from typing import Any, Generator
+from typing import Any
 
 import psycopg
 from psycopg import sql

@@ -135,6 +135,8 @@ def test_claude_command_includes_effort(monkeypatch: pytest.MonkeyPatch) -> None
 
     command = cast(list[str], captured["command"])
     assert command[command.index("--effort") + 1] == "high"
+
+
 def test_codex_rejects_reasoning_before_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
     stdout = "\n".join(
         [

@@ -28,7 +28,7 @@ class _FakeProvider:
 
 
 class _FakeRegistry:
-    def get(self, name: str) -> _FakeProvider:
+    def get(self, _name: str) -> _FakeProvider:
         return _FakeProvider()
 
     def close(self) -> None:

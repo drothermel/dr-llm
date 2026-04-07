@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -34,7 +34,7 @@ def fetch_anthropic_models(
     payload = get_json(url=models_url, headers=headers)
     items_raw = payload.get("data")
     items = items_raw if isinstance(items_raw, list) else []
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     out: list[ModelCatalogEntry] = []
     for item in items:
         if not isinstance(item, dict):

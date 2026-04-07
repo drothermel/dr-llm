@@ -53,8 +53,7 @@ from dr_llm.llm.providers.reasoning import (
     ThinkingLevel,
 )
 from dr_llm.llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
-from dr_llm.llm.providers.registry import ProviderRegistry
-from dr_llm.llm.providers.registry import build_default_registry
+from dr_llm.llm.providers.registry import ProviderRegistry, build_default_registry
 
 app = typer.Typer()
 

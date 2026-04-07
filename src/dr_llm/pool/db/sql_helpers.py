@@ -33,7 +33,10 @@ def is_constraint_error(exc: BaseException) -> bool:
 def parse_json_field(raw: Any) -> dict[str, Any]:
     if isinstance(raw, dict):
         return raw
-    return json.loads(raw or "{}")
+    try:
+        return json.loads(raw or "{}")
+    except json.JSONDecodeError as err:
+        raise ValueError(f"Invalid JSON in parse_json_field: {raw!r}") from err
 
 
 def validate_key_values(schema: PoolSchema, key_values: dict[str, Any]) -> None:

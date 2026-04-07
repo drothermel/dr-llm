@@ -20,7 +20,7 @@ class LlmConfig(BaseModel):
     reasoning: ReasoningSpec | None = None
 
     @model_validator(mode="after")
-    def _validate_reasoning(self) -> LlmConfig:
+    def _validate_generation_params(self) -> LlmConfig:
         validate_max_tokens(
             provider=self.provider,
             max_tokens=self.max_tokens,

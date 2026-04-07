@@ -14,6 +14,23 @@ from dr_llm.llm.providers.reasoning import (
 )
 
 
+def _require_anthropic_api_budget_tokens(
+    budget_tokens: int | None, *, label: str
+) -> int:
+    """Validate tokens for Anthropic-style thinking payloads (strictly positive int)."""
+    if budget_tokens is None:
+        raise ValueError(
+            f"{label} budget thinking requires budget_tokens when thinking_level is 'budget'"
+        )
+    if type(budget_tokens) is not int:
+        raise ValueError(
+            f"{label} budget_tokens must be int, got {type(budget_tokens).__name__}"
+        )
+    if budget_tokens <= 0:
+        raise ValueError(f"{label} budget_tokens must be > 0")
+    return budget_tokens
+
+
 class AnthropicReasoningConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -37,8 +54,10 @@ class AnthropicReasoningConfig(BaseModel):
             ):
                 thinking: dict[str, Any] = {}
                 if thinking_level == ThinkingLevel.BUDGET:
-                    assert budget_tokens is not None
-                    thinking = {"type": "enabled", "budget_tokens": budget_tokens}
+                    tokens = _require_anthropic_api_budget_tokens(
+                        budget_tokens, label="anthropic"
+                    )
+                    thinking = {"type": "enabled", "budget_tokens": tokens}
                 elif thinking_level == ThinkingLevel.ADAPTIVE:
                     thinking = {"type": "adaptive"}
                 if display is not None:
@@ -90,8 +109,10 @@ class KimiCodeReasoningConfig(BaseModel):
                 budget_tokens=budget_tokens,
                 display=None,
             ):
-                assert budget_tokens is not None
-                return cls(thinking={"type": "enabled", "budget_tokens": budget_tokens})
+                tokens = _require_anthropic_api_budget_tokens(
+                    budget_tokens, label="kimi-code"
+                )
+                return cls(thinking={"type": "enabled", "budget_tokens": tokens})
             case _:
                 raise ProviderSemanticError(
                     f"kimi-code reasoning serializer received unsupported config kind={config.kind!r}"

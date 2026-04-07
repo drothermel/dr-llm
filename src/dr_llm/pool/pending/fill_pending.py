@@ -103,15 +103,15 @@ def _build_pending_samples(
     for combination in product(*grid_keys):
         key_values = dict(zip(column_names, combination, strict=True))
         payload = _build_payload(key_values=key_values, rich_columns=rich_columns)
-        for sample_idx in range(n):
-            samples.append(
-                PendingSample(
-                    key_values=key_values,
-                    sample_idx=sample_idx,
-                    payload=payload,
-                    priority=priority,
-                )
+        samples.extend(
+            PendingSample(
+                key_values=key_values,
+                sample_idx=sample_idx,
+                payload=payload,
+                priority=priority,
             )
+            for sample_idx in range(n)
+        )
     return samples
 
 
@@ -144,7 +144,6 @@ def _insert_pending_samples(
 ) -> InsertResult:
     inserted = 0
     skipped = 0
-    failed = 0
 
     for sample in samples:
         did_insert = store.pending.insert_pending(sample, ignore_conflicts=True)
@@ -153,4 +152,4 @@ def _insert_pending_samples(
         else:
             skipped += 1
 
-    return InsertResult(inserted=inserted, skipped=skipped, failed=failed)
+    return InsertResult(inserted=inserted, skipped=skipped, failed=0)

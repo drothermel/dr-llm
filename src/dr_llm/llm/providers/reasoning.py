@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Annotated, Literal, cast
+from typing import Any, Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -440,7 +440,18 @@ def _validate_anthropic_reasoning(
                 raise ValueError(
                     f"anthropic budget thinking is not supported for model={model!r}"
                 )
-            assert budget_tokens is not None
+            if budget_tokens is None:
+                raise ValueError(
+                    "anthropic budget thinking requires budget_tokens when "
+                    "thinking_level is 'budget'"
+                )
+            if type(budget_tokens) is not int:
+                raise ValueError(
+                    "anthropic budget_tokens must be int, got "
+                    f"{type(budget_tokens).__name__}"
+                )
+            if budget_tokens <= 0:
+                raise ValueError("anthropic budget_tokens must be > 0")
             _validate_anthropic_budget_range(
                 provider=provider,
                 model=model,
@@ -640,7 +651,18 @@ def _validate_google_reasoning(
                 f"google dynamic thinking is not supported for model={model!r}"
             )
         if thinking_level == ThinkingLevel.BUDGET:
-            assert budget_tokens is not None
+            if budget_tokens is None:
+                raise ValueError(
+                    "google budget thinking requires budget_tokens when "
+                    "thinking_level is 'budget'"
+                )
+            if type(budget_tokens) is not int:
+                raise ValueError(
+                    "google budget_tokens must be int, got "
+                    f"{type(budget_tokens).__name__}"
+                )
+            if budget_tokens < 0:
+                raise ValueError("google budget_tokens must be >= 0")
             _validate_budget_range(
                 provider=provider,
                 model=model,
@@ -728,15 +750,12 @@ def _validate_allowed_thinking_levels(
 
 
 def _google_literal_to_thinking_level(level: str) -> ThinkingLevel:
-    return cast(
-        ThinkingLevel,
-        {
-            "minimal": ThinkingLevel.MINIMAL,
-            "low": ThinkingLevel.LOW,
-            "medium": ThinkingLevel.MEDIUM,
-            "high": ThinkingLevel.HIGH,
-        }[level],
-    )
+    return {
+        "minimal": ThinkingLevel.MINIMAL,
+        "low": ThinkingLevel.LOW,
+        "medium": ThinkingLevel.MEDIUM,
+        "high": ThinkingLevel.HIGH,
+    }[level]
 
 
 def _requires_explicit_reasoning(

@@ -18,7 +18,7 @@ TBackendState = TypeVar("TBackendState", bound=BaseModel)
 class ThreadsafeWorkerStats(Generic[TBackendState]):
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._counts: dict[WorkerStatKey, int] = {key: 0 for key in WORKER_STAT_KEYS}
+        self._counts: dict[WorkerStatKey, int] = dict.fromkeys(WORKER_STAT_KEYS, 0)
 
     def incr(self, key: WorkerStatKey, amount: int = 1) -> None:
         with self._lock:

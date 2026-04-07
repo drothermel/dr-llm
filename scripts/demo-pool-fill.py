@@ -27,7 +27,11 @@ import typer
 
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import Message
-from dr_llm.llm.providers.reasoning import GoogleReasoning, OpenAIReasoning, ThinkingLevel
+from dr_llm.llm.providers.reasoning import (
+    GoogleReasoning,
+    OpenAIReasoning,
+    ThinkingLevel,
+)
 from dr_llm.llm.providers.registry import build_default_registry
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
@@ -65,13 +69,17 @@ LLM_CONFIGS: dict[str, LlmConfig] = {
 
 PROMPTS: dict[str, list[Message]] = {
     "haiku": [Message(role="user", content="Write a haiku about programming.")],
-    "math": [Message(role="user", content="What is 17 * 23? Reply with just the number.")],
+    "math": [
+        Message(role="user", content="What is 17 * 23? Reply with just the number.")
+    ],
 }
 
 
 def _print_progress(snapshot: WorkerSnapshot[PoolPendingBackendState]) -> None:
-    assert snapshot.backend_state is not None
-    counts = snapshot.backend_state.status_counts
+    backend_state = snapshot.backend_state
+    if backend_state is None:
+        return
+    counts = backend_state.status_counts
     worker_counts = snapshot.counts
     print(
         "Progress: "
@@ -83,7 +91,9 @@ def _print_progress(snapshot: WorkerSnapshot[PoolPendingBackendState]) -> None:
     )
 
 
-def _run_demo(dsn: str, pool_name: str, num_workers: int, samples_per_cell: int) -> None:
+def _run_demo(
+    dsn: str, pool_name: str, num_workers: int, samples_per_cell: int
+) -> None:
     schema = PoolSchema(
         name=pool_name,
         key_columns=[KeyColumn(name="llm_config"), KeyColumn(name="prompt")],
@@ -127,7 +137,9 @@ def _run_demo(dsn: str, pool_name: str, num_workers: int, samples_per_cell: int)
             while True:
                 snapshot = controller.snapshot()
                 worker_counts = snapshot.counts
-                assert snapshot.backend_state is not None
+                if snapshot.backend_state is None:
+                    time.sleep(0.1)
+                    continue
                 current_progress = (
                     worker_counts.claimed,
                     worker_counts.completed,
@@ -193,7 +205,9 @@ def main(
     ] = 2,
     samples_per_cell: Annotated[
         int,
-        typer.Option(help="Number of samples to queue for each (llm_config, prompt) cell."),
+        typer.Option(
+            help="Number of samples to queue for each (llm_config, prompt) cell."
+        ),
     ] = 1,
 ) -> None:
     if dsn is not None:

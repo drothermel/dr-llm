@@ -10,7 +10,7 @@ from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import CallMode, Message
 from dr_llm.llm.providers.usage import TokenUsage
 from dr_llm.llm.response import LlmResponse
-import dr_llm.pool.llm_pool_adapter as llm_pool_adapter
+from dr_llm.pool import llm_pool_adapter
 from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
 from dr_llm.pool.pending.pending_sample import PendingSample
 

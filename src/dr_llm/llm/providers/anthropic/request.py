@@ -51,9 +51,8 @@ class AnthropicRequest(BaseModel):
         request: LlmRequest,
         config: AnthropicConfig,
     ) -> AnthropicRequest:
-        if request.max_tokens is None:
-            if request.provider != "minimax":
-                raise ProviderSemanticError("anthropic requests require max_tokens")
+        if request.max_tokens is None and request.provider != "minimax":
+            raise ProviderSemanticError("anthropic requests require max_tokens")
         if request.provider == "kimi-code":
             reasoning_mapping = KimiCodeReasoningConfig.from_base(request.reasoning)
         elif request.provider == "minimax":

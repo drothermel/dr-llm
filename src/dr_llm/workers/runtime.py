@@ -5,7 +5,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
-from typing import TypeVar
+from typing import Any, ContextManager, TypeVar
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -80,7 +80,7 @@ def run_workers_forever(
         logger.info("Stopping workers on keyboard interrupt")
     finally:
         controller.stop()
-    return controller.join()
+        return controller.join()
 
 
 def run_workers(
@@ -152,7 +152,7 @@ def _process_context(
     backend: WorkerBackend[TWorkItem, TResult, TBackendState],
     item: TWorkItem,
     worker_id: str,
-):
+) -> ContextManager[Any]:
     process_context = getattr(backend, "process_context", None)
     if process_context is None:
         return nullcontext()

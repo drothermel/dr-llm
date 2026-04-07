@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Any
 from uuid import uuid4
 
 from pydantic import (

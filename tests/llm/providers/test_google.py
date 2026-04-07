@@ -8,8 +8,13 @@ import pytest
 from dr_llm.errors import ProviderTransportError
 from dr_llm.llm.providers.api_config import APIProviderConfig
 from dr_llm.llm.providers.google.provider import GoogleProvider
+from dr_llm.llm.providers.google.request import GoogleRequest
 from dr_llm.llm.messages import Message
-from dr_llm.llm.providers.reasoning import GoogleReasoning, ReasoningBudget, ThinkingLevel
+from dr_llm.llm.providers.reasoning import (
+    GoogleReasoning,
+    ReasoningBudget,
+    ThinkingLevel,
+)
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 
@@ -22,7 +27,11 @@ _GOOGLE_CONFIG = APIProviderConfig(
 
 _MOCK_RESPONSE = {
     "candidates": [{"content": {"parts": [{"text": "done"}]}, "finishReason": "STOP"}],
-    "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 2, "totalTokenCount": 3},
+    "usageMetadata": {
+        "promptTokenCount": 1,
+        "candidatesTokenCount": 2,
+        "totalTokenCount": 3,
+    },
 }
 _THOUGHT_RESPONSE = {
     "candidates": [
@@ -36,8 +45,24 @@ _THOUGHT_RESPONSE = {
             "finishReason": "STOP",
         }
     ],
-    "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 2, "totalTokenCount": 3},
+    "usageMetadata": {
+        "promptTokenCount": 1,
+        "candidatesTokenCount": 2,
+        "totalTokenCount": 3,
+    },
 }
+
+
+def test_rejects_unsupported_message_role() -> None:
+    """model_construct can bypass validation; unsupported roles must not be dropped silently."""
+    tool_msg = Message.model_construct(role="tool", content="tool output")
+    request = make_request(
+        provider="google",
+        model="gemini-test",
+        messages=[tool_msg],
+    )
+    with pytest.raises(ValueError, match="Unsupported Message.role.*'tool'"):
+        GoogleRequest.from_llm_request(request, _GOOGLE_CONFIG)
 
 
 def test_payload_serializes_messages() -> None:

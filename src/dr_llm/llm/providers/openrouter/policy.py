@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
     from dr_llm.llm.catalog.models import ModelCatalogEntry
+    from dr_llm.llm.providers.reasoning_capabilities import ReasoningCapabilities
 
 OpenRouterEffortLevel = Literal["low", "medium", "high"]
 
@@ -646,7 +647,8 @@ def apply_openrouter_model_policies(
 
 def _capabilities_for_policy(
     request_style: OpenRouterReasoningRequestStyle,
-):
+) -> ReasoningCapabilities:
+    # Local import avoids circular import (reasoning_capabilities imports this module).
     from dr_llm.llm.providers.reasoning_capabilities import ReasoningCapabilities
 
     if request_style == OpenRouterReasoningRequestStyle.ENABLED_FLAG:

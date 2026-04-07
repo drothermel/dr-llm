@@ -11,7 +11,7 @@ from dr_llm.llm.providers.reasoning_capabilities import ReasoningCapabilities
 class ModelCatalogPricing(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    currency: str | None = "USD"
+    currency: str = "USD"
     input_cost_per_1m: float | None = None
     output_cost_per_1m: float | None = None
     reasoning_cost_per_1m: float | None = None

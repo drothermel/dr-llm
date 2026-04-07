@@ -4,7 +4,7 @@ import threading
 import time
 from contextlib import contextmanager, nullcontext
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -240,12 +240,16 @@ def test_retry_then_success() -> None:
     assert snapshot.backend_state.failed == 0
 
 
+def _raise_runtime_boom(_item: str) -> NoReturn:
+    raise RuntimeError("boom")
+
+
 def test_retry_then_fail() -> None:
     backend = FakeWorkerBackend(["always-fail"], max_retries=1)
 
     controller = start_workers(
         backend,
-        process_fn=lambda _item: (_ for _ in ()).throw(RuntimeError("boom")),
+        process_fn=_raise_runtime_boom,
         config=WorkerConfig(
             num_workers=1,
             min_poll_interval_s=0.01,

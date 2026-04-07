@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dr_llm.llm.providers.thinking_utils import matches_family
+
 CODEX_THINKING_SUPPORTED_MODELS = [
     "gpt-5",
     "gpt-5.1",
@@ -28,34 +30,18 @@ CODEX_OFF_THINKING_SUPPORTED_MODELS = [
 
 
 def codex_supports_configurable_thinking(model: str) -> bool:
-    return _matches_family(normalized=model, families=CODEX_THINKING_SUPPORTED_MODELS)
+    return matches_family(normalized=model, families=CODEX_THINKING_SUPPORTED_MODELS)
 
 
 def codex_supports_minimal_thinking(model: str) -> bool:
-    return _matches_family(
+    return matches_family(
         normalized=model,
         families=CODEX_MINIMAL_THINKING_SUPPORTED_MODELS,
     )
 
 
 def codex_supports_off_thinking(model: str) -> bool:
-    return _matches_family(
+    return matches_family(
         normalized=model,
         families=CODEX_OFF_THINKING_SUPPORTED_MODELS,
     )
-
-
-def _matches_family(*, normalized: str, families: list[str]) -> bool:
-    return any(
-        normalized == family
-        or _is_snapshot_of_family(normalized=normalized, family=family)
-        for family in families
-    )
-
-
-def _is_snapshot_of_family(*, normalized: str, family: str) -> bool:
-    prefix = f"{family}-"
-    if not normalized.startswith(prefix):
-        return False
-    suffix = normalized[len(prefix) :]
-    return bool(suffix) and suffix[0].isdigit()

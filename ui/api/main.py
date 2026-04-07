@@ -101,7 +101,9 @@ _GOOGLE_COMMON_MODELS = [
     ("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite"),
 ]
 
-_OPENROUTER_COMMON_MODELS = [(model_id, model_id) for model_id in openrouter_allowed_models()]
+_OPENROUTER_COMMON_MODELS = [
+    (model_id, model_id) for model_id in openrouter_allowed_models()
+]
 
 _GLM_COMMON_MODELS = [
     ("glm-4.5", "GLM 4.5"),
@@ -215,8 +217,10 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
     registry = _get_registry(request.app)
     try:
         model_provider = registry.get(provider)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+    except KeyError as err:
+        raise HTTPException(
+            status_code=404, detail=f"Unknown provider: {provider}"
+        ) from err
 
     # Check if provider is available (has required env vars / executables)
     is_available = registry.availability_status(provider).available
@@ -257,8 +261,10 @@ def sync_provider_models(provider: str, request: Request) -> SyncResultResponse:
     registry = _get_registry(request.app)
     try:
         model_provider = registry.get(provider)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+    except KeyError as err:
+        raise HTTPException(
+            status_code=404, detail=f"Unknown provider: {provider}"
+        ) from err
 
     try:
         entries, _raw = fetch_models_for_provider(model_provider)

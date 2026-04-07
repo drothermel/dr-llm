@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from dr_llm.llm.catalog.fetchers.common import api_key_from_env, as_int, get_json
@@ -27,7 +27,7 @@ def fetch_kimi_models(
     )
     items_raw = payload.get("data")
     items = items_raw if isinstance(items_raw, list) else []
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     out: list[ModelCatalogEntry] = []
     for item in items:
         if not isinstance(item, dict):

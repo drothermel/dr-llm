@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 from uuid import uuid4
 
 from pydantic import (
@@ -74,6 +75,12 @@ class PendingSample(BaseModel):
         return cols
 
     def to_db_insert_row(self, schema: PoolSchema) -> dict[str, Any]:
+        missing = [kc for kc in schema.key_column_names if kc not in self.key_values]
+        if missing:
+            raise ValueError(
+                "PendingSample.key_values must include all schema key columns "
+                f"{list(schema.key_column_names)!r}; missing: {missing!r}"
+            )
         dumped = self.model_dump(
             by_alias=True,
             exclude={"worker_id", "lease_expires_at", "attempt_count", "created_at"},

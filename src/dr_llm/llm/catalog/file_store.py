@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -73,17 +74,25 @@ class FileCatalogStore:
                 return entry
         return None
 
+    def _load_from_paths(self, paths: Path | Sequence[Path]) -> list[ModelCatalogEntry]:
+        path_list = [paths] if isinstance(paths, Path) else list(paths)
+        entries: list[ModelCatalogEntry] = []
+        for path in path_list:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                chunk = [ModelCatalogEntry(**item) for item in data]
+                entries.extend(
+                    apply_openrouter_model_policies(filter_blacklisted_entries(chunk))
+                )
+            except (OSError, json.JSONDecodeError, ValidationError) as exc:
+                logger.warning("Skipping corrupt catalog cache %s: %s", path, exc)
+        return entries
+
     def _load_provider(self, provider: str) -> list[ModelCatalogEntry]:
         path = self._cache_dir / f"{provider}.json"
         if not path.exists():
             return []
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            entries = [ModelCatalogEntry(**item) for item in data]
-            return apply_openrouter_model_policies(filter_blacklisted_entries(entries))
-        except (OSError, json.JSONDecodeError, ValidationError) as exc:
-            logger.warning("Skipping corrupt catalog cache %s: %s", path, exc)
-            return []
+        return self._load_from_paths(path)
 
     def _load_all(
         self, *, provider_filter: str | None = None
@@ -92,19 +101,7 @@ class FileCatalogStore:
             return []
         if provider_filter is not None:
             return self._load_provider(provider_filter)
-        entries: list[ModelCatalogEntry] = []
-        for path in sorted(self._cache_dir.glob("*.json")):
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                provider_entries = [ModelCatalogEntry(**item) for item in data]
-                entries.extend(
-                    apply_openrouter_model_policies(
-                        filter_blacklisted_entries(provider_entries)
-                    )
-                )
-            except (OSError, json.JSONDecodeError, ValidationError) as exc:
-                logger.warning("Skipping corrupt catalog cache %s: %s", path, exc)
-        return entries
+        return self._load_from_paths(sorted(self._cache_dir.glob("*.json")))
 
     @staticmethod
     def _apply_filters(

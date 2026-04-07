@@ -10,10 +10,9 @@ from dr_llm.llm.providers.openrouter.policy import (
 
 
 def test_openrouter_policy_covers_affordable_models_csv() -> None:
+    csv_path = Path(__file__).resolve().parents[3] / "info" / "affordable_models_data.csv"
     rows = list(
-        csv.DictReader(
-            Path("info/affordable_models_data.csv").read_text(encoding="utf-8").splitlines()
-        )
+        csv.DictReader(csv_path.read_text(encoding="utf-8").splitlines())
     )
     csv_models = {
         row["Model"]

@@ -62,5 +62,5 @@ def make_response(**overrides: Any) -> LlmResponse:
 
 
 @pytest.fixture
-def fake_adapter() -> FakeProvider:
+def fake_provider() -> FakeProvider:
     return FakeProvider()

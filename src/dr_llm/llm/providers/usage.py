@@ -268,9 +268,9 @@ def parse_reasoning(
             ]
             if thinking_items:
                 reasoning_chunks = [
-                    str(item.get("thinking")).strip()
+                    val
                     for item in thinking_items
-                    if _as_str(item.get("thinking")) is not None
+                    if (val := _as_str(item.get("thinking"))) is not None
                 ]
                 if reasoning_chunks:
                     reasoning_text = "\n\n".join(reasoning_chunks)

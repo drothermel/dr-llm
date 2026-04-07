@@ -25,6 +25,14 @@ class EffortSpec(StrEnum):
     MAX = "max"
 
 
+FULL_EFFORT = (
+    EffortSpec.LOW,
+    EffortSpec.MEDIUM,
+    EffortSpec.HIGH,
+    EffortSpec.MAX,
+)
+
+
 def supported_effort_levels(*, provider: str, model: str) -> tuple[EffortSpec, ...]:
     capabilities = reasoning_capabilities_for_model(provider=provider, model=model)
     if capabilities is None or capabilities.mode not in _EFFORT_CAPABILITY_MODES:
@@ -41,28 +49,13 @@ def supported_effort_levels(*, provider: str, model: str) -> tuple[EffortSpec, .
     if provider == "claude-code":
         if model not in _DIRECT_ANTHROPIC_EFFORT_MODELS:
             return ()
-        return (
-            EffortSpec.LOW,
-            EffortSpec.MEDIUM,
-            EffortSpec.HIGH,
-            EffortSpec.MAX,
-        )
+        return FULL_EFFORT
 
     if provider == "minimax":
-        return (
-            EffortSpec.LOW,
-            EffortSpec.MEDIUM,
-            EffortSpec.HIGH,
-            EffortSpec.MAX,
-        )
+        return FULL_EFFORT
 
     if provider == "kimi-code":
-        return (
-            EffortSpec.LOW,
-            EffortSpec.MEDIUM,
-            EffortSpec.HIGH,
-            EffortSpec.MAX,
-        )
+        return FULL_EFFORT
 
     return ()
 

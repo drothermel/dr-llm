@@ -131,7 +131,9 @@ def _pending(dim_a: str = "a", dim_b: int = 1, **kwargs: Any) -> PendingSample:
 
 
 @pytest.mark.integration
-def test_store_init_drops_legacy_call_recorder_tables(pool_store: PoolStore) -> None:
+def test_store_init_drops_legacy_call_recorder_tables(
+    pool_store: PoolStore,  # noqa: ARG001
+) -> None:
     dsn = _get_dsn()
     assert dsn is not None
     _create_legacy_tables(dsn)

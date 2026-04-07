@@ -287,7 +287,7 @@ class PendingStore:
                     f"UPDATE {tbl} SET priority = GREATEST(priority, %s) "
                     f"WHERE {kw} AND status = %s"
                 ),
-                [priority] + kp + [PendingStatus.pending.value],
+                [priority, *kp, PendingStatus.pending.value],
             )
             conn.commit()
             return cur.rowcount or 0
@@ -343,7 +343,6 @@ class PendingStore:
             f"SELECT status, COUNT(*) AS cnt FROM {tbl} {where_clause} GROUP BY status"
         )
 
-        with self._runtime.conn() as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                rows = cur.execute(q(sql_str), params).fetchall()
+        with self._runtime.conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+            rows = cur.execute(q(sql_str), params).fetchall()
         return PendingStatusCounts.from_rows(rows)

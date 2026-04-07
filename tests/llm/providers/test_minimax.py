@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from dr_llm.llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.minimax import (
     MINIMAX_BASE_URL,
@@ -19,9 +20,17 @@ _MOCK_RESPONSE: dict[str, Any] = {
 }
 
 
+def _minimax_test_config() -> AnthropicConfig:
+    return AnthropicConfig(
+        name=MINIMAX_PROVIDER_NAME,
+        base_url=MINIMAX_BASE_URL,
+        api_key="test-key",
+    )
+
+
 def test_minimax_serializes_effort_without_thinking_payload() -> None:
     captured, client = make_http_client(_MOCK_RESPONSE)
-    adapter = MiniMaxProvider(client=client)
+    adapter = MiniMaxProvider(config=_minimax_test_config(), client=client)
 
     request = make_request(
         provider=MINIMAX_PROVIDER_NAME,
@@ -40,7 +49,7 @@ def test_minimax_serializes_effort_without_thinking_payload() -> None:
 
 def test_minimax_serializes_optional_max_tokens_when_present() -> None:
     captured, client = make_http_client(_MOCK_RESPONSE)
-    adapter = MiniMaxProvider(client=client)
+    adapter = MiniMaxProvider(config=_minimax_test_config(), client=client)
 
     request = make_request(
         provider=MINIMAX_PROVIDER_NAME,

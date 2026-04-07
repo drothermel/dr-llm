@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Generic, Literal, TypeVar
+from typing import Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -56,7 +56,7 @@ class WorkerStatCounts(BaseModel):
     idle_polls: int = 0
 
 
-class WorkerSnapshot(BaseModel, Generic[TBackendState]):
+class WorkerSnapshot[TBackendState](BaseModel):
     """Observable state for a running worker controller."""
 
     model_config = ConfigDict(frozen=True)

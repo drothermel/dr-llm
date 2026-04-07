@@ -14,6 +14,21 @@ from dr_llm.llm.providers.reasoning import (
 )
 
 
+def _require_google_budget_tokens(budget_tokens: int | None) -> int:
+    """Validate tokens for Google thinkingBudget (non-negative int)."""
+    if budget_tokens is None:
+        raise ValueError(
+            "google budget thinking requires budget_tokens when thinking_level is 'budget'"
+        )
+    if type(budget_tokens) is not int:
+        raise ValueError(
+            f"google budget_tokens must be int, got {type(budget_tokens).__name__}"
+        )
+    if budget_tokens < 0:
+        raise ValueError("google budget_tokens must be >= 0")
+    return budget_tokens
+
+
 class GoogleReasoningConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -43,8 +58,9 @@ class GoogleReasoningConfig(BaseModel):
                 elif thinking_level == ThinkingLevel.ADAPTIVE:
                     payload["thinkingBudget"] = -1
                 elif thinking_level == ThinkingLevel.BUDGET:
-                    assert budget_tokens is not None
-                    payload["thinkingBudget"] = budget_tokens
+                    payload["thinkingBudget"] = _require_google_budget_tokens(
+                        budget_tokens
+                    )
                 elif thinking_level in {
                     ThinkingLevel.MINIMAL,
                     ThinkingLevel.LOW,

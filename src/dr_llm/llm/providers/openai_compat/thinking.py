@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dr_llm.llm.providers.thinking_utils import matches_family
+
 OPENAI_THINKING_SUPPORTED_MODELS = [
     "gpt-5",
     "gpt-5-mini",
@@ -58,7 +60,7 @@ def normalize_openai_reasoning_model(model: str) -> str:
 
 def openai_supports_configurable_thinking(model: str) -> bool:
     normalized = normalize_openai_reasoning_model(model)
-    return _matches_family(
+    return matches_family(
         normalized=normalized,
         families=OPENAI_THINKING_SUPPORTED_MODELS,
     )
@@ -66,7 +68,7 @@ def openai_supports_configurable_thinking(model: str) -> bool:
 
 def openai_supports_minimal_thinking(model: str) -> bool:
     normalized = normalize_openai_reasoning_model(model)
-    return _matches_family(
+    return matches_family(
         normalized=normalized,
         families=OPENAI_MINIMAL_THINKING_SUPPORTED_MODELS,
     )
@@ -74,23 +76,7 @@ def openai_supports_minimal_thinking(model: str) -> bool:
 
 def openai_supports_off_thinking(model: str) -> bool:
     normalized = normalize_openai_reasoning_model(model)
-    return _matches_family(
+    return matches_family(
         normalized=normalized,
         families=OPENAI_OFF_THINKING_SUPPORTED_MODELS,
     )
-
-
-def _matches_family(*, normalized: str, families: list[str]) -> bool:
-    return any(
-        normalized == family
-        or _is_snapshot_of_family(normalized=normalized, family=family)
-        for family in families
-    )
-
-
-def _is_snapshot_of_family(*, normalized: str, family: str) -> bool:
-    prefix = f"{family}-"
-    if not normalized.startswith(prefix):
-        return False
-    suffix = normalized[len(prefix) :]
-    return bool(suffix) and suffix[0].isdigit()
