@@ -15,6 +15,9 @@ class WorkerStatCounts(BaseModel):
     process_errors: int = 0
     idle_polls: int = 0
 
+    def increment(self, key: str, amount: int = 1) -> None:
+        setattr(self, key, getattr(self, key) + amount)
+
 
 class WorkerSnapshot(BaseModel):
     """Observable state for a running pool worker controller."""
@@ -34,7 +37,7 @@ class ThreadsafeWorkerStats:
 
     def incr(self, key: str, amount: int = 1) -> None:
         with self._lock:
-            setattr(self._counts, key, getattr(self._counts, key) + amount)
+            self._counts.increment(key, amount)
 
     def snapshot(
         self,
