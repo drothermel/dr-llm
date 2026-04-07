@@ -6,10 +6,11 @@ from collections.abc import Iterable, Mapping
 from itertools import product
 from typing import Any
 
+from pydantic import BaseModel
+
 from dr_llm.pool.errors import PoolSchemaError
 from dr_llm.pool.models import InsertResult
 from dr_llm.pool.pending.pending_sample import PendingSample
-from dr_llm.pool.pending.utils import serialize_payload_value
 from dr_llm.pool.sample_store import PoolStore
 
 
@@ -124,6 +125,17 @@ def _build_payload(
         if name in rich_columns:
             payload[name] = serialize_payload_value(rich_columns[name][col_value])
     return payload
+
+
+def serialize_payload_value(value: Any) -> Any:
+    """Convert common pending payload values into plain JSON-compatible shapes."""
+    if isinstance(value, BaseModel):
+        return value.model_dump()
+    if isinstance(value, list):
+        return [
+            item.model_dump() if isinstance(item, BaseModel) else item for item in value
+        ]
+    return value
 
 
 def _insert_pending_samples(
