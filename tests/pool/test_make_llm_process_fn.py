@@ -5,7 +5,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from dr_llm.logging import generation_log_context
 from dr_llm.pool.pending.models import PendingSample
+import dr_llm.pool.pending.workers as pool_workers
 from dr_llm.pool.pending.workers import make_llm_process_fn
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.response import LlmResponse
@@ -35,6 +37,7 @@ def _make_registry(response: LlmResponse | None = None) -> MagicMock:
     resp = response or _make_response()
     adapter = MagicMock()
     adapter.generate.return_value = resp
+    adapter.mode = resp.mode
     registry = MagicMock()
     registry.get.return_value = adapter
     return registry
@@ -80,26 +83,7 @@ def test_returns_full_response_dump() -> None:
     assert result == expected
 
 
-def test_records_call_when_recorder_provided() -> None:
-    registry = _make_registry()
-    recorder = MagicMock()
-    recorder.record_call.return_value = "call-123"
-    process_fn = make_llm_process_fn(
-        registry, recorder=recorder, run_id="run-abc"
-    )
-    sample = _make_sample(_sample_payload())
-
-    result = process_fn(sample)
-
-    recorder.record_call.assert_called_once()
-    call_kwargs = recorder.record_call.call_args[1]
-    assert call_kwargs["run_id"] == "run-abc"
-    assert call_kwargs["request"].provider == "openai"
-    assert call_kwargs["response"].text == "hello world"
-    assert result["call_id"] == "call-123"
-
-
-def test_no_call_id_without_recorder() -> None:
+def test_process_result_has_no_call_id() -> None:
     registry = _make_registry()
     process_fn = make_llm_process_fn(registry)
     sample = _make_sample(_sample_payload())
@@ -109,9 +93,71 @@ def test_no_call_id_without_recorder() -> None:
     assert "call_id" not in result
 
 
+def test_emits_worker_logging_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = _make_registry()
+    process_fn = make_llm_process_fn(registry)
+    sample = _make_sample(_sample_payload())
+    events: list[dict[str, Any]] = []
+
+    monkeypatch.setattr(
+        pool_workers,
+        "emit_generation_event",
+        lambda *, event_type, stage, payload: events.append(
+            {"event_type": event_type, "stage": stage, "payload": payload}
+        ),
+    )
+
+    with generation_log_context({"pool_name": "demo", "worker_id": "worker-1"}):
+        result = process_fn(sample)
+
+    assert result["text"] == "hello world"
+    assert [event["event_type"] for event in events] == [
+        "llm_call.started",
+        "llm_call.succeeded",
+    ]
+    for event in events:
+        assert event["payload"]["pool_name"] == "demo"
+        assert event["payload"]["worker_id"] == "worker-1"
+        assert event["payload"]["pending_id"] == sample.pending_id
+        assert event["payload"]["sample_idx"] == sample.sample_idx
+        assert event["payload"]["key_values"] == sample.key_values
+
+
+def test_failed_worker_call_emits_failure_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = MagicMock()
+    adapter.generate.side_effect = RuntimeError("API down")
+    adapter.mode = CallMode.api
+    registry = MagicMock()
+    registry.get.return_value = adapter
+    process_fn = make_llm_process_fn(registry)
+    sample = _make_sample(_sample_payload())
+    events: list[dict[str, Any]] = []
+
+    monkeypatch.setattr(
+        pool_workers,
+        "emit_generation_event",
+        lambda *, event_type, stage, payload: events.append(
+            {"event_type": event_type, "stage": stage, "payload": payload}
+        ),
+    )
+
+    with generation_log_context({"pool_name": "demo", "worker_id": "worker-1"}):
+        with pytest.raises(RuntimeError, match="API down"):
+            process_fn(sample)
+
+    assert [event["event_type"] for event in events] == [
+        "llm_call.started",
+        "llm_call.failed",
+    ]
+    assert events[-1]["payload"]["message"] == "API down"
+
+
 def test_error_propagates() -> None:
     adapter = MagicMock()
     adapter.generate.side_effect = RuntimeError("API down")
+    adapter.mode = CallMode.api
     registry = MagicMock()
     registry.get.return_value = adapter
     process_fn = make_llm_process_fn(registry)
@@ -147,10 +193,12 @@ def test_custom_key_names() -> None:
     process_fn = make_llm_process_fn(
         registry, llm_config_key="model_cfg", prompt_key="msgs"
     )
-    sample = _make_sample({
-        "model_cfg": config.model_dump(),
-        "msgs": [m.model_dump() for m in messages],
-    })
+    sample = _make_sample(
+        {
+            "model_cfg": config.model_dump(),
+            "msgs": [m.model_dump() for m in messages],
+        }
+    )
 
     result = process_fn(sample)
 

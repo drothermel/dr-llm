@@ -1,5 +1,3 @@
-from dr_llm.pool.db.recorded_call import RunStatus
-from dr_llm.pool.db.repository import PoolDb
 from dr_llm.pool.db.runtime import DbConfig
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.models import (
@@ -16,10 +14,8 @@ __all__ = [
     "KeyColumn",
     "PoolAcquireQuery",
     "PoolAcquireResult",
-    "PoolDb",
     "PoolSchema",
     "PoolService",
     "PoolStore",
-    "RunStatus",
     "make_llm_process_fn",
 ]

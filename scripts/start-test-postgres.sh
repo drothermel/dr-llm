@@ -50,16 +50,4 @@ export DR_LLM_DATABASE_URL="${DATABASE_URL}"
 export DR_LLM_TEST_DATABASE_URL="${DATABASE_URL}"
 echo "Exported DR_LLM_DATABASE_URL and DR_LLM_TEST_DATABASE_URL"
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-POOL_DIR="${REPO_ROOT}/src/dr_llm/pool"
-
-echo "Applying schema migrations..."
-psql -v ON_ERROR_STOP=1 "${DATABASE_URL}" -f "${POOL_DIR}/schema_bootstrap.sql" || { echo "Migration failed: schema_bootstrap.sql"; return 1 2>/dev/null || exit 1; }
-if [ -d "${POOL_DIR}/migrations" ]; then
-  mapfile -t migrations < <(printf '%s\n' "${POOL_DIR}"/migrations/*.sql | sort)
-  for migration in "${migrations[@]}"; do
-    [ -f "$migration" ] || continue
-    psql -v ON_ERROR_STOP=1 "${DATABASE_URL}" -f "$migration" || { echo "Migration failed: $(basename "$migration")"; return 1 2>/dev/null || exit 1; }
-  done
-fi
-echo "Schema migrations applied."
+echo "Pool schemas are created lazily by the application."

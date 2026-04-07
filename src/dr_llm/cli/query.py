@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,7 +7,6 @@ import typer
 from pydantic import ValidationError
 
 from dr_llm.logging import emit_generation_event, generation_log_context
-from dr_llm.pool.db.repository import PoolDb
 from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.registry import build_default_registry
 from dr_llm.llm.request import LlmRequest
@@ -39,12 +37,6 @@ def query(
         help='JSON reasoning config (e.g. {"kind":"budget","tokens":1024}).',
     ),
     metadata_json: str | None = typer.Option(None, help="JSON object metadata."),
-    run_id: str | None = typer.Option(None),
-    external_call_id: str | None = typer.Option(None),
-    record: bool = typer.Option(True, "--record/--no-record"),
-    dsn: str | None = typer.Option(None, envvar="DR_LLM_DATABASE_URL"),
-    min_pool_size: int = typer.Option(4),
-    max_pool_size: int = typer.Option(64),
 ) -> None:
     """Execute a single LLM query through the unified provider interface."""
     metadata = (
@@ -81,15 +73,10 @@ def query(
     registry = build_default_registry()
     try:
         model_provider = registry.get(provider)
-        call_id = external_call_id or uuid4().hex
-
-        repository: PoolDb | None = None
-        if record:
-            repository = common._repo(dsn, min_pool_size, max_pool_size)
+        call_id = uuid4().hex
 
         log_context = {
             "call_id": call_id,
-            "run_id": run_id,
             "provider": request.provider,
             "model": request.model,
             "mode": model_provider.mode,
@@ -117,26 +104,6 @@ def query(
                         "message": str(exc),
                     },
                 )
-                if repository is not None:
-                    try:
-                        repository.record_call(
-                            request=request,
-                            response=None,
-                            run_id=run_id,
-                            status="failed",
-                            mode=model_provider.mode,
-                            error_text=str(exc),
-                            external_call_id=external_call_id,
-                            metadata=metadata,
-                            call_id=call_id,
-                        )
-                    except Exception as rec_exc:  # noqa: BLE001
-                        logging.getLogger(__name__).warning(
-                            "Failed to record failed call (call_id=%s, run_id=%s): %s",
-                            call_id,
-                            run_id,
-                            rec_exc,
-                        )
                 raise
 
             emit_generation_event(
@@ -150,28 +117,6 @@ def query(
                     )
                 },
             )
-            if repository is not None:
-                try:
-                    repository.record_call(
-                        request=request,
-                        response=response,
-                        run_id=run_id,
-                        status="success",
-                        mode=model_provider.mode,
-                        external_call_id=external_call_id,
-                        metadata=metadata,
-                        call_id=call_id,
-                    )
-                except Exception as rec_exc:  # noqa: BLE001
-                    logging.getLogger(__name__).warning(
-                        "Failed to record successful call (call_id=%s, run_id=%s): %s",
-                        call_id,
-                        run_id,
-                        rec_exc,
-                    )
-
         common._emit(response.model_dump(mode="json", exclude_computed_fields=True))
     finally:
-        if repository is not None:
-            repository.close()
         registry.close()

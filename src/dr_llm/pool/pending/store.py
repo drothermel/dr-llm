@@ -51,7 +51,6 @@ class PendingStore:
                 "sample_idx",
                 "payload_json",
                 "source_run_id",
-                "call_id",
                 "metadata_json",
                 "priority",
                 "status",
@@ -69,7 +68,6 @@ class PendingStore:
                 sample.sample_idx,
                 json.dumps(sample.payload, default=str),
                 sample.source_run_id,
-                sample.call_id,
                 json.dumps(sample.metadata, default=str),
                 sample.priority,
                 sample.status.value,
@@ -124,7 +122,6 @@ class PendingStore:
                 "sample_idx",
                 "payload_json",
                 "source_run_id",
-                "call_id",
                 "metadata_json",
                 "priority",
                 "status",
@@ -168,7 +165,6 @@ class PendingStore:
                             sample_idx=row["sample_idx"],
                             payload=parse_json_field(row["payload_json"]),
                             source_run_id=row["source_run_id"],
-                            call_id=row["call_id"],
                             metadata=parse_json_field(row["metadata_json"]),
                             priority=row["priority"],
                             status=PendingStatus.leased,
@@ -202,7 +198,6 @@ class PendingStore:
                 "sample_idx",
                 "payload_json",
                 "source_run_id",
-                "call_id",
                 "metadata_json",
             ]
         )
@@ -235,7 +230,6 @@ class PendingStore:
                         "sample_idx",
                         "payload_json",
                         "source_run_id",
-                        "call_id",
                         "metadata_json",
                     ]
                 )
@@ -248,7 +242,6 @@ class PendingStore:
                         row["sample_idx"],
                         json.dumps(final_payload, default=str),
                         row["source_run_id"],
-                        row["call_id"],
                         json.dumps(meta, default=str),
                     ]
                 )
@@ -281,7 +274,6 @@ class PendingStore:
                     key_values=key_vals,
                     payload=final_payload,
                     source_run_id=row["source_run_id"],
-                    call_id=row["call_id"],
                     metadata=meta,
                 )
             except Exception:
@@ -408,7 +400,6 @@ class PendingStore:
                 "sample_idx",
                 "payload_json",
                 "source_run_id",
-                "call_id",
                 "metadata_json",
                 "priority",
                 "status",
@@ -451,7 +442,6 @@ class PendingStore:
                         sample_idx=row["sample_idx"],
                         payload=parse_json_field(row["payload_json"]),
                         source_run_id=row["source_run_id"],
-                        call_id=row["call_id"],
                         metadata=parse_json_field(row["metadata_json"]),
                         priority=row["priority"],
                         status=PendingStatus(row["status"]),

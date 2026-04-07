@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
-from dr_llm.pool.db.recorded_call import RecordedCall, RunStatus
 from dr_llm.pool.models import AcquireQuery, AcquireResult, PoolSample, SampleStatus
 from dr_llm.pool.pending.models import PendingSample, PendingStatus, PendingStatusCounts
 from dr_llm.pool.pending.threadsafe_worker_stats import WorkerSnapshot
 from dr_llm.pool.results import InsertResult
-from dr_llm.llm.messages import CallMode
 
 
 def test_pool_sample_defaults() -> None:
@@ -62,23 +58,6 @@ def test_worker_snapshot_defaults() -> None:
     assert snapshot.stop_requested is False
     assert snapshot.counts.claimed == 0
     assert snapshot.status_counts.total == 0
-
-
-def test_recorded_call_coerces_status_to_enum() -> None:
-    call = RecordedCall(
-        call_id="call_123",
-        run_id="run_123",
-        provider="openai",
-        model="gpt-4.1",
-        mode=CallMode.api,
-        status="success",  # type: ignore[arg-type]  # raw string, not enum
-        created_at=datetime(2026, 3, 28, 12, 0, tzinfo=UTC),
-        latency_ms=12,
-        error_text=None,
-        request={},
-        response=None,
-    )
-    assert call.status is RunStatus.success
 
 
 def test_pool_root_has_no_re_exports() -> None:

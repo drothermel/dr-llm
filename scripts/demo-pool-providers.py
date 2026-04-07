@@ -196,7 +196,6 @@ def query_provider(
         model,
         "--message",
         prompt,
-        "--no-record",
     ]
     if provider in {"anthropic", "kimi-code"}:
         args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])

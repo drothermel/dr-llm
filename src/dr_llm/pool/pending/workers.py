@@ -11,7 +11,8 @@ from itertools import product
 from typing import Any
 from uuid import uuid4
 
-from dr_llm.pool.db.call_recorder import CallRecorder
+from dr_llm.logging import emit_generation_event, generation_log_context
+from dr_llm.logging.events import get_generation_log_context
 from dr_llm.pool.errors import PoolSchemaError
 from dr_llm.pool.pending.models import (
     PendingSample,
@@ -230,7 +231,10 @@ def _worker_loop(
         stats.incr("claimed")
 
         try:
-            payload = process_fn(pending_sample)
+            with generation_log_context(
+                {"pool_name": store.schema.name, "worker_id": worker_id}
+            ):
+                payload = process_fn(pending_sample)
             if not isinstance(payload, dict):
                 raise TypeError("process_fn must return a payload dict")
             promoted = store.pending.promote_pending(
@@ -296,8 +300,6 @@ def make_llm_process_fn(
     *,
     llm_config_key: str = "llm_config",
     prompt_key: str = "prompt",
-    recorder: CallRecorder | None = None,
-    run_id: str | None = None,
 ) -> ProcessFn:
     """Build a ``ProcessFn`` that dispatches LLM calls via the provider registry.
 
@@ -325,20 +327,63 @@ def make_llm_process_fn(
         messages = [Message(**m) for m in raw_messages]
         request = config.to_request(messages)
 
+        context = get_generation_log_context()
         model_provider = registry.get(request.provider)
-        response = model_provider.generate(request)
+        call_id = uuid4().hex
+        worker_payload = {
+            "pool_name": context.get("pool_name"),
+            "pending_id": sample.pending_id,
+            "sample_idx": sample.sample_idx,
+            "worker_id": context.get("worker_id"),
+            "key_values": sample.key_values,
+        }
 
-        call_id: str | None = None
-        if recorder is not None:
-            call_id = recorder.record_call(
-                request=request,
-                response=response,
-                run_id=run_id,
+        with generation_log_context(
+            {
+                "call_id": call_id,
+                "provider": request.provider,
+                "model": request.model,
+                "mode": model_provider.mode,
+            }
+        ):
+            emit_generation_event(
+                event_type="llm_call.started",
+                stage="pool_worker.before_provider",
+                payload={
+                    **worker_payload,
+                    "request": request.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                        exclude_computed_fields=True,
+                    ),
+                },
             )
+            try:
+                response = model_provider.generate(request)
+            except Exception as exc:  # noqa: BLE001
+                emit_generation_event(
+                    event_type="llm_call.failed",
+                    stage="pool_worker.provider_exception",
+                    payload={
+                        **worker_payload,
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                )
+                raise
 
-        result = response.model_dump()
-        if call_id is not None:
-            result["call_id"] = call_id
-        return result
+            emit_generation_event(
+                event_type="llm_call.succeeded",
+                stage="pool_worker.after_provider",
+                payload={
+                    **worker_payload,
+                    "response": response.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                        exclude_computed_fields=True,
+                    ),
+                },
+            )
+            return response.model_dump()
 
     return _process

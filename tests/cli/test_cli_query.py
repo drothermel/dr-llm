@@ -48,7 +48,6 @@ def test_query_emits_response_json(monkeypatch: pytest.MonkeyPatch) -> None:
             "gpt-4.1",
             "--message",
             "hello",
-            "--no-record",
         ],
     )
 
@@ -58,21 +57,18 @@ def test_query_emits_response_json(monkeypatch: pytest.MonkeyPatch) -> None:
     assert payload["usage"]["total_tokens"] == 3
 
 
-def test_query_no_record_skips_db(monkeypatch: pytest.MonkeyPatch) -> None:
-    """--no-record should never attempt to create a DB connection."""
-    repo_created = False
-
-    def _repo_should_not_be_called(*args: Any, **kwargs: Any) -> None:
-        nonlocal repo_created
-        repo_created = True
-
-    monkeypatch.setattr(query_cli, "build_default_registry", _FakeRegistry)
-    monkeypatch.setattr("dr_llm.cli.common._repo", _repo_should_not_be_called)
-
+def test_query_recording_flags_are_removed() -> None:
     result = runner.invoke(
         app,
         ["query", "--provider", "openai", "--model", "gpt-4.1", "--message", "hi", "--no-record"],
     )
 
-    assert result.exit_code == 0
-    assert not repo_created
+    assert result.exit_code != 0
+    assert "No such option: --no-record" in result.output
+
+
+def test_run_command_is_removed() -> None:
+    result = runner.invoke(app, ["run", "start"])
+
+    assert result.exit_code != 0
+    assert "No such command 'run'." in result.output

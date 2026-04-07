@@ -11,8 +11,6 @@ from rich.table import Table
 
 from dr_llm.llm.catalog.model_blacklist import BlacklistedModel
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogSyncResult
-from dr_llm.pool.db.repository import PoolDb
-from dr_llm.pool.db.runtime import DbConfig
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.config import ProviderAvailabilityStatus
 
@@ -210,15 +208,3 @@ def _load_messages(
             "At least one message is required (use --message or --messages-file)"
         )
     return result
-
-
-def _repo(dsn: str | None, min_pool_size: int, max_pool_size: int) -> PoolDb:
-    if dsn is None:
-        config = DbConfig(min_pool_size=min_pool_size, max_pool_size=max_pool_size)
-    else:
-        config = DbConfig(
-            dsn=dsn,
-            min_pool_size=min_pool_size,
-            max_pool_size=max_pool_size,
-        )
-    return PoolDb(config)

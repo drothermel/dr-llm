@@ -1,24 +1,33 @@
 from __future__ import annotations
 
-import json
 import threading
 from contextlib import contextmanager
-from hashlib import sha256
 from os import getenv
-from pathlib import Path
 from time import sleep
-from typing import Any, Generator, LiteralString, cast
+from typing import Any, Generator
 
 import psycopg
-from psycopg import errors, sql
+from psycopg import sql
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import TransientPersistenceError
 
 
-_SCHEMA_PATH = Path(__file__).parent / "schema_bootstrap.sql"
-_MIGRATION_DIR = Path(__file__).parent / "migrations"
+_LEGACY_TABLES = (
+    "artifacts",
+    "llm_call_responses",
+    "llm_call_requests",
+    "llm_calls",
+    "run_parameters",
+    "runs",
+    "tool_call_dead_letters",
+    "tool_results",
+    "tool_calls",
+    "session_events",
+    "session_turns",
+    "sessions",
+)
 
 
 class DbConfig(BaseModel):
@@ -38,29 +47,6 @@ class DbConfig(BaseModel):
     pool_open_retry_backoff_seconds: float = 0.1
 
 
-def is_retryable_db_error(exc: BaseException) -> bool:
-    if isinstance(
-        exc,
-        (
-            psycopg.OperationalError,
-            psycopg.InterfaceError,
-            errors.DeadlockDetected,
-            errors.SerializationFailure,
-        ),
-    ):
-        return True
-    if isinstance(exc, TransientPersistenceError):
-        return True
-    return False
-
-
-def hash_payload(payload: dict[str, Any]) -> str:
-    encoded = json.dumps(
-        payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")
-    )
-    return sha256(encoded.encode("utf-8")).hexdigest()
-
-
 class DbRuntime:
     def __init__(self, config: DbConfig) -> None:
         self.config = config
@@ -70,8 +56,8 @@ class DbRuntime:
             max_size=self.config.max_pool_size,
             open=False,
         )
-        self.schema_lock = threading.Lock()
-        self.schema_initialized = False
+        self._legacy_cleanup_lock = threading.Lock()
+        self._legacy_cleanup_done = False
         self._pool_lock = threading.Lock()
         self._pool_opened = False
         if self.config.open_on_init:
@@ -106,7 +92,7 @@ class DbRuntime:
 
     def initialize(self) -> None:
         self.open_pool()
-        self.init_schema()
+        self.cleanup_legacy_tables()
 
     @contextmanager
     def conn(self) -> Generator[psycopg.Connection[tuple[Any, ...]], None, None]:
@@ -120,17 +106,20 @@ class DbRuntime:
             yield conn
 
     def init_schema(self) -> None:
-        if self.schema_initialized:
+        self.cleanup_legacy_tables()
+
+    def cleanup_legacy_tables(self) -> None:
+        if self._legacy_cleanup_done:
             return
-        with self.schema_lock:
-            if self.schema_initialized:
+        with self._legacy_cleanup_lock:
+            if self._legacy_cleanup_done:
                 return
-            schema_sql = _SCHEMA_PATH.read_text(encoding="utf-8")
             with self.conn() as conn:
-                conn.execute(sql.SQL(cast(LiteralString, schema_sql)))
-                if _MIGRATION_DIR.is_dir():
-                    for migration_path in sorted(_MIGRATION_DIR.glob("*.sql")):
-                        migration_sql = migration_path.read_text(encoding="utf-8")
-                        conn.execute(sql.SQL(cast(LiteralString, migration_sql)))
+                for table_name in _LEGACY_TABLES:
+                    conn.execute(
+                        sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
+                            sql.Identifier(table_name)
+                        )
+                    )
                 conn.commit()
-            self.schema_initialized = True
+            self._legacy_cleanup_done = True

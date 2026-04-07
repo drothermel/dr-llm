@@ -23,7 +23,6 @@ class PoolSample(BaseModel):
     key_values: dict[str, Any] = Field(default_factory=dict)
     payload: dict[str, Any] = Field(default_factory=dict)
     source_run_id: str | None = None
-    call_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     status: SampleStatus = SampleStatus.active
     created_at: datetime | None = None

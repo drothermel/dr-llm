@@ -53,7 +53,6 @@ def _samples_ddl(schema: PoolSchema) -> str:
     sample_idx INTEGER NOT NULL,
     payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
     source_run_id TEXT,
-    call_id TEXT,
     metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
     status TEXT NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -97,7 +96,6 @@ def _pending_ddl(schema: PoolSchema) -> str:
     sample_idx INTEGER NOT NULL,
     payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
     source_run_id TEXT,
-    call_id TEXT,
     metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
     priority INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'pending',

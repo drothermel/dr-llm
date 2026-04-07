@@ -71,7 +71,7 @@ class PoolStore:
         with self._schema_lock:
             if self._schema_initialized:
                 return
-            self._runtime.open_pool()
+            self._runtime.cleanup_legacy_tables()
             ddl = generate_ddl(self._schema)
             with self._runtime.conn() as conn:
                 conn.execute(q(ddl))
@@ -128,7 +128,6 @@ class PoolStore:
                 "sample_idx",
                 "payload_json",
                 "source_run_id",
-                "call_id",
                 "metadata_json",
                 "status",
             ]
@@ -145,7 +144,6 @@ class PoolStore:
                 sample.sample_idx,
                 json.dumps(sample.payload, default=str),
                 sample.source_run_id,
-                sample.call_id,
                 json.dumps(sample.metadata, default=str),
                 sample.status.value,
             ]
@@ -183,7 +181,6 @@ class PoolStore:
                 "sample_idx",
                 "payload_json",
                 "source_run_id",
-                "call_id",
                 "metadata_json",
                 "status",
             ]
@@ -197,7 +194,6 @@ class PoolStore:
         select_parts.append("next_idx.idx")  # sample_idx from CTE
         select_parts.append("%s")  # payload_json
         select_parts.append("%s")  # source_run_id
-        select_parts.append("%s")  # call_id
         select_parts.append("%s")  # metadata_json
         select_parts.append("%s")  # status
 
@@ -219,7 +215,6 @@ class PoolStore:
             [
                 json.dumps(sample.payload, default=str),
                 sample.source_run_id,
-                sample.call_id,
                 json.dumps(sample.metadata, default=str),
                 sample.status.value,
             ]
@@ -288,7 +283,6 @@ class PoolStore:
                 "sample_idx",
                 "payload_json",
                 "source_run_id",
-                "call_id",
                 "metadata_json",
                 "status",
             ]
@@ -307,7 +301,6 @@ class PoolStore:
                     sample.sample_idx,
                     json.dumps(sample.payload, default=str),
                     sample.source_run_id,
-                    sample.call_id,
                     json.dumps(sample.metadata, default=str),
                     sample.status.value,
                 ]
@@ -350,7 +343,7 @@ class PoolStore:
 
         select_sql = (
             "SELECT sample_id, sample_idx, payload_json, source_run_id, "
-            "call_id, metadata_json, status, created_at, "
+            "metadata_json, status, created_at, "
             + ", ".join(key_names)
             + f" FROM {samples_tbl} "
             f"WHERE {kw} "
@@ -379,7 +372,6 @@ class PoolStore:
                         key_values=key_vals,
                         payload=parse_json_field(row["payload_json"]),
                         source_run_id=row["source_run_id"],
-                        call_id=row["call_id"],
                         metadata=parse_json_field(row["metadata_json"]),
                         status=row["status"],
                         created_at=row["created_at"],
@@ -500,7 +492,6 @@ class PoolStore:
                 "sample_idx",
                 "payload_json",
                 "source_run_id",
-                "call_id",
                 "metadata_json",
                 "status",
                 "created_at",
@@ -538,7 +529,6 @@ class PoolStore:
                         key_values=key_vals,
                         payload=parse_json_field(row["payload_json"]),
                         source_run_id=row["source_run_id"],
-                        call_id=row["call_id"],
                         metadata=parse_json_field(row["metadata_json"]),
                         status=row["status"],
                         created_at=row["created_at"],

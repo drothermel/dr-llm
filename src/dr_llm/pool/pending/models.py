@@ -25,7 +25,6 @@ class PendingSample(BaseModel):
     sample_idx: int = 0
     payload: dict[str, Any] = Field(default_factory=dict)
     source_run_id: str | None = None
-    call_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     priority: int = 0
     status: PendingStatus = PendingStatus.pending
