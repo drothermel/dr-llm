@@ -8,11 +8,11 @@ import typer
 from pydantic import ValidationError
 
 from dr_llm.logging import emit_generation_event, generation_log_context
+from dr_llm.pool.db.repository import PoolDb
 from dr_llm.providers import build_default_registry
 from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.reasoning import parse_reasoning_spec
-from dr_llm.pool.db import PoolDb
 
 from . import common
 

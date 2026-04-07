@@ -11,7 +11,8 @@ from rich.table import Table
 
 from dr_llm.catalog.model_blacklist import BlacklistedModel
 from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogSyncResult
-from dr_llm.pool.db import DbConfig, PoolDb
+from dr_llm.pool.db.repository import PoolDb
+from dr_llm.pool.db.runtime import DbConfig
 from dr_llm.providers.models import Message
 from dr_llm.providers.provider_config import ProviderAvailabilityStatus
 

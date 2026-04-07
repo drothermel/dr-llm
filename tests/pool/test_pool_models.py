@@ -4,13 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from dr_llm.pool.db import RecordedCall, RunStatus
+from dr_llm.pool.db.recorded_call import RecordedCall, RunStatus
 from dr_llm.pool.models import AcquireQuery, AcquireResult, PoolSample, SampleStatus
-from dr_llm.pool.pending import (
-    PendingSample,
-    PendingStatus,
-    PendingStatusCounts,
-)
+from dr_llm.pool.pending.models import PendingSample, PendingStatus, PendingStatusCounts
 from dr_llm.pool.pending.threadsafe_worker_stats import WorkerSnapshot
 from dr_llm.pool.results import InsertResult
 from dr_llm.providers.models import CallMode
@@ -85,24 +81,24 @@ def test_recorded_call_coerces_status_to_enum() -> None:
     assert call.status is RunStatus.success
 
 
-def test_pool_root_exports_are_narrow() -> None:
+def test_pool_root_has_no_re_exports() -> None:
     import dr_llm.pool as pool
 
-    assert hasattr(pool, "PoolStore")
-    assert hasattr(pool, "PoolService")
-    assert hasattr(pool, "PoolSchema")
-    assert hasattr(pool, "AcquireQuery")
+    assert not hasattr(pool, "PoolStore")
+    assert not hasattr(pool, "PoolService")
+    assert not hasattr(pool, "PoolSchema")
+    assert not hasattr(pool, "AcquireQuery")
     assert not hasattr(pool, "PendingSample")
     assert not hasattr(pool, "PoolDb")
 
 
-def test_pending_and_db_package_exports() -> None:
+def test_pending_and_db_packages_have_no_re_exports() -> None:
     import dr_llm.pool.db as pool_db
     import dr_llm.pool.pending as pending
 
-    assert hasattr(pool_db, "PoolDb")
-    assert hasattr(pool_db, "DbConfig")
-    assert hasattr(pool_db, "RunStatus")
-    assert hasattr(pending, "PendingSample")
-    assert hasattr(pending, "PendingStore")
+    assert not hasattr(pool_db, "PoolDb")
+    assert not hasattr(pool_db, "DbConfig")
+    assert not hasattr(pool_db, "RunStatus")
+    assert not hasattr(pending, "PendingSample")
+    assert not hasattr(pending, "PendingStore")
     assert not hasattr(pending, "seed_pending")

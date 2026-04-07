@@ -12,7 +12,8 @@ import pytest
 from psycopg import sql
 
 from dr_llm.errors import TransientPersistenceError
-from dr_llm.pool.db import DbConfig, DbRuntime, KeyColumn, PoolSchema
+from dr_llm.pool.db.runtime import DbConfig, DbRuntime
+from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.pending.pool_worker_controller import PoolWorkerController
 from dr_llm.pool.pending.workers import seed_pending, start_workers
 from dr_llm.pool.sample_store import PoolStore

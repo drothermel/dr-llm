@@ -22,7 +22,7 @@ from dr_llm.project.docker import (
     get_docker_project_metadata,
     wait_docker_ready,
 )
-from dr_llm.pool.db import try_init_db_from_dsn
+from dr_llm.pool.db.repository import try_init_db_from_dsn
 
 BASE_PORT = 5500
 

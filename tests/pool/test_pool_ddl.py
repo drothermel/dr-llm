@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from dr_llm.pool.db import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.db.ddl import generate_ddl
 
 

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from dr_llm.pool.pending import PendingSample
+from dr_llm.pool.pending.models import PendingSample
 from dr_llm.pool.pending.workers import make_llm_process_fn
 from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.llm_response import LlmResponse
