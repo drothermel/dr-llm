@@ -98,11 +98,13 @@ The recommended way to populate a pool: define `LlmConfig`s and prompts, seed th
 from dr_llm import DbConfig, KeyColumn, PoolSchema, PoolStore
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
-from dr_llm.pool.pending.workers import seed_pending, start_workers
+from dr_llm.pool.pending.backend import PoolPendingBackend, PoolPendingBackendConfig
+from dr_llm.pool.pending.fill_pending import seed_pending
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.llm import build_default_registry
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import Message
+from dr_llm.workers import WorkerConfig, start_workers
 
 # 1. Create a Docker-managed Postgres project
 project = ProjectInfo.create_new("my_eval")
@@ -140,13 +142,24 @@ seed_pending(store, key_grid={"llm_config": llm_configs, "prompt": prompts}, n=2
 # 5. Start workers — they call the real providers
 registry = build_default_registry()
 process_fn = make_llm_process_fn(registry)
-controller = start_workers(store, process_fn=process_fn, num_workers=4)
+controller = start_workers(
+    PoolPendingBackend(
+        store,
+        config=PoolPendingBackendConfig(max_retries=1),
+    ),
+    process_fn=process_fn,
+    config=WorkerConfig(
+        num_workers=4,
+        thread_name_prefix="pool-fill",
+    ),
+)
 
 # 6. Wait for completion
 import time
 while True:
     snap = controller.snapshot()
-    if snap.status_counts.in_flight == 0:
+    assert snap.backend_state is not None
+    if snap.backend_state.status_counts.in_flight == 0:
         break
     time.sleep(1)
 controller.stop()
