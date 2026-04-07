@@ -299,6 +299,7 @@ def test_seed_pending_rich_grid_with_workers(fill_store: PoolStore) -> None:
             mode=CallMode.api,
         )
         adapter = MagicMock()
+        adapter.mode = CallMode.api
         adapter.generate.return_value = fake_response
         registry = MagicMock()
         registry.get.return_value = adapter

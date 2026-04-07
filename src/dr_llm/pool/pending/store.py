@@ -14,7 +14,6 @@ from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.sql_helpers import (
     is_constraint_error,
     key_where_clause,
-    parse_json_field,
     q,
     validate_key_filter,
     validate_key_values,
@@ -42,37 +41,12 @@ class PendingStore:
     ) -> bool:
         validate_key_values(self._schema, sample.key_values)
         tbl = self._schema.pending_table
-        key_names = self._schema.key_column_names
-
-        cols = (
-            ["pending_id"]
-            + key_names
-            + [
-                "sample_idx",
-                "payload_json",
-                "source_run_id",
-                "metadata_json",
-                "priority",
-                "status",
-            ]
-        )
+        insert_row = sample.to_db_insert_row(self._schema)
+        cols = list(insert_row.keys())
         placeholders = ", ".join(["%s"] * len(cols))
         col_list = ", ".join(cols)
         conflict = " ON CONFLICT DO NOTHING" if ignore_conflicts else ""
-
-        values: list[Any] = [sample.pending_id]
-        for name in key_names:
-            values.append(sample.key_values[name])
-        values.extend(
-            [
-                sample.sample_idx,
-                json.dumps(sample.payload, default=str),
-                sample.source_run_id,
-                json.dumps(sample.metadata, default=str),
-                sample.priority,
-                sample.status.value,
-            ]
-        )
+        values = list(insert_row.values())
 
         with self._runtime.conn() as conn:
             try:
@@ -100,7 +74,6 @@ class PendingStore:
     ) -> list[PendingSample]:
         """Lease pending samples for processing via FOR UPDATE SKIP LOCKED."""
         tbl = self._schema.pending_table
-        key_names = self._schema.key_column_names
 
         where_parts = ["(status = %s OR (status = %s AND lease_expires_at < now()))"]
         params: list[Any] = [PendingStatus.pending.value, PendingStatus.leased.value]
@@ -115,22 +88,7 @@ class PendingStore:
         where_clause = " AND ".join(where_parts)
         params.extend([limit])
 
-        all_cols = (
-            ["pending_id"]
-            + key_names
-            + [
-                "sample_idx",
-                "payload_json",
-                "source_run_id",
-                "metadata_json",
-                "priority",
-                "status",
-                "worker_id",
-                "lease_expires_at",
-                "attempt_count",
-                "created_at",
-            ]
-        )
+        all_cols = PendingSample.db_select_columns(self._schema)
         claim_sql = (
             f"WITH candidates AS ("
             f"  SELECT pending_id FROM {tbl} "
@@ -155,26 +113,7 @@ class PendingStore:
                 with conn.cursor(row_factory=dict_row) as cur:
                     rows = cur.execute(q(claim_sql), update_params).fetchall()
                 conn.commit()
-                results: list[PendingSample] = []
-                for row in rows:
-                    key_vals = {name: row[name] for name in key_names}
-                    results.append(
-                        PendingSample(
-                            pending_id=row["pending_id"],
-                            key_values=key_vals,
-                            sample_idx=row["sample_idx"],
-                            payload=parse_json_field(row["payload_json"]),
-                            source_run_id=row["source_run_id"],
-                            metadata=parse_json_field(row["metadata_json"]),
-                            priority=row["priority"],
-                            status=PendingStatus.leased,
-                            worker_id=worker_id,
-                            lease_expires_at=row["lease_expires_at"],
-                            attempt_count=row["attempt_count"],
-                            created_at=row["created_at"],
-                        )
-                    )
-                return results
+                return [PendingSample.from_db_row(self._schema, row) for row in rows]
             except Exception:
                 conn.rollback()
                 raise
@@ -189,25 +128,14 @@ class PendingStore:
         """
         pending_tbl = self._schema.pending_table
         samples_tbl = self._schema.samples_table
-        key_names = self._schema.key_column_names
-
-        all_cols = (
-            ["pending_id", "status"]
-            + key_names
-            + [
-                "sample_idx",
-                "payload_json",
-                "source_run_id",
-                "metadata_json",
-            ]
-        )
+        pending_cols = PendingSample.db_select_columns(self._schema)
 
         with self._runtime.conn() as conn:
             try:
                 with conn.cursor(row_factory=dict_row) as cur:
                     row = cur.execute(
                         q(
-                            f"SELECT {', '.join(all_cols)} FROM {pending_tbl} "
+                            f"SELECT {', '.join(pending_cols)} FROM {pending_tbl} "
                             f"WHERE pending_id = %s FOR UPDATE"
                         ),
                         [pending_id],
@@ -217,34 +145,22 @@ class PendingStore:
                     conn.rollback()
                     return None
 
-                key_vals = {name: row[name] for name in key_names}
-                pending_payload = parse_json_field(row["payload_json"])
-                meta = parse_json_field(row["metadata_json"])
-                final_payload = payload if payload is not None else pending_payload
-                sample_id = uuid4().hex
-
-                sample_cols = (
-                    ["sample_id"]
-                    + key_names
-                    + [
-                        "sample_idx",
-                        "payload_json",
-                        "source_run_id",
-                        "metadata_json",
-                    ]
+                pending_sample = PendingSample.from_db_row(self._schema, row)
+                final_payload = (
+                    payload if payload is not None else pending_sample.payload
                 )
+                sample = PoolSample(
+                    sample_id=uuid4().hex,
+                    sample_idx=pending_sample.sample_idx,
+                    key_values=pending_sample.key_values,
+                    payload=final_payload,
+                    source_run_id=pending_sample.source_run_id,
+                    metadata=pending_sample.metadata,
+                )
+                insert_row = sample.to_db_insert_row(self._schema)
+                sample_cols = list(insert_row.keys())
                 placeholders = ", ".join(["%s"] * len(sample_cols))
-                values: list[Any] = [sample_id]
-                for name in key_names:
-                    values.append(key_vals[name])
-                values.extend(
-                    [
-                        row["sample_idx"],
-                        json.dumps(final_payload, default=str),
-                        row["source_run_id"],
-                        json.dumps(meta, default=str),
-                    ]
-                )
+                values = list(insert_row.values())
 
                 insert_cur = conn.execute(
                     q(
@@ -268,14 +184,7 @@ class PendingStore:
                 )
 
                 conn.commit()
-                return PoolSample(
-                    sample_id=sample_id,
-                    sample_idx=row["sample_idx"],
-                    key_values=key_vals,
-                    payload=final_payload,
-                    source_run_id=row["source_run_id"],
-                    metadata=meta,
-                )
+                return sample
             except Exception:
                 conn.rollback()
                 raise
@@ -391,24 +300,7 @@ class PendingStore:
     ) -> list[PendingSample]:
         """Load in-flight pending samples, optionally filtered by partial key match."""
         tbl = self._schema.pending_table
-        key_names = self._schema.key_column_names
-
-        all_cols = (
-            ["pending_id"]
-            + key_names
-            + [
-                "sample_idx",
-                "payload_json",
-                "source_run_id",
-                "metadata_json",
-                "priority",
-                "status",
-                "worker_id",
-                "lease_expires_at",
-                "attempt_count",
-                "created_at",
-            ]
-        )
+        all_cols = PendingSample.db_select_columns(self._schema)
         col_list = ", ".join(all_cols)
 
         where_parts: list[str] = ["status IN (%s, %s)"]
@@ -432,26 +324,7 @@ class PendingStore:
                     params,
                 ).fetchall()
 
-            results: list[PendingSample] = []
-            for row in rows:
-                key_vals = {name: row[name] for name in key_names}
-                results.append(
-                    PendingSample(
-                        pending_id=row["pending_id"],
-                        key_values=key_vals,
-                        sample_idx=row["sample_idx"],
-                        payload=parse_json_field(row["payload_json"]),
-                        source_run_id=row["source_run_id"],
-                        metadata=parse_json_field(row["metadata_json"]),
-                        priority=row["priority"],
-                        status=PendingStatus(row["status"]),
-                        worker_id=row["worker_id"],
-                        lease_expires_at=row["lease_expires_at"],
-                        attempt_count=row["attempt_count"],
-                        created_at=row["created_at"],
-                    )
-                )
-            return results
+            return [PendingSample.from_db_row(self._schema, row) for row in rows]
 
     def status_counts(
         self, *, key_filter: dict[str, Any] | None = None

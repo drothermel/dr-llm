@@ -109,6 +109,7 @@ def _sample(dim_a: str = "a", dim_b: int = 1, **kwargs: Any) -> PoolSample:
         key_values={"dim_a": dim_a, "dim_b": dim_b},
         payload=kwargs.get("payload", {"data": "test"}),
         source_run_id=kwargs.get("source_run_id"),
+        metadata=kwargs.get("metadata", {}),
         sample_idx=kwargs.get("sample_idx"),
     )
 
@@ -118,6 +119,8 @@ def _pending(dim_a: str = "a", dim_b: int = 1, **kwargs: Any) -> PendingSample:
         key_values={"dim_a": dim_a, "dim_b": dim_b},
         sample_idx=kwargs.get("sample_idx", 0),
         payload=kwargs.get("payload", {"partial": True}),
+        source_run_id=kwargs.get("source_run_id"),
+        metadata=kwargs.get("metadata", {}),
         priority=kwargs.get("priority", 0),
     )
 
@@ -198,7 +201,17 @@ def test_bulk_insert(pool_store: PoolStore) -> None:
 
 @pytest.mark.integration
 def test_acquire_basic(pool_store: PoolStore) -> None:
-    for i in range(3):
+    pool_store.insert_sample(
+        _sample(
+            dim_a="acq",
+            dim_b=1,
+            sample_idx=0,
+            payload={"data": "primary"},
+            source_run_id="seed-run",
+            metadata={"kind": "primary"},
+        )
+    )
+    for i in range(1, 3):
         pool_store.insert_sample(_sample(dim_a="acq", dim_b=1, sample_idx=i))
 
     q = AcquireQuery(run_id="run1", key_values={"dim_a": "acq", "dim_b": 1}, n=2)
@@ -207,6 +220,10 @@ def test_acquire_basic(pool_store: PoolStore) -> None:
     assert len(result.samples) == 2
     assert result.samples[0].sample_idx == 0
     assert result.samples[1].sample_idx == 1
+    assert result.samples[0].payload == {"data": "primary"}
+    assert result.samples[0].source_run_id == "seed-run"
+    assert result.samples[0].metadata == {"kind": "primary"}
+    assert result.samples[0].status.value == "active"
 
 
 @pytest.mark.integration
@@ -252,7 +269,14 @@ def test_pending_insert_and_count(pool_store: PoolStore) -> None:
 
 @pytest.mark.integration
 def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
-    p = _pending(dim_a="promote", dim_b=1, sample_idx=0)
+    p = _pending(
+        dim_a="promote",
+        dim_b=1,
+        sample_idx=0,
+        payload={"partial": True, "draft": 1},
+        source_run_id="pending-run",
+        metadata={"source": "seed"},
+    )
     pool_store.pending.insert_pending(p)
 
     claimed = pool_store.pending.claim_pending(
@@ -262,6 +286,10 @@ def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
     assert len(claimed) == 1
     assert claimed[0].status == PendingStatus.leased
     assert claimed[0].worker_id == "w1"
+    assert claimed[0].payload == {"partial": True, "draft": 1}
+    assert claimed[0].source_run_id == "pending-run"
+    assert claimed[0].metadata == {"source": "seed"}
+    assert claimed[0].attempt_count == 1
 
     # Promote with final payload
     sample = pool_store.pending.promote_pending(
@@ -270,6 +298,8 @@ def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
     )
     assert sample is not None
     assert sample.payload["final"] is True
+    assert sample.source_run_id == "pending-run"
+    assert sample.metadata == {"source": "seed"}
     assert pool_store.cell_depth(key_values={"dim_a": "promote", "dim_b": 1}) == 1
 
 
@@ -344,22 +374,46 @@ def test_bulk_load(pool_store: PoolStore) -> None:
 def test_bulk_load_with_filter(pool_store: PoolStore) -> None:
     # Insert some known samples
     for i in range(3):
-        pool_store.insert_sample(_sample(dim_a="bload", dim_b=99, sample_idx=i))
+        pool_store.insert_sample(
+            _sample(
+                dim_a="bload",
+                dim_b=99,
+                sample_idx=i,
+                payload={"loaded": i},
+                source_run_id=f"bulk-run-{i}",
+                metadata={"batch": i},
+            )
+        )
 
     filtered = pool_store.bulk_load(key_filter={"dim_a": "bload", "dim_b": 99})
     assert len(filtered) == 3
     assert all(s.key_values["dim_a"] == "bload" for s in filtered)
+    assert filtered[0].payload == {"loaded": 0}
+    assert filtered[0].source_run_id == "bulk-run-0"
+    assert filtered[0].metadata == {"batch": 0}
 
 
 @pytest.mark.integration
 def test_bulk_load_pending(pool_store: PoolStore) -> None:
-    pool_store.pending.insert_pending(_pending(dim_a="blp", dim_b=70, sample_idx=0))
+    pool_store.pending.insert_pending(
+        _pending(
+            dim_a="blp",
+            dim_b=70,
+            sample_idx=0,
+            payload={"partial": "first"},
+            source_run_id="pending-seed-0",
+            metadata={"batch": 0},
+        )
+    )
     pool_store.pending.insert_pending(_pending(dim_a="blp", dim_b=70, sample_idx=1))
 
     results = pool_store.pending.bulk_load_pending(key_filter={"dim_a": "blp", "dim_b": 70})
     assert len(results) == 2
     assert all(isinstance(r, PendingSample) for r in results)
     assert all(r.key_values["dim_a"] == "blp" for r in results)
+    assert results[0].payload == {"partial": "first"}
+    assert results[0].source_run_id == "pending-seed-0"
+    assert results[0].metadata == {"batch": 0}
 
 
 @pytest.mark.integration

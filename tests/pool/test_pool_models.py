@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.models import AcquireQuery, AcquireResult, PoolSample, SampleStatus
 from dr_llm.pool.pending.models import PendingSample, PendingStatus, PendingStatusCounts
 from dr_llm.pool.pending.threadsafe_worker_stats import WorkerSnapshot
 from dr_llm.pool.results import InsertResult
+
+_TEST_SCHEMA = PoolSchema(
+    name="modeltest",
+    key_columns=[
+        KeyColumn(name="dim_a"),
+        KeyColumn(name="dim_b", type=ColumnType.integer),
+    ],
+)
 
 
 def test_pool_sample_defaults() -> None:
@@ -34,6 +45,128 @@ def test_pending_sample_defaults() -> None:
     assert p.status == PendingStatus.pending
     assert p.priority == 0
     assert p.attempt_count == 0
+
+
+def test_pool_sample_to_db_insert_row_uses_schema_key_order() -> None:
+    sample = PoolSample(
+        sample_id="sample-1",
+        sample_idx=7,
+        key_values={"dim_b": 3, "dim_a": "alpha"},
+        payload={"score": 0.9},
+        source_run_id="run-1",
+        metadata={"source": "test"},
+        status=SampleStatus.superseded,
+    )
+
+    row = sample.to_db_insert_row(_TEST_SCHEMA)
+
+    assert list(row.keys()) == [
+        "sample_id",
+        "dim_a",
+        "dim_b",
+        "sample_idx",
+        "payload_json",
+        "source_run_id",
+        "metadata_json",
+        "status",
+    ]
+    assert row["dim_a"] == "alpha"
+    assert row["dim_b"] == 3
+    assert row["payload_json"] == '{"score": 0.9}'
+    assert row["metadata_json"] == '{"source": "test"}'
+    assert row["status"] == SampleStatus.superseded.value
+
+
+def test_pool_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
+    created_at = datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC)
+    sample = PoolSample.from_db_row(
+        _TEST_SCHEMA,
+        {
+            "sample_id": "sample-1",
+            "dim_a": "alpha",
+            "dim_b": 3,
+            "sample_idx": 7,
+            "payload_json": '{"score": 0.9}',
+            "source_run_id": "run-1",
+            "metadata_json": '{"source": "test"}',
+            "status": "superseded",
+            "created_at": created_at,
+        },
+    )
+
+    assert sample.sample_id == "sample-1"
+    assert sample.key_values == {"dim_a": "alpha", "dim_b": 3}
+    assert sample.payload == {"score": 0.9}
+    assert sample.metadata == {"source": "test"}
+    assert sample.status == SampleStatus.superseded
+    assert sample.created_at == created_at
+
+
+def test_pending_sample_to_db_insert_row_uses_schema_key_order() -> None:
+    sample = PendingSample(
+        pending_id="pending-1",
+        key_values={"dim_b": 4, "dim_a": "beta"},
+        sample_idx=2,
+        payload={"partial": True},
+        source_run_id="run-2",
+        metadata={"attempt": 1},
+        priority=9,
+        status=PendingStatus.leased,
+    )
+
+    row = sample.to_db_insert_row(_TEST_SCHEMA)
+
+    assert list(row.keys()) == [
+        "pending_id",
+        "dim_a",
+        "dim_b",
+        "sample_idx",
+        "payload_json",
+        "source_run_id",
+        "metadata_json",
+        "priority",
+        "status",
+    ]
+    assert row["dim_a"] == "beta"
+    assert row["dim_b"] == 4
+    assert row["payload_json"] == '{"partial": true}'
+    assert row["metadata_json"] == '{"attempt": 1}'
+    assert row["priority"] == 9
+    assert row["status"] == PendingStatus.leased.value
+
+
+def test_pending_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
+    created_at = datetime(2024, 6, 7, 8, 9, 10, tzinfo=UTC)
+    lease_expires_at = datetime(2024, 6, 7, 8, 14, 10, tzinfo=UTC)
+    sample = PendingSample.from_db_row(
+        _TEST_SCHEMA,
+        {
+            "pending_id": "pending-1",
+            "dim_a": "beta",
+            "dim_b": 4,
+            "sample_idx": 2,
+            "payload_json": '{"partial": true}',
+            "source_run_id": "run-2",
+            "metadata_json": '{"attempt": 1}',
+            "priority": 9,
+            "status": "leased",
+            "worker_id": "worker-1",
+            "lease_expires_at": lease_expires_at,
+            "attempt_count": 3,
+            "created_at": created_at,
+        },
+    )
+
+    assert sample.pending_id == "pending-1"
+    assert sample.key_values == {"dim_a": "beta", "dim_b": 4}
+    assert sample.payload == {"partial": True}
+    assert sample.metadata == {"attempt": 1}
+    assert sample.priority == 9
+    assert sample.status == PendingStatus.leased
+    assert sample.worker_id == "worker-1"
+    assert sample.lease_expires_at == lease_expires_at
+    assert sample.attempt_count == 3
+    assert sample.created_at == created_at
 
 
 def test_insert_result_defaults() -> None:
