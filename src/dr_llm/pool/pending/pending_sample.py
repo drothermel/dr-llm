@@ -5,7 +5,14 @@ from datetime import datetime
 from typing import Any, Mapping
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+)
 
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.sql_helpers import key_values_from_row, parse_json_field
@@ -20,14 +27,22 @@ class PendingSample(BaseModel):
     schema-defined key columns.
     """
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True)
 
     pending_id: str = Field(default_factory=lambda: uuid4().hex)
     key_values: dict[str, Any] = Field(default_factory=dict)
     sample_idx: int = 0
-    payload: dict[str, Any] = Field(default_factory=dict, alias="payload_json")
+    payload: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("payload", "payload_json"),
+        serialization_alias="payload_json",
+    )
     source_run_id: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict, alias="metadata_json")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("metadata", "metadata_json"),
+        serialization_alias="metadata_json",
+    )
     priority: int = 0
     status: PendingStatus = PendingStatus.pending
     worker_id: str | None = None
@@ -55,7 +70,7 @@ class PendingSample(BaseModel):
             if name == "key_values":
                 cols.extend(schema.key_column_names)
             else:
-                cols.append(field.alias or name)
+                cols.append(str(field.serialization_alias or name))
         return cols
 
     def to_db_insert_row(self, schema: PoolSchema) -> dict[str, Any]:
