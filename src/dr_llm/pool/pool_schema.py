@@ -3,7 +3,13 @@ from __future__ import annotations
 import re
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 
 class ColumnType(StrEnum):
@@ -61,18 +67,22 @@ class PoolSchema(BaseModel):
             raise ValueError("PoolSchema requires at least one KeyColumn")
         return self
 
+    @computed_field
     @property
     def samples_table(self) -> str:
         return f"pool_{self.name}_samples"
 
+    @computed_field
     @property
     def claims_table(self) -> str:
         return f"pool_{self.name}_claims"
 
+    @computed_field
     @property
     def pending_table(self) -> str:
         return f"pool_{self.name}_pending"
 
+    @computed_field
     @property
     def metadata_table(self) -> str:
         return f"pool_{self.name}_metadata"
