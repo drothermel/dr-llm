@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 TWorkItem = TypeVar("TWorkItem")
 TResult = TypeVar("TResult")
+TBackendState = TypeVar("TBackendState", bound=BaseModel)
 
 
 class ErrorAction(StrEnum):
@@ -17,12 +18,9 @@ class ErrorAction(StrEnum):
 
 
 type ProcessFn[TWorkItem, TResult] = Callable[[TWorkItem], TResult]
-type ProcessContextFactory[TWorkItem] = Callable[
-    [TWorkItem, str], AbstractContextManager[Any]
-]
 
 
-class WorkerBackend(Protocol[TWorkItem, TResult]):
+class WorkerBackend(Protocol[TWorkItem, TResult, TBackendState]):
     def claim(
         self, *, worker_id: str, limit: int, lease_seconds: int
     ) -> list[TWorkItem]: ...
@@ -35,7 +33,13 @@ class WorkerBackend(Protocol[TWorkItem, TResult]):
         item: TWorkItem,
         worker_id: str,
         exc: Exception,
-        max_retries: int,
     ) -> ErrorAction: ...
 
-    def snapshot(self) -> BaseModel | None: ...
+    def snapshot(self) -> TBackendState | None: ...
+
+    def process_context(
+        self,
+        *,
+        item: TWorkItem,
+        worker_id: str,
+    ) -> AbstractContextManager[Any]: ...

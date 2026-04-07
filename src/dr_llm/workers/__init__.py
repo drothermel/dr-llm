@@ -1,9 +1,4 @@
-from dr_llm.workers.backend import (
-    ErrorAction,
-    ProcessContextFactory,
-    ProcessFn,
-    WorkerBackend,
-)
+from dr_llm.workers.backend import ErrorAction, ProcessFn, WorkerBackend
 from dr_llm.workers.models import (
     WorkerConfig,
     WorkerSnapshot,
@@ -15,7 +10,6 @@ from dr_llm.workers.worker_controller import WorkerController
 
 __all__ = [
     "ErrorAction",
-    "ProcessContextFactory",
     "ProcessFn",
     "ThreadsafeWorkerStats",
     "WorkerBackend",

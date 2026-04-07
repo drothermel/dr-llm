@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 import pytest
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from dr_llm.workers import (
     ErrorAction,
@@ -29,8 +29,15 @@ class FakeBackendState(BaseModel):
     claims: int = 0
 
 
-class FakeWorkerBackend(WorkerBackend[str, dict[str, Any]]):
-    def __init__(self, items: list[str]) -> None:
+class FakeWorkerBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
+    def __init__(
+        self,
+        items: list[str],
+        *,
+        max_retries: int = 0,
+        process_context_enabled: bool = False,
+        events: list[str] | None = None,
+    ) -> None:
         self._lock = threading.Lock()
         self._queued = list(items)
         self._completed: list[str] = []
@@ -38,6 +45,9 @@ class FakeWorkerBackend(WorkerBackend[str, dict[str, Any]]):
         self._attempts: dict[str, int] = {}
         self._claims = 0
         self._retries = 0
+        self._max_retries = max_retries
+        self._process_context_enabled = process_context_enabled
+        self._events = events
 
     def claim(self, *, worker_id: str, limit: int, lease_seconds: int) -> list[str]:
         del worker_id, lease_seconds
@@ -63,13 +73,12 @@ class FakeWorkerBackend(WorkerBackend[str, dict[str, Any]]):
         item: str,
         worker_id: str,
         exc: Exception,
-        max_retries: int,
     ) -> ErrorAction:
         del worker_id, exc
         with self._lock:
             attempts = self._attempts.get(item, 0) + 1
             self._attempts[item] = attempts
-            if attempts <= max_retries:
+            if attempts <= self._max_retries:
                 self._retries += 1
                 self._queued.append(item)
                 return ErrorAction.retry
@@ -86,13 +95,27 @@ class FakeWorkerBackend(WorkerBackend[str, dict[str, Any]]):
                 claims=self._claims,
             )
 
+    @contextmanager
+    def process_context(self, *, item: str, worker_id: str):
+        if not self._process_context_enabled:
+            with nullcontext():
+                yield
+            return
+
+        assert self._events is not None
+        self._events.append(f"enter:{item}:{worker_id}")
+        try:
+            yield
+        finally:
+            self._events.append(f"exit:{item}:{worker_id}")
+
 
 def _wait_for(
-    controller: WorkerController,
-    predicate: Callable[[WorkerSnapshot], bool],
+    controller: WorkerController[FakeBackendState],
+    predicate: Callable[[WorkerSnapshot[FakeBackendState]], bool],
     *,
     timeout_s: float = 2.0,
-) -> WorkerSnapshot:
+) -> WorkerSnapshot[FakeBackendState]:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         snapshot = controller.snapshot()
@@ -102,7 +125,9 @@ def _wait_for(
     raise AssertionError("Timed out waiting for worker state")
 
 
-def _stop_controller(controller: WorkerController) -> WorkerSnapshot:
+def _stop_controller(
+    controller: WorkerController[FakeBackendState],
+) -> WorkerSnapshot[FakeBackendState]:
     controller.stop()
     return controller.join(timeout=5.0)
 
@@ -124,8 +149,6 @@ def test_worker_config_validation() -> None:
         )
     with pytest.raises(ValueError, match="backoff_factor must be >= 1.0"):
         WorkerConfig(num_workers=1, backoff_factor=0.5)
-    with pytest.raises(ValueError, match="max_retries must be non-negative"):
-        WorkerConfig(num_workers=1, max_retries=-1)
     with pytest.raises(ValueError, match="thread_name_prefix must be non-empty"):
         WorkerConfig(num_workers=1, thread_name_prefix="  ")
 
@@ -156,9 +179,8 @@ def test_start_workers_completes_claimed_items() -> None:
     assert snapshot.counts.failed == 0
     assert snapshot.counts.retried == 0
     assert snapshot.backend_state is not None
-    backend_state = cast(FakeBackendState, snapshot.backend_state)
-    assert backend_state.completed == 3
-    assert backend_state.queued == 0
+    assert snapshot.backend_state.completed == 3
+    assert snapshot.backend_state.queued == 0
 
 
 def test_idle_polling_increments_and_stops_cleanly() -> None:
@@ -183,7 +205,7 @@ def test_idle_polling_increments_and_stops_cleanly() -> None:
 
 
 def test_retry_then_success() -> None:
-    backend = FakeWorkerBackend(["retry-once"])
+    backend = FakeWorkerBackend(["retry-once"], max_retries=1)
     attempts = {"count": 0}
 
     def flaky_process(item: str) -> dict[str, str]:
@@ -199,7 +221,6 @@ def test_retry_then_success() -> None:
             num_workers=1,
             min_poll_interval_s=0.01,
             max_poll_interval_s=0.05,
-            max_retries=1,
         ),
     )
     try:
@@ -218,13 +239,12 @@ def test_retry_then_success() -> None:
     assert snapshot.counts.failed == 0
     assert snapshot.counts.process_errors == 1
     assert snapshot.backend_state is not None
-    backend_state = cast(FakeBackendState, snapshot.backend_state)
-    assert backend_state.retries == 1
-    assert backend_state.failed == 0
+    assert snapshot.backend_state.retries == 1
+    assert snapshot.backend_state.failed == 0
 
 
 def test_retry_then_fail() -> None:
-    backend = FakeWorkerBackend(["always-fail"])
+    backend = FakeWorkerBackend(["always-fail"], max_retries=1)
 
     controller = start_workers(
         backend,
@@ -233,7 +253,6 @@ def test_retry_then_fail() -> None:
             num_workers=1,
             min_poll_interval_s=0.01,
             max_poll_interval_s=0.05,
-            max_retries=1,
         ),
     )
     try:
@@ -254,16 +273,12 @@ def test_retry_then_fail() -> None:
 
 
 def test_process_context_hook_runs_around_work() -> None:
-    backend = FakeWorkerBackend(["ctx"])
     events: list[str] = []
-
-    @contextmanager
-    def process_context(item: str, worker_id: str):
-        events.append(f"enter:{item}:{worker_id}")
-        try:
-            yield
-        finally:
-            events.append(f"exit:{item}:{worker_id}")
+    backend = FakeWorkerBackend(
+        ["ctx"],
+        process_context_enabled=True,
+        events=events,
+    )
 
     controller = start_workers(
         backend,
@@ -273,7 +288,6 @@ def test_process_context_hook_runs_around_work() -> None:
             min_poll_interval_s=0.01,
             max_poll_interval_s=0.05,
         ),
-        process_context_factory=process_context,
     )
     try:
         snapshot = _wait_for(
@@ -309,3 +323,23 @@ def test_snapshot_includes_backend_state() -> None:
 
     assert snapshot.backend_state is not None
     assert isinstance(snapshot.backend_state, FakeBackendState)
+
+
+def test_snapshot_counts_are_frozen() -> None:
+    backend = FakeWorkerBackend(["only-item"])
+    controller = start_workers(
+        backend,
+        process_fn=lambda item: {"item": item},
+        config=WorkerConfig(
+            num_workers=1,
+            min_poll_interval_s=0.01,
+            max_poll_interval_s=0.05,
+        ),
+    )
+    try:
+        snapshot = controller.snapshot()
+    finally:
+        _stop_controller(controller)
+
+    with pytest.raises(ValidationError, match="Instance is frozen"):
+        snapshot.counts.claimed = 1

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+TBackendState = TypeVar("TBackendState", bound=BaseModel)
 
 
 type WorkerStatKey = Literal[
@@ -14,6 +16,15 @@ type WorkerStatKey = Literal[
     "idle_polls",
 ]
 
+WORKER_STAT_KEYS: tuple[WorkerStatKey, ...] = (
+    "claimed",
+    "completed",
+    "failed",
+    "retried",
+    "process_errors",
+    "idle_polls",
+)
+
 
 class WorkerConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -23,7 +34,6 @@ class WorkerConfig(BaseModel):
     min_poll_interval_s: float = 0.5
     max_poll_interval_s: float = 5.0
     backoff_factor: float = 2.0
-    max_retries: int = 0
     thread_name_prefix: str = "worker"
 
     @model_validator(mode="after")
@@ -38,14 +48,14 @@ class WorkerConfig(BaseModel):
             raise ValueError("max_poll_interval_s must be >= min_poll_interval_s")
         if self.backoff_factor < 1.0:
             raise ValueError("backoff_factor must be >= 1.0")
-        if self.max_retries < 0:
-            raise ValueError("max_retries must be non-negative")
         if not self.thread_name_prefix.strip():
             raise ValueError("thread_name_prefix must be non-empty")
         return self
 
 
 class WorkerStatCounts(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     claimed: int = 0
     completed: int = 0
     failed: int = 0
@@ -53,11 +63,8 @@ class WorkerStatCounts(BaseModel):
     process_errors: int = 0
     idle_polls: int = 0
 
-    def increment(self, key: WorkerStatKey, amount: int = 1) -> None:
-        setattr(self, key, getattr(self, key) + amount)
 
-
-class WorkerSnapshot(BaseModel):
+class WorkerSnapshot(BaseModel, Generic[TBackendState]):
     """Observable state for a running worker controller."""
 
     model_config = ConfigDict(frozen=True)
@@ -65,4 +72,4 @@ class WorkerSnapshot(BaseModel):
     worker_count: int
     stop_requested: bool = False
     counts: WorkerStatCounts = Field(default_factory=WorkerStatCounts)
-    backend_state: BaseModel | None = None
+    backend_state: TBackendState | None = None

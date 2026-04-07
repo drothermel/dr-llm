@@ -5,11 +5,13 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
+from typing import TypeVar
 from uuid import uuid4
+
+from pydantic import BaseModel
 
 from dr_llm.workers.backend import (
     ErrorAction,
-    ProcessContextFactory,
     ProcessFn,
     WorkerBackend,
 )
@@ -19,17 +21,20 @@ from dr_llm.workers.worker_controller import WorkerController
 
 logger = logging.getLogger(__name__)
 
+TWorkItem = TypeVar("TWorkItem")
+TResult = TypeVar("TResult")
+TBackendState = TypeVar("TBackendState", bound=BaseModel)
 
-def start_workers[TWorkItem, TResult](
-    backend: WorkerBackend[TWorkItem, TResult],
+
+def start_workers(
+    backend: WorkerBackend[TWorkItem, TResult, TBackendState],
     *,
     process_fn: ProcessFn[TWorkItem, TResult],
     config: WorkerConfig,
-    process_context_factory: ProcessContextFactory[TWorkItem] | None = None,
-) -> WorkerController:
+) -> WorkerController[TBackendState]:
     """Start long-lived queue-draining workers and return a controller."""
     stop_event = threading.Event()
-    stats = ThreadsafeWorkerStats()
+    stats = ThreadsafeWorkerStats[TBackendState]()
     executor = ThreadPoolExecutor(
         max_workers=config.num_workers,
         thread_name_prefix=config.thread_name_prefix,
@@ -43,7 +48,6 @@ def start_workers[TWorkItem, TResult](
             stop_event=stop_event,
             stats=stats,
             config=config,
-            process_context_factory=process_context_factory,
         )
         for idx in range(config.num_workers)
     ]
@@ -57,19 +61,17 @@ def start_workers[TWorkItem, TResult](
     )
 
 
-def run_workers[TWorkItem, TResult](
-    backend: WorkerBackend[TWorkItem, TResult],
+def run_workers(
+    backend: WorkerBackend[TWorkItem, TResult, TBackendState],
     *,
     process_fn: ProcessFn[TWorkItem, TResult],
     config: WorkerConfig,
-    process_context_factory: ProcessContextFactory[TWorkItem] | None = None,
-) -> WorkerSnapshot:
+) -> WorkerSnapshot[TBackendState]:
     """Start workers and block until interrupted, then stop them cleanly."""
     controller = start_workers(
         backend,
         process_fn=process_fn,
         config=config,
-        process_context_factory=process_context_factory,
     )
     try:
         while True:
@@ -81,18 +83,16 @@ def run_workers[TWorkItem, TResult](
     return controller.join()
 
 
-def _worker_loop[TWorkItem, TResult](
+def _worker_loop(
     *,
-    backend: WorkerBackend[TWorkItem, TResult],
+    backend: WorkerBackend[TWorkItem, TResult, TBackendState],
     process_fn: ProcessFn[TWorkItem, TResult],
     worker_id: str,
     stop_event: threading.Event,
-    stats: ThreadsafeWorkerStats,
+    stats: ThreadsafeWorkerStats[TBackendState],
     config: WorkerConfig,
-    process_context_factory: ProcessContextFactory[TWorkItem] | None,
 ) -> None:
     poll_interval_s = config.min_poll_interval_s
-    context_factory = process_context_factory or _null_context_factory
 
     while not stop_event.is_set():
         claimed = backend.claim(
@@ -115,7 +115,7 @@ def _worker_loop[TWorkItem, TResult](
         stats.incr("claimed")
 
         try:
-            with context_factory(item, worker_id):
+            with _process_context(backend=backend, item=item, worker_id=worker_id):
                 result = process_fn(item)
             backend.complete(item=item, result=result, worker_id=worker_id)
             stats.incr("completed")
@@ -126,16 +126,21 @@ def _worker_loop[TWorkItem, TResult](
                 item=item,
                 worker_id=worker_id,
                 exc=exc,
-                max_retries=config.max_retries,
             )
-            if action is ErrorAction.retry:
-                stats.incr("retried")
-                continue
-            if action is ErrorAction.fail:
-                stats.incr("failed")
-                continue
-            raise ValueError(f"Unsupported error action: {action!r}")
+            match action:
+                case ErrorAction.retry:
+                    stats.incr("retried")
+                case ErrorAction.fail:
+                    stats.incr("failed")
 
 
-def _null_context_factory(_item: object, _worker_id: str):
-    return nullcontext()
+def _process_context(
+    *,
+    backend: WorkerBackend[TWorkItem, TResult, TBackendState],
+    item: TWorkItem,
+    worker_id: str,
+):
+    process_context = getattr(backend, "process_context", None)
+    if process_context is None:
+        return nullcontext()
+    return process_context(item=item, worker_id=worker_id)
