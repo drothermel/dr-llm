@@ -39,7 +39,16 @@ def test_parse_reasoning_extracts_thinking_content_blocks():
     msg = {"content": details}
     text, extracted_details = parse_reasoning(msg)
     assert text == "step 1"
-    assert extracted_details == details
+    assert extracted_details is None
+
+
+def test_parse_reasoning_preserves_reasoning_details_when_thinking_blocks_present():
+    reasoning_details = [{"type": "reasoning.text", "text": "provider detail"}]
+    content = [{"type": "thinking", "thinking": "step 1"}]
+    msg = {"reasoning_details": reasoning_details, "content": content}
+    text, extracted_details = parse_reasoning(msg)
+    assert text == "step 1"
+    assert extracted_details == reasoning_details
 
 
 def test_cost_info_from_raw_parses_usage_block():

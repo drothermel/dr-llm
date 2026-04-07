@@ -515,14 +515,7 @@ def _validate_anthropic_reasoning(
             f"Unsupported kimi-code thinking level {thinking_level!r} for model={model!r}"
         )
 
-    if thinking_level != ThinkingLevel.NA:
-        raise ValueError(
-            f"anthropic thinking_level {thinking_level!r} is not supported for provider={provider!r}"
-        )
-    if budget_tokens is not None or display is not None:
-        raise ValueError(
-            f"anthropic reasoning fields are not supported for provider={provider!r}"
-        )
+    raise ValueError(f"anthropic reasoning is not supported for provider={provider!r}")
 
 
 def _validate_openai_reasoning(

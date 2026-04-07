@@ -17,6 +17,7 @@ class _GoogleGenerationConfig(BaseModel):
     temperature: float | None = None
     topP: float | None = None
     maxOutputTokens: int | None = None
+    thinkingConfig: _GoogleThinkingConfig | None = None
 
 
 class _GoogleThinkingConfig(BaseModel):
@@ -46,7 +47,6 @@ class GoogleRequest(BaseModel):
     contents: list[_GoogleRequestContent]
     systemInstruction: _GoogleSystemInstruction | None = None
     generationConfig: _GoogleGenerationConfig | None = None
-    thinkingConfig: _GoogleThinkingConfig | None = None
     base_url: str = Field(exclude=True)
     api_key_env: str = Field(exclude=True)
     api_key: str = Field(exclude=True, repr=False)
@@ -71,9 +71,9 @@ class GoogleRequest(BaseModel):
                 if system
                 else None
             ),
-            generationConfig=cls._generation_config(request=request),
-            thinkingConfig=cls._thinking_config(
-                reasoning_payload=reasoning_mapping.to_payload()
+            generationConfig=cls._generation_config(
+                request=request,
+                reasoning_payload=reasoning_mapping.to_payload(),
             ),
             base_url=config.base_url,
             api_key_env=config.api_key_env,
@@ -117,48 +117,24 @@ class GoogleRequest(BaseModel):
     def _generation_config(
         *,
         request: LlmRequest,
+        reasoning_payload: dict[str, Any],
     ) -> _GoogleGenerationConfig | None:
-        generation_config = _GoogleGenerationConfig()
-        has_generation_config = False
+        thinking_config = (
+            _GoogleThinkingConfig(**reasoning_payload) if reasoning_payload else None
+        )
         if (
             request.temperature is not None
             or request.top_p is not None
             or request.max_tokens is not None
+            or thinking_config is not None
         ):
-            generation_config = _GoogleGenerationConfig(
+            return _GoogleGenerationConfig(
                 temperature=request.temperature,
                 topP=request.top_p,
                 maxOutputTokens=request.max_tokens,
+                thinkingConfig=thinking_config,
             )
-            has_generation_config = True
-        if not has_generation_config:
-            return None
-        return generation_config
-
-    @staticmethod
-    def _thinking_config(
-        *,
-        reasoning_payload: dict[str, Any],
-    ) -> _GoogleThinkingConfig | None:
-        if not reasoning_payload:
-            return None
-        return _GoogleThinkingConfig(
-            thinkingBudget=(
-                int(reasoning_payload["thinkingBudget"])
-                if "thinkingBudget" in reasoning_payload
-                else None
-            ),
-            thinkingLevel=(
-                str(reasoning_payload["thinkingLevel"])
-                if "thinkingLevel" in reasoning_payload
-                else None
-            ),
-            includeThoughts=(
-                bool(reasoning_payload["includeThoughts"])
-                if "includeThoughts" in reasoning_payload
-                else None
-            ),
-        )
+        return None
 
     def endpoint(self) -> str:
         return f"{self.base_url}/models/{self.model}:generateContent"
@@ -167,9 +143,4 @@ class GoogleRequest(BaseModel):
         return {"x-goog-api-key": self.api_key}
 
     def json_payload(self) -> dict[str, Any]:
-        payload = self.model_dump(mode="json", exclude_none=True)
-        thinking_config = payload.pop("thinkingConfig", None)
-        if thinking_config is not None:
-            generation_config = payload.setdefault("generationConfig", {})
-            generation_config["thinkingConfig"] = thinking_config
-        return payload
+        return self.model_dump(mode="json", exclude_none=True)

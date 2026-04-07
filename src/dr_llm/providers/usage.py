@@ -267,7 +267,6 @@ def parse_reasoning(
                 if isinstance(item, dict) and item.get("type") == "thinking"
             ]
             if thinking_items:
-                reasoning_details = thinking_items
                 reasoning_chunks = [
                     str(item.get("thinking")).strip()
                     for item in thinking_items

@@ -25,9 +25,8 @@ def apply_openrouter_model_policies(
             continue
         capabilities = _capabilities_for_policy(policy.request_style)
         filtered.append(
-            ModelCatalogEntry.model_validate(
-                entry.model_dump(mode="python")
-                | {
+            entry.model_copy(
+                update={
                     "supports_reasoning": capabilities.supports_reasoning,
                     "reasoning_capabilities": capabilities,
                 }

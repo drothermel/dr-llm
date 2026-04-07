@@ -28,7 +28,7 @@ class LlmRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _validate_reasoning(self) -> LlmRequest:
+    def _validate_request_constraints(self) -> LlmRequest:
         validate_max_tokens(
             provider=self.provider,
             max_tokens=self.max_tokens,

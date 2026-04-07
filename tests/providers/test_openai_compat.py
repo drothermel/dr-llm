@@ -154,6 +154,23 @@ def test_glm_request_serializes_native_thinking_payload() -> None:
     assert provider_request.json_payload()["thinking"] == {"type": "enabled"}
 
 
+def test_request_rejects_extra_body_key_collisions() -> None:
+    provider_request = OpenAICompatRequest(
+        provider="openrouter",
+        model="deepseek/deepseek-chat",
+        messages=[{"role": "user", "content": "hi"}],
+        extra_body={"model": "other-model"},
+        base_url="https://openrouter.ai/api/v1",
+        chat_path="/chat/completions",
+        api_key_env="OPENROUTER_API_KEY",
+        api_key="x",
+        idempotency_key="fixed-key",
+    )
+
+    with pytest.raises(ValueError, match="extra_body conflicts with validated payload keys: model"):
+        provider_request.json_payload()
+
+
 # ---------------------------------------------------------------------------
 # Response unit tests
 # ---------------------------------------------------------------------------

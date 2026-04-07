@@ -68,4 +68,5 @@ def test_kimi_code_serializes_budget_and_disabled_thinking() -> None:
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
     )
     off_adapter.generate(off_request)
+    assert off_captured["payload"]["output_config"] == {"effort": "low"}
     assert off_captured["payload"]["thinking"] == {"type": "disabled"}

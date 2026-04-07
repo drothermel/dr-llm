@@ -79,7 +79,7 @@ class FileCatalogStore:
             return []
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            entries = [ModelCatalogEntry.model_validate(item) for item in data]
+            entries = [ModelCatalogEntry(**item) for item in data]
             return apply_openrouter_model_policies(filter_blacklisted_entries(entries))
         except (OSError, json.JSONDecodeError, ValidationError) as exc:
             logger.warning("Skipping corrupt catalog cache %s: %s", path, exc)
@@ -96,9 +96,7 @@ class FileCatalogStore:
         for path in sorted(self._cache_dir.glob("*.json")):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                provider_entries = [
-                    ModelCatalogEntry.model_validate(item) for item in data
-                ]
+                provider_entries = [ModelCatalogEntry(**item) for item in data]
                 entries.extend(
                     apply_openrouter_model_policies(
                         filter_blacklisted_entries(provider_entries)

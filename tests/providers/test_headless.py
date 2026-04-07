@@ -156,7 +156,7 @@ def test_codex_rejects_reasoning_before_subprocess(monkeypatch: pytest.MonkeyPat
     with pytest.raises(ValidationError):
         make_request(
             provider="codex",
-            model="gpt-5-codex",
+            model="gpt-5.1-codex-mini",
             reasoning=ReasoningBudget(tokens=1024),
         )
     assert "command" not in captured

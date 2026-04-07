@@ -396,6 +396,12 @@ def test_rejects_provider_specific_reasoning_on_wrong_provider() -> None:
             model="gpt-5-mini",
             reasoning=GoogleReasoning(thinking_level=ThinkingLevel.LOW),
         )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5-mini",
+            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.NA),
+        )
 
 
 def test_openai_gpt5_family_accepts_provider_shaped_reasoning() -> None:

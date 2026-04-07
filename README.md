@@ -48,6 +48,8 @@ uv run dr-llm models show --provider openai --model gpt-4.1
 ```
 
 Catalog data is cached locally at `~/.dr_llm/catalog_cache/`. No database required.
+Human-readable and JSON model listings also include the repo's curated blacklist,
+and OpenRouter listings are filtered through the local reasoning-policy allowlist.
 
 ## Available Providers
 
@@ -181,8 +183,9 @@ dr-llm models show --provider NAME --model NAME
 
 # Query
 dr-llm query --provider NAME --model NAME --message TEXT [--no-record]
-dr-llm query --provider openai --model gpt-5-mini --reasoning-json '{"kind":"effort","level":"high"}' --message TEXT
-dr-llm query --provider google --model gemini-2.5-flash --reasoning-json '{"kind":"google","thinking_budget":512}' --message TEXT
+dr-llm query --provider openai --model gpt-5-mini --reasoning-json '{"kind":"openai","thinking_level":"high"}' --message TEXT
+dr-llm query --provider google --model gemini-2.5-flash --reasoning-json '{"kind":"google","thinking_level":"budget","budget_tokens":512}' --message TEXT
+dr-llm query --provider openrouter --model openai/gpt-oss-20b --reasoning-json '{"kind":"openrouter","effort":"high"}' --message TEXT
 
 # Runs (requires DB)
 dr-llm run start [--run-type TYPE] [--metadata-json JSON]
@@ -258,4 +261,26 @@ uv run python scripts/demo-pool-fill.py
 
 Auto-creates a Docker Postgres project, seeds a pending queue for an `(llm_config, prompt)` pool using `LlmConfig` and `Message` objects, starts workers that make real LLM calls via `make_llm_process_fn`, prints progress, shows response snippets, and destroys the project on exit. Pass `--dsn` to use an existing database instead. Run with `--help` for options.
 
-Reasoning configs are validated before dispatch. For example, Google 2.5 models require budget-style reasoning such as `{"kind":"google","thinking_budget":512}`, `minimax` requires `{"kind":"anthropic","thinking_level":"na"}` together with an explicit `--effort`, and `kimi-code` uses Anthropic-compatible reasoning like `{"kind":"anthropic","thinking_level":"adaptive"}` together with an explicit `--effort` and `--max-tokens`.
+### Reasoning and effort demo (live API / CLI checks)
+
+```bash
+uv run python scripts/demo_thinking_and_effort.py
+```
+
+Exercises the branch's provider-specific reasoning and effort validation against
+curated model sets for OpenAI, OpenRouter, Google, Codex, Claude Code, MiniMax,
+and Kimi Code. Use `--provider` to limit the run to one provider.
+
+Reasoning configs are validated before dispatch. For example, OpenAI GPT-5
+family models use configs like `{"kind":"openai","thinking_level":"high"}`,
+Google 2.5 models accept budget configs like
+`{"kind":"google","thinking_level":"budget","budget_tokens":512}`, `minimax`
+requires `{"kind":"anthropic","thinking_level":"na"}` together with an explicit
+`--effort`, `kimi-code` uses Anthropic-compatible reasoning like
+`{"kind":"anthropic","thinking_level":"adaptive"}` together with an explicit
+`--effort` and `--max-tokens`, and OpenRouter reasoning-capable models use
+`{"kind":"openrouter", ...}` with either `enabled` or `effort` depending on the
+repo's curated model policy.
+
+See [`OPEN_ROUTER_REASONING_NOTES.md`](/Users/daniellerothermel/drotherm/repos/dr-llm/OPEN_ROUTER_REASONING_NOTES.md)
+for the direct API observations that informed the OpenRouter policy layer.

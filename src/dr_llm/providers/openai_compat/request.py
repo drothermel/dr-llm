@@ -104,5 +104,11 @@ class OpenAICompatRequest(BaseModel):
         payload = self.model_dump(
             mode="json", exclude_none=True, exclude={"extra_body"}
         )
+        overlapping_keys = sorted(set(self.extra_body) & set(payload))
+        if overlapping_keys:
+            conflicts = ", ".join(overlapping_keys)
+            raise ValueError(
+                f"extra_body conflicts with validated payload keys: {conflicts}"
+            )
         payload.update(self.extra_body)
         return payload
