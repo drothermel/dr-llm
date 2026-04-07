@@ -49,15 +49,14 @@ class FakeWorkerBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
         self._process_context_enabled = process_context_enabled
         self._events = events
 
-    def claim(self, *, worker_id: str, limit: int, lease_seconds: int) -> list[str]:
+    def claim(self, *, worker_id: str, lease_seconds: int) -> list[str]:
         del worker_id, lease_seconds
         with self._lock:
             if not self._queued:
                 return []
             self._claims += 1
-            claimed = self._queued[:limit]
-            self._queued = self._queued[limit:]
-        return claimed
+            item = self._queued.pop(0)
+        return [item]
 
     def complete(
         self, *, item: str, result: dict[str, Any], worker_id: str

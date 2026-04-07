@@ -97,7 +97,6 @@ def _worker_loop(
     while not stop_event.is_set():
         claimed = backend.claim(
             worker_id=worker_id,
-            limit=1,
             lease_seconds=config.lease_seconds,
         )
         if not claimed:
