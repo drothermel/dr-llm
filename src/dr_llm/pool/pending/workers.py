@@ -11,9 +11,13 @@ from itertools import product
 from typing import Any
 from uuid import uuid4
 
+from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.registry import ProviderRegistry
 from dr_llm.logging import emit_generation_event, generation_log_context
 from dr_llm.logging.events import get_generation_log_context
 from dr_llm.pool.errors import PoolSchemaError
+from dr_llm.pool.models import InsertResult
 from dr_llm.pool.pending.models import (
     PendingSample,
 )
@@ -23,11 +27,7 @@ from dr_llm.pool.pending.threadsafe_worker_stats import (
     WorkerSnapshot,
 )
 from dr_llm.pool.pending.utils import serialize_payload_value
-from dr_llm.pool.results import InsertResult
 from dr_llm.pool.sample_store import PoolStore
-from dr_llm.llm.config import LlmConfig
-from dr_llm.llm.messages import Message
-from dr_llm.llm.providers.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
 

@@ -25,10 +25,10 @@ from dr_llm.pool.models import (
     AcquireQuery,
     AcquireResult,
     CoverageRow,
+    InsertResult,
     PoolSample,
 )
 from dr_llm.pool.pending.store import PendingStore
-from dr_llm.pool.results import InsertResult
 
 logger = logging.getLogger(__name__)
 

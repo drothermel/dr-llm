@@ -5,10 +5,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
-from dr_llm.pool.models import AcquireQuery, AcquireResult, PoolSample, SampleStatus
+from dr_llm.pool.models import (
+    AcquireQuery,
+    AcquireResult,
+    InsertResult,
+    PoolSample,
+    SampleStatus,
+)
 from dr_llm.pool.pending.models import PendingSample, PendingStatus, PendingStatusCounts
 from dr_llm.pool.pending.threadsafe_worker_stats import WorkerSnapshot
-from dr_llm.pool.results import InsertResult
 
 _TEST_SCHEMA = PoolSchema(
     name="modeltest",
