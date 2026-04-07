@@ -186,6 +186,37 @@ def test_pending_status_counts_total() -> None:
     assert counts.total == 10
 
 
+def test_pending_status_counts_in_flight() -> None:
+    counts = PendingStatusCounts(pending=3, leased=2, promoted=10, failed=1)
+    assert counts.in_flight == 5
+
+
+def test_pending_status_counts_from_rows() -> None:
+    rows = [
+        {"status": "pending", "cnt": 3},
+        {"status": "leased", "cnt": 2},
+        {"status": "promoted", "cnt": 5},
+        {"status": "failed", "cnt": 1},
+    ]
+    counts = PendingStatusCounts.from_rows(rows)
+    assert counts.pending == 3
+    assert counts.leased == 2
+    assert counts.promoted == 5
+    assert counts.failed == 1
+
+
+def test_pending_status_counts_from_rows_handles_partial_and_unknown() -> None:
+    rows = [
+        {"status": "pending", "cnt": 4},
+        {"status": "unknown_status", "cnt": 99},
+    ]
+    counts = PendingStatusCounts.from_rows(rows)
+    assert counts.pending == 4
+    assert counts.leased == 0
+    assert counts.promoted == 0
+    assert counts.failed == 0
+
+
 def test_acquire_query_auto_request_id() -> None:
     q = AcquireQuery(run_id="r1", key_values={"x": "a"}, n=5)
     assert q.request_id  # auto-generated

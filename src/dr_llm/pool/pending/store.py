@@ -343,19 +343,7 @@ class PendingStore:
             f"SELECT status, COUNT(*) AS cnt FROM {tbl} {where_clause} GROUP BY status"
         )
 
-        counts = {status.value: 0 for status in PendingStatus}
         with self._runtime.conn() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 rows = cur.execute(q(sql_str), params).fetchall()
-
-        for row in rows:
-            status = row["status"]
-            if status in counts:
-                counts[status] = int(row["cnt"])
-
-        return PendingStatusCounts(
-            pending=counts[PendingStatus.pending.value],
-            leased=counts[PendingStatus.leased.value],
-            promoted=counts[PendingStatus.promoted.value],
-            failed=counts[PendingStatus.failed.value],
-        )
+        return PendingStatusCounts.from_rows(rows)

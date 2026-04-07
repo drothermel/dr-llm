@@ -83,7 +83,7 @@ def _wait_for_terminal_queue(
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         counts = store.pending.status_counts(key_filter=key_filter)
-        if counts.pending == 0 and counts.leased == 0:
+        if counts.in_flight == 0:
             return
         time.sleep(0.05)
     raise AssertionError("Timed out waiting for queue to reach a terminal state")

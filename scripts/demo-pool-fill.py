@@ -129,10 +129,7 @@ def _run_demo(dsn: str, pool_name: str, num_workers: int, samples_per_cell: int)
                 if current_progress != last_progress:
                     _print_progress(snapshot)
                     last_progress = current_progress
-                if (
-                    snapshot.status_counts.pending == 0
-                    and snapshot.status_counts.leased == 0
-                ):
+                if snapshot.status_counts.in_flight == 0:
                     break
                 time.sleep(0.5)
         finally:

@@ -145,7 +145,7 @@ controller = start_workers(store, process_fn=process_fn, num_workers=4)
 import time
 while True:
     snap = controller.snapshot()
-    if snap.status_counts.pending == 0 and snap.status_counts.leased == 0:
+    if snap.status_counts.in_flight == 0:
         break
     time.sleep(1)
 controller.stop()
