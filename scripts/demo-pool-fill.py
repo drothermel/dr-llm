@@ -25,17 +25,22 @@ from uuid import uuid4
 
 import typer
 
+from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.reasoning import GoogleReasoning, OpenAIReasoning, ThinkingLevel
+from dr_llm.llm.providers.registry import build_default_registry
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
-from dr_llm.pool.pending.threadsafe_worker_stats import WorkerSnapshot
-from dr_llm.pool.pending.workers import seed_pending, start_workers
+from dr_llm.pool.pending.backend import (
+    PoolPendingBackend,
+    PoolPendingBackendConfig,
+    PoolPendingBackendState,
+)
+from dr_llm.pool.pending.fill_pending import seed_pending
 from dr_llm.pool.sample_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
-from dr_llm.llm.config import LlmConfig
-from dr_llm.llm.messages import Message
-from dr_llm.llm.providers.registry import build_default_registry
-from dr_llm.llm.providers.reasoning import GoogleReasoning, OpenAIReasoning, ThinkingLevel
+from dr_llm.workers import WorkerConfig, WorkerSnapshot, start_workers
 
 app = typer.Typer()
 
@@ -64,13 +69,14 @@ PROMPTS: dict[str, list[Message]] = {
 }
 
 
-def _print_progress(snapshot: WorkerSnapshot) -> None:
-    counts = snapshot.status_counts
+def _print_progress(snapshot: WorkerSnapshot[PoolPendingBackendState]) -> None:
+    assert snapshot.backend_state is not None
+    counts = snapshot.backend_state.status_counts
     worker_counts = snapshot.counts
     print(
         "Progress: "
         f"claimed={worker_counts.claimed} "
-        f"promoted={worker_counts.promoted} "
+        f"completed={worker_counts.completed} "
         f"failed={worker_counts.failed} "
         f"pending={counts.pending} "
         f"leased={counts.leased}"
@@ -104,36 +110,43 @@ def _run_demo(dsn: str, pool_name: str, num_workers: int, samples_per_cell: int)
 
         process_fn = make_llm_process_fn(registry)
         controller = start_workers(
-            store,
+            PoolPendingBackend(
+                store,
+                config=PoolPendingBackendConfig(max_retries=1),
+            ),
             process_fn=process_fn,
-            num_workers=num_workers,
-            min_poll_interval_s=0.5,
-            max_poll_interval_s=3.0,
-            max_retries=1,
+            config=WorkerConfig(
+                num_workers=num_workers,
+                min_poll_interval_s=0.5,
+                max_poll_interval_s=3.0,
+                thread_name_prefix="pool-fill",
+            ),
         )
         try:
             last_progress: tuple[int, int, int, int, int] | None = None
             while True:
                 snapshot = controller.snapshot()
                 worker_counts = snapshot.counts
+                assert snapshot.backend_state is not None
                 current_progress = (
                     worker_counts.claimed,
-                    worker_counts.promoted,
+                    worker_counts.completed,
                     worker_counts.failed,
-                    snapshot.status_counts.pending,
-                    snapshot.status_counts.leased,
+                    snapshot.backend_state.status_counts.pending,
+                    snapshot.backend_state.status_counts.leased,
                 )
                 if current_progress != last_progress:
                     _print_progress(snapshot)
                     last_progress = current_progress
-                if snapshot.status_counts.in_flight == 0:
+                if snapshot.backend_state.status_counts.in_flight == 0:
                     break
                 time.sleep(0.5)
         finally:
             controller.stop()
             final_snapshot = controller.join()
 
-        final_counts = final_snapshot.status_counts
+        assert final_snapshot.backend_state is not None
+        final_counts = final_snapshot.backend_state.status_counts
         print(
             "Final queue counts: "
             f"pending={final_counts.pending} "

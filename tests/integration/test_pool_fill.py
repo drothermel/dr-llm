@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
+from typing import Any
 from uuid import uuid4
 
 import psycopg
@@ -14,9 +15,15 @@ from psycopg import sql
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
-from dr_llm.pool.pending.pool_worker_controller import PoolWorkerController
-from dr_llm.pool.pending.workers import seed_pending, start_workers
+from dr_llm.pool.pending.backend import (
+    PoolPendingBackend,
+    PoolPendingBackendConfig,
+    PoolPendingBackendState,
+)
+from dr_llm.pool.pending.fill_pending import seed_pending
+from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.sample_store import PoolStore
+from dr_llm.workers import WorkerConfig, WorkerController, start_workers
 
 
 _TEST_SCHEMA = PoolSchema(
@@ -89,7 +96,33 @@ def _wait_for_terminal_queue(
     raise AssertionError("Timed out waiting for queue to reach a terminal state")
 
 
-def _stop_controller(controller: PoolWorkerController) -> None:
+def _start_pool_workers(
+    store: PoolStore,
+    *,
+    process_fn: Callable[[PendingSample], dict[str, Any]],
+    num_workers: int,
+    max_retries: int = 0,
+    key_filter: dict[str, str] | None = None,
+) -> WorkerController[PoolPendingBackendState]:
+    return start_workers(
+        PoolPendingBackend(
+            store,
+            config=PoolPendingBackendConfig(
+                max_retries=max_retries,
+                key_filter=key_filter,
+            ),
+        ),
+        process_fn=process_fn,
+        config=WorkerConfig(
+            num_workers=num_workers,
+            min_poll_interval_s=0.01,
+            max_poll_interval_s=0.05,
+            thread_name_prefix="pool-fill",
+        ),
+    )
+
+
+def _stop_controller(controller: WorkerController[PoolPendingBackendState]) -> None:
     controller.stop()
     controller.join(timeout=5.0)
 
@@ -117,7 +150,7 @@ def test_start_workers_promote_seeded_grid(fill_store: PoolStore) -> None:
     )
     assert seed_result.inserted == 8
 
-    controller = start_workers(
+    controller = _start_pool_workers(
         fill_store,
         process_fn=lambda sample: {
             "completion": (
@@ -126,8 +159,6 @@ def test_start_workers_promote_seeded_grid(fill_store: PoolStore) -> None:
             )
         },
         num_workers=3,
-        min_poll_interval_s=0.01,
-        max_poll_interval_s=0.05,
     )
     try:
         _wait_for_terminal_queue(fill_store)
@@ -137,11 +168,12 @@ def test_start_workers_promote_seeded_grid(fill_store: PoolStore) -> None:
         _stop_controller(controller)
 
     assert snapshot.counts.claimed == 8
-    assert snapshot.counts.promoted == 8
+    assert snapshot.counts.completed == 8
     assert snapshot.counts.failed == 0
-    assert snapshot.status_counts.pending == 0
-    assert snapshot.status_counts.leased == 0
-    assert snapshot.status_counts.promoted == 8
+    assert snapshot.backend_state is not None
+    assert snapshot.backend_state.status_counts.pending == 0
+    assert snapshot.backend_state.status_counts.leased == 0
+    assert snapshot.backend_state.status_counts.promoted == 8
     for model in ["gpt-4.1-mini", "gpt-5-mini"]:
         for prompt in ["math", "history"]:
             assert fill_store.cell_depth(key_values={"model": model, "prompt": prompt}) == 2
@@ -158,12 +190,10 @@ def test_start_workers_retry_then_fail(fill_store: PoolStore) -> None:
     def always_fail(_sample: object) -> dict[str, str]:
         raise RuntimeError("boom")
 
-    controller = start_workers(
+    controller = _start_pool_workers(
         fill_store,
         process_fn=always_fail,
         num_workers=1,
-        min_poll_interval_s=0.01,
-        max_poll_interval_s=0.05,
         max_retries=1,
     )
     try:
@@ -177,7 +207,8 @@ def test_start_workers_retry_then_fail(fill_store: PoolStore) -> None:
     assert snapshot.counts.retried == 1
     assert snapshot.counts.failed == 1
     assert snapshot.counts.process_errors == 2
-    assert snapshot.status_counts.failed == 1
+    assert snapshot.backend_state is not None
+    assert snapshot.backend_state.status_counts.failed == 1
     assert fill_store.cell_depth(
         key_values={"model": "retry-model", "prompt": "fail-prompt"}
     ) == 0
@@ -198,12 +229,10 @@ def test_start_workers_retry_then_promote(fill_store: PoolStore) -> None:
             raise RuntimeError("temporary error")
         return {"completion": "ok"}
 
-    controller = start_workers(
+    controller = _start_pool_workers(
         fill_store,
         process_fn=flaky_process,
         num_workers=1,
-        min_poll_interval_s=0.01,
-        max_poll_interval_s=0.05,
         max_retries=1,
     )
     try:
@@ -216,9 +245,10 @@ def test_start_workers_retry_then_promote(fill_store: PoolStore) -> None:
     assert snapshot.counts.claimed == 2
     assert snapshot.counts.retried == 1
     assert snapshot.counts.failed == 0
-    assert snapshot.counts.promoted == 1
+    assert snapshot.counts.completed == 1
     assert snapshot.counts.process_errors == 1
-    assert snapshot.status_counts.promoted == 1
+    assert snapshot.backend_state is not None
+    assert snapshot.backend_state.status_counts.promoted == 1
     assert fill_store.cell_depth(
         key_values={"model": "retry-model", "prompt": "eventual-success"}
     ) == 1
@@ -232,12 +262,10 @@ def test_start_workers_respects_key_filter(fill_store: PoolStore) -> None:
         n=2,
     )
 
-    controller = start_workers(
+    controller = _start_pool_workers(
         fill_store,
         process_fn=lambda sample: {"completion": sample.key_values["model"]},
         num_workers=2,
-        min_poll_interval_s=0.01,
-        max_poll_interval_s=0.05,
         key_filter={"model": "m1"},
     )
     try:
@@ -248,9 +276,10 @@ def test_start_workers_respects_key_filter(fill_store: PoolStore) -> None:
         _stop_controller(controller)
     all_counts = fill_store.pending.status_counts()
 
-    assert snapshot.counts.promoted == 2
-    assert snapshot.status_counts.pending == 0
-    assert snapshot.status_counts.promoted == 2
+    assert snapshot.counts.completed == 2
+    assert snapshot.backend_state is not None
+    assert snapshot.backend_state.status_counts.pending == 0
+    assert snapshot.backend_state.status_counts.promoted == 2
     assert all_counts.pending == 2
     assert all_counts.promoted == 2
     assert fill_store.cell_depth(key_values={"model": "m1", "prompt": "shared"}) == 2
@@ -265,9 +294,8 @@ def test_seed_pending_rich_grid_with_workers(fill_store: PoolStore) -> None:
     from dr_llm.llm.config import LlmConfig
     from dr_llm.llm.messages import CallMode, Message
     from dr_llm.llm.response import LlmResponse
-    from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
-    from dr_llm.pool.pending.workers import seed_pending
     from dr_llm.llm.providers.usage import TokenUsage
+    from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
 
     # Use a fresh schema with llm_config/prompt columns
     fill_schema = PoolSchema(
@@ -306,12 +334,10 @@ def test_seed_pending_rich_grid_with_workers(fill_store: PoolStore) -> None:
         registry.get.return_value = adapter
 
         process_fn = make_llm_process_fn(registry)
-        controller = start_workers(
+        controller = _start_pool_workers(
             rich_store,
             process_fn=process_fn,
             num_workers=2,
-            min_poll_interval_s=0.01,
-            max_poll_interval_s=0.05,
         )
         try:
             _wait_for_terminal_queue(rich_store)
@@ -320,7 +346,7 @@ def test_seed_pending_rich_grid_with_workers(fill_store: PoolStore) -> None:
         finally:
             _stop_controller(controller)
 
-        assert snapshot.counts.promoted == 2
+        assert snapshot.counts.completed == 2
         assert snapshot.counts.failed == 0
         samples = rich_store.bulk_load()
         assert len(samples) == 2

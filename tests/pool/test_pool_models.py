@@ -10,10 +10,11 @@ from dr_llm.pool.models import (
     AcquireResult,
     InsertResult,
 )
+from dr_llm.pool.pending.backend import PoolPendingBackendState
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample, SampleStatus
-from dr_llm.pool.pending.threadsafe_worker_stats import WorkerSnapshot
+from dr_llm.workers import WorkerSnapshot
 
 _TEST_SCHEMA = PoolSchema(
     name="modeltest",
@@ -223,10 +224,14 @@ def test_acquire_query_auto_request_id() -> None:
 
 
 def test_worker_snapshot_defaults() -> None:
-    snapshot = WorkerSnapshot(worker_count=2)
+    snapshot = WorkerSnapshot[PoolPendingBackendState](
+        worker_count=2,
+        backend_state=PoolPendingBackendState(),
+    )
     assert snapshot.stop_requested is False
     assert snapshot.counts.claimed == 0
-    assert snapshot.status_counts.total == 0
+    assert snapshot.backend_state is not None
+    assert snapshot.backend_state.status_counts.total == 0
 
 
 def test_pool_root_has_no_re_exports() -> None:
