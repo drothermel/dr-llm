@@ -12,9 +12,12 @@ TResult = TypeVar("TResult")
 TBackendState = TypeVar("TBackendState", bound=BaseModel)
 
 
-class ErrorAction(StrEnum):
+class ErrorDecision(StrEnum):
     retry = "retry"
     fail = "fail"
+
+
+ErrorAction = ErrorDecision
 
 
 type ProcessFn[TWorkItem, TResult] = Callable[[TWorkItem], TResult]
@@ -31,7 +34,7 @@ class WorkerBackend(Protocol[TWorkItem, TResult, TBackendState]):
         item: TWorkItem,
         worker_id: str,
         exc: Exception,
-    ) -> ErrorAction: ...
+    ) -> ErrorDecision: ...
 
     def snapshot(self) -> TBackendState | None: ...
 

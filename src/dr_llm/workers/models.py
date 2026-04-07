@@ -29,25 +29,17 @@ WORKER_STAT_KEYS: tuple[WorkerStatKey, ...] = (
 class WorkerConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    num_workers: int
-    lease_seconds: int = 300
-    min_poll_interval_s: float = 0.5
-    max_poll_interval_s: float = 5.0
-    backoff_factor: float = 2.0
+    num_workers: int = Field(gt=0)
+    lease_seconds: int = Field(default=300, gt=0)
+    min_poll_interval_s: float = Field(default=0.5, gt=0)
+    max_poll_interval_s: float = Field(default=5.0, gt=0)
+    backoff_factor: float = Field(default=2.0, ge=1.0)
     thread_name_prefix: str = "worker"
 
     @model_validator(mode="after")
     def _validate(self) -> WorkerConfig:
-        if self.num_workers <= 0:
-            raise ValueError("num_workers must be positive")
-        if self.lease_seconds <= 0:
-            raise ValueError("lease_seconds must be positive")
-        if self.min_poll_interval_s <= 0 or self.max_poll_interval_s <= 0:
-            raise ValueError("poll intervals must be positive")
         if self.max_poll_interval_s < self.min_poll_interval_s:
             raise ValueError("max_poll_interval_s must be >= min_poll_interval_s")
-        if self.backoff_factor < 1.0:
-            raise ValueError("backoff_factor must be >= 1.0")
         if not self.thread_name_prefix.strip():
             raise ValueError("thread_name_prefix must be non-empty")
         return self

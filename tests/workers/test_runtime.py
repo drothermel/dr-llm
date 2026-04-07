@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from dr_llm.workers import (
-    ErrorAction,
+    ErrorDecision,
     WorkerConfig,
     WorkerController,
     WorkerSnapshot,
@@ -72,7 +72,7 @@ class FakeWorkerBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
         item: str,
         worker_id: str,
         exc: Exception,
-    ) -> ErrorAction:
+    ) -> ErrorDecision:
         del worker_id, exc
         with self._lock:
             attempts = self._attempts.get(item, 0) + 1
@@ -80,9 +80,9 @@ class FakeWorkerBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
             if attempts <= self._max_retries:
                 self._retries += 1
                 self._queued.append(item)
-                return ErrorAction.retry
+                return ErrorDecision.retry
             self._failed.append(item)
-            return ErrorAction.fail
+            return ErrorDecision.fail
 
     def snapshot(self) -> FakeBackendState:
         with self._lock:
@@ -132,23 +132,21 @@ def _stop_controller(
 
 
 def test_worker_config_validation() -> None:
-    with pytest.raises(ValueError, match="num_workers must be positive"):
+    with pytest.raises(ValidationError, match="greater than 0"):
         WorkerConfig(num_workers=0)
-    with pytest.raises(ValueError, match="lease_seconds must be positive"):
+    with pytest.raises(ValidationError, match="greater than 0"):
         WorkerConfig(num_workers=1, lease_seconds=0)
-    with pytest.raises(ValueError, match="poll intervals must be positive"):
+    with pytest.raises(ValidationError, match="greater than 0"):
         WorkerConfig(num_workers=1, min_poll_interval_s=0.0)
-    with pytest.raises(
-        ValueError, match="max_poll_interval_s must be >= min_poll_interval_s"
-    ):
+    with pytest.raises(ValidationError, match="max_poll_interval_s must be >="):
         WorkerConfig(
             num_workers=1,
             min_poll_interval_s=0.2,
             max_poll_interval_s=0.1,
         )
-    with pytest.raises(ValueError, match="backoff_factor must be >= 1.0"):
+    with pytest.raises(ValidationError, match="greater than or equal to 1"):
         WorkerConfig(num_workers=1, backoff_factor=0.5)
-    with pytest.raises(ValueError, match="thread_name_prefix must be non-empty"):
+    with pytest.raises(ValidationError, match="thread_name_prefix must be non-empty"):
         WorkerConfig(num_workers=1, thread_name_prefix="  ")
 
 

@@ -11,7 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from dr_llm.workers.backend import (
-    ErrorAction,
+    ErrorDecision,
     ProcessFn,
     WorkerBackend,
 )
@@ -61,7 +61,7 @@ def start_workers(
     )
 
 
-def run_workers(
+def run_workers_forever(
     backend: WorkerBackend[TWorkItem, TResult, TBackendState],
     *,
     process_fn: ProcessFn[TWorkItem, TResult],
@@ -81,6 +81,20 @@ def run_workers(
     finally:
         controller.stop()
     return controller.join()
+
+
+def run_workers(
+    backend: WorkerBackend[TWorkItem, TResult, TBackendState],
+    *,
+    process_fn: ProcessFn[TWorkItem, TResult],
+    config: WorkerConfig,
+) -> WorkerSnapshot[TBackendState]:
+    """Compatibility alias for :func:`run_workers_forever`."""
+    return run_workers_forever(
+        backend,
+        process_fn=process_fn,
+        config=config,
+    )
 
 
 def _worker_loop(
@@ -127,9 +141,9 @@ def _worker_loop(
                 exc=exc,
             )
             match action:
-                case ErrorAction.retry:
+                case ErrorDecision.retry:
                     stats.incr("retried")
-                case ErrorAction.fail:
+                case ErrorDecision.fail:
                     stats.incr("failed")
 
 
