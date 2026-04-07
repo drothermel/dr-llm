@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from enum import StrEnum
 from typing import Any, Mapping
 from uuid import uuid4
 
@@ -10,13 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_valid
 
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.sql_helpers import key_values_from_row, parse_json_field
-
-
-class PendingStatus(StrEnum):
-    pending = "pending"
-    leased = "leased"
-    promoted = "promoted"
-    failed = "failed"
+from dr_llm.pool.pending.pending_status import PendingStatus
 
 
 class PendingSample(BaseModel):
@@ -84,18 +77,3 @@ class PendingSample(BaseModel):
         return cls.model_validate(
             {**row, "key_values": key_values_from_row(schema, dict(row))}
         )
-
-
-class PendingStatusCounts(BaseModel):
-    """Counts of pending rows by lifecycle status."""
-
-    model_config = ConfigDict(frozen=True)
-
-    pending: int = 0
-    leased: int = 0
-    promoted: int = 0
-    failed: int = 0
-
-    @property
-    def total(self) -> int:
-        return self.pending + self.leased + self.promoted + self.failed

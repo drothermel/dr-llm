@@ -36,7 +36,7 @@ import typer
 
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
-from dr_llm.pool.models import PoolSample
+from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.sample_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.llm.providers.registry import build_default_registry

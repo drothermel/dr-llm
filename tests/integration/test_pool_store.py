@@ -14,8 +14,10 @@ from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
-from dr_llm.pool.models import AcquireQuery, PoolSample
-from dr_llm.pool.pending.models import PendingSample, PendingStatus
+from dr_llm.pool.models import AcquireQuery
+from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pending.pending_status import PendingStatus
+from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_service import PoolService
 from dr_llm.pool.sample_store import PoolStore
 

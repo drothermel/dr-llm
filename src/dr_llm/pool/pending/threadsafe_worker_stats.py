@@ -4,7 +4,7 @@ import threading
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.pool.pending.models import PendingStatusCounts
+from dr_llm.pool.pending.pending_status import PendingStatusCounts
 
 
 class WorkerStatCounts(BaseModel):

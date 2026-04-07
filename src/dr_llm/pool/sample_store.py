@@ -26,9 +26,9 @@ from dr_llm.pool.models import (
     AcquireResult,
     CoverageRow,
     InsertResult,
-    PoolSample,
 )
 from dr_llm.pool.pending.store import PendingStore
+from dr_llm.pool.pool_sample import PoolSample
 
 logger = logging.getLogger(__name__)
 

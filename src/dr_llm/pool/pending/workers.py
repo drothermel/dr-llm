@@ -18,9 +18,7 @@ from dr_llm.logging import emit_generation_event, generation_log_context
 from dr_llm.logging.events import get_generation_log_context
 from dr_llm.pool.errors import PoolSchemaError
 from dr_llm.pool.models import InsertResult
-from dr_llm.pool.pending.models import (
-    PendingSample,
-)
+from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pool_worker_controller import PoolWorkerController
 from dr_llm.pool.pending.threadsafe_worker_stats import (
     ThreadsafeWorkerStats,

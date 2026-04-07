@@ -19,12 +19,9 @@ from dr_llm.pool.db.sql_helpers import (
     validate_key_values,
 )
 from dr_llm.pool.errors import PoolSchemaError
-from dr_llm.pool.models import PoolSample
-from dr_llm.pool.pending.models import (
-    PendingSample,
-    PendingStatus,
-    PendingStatusCounts,
-)
+from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts
+from dr_llm.pool.pool_sample import PoolSample
 
 logger = logging.getLogger(__name__)
 

@@ -9,10 +9,10 @@ from dr_llm.pool.models import (
     AcquireQuery,
     AcquireResult,
     InsertResult,
-    PoolSample,
-    SampleStatus,
 )
-from dr_llm.pool.pending.models import PendingSample, PendingStatus, PendingStatusCounts
+from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts
+from dr_llm.pool.pool_sample import PoolSample, SampleStatus
 from dr_llm.pool.pending.threadsafe_worker_stats import WorkerSnapshot
 
 _TEST_SCHEMA = PoolSchema(
