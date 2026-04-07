@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from dr_llm.pool.pool_schema import PoolSchema
-from dr_llm.pool.runtime import DbRuntime
-from dr_llm.pool.sql_helpers import q
+from dr_llm.pool.db.runtime import DbRuntime
+from dr_llm.pool.db.schema import PoolSchema
+from dr_llm.pool.db.sql_helpers import q
 
 
 class MetadataStore:

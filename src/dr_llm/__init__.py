@@ -13,10 +13,8 @@ from dr_llm.pool import (
     PoolService,
     PoolStore,
 )
-from dr_llm.pool.db import PoolDb
-from dr_llm.pool.recorded_call import RunStatus
-from dr_llm.pool.runtime import DbConfig
-from dr_llm.pool.pool_fill import make_llm_process_fn
+from dr_llm.pool.db import DbConfig, PoolDb, RunStatus
+from dr_llm.pool.pending.workers import make_llm_process_fn
 from dr_llm.providers.effort import EffortSpec
 from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.llm_request import LlmRequest

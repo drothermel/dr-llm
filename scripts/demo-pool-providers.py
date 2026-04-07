@@ -34,13 +34,12 @@ from typing import Any
 
 import typer
 
-from dr_llm.pool.sample_models import PoolSample
-from dr_llm.pool.pool_schema import KeyColumn, PoolSchema
+from dr_llm.pool import KeyColumn, PoolSample, PoolSchema
+from dr_llm.pool.db import DbConfig, DbRuntime
 from dr_llm.pool.sample_store import PoolStore
+from dr_llm.project.project_info import ProjectInfo
 from dr_llm.providers import build_default_registry
 from dr_llm.providers.provider_config import ProviderAvailabilityStatus
-from dr_llm.project.project_info import ProjectInfo
-from dr_llm.pool.runtime import DbConfig, DbRuntime
 
 app = typer.Typer()
 

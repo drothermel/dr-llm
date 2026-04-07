@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 from dr_llm.pool.errors import PoolTopupError
-from dr_llm.pool.sample_models import AcquireQuery, AcquireResult, PoolSample
+from dr_llm.pool.models import AcquireQuery, AcquireResult, PoolSample
 from dr_llm.pool.sample_store import PoolStore
 
 logger = logging.getLogger(__name__)

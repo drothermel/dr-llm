@@ -11,17 +11,12 @@ import pytest
 from psycopg import sql
 
 from dr_llm.errors import TransientPersistenceError
+from dr_llm.pool.db import ColumnType, DbConfig, DbRuntime, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
-from dr_llm.pool.sample_models import (
-    AcquireQuery,
-    PendingSample,
-    PendingStatus,
-    PoolSample,
-)
-from dr_llm.pool.pool_schema import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.models import AcquireQuery, PoolSample
+from dr_llm.pool.pending import PendingSample, PendingStatus
 from dr_llm.pool.pool_service import PoolService
 from dr_llm.pool.sample_store import PoolStore
-from dr_llm.pool.runtime import DbConfig, DbRuntime
 
 
 _TEST_SCHEMA = PoolSchema(

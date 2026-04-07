@@ -12,9 +12,12 @@ import pytest
 from psycopg import sql
 
 from dr_llm.errors import TransientPersistenceError
-from dr_llm.pool.pool_fill import PoolWorkerController, seed_pending, start_workers
-from dr_llm.pool.pool_schema import KeyColumn, PoolSchema
-from dr_llm.pool.runtime import DbConfig, DbRuntime
+from dr_llm.pool.db import DbConfig, DbRuntime, KeyColumn, PoolSchema
+from dr_llm.pool.pending.workers import (
+    PoolWorkerController,
+    seed_pending,
+    start_workers,
+)
 from dr_llm.pool.sample_store import PoolStore
 
 
@@ -261,7 +264,7 @@ def test_seed_pending_rich_grid_with_workers(fill_store: PoolStore) -> None:
     """End-to-end: seed with rich grid values, fill with make_llm_process_fn."""
     from unittest.mock import MagicMock
 
-    from dr_llm.pool.pool_fill import make_llm_process_fn, seed_pending
+    from dr_llm.pool.pending.workers import make_llm_process_fn, seed_pending
     from dr_llm.providers.llm_config import LlmConfig
     from dr_llm.providers.llm_response import LlmResponse
     from dr_llm.providers.models import CallMode, Message

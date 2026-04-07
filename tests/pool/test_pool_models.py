@@ -4,19 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from dr_llm.pool.recorded_call import RecordedCall, RunStatus
+from dr_llm.pool.db import RecordedCall, RunStatus
+from dr_llm.pool.models import AcquireQuery, AcquireResult, PoolSample, SampleStatus
+from dr_llm.pool.pending import PendingSample, PendingStatus, PendingStatusCounts, WorkerSnapshot
+from dr_llm.pool.results import InsertResult
 from dr_llm.providers.models import CallMode
-from dr_llm.pool.sample_models import (
-    AcquireQuery,
-    AcquireResult,
-    InsertResult,
-    PendingSample,
-    PendingStatusCounts,
-    PendingStatus,
-    PoolSample,
-    SampleStatus,
-    WorkerSnapshot,
-)
 
 
 def test_pool_sample_defaults() -> None:
@@ -85,3 +77,26 @@ def test_recorded_call_coerces_status_to_enum() -> None:
         response=None,
     )
     assert call.status is RunStatus.success
+
+
+def test_pool_root_exports_are_narrow() -> None:
+    import dr_llm.pool as pool
+
+    assert hasattr(pool, "PoolStore")
+    assert hasattr(pool, "PoolService")
+    assert hasattr(pool, "PoolSchema")
+    assert hasattr(pool, "AcquireQuery")
+    assert not hasattr(pool, "PendingSample")
+    assert not hasattr(pool, "PoolDb")
+
+
+def test_pending_and_db_package_exports() -> None:
+    import dr_llm.pool.db as pool_db
+    import dr_llm.pool.pending as pending
+
+    assert hasattr(pool_db, "PoolDb")
+    assert hasattr(pool_db, "DbConfig")
+    assert hasattr(pool_db, "RunStatus")
+    assert hasattr(pending, "PendingSample")
+    assert hasattr(pending, "PendingStore")
+    assert not hasattr(pending, "seed_pending")

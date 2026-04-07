@@ -13,8 +13,8 @@ from tenacity import (
 )
 
 from dr_llm.errors import PersistenceError, TransientPersistenceError
-from dr_llm.pool.recorded_call import RecordedCall, RunStatus
-from dr_llm.pool.runtime import (
+from dr_llm.pool.db.recorded_call import RecordedCall, RunStatus
+from dr_llm.pool.db.runtime import (
     DbRuntime,
     hash_payload,
     is_retryable_db_error,

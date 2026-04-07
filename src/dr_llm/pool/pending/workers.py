@@ -13,14 +13,14 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
-from dr_llm.pool.call_recorder import CallRecorder
+from dr_llm.pool.db.call_recorder import CallRecorder
 from dr_llm.pool.errors import PoolSchemaError
-from dr_llm.pool.sample_models import (
-    InsertResult,
+from dr_llm.pool.pending.models import (
     PendingSample,
     PendingStatusCounts,
     WorkerSnapshot,
 )
+from dr_llm.pool.results import InsertResult
 from dr_llm.pool.sample_store import PoolStore
 from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.models import Message

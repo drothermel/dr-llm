@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from dr_llm.pool.pool_fill import make_llm_process_fn
-from dr_llm.pool.sample_models import PendingSample
+from dr_llm.pool.pending import PendingSample
+from dr_llm.pool.pending.workers import make_llm_process_fn
 from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.providers.models import CallMode, Message

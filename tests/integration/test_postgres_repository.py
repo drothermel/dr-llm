@@ -8,8 +8,7 @@ import pytest
 from psycopg import sql
 
 from dr_llm.errors import TransientPersistenceError
-from dr_llm.pool.db import PoolDb
-from dr_llm.pool.runtime import DbConfig
+from dr_llm.pool.db import DbConfig, PoolDb
 from dr_llm.providers.llm_request import LlmRequest
 from dr_llm.providers.llm_response import LlmResponse
 from dr_llm.providers.models import CallMode, Message

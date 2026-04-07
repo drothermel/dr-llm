@@ -10,7 +10,7 @@ from psycopg import errors as pg_errors
 from psycopg import sql
 
 from dr_llm.pool.errors import PoolSchemaError
-from dr_llm.pool.pool_schema import PoolSchema
+from dr_llm.pool.db.schema import PoolSchema
 
 logger = logging.getLogger(__name__)
 

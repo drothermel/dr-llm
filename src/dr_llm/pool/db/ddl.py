@@ -6,7 +6,7 @@ statements for the samples, claims, pending, and metadata tables.
 
 from __future__ import annotations
 
-from dr_llm.pool.pool_schema import ColumnType, PoolSchema
+from dr_llm.pool.db.schema import ColumnType, PoolSchema
 
 
 _PG_TYPE_MAP: dict[ColumnType, str] = {

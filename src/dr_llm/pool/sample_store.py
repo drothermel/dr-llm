@@ -11,19 +11,11 @@ from uuid import uuid4
 
 from psycopg.rows import dict_row
 
-from dr_llm.pool.ddl import generate_ddl
-from dr_llm.pool.metadata_store import MetadataStore
-from dr_llm.pool.pending_store import PendingStore
-from dr_llm.pool.pool_schema import PoolSchema
-from dr_llm.pool.runtime import DbRuntime
-from dr_llm.pool.sample_models import (
-    AcquireQuery,
-    AcquireResult,
-    CoverageRow,
-    InsertResult,
-    PoolSample,
-)
-from dr_llm.pool.sql_helpers import (
+from dr_llm.pool.db.ddl import generate_ddl
+from dr_llm.pool.db.metadata import MetadataStore
+from dr_llm.pool.db.runtime import DbRuntime
+from dr_llm.pool.db.schema import PoolSchema
+from dr_llm.pool.db.sql_helpers import (
     is_constraint_error,
     key_where_clause,
     parse_json_field,
@@ -31,6 +23,14 @@ from dr_llm.pool.sql_helpers import (
     validate_key_filter,
     validate_key_values,
 )
+from dr_llm.pool.models import (
+    AcquireQuery,
+    AcquireResult,
+    CoverageRow,
+    PoolSample,
+)
+from dr_llm.pool.pending.store import PendingStore
+from dr_llm.pool.results import InsertResult
 
 logger = logging.getLogger(__name__)
 

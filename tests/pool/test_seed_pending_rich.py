@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from dr_llm.pool.pool_fill import seed_pending
+from dr_llm.pool.pending.workers import seed_pending
 from dr_llm.pool.sample_store import PoolStore
 from dr_llm.providers.llm_config import LlmConfig
 from dr_llm.providers.models import Message
