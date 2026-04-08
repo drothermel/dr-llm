@@ -57,6 +57,7 @@ def test_create_project_retries_when_docker_reports_port_collision(
         "wait_docker_ready",
         lambda **kwargs: ContainerStatus.RUNNING,
     )
+    monkeypatch.setattr(project_service_module, "wait_dsn_ready", lambda dsn: None)
 
     project = create_project("demo")
 
@@ -90,6 +91,7 @@ def test_create_project_skips_ports_with_existing_listeners(
         "wait_docker_ready",
         lambda **kwargs: ContainerStatus.RUNNING,
     )
+    monkeypatch.setattr(project_service_module, "wait_dsn_ready", lambda dsn: None)
 
     project = create_project("demo")
 
@@ -158,6 +160,52 @@ def test_create_project_cleans_up_container_when_ready_check_fails(
     assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
 
 
+def test_create_project_cleans_up_container_when_dsn_probe_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the host-side DSN probe fails after wait_docker_ready succeeds,
+    the freshly-created container must still be destroyed so callers don't
+    leak Docker resources on a failed startup."""
+    destroyed: list[tuple[str, str]] = []
+    probed_dsns: list[str] = []
+
+    monkeypatch.setattr(
+        project_service_module,
+        "get_all_docker_project_metadata",
+        list,
+    )
+    monkeypatch.setattr(
+        project_service_module, "_port_has_listener", lambda port: False
+    )
+    monkeypatch.setattr(
+        project_service_module, "create_project_container", lambda **kwargs: None
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "wait_docker_ready",
+        lambda **kwargs: ContainerStatus.RUNNING,
+    )
+
+    def fake_wait_dsn_ready(dsn: str) -> None:
+        probed_dsns.append(dsn)
+        raise ProjectError("postgres did not accept SQL connections")
+
+    monkeypatch.setattr(project_service_module, "wait_dsn_ready", fake_wait_dsn_ready)
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_destroy",
+        lambda container_name, volume_name: destroyed.append(
+            (container_name, volume_name)
+        ),
+    )
+
+    with pytest.raises(ProjectError, match="did not accept SQL connections"):
+        create_project("demo")
+
+    assert probed_dsns == ["postgresql://postgres:postgres@localhost:5500/dr_llm"]
+    assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
+
+
 def test_get_project_raises_project_not_found(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -217,16 +265,23 @@ def test_start_project_returns_fresh_project_metadata_after_ready(
     def fake_get_project(name: str) -> ProjectInfo:
         return ProjectInfo(name=name, port=5500, status=ContainerStatus.RUNNING)
 
+    probed_dsns: list[str] = []
+
+    def fake_wait_dsn_ready(dsn: str) -> None:
+        probed_dsns.append(dsn)
+
     monkeypatch.setattr(project_service_module, "call_docker_start", fake_start)
     monkeypatch.setattr(
         project_service_module, "wait_docker_ready", fake_wait_docker_ready
     )
+    monkeypatch.setattr(project_service_module, "wait_dsn_ready", fake_wait_dsn_ready)
     monkeypatch.setattr(project_service_module, "get_project", fake_get_project)
 
     project = start_project("demo")
 
     assert started_containers == ["dr-llm-pg-demo"]
     assert waited_for == [("dr-llm-pg-demo", "postgres", "dr_llm")]
+    assert probed_dsns == ["postgresql://postgres:postgres@localhost:5500/dr_llm"]
     assert project.port == 5500
     assert project.status == ContainerStatus.RUNNING
 

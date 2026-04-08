@@ -11,7 +11,10 @@ from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.registry import ProviderRegistry
 from dr_llm.logging.events import generation_log_context, get_generation_log_context
 from dr_llm.logging.sinks import emit_generation_event
+from dr_llm.pool.models import InsertResult
+from dr_llm.pool.pending.grid import Axis, GridCell, seed_grid
 from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pool_store import PoolStore
 
 ProcessFn = Callable[[PendingSample], dict[str, Any]]
 
@@ -111,3 +114,59 @@ def make_llm_process_fn(
             return response.model_dump()
 
     return _process
+
+
+def seed_llm_grid(
+    store: PoolStore,
+    *,
+    axes: list[Axis[Any]],
+    build_request: Callable[[GridCell], tuple[list[Message], LlmConfig]],
+    n: int = 1,
+    priority: int = 0,
+    build_metadata: Callable[[GridCell], dict[str, Any]] | None = None,
+    chunk_size: int = 500,
+    llm_config_key: str = "llm_config",
+    prompt_key: str = "prompt",
+) -> InsertResult:
+    """Seed a pending pool from a cross-product of axes for LLM workers.
+
+    Wraps :func:`seed_grid` with a payload shape that
+    :func:`make_llm_process_fn` can consume directly: each row's payload
+    is ``{llm_config_key: <serialized LlmConfig>, prompt_key: <list of
+    serialized Messages>}``.
+
+    Args:
+        store: Target pool store. Its schema's key columns must match
+            the axis names in order.
+        axes: Ordered list of variant axes.
+        build_request: Per-cell callback returning ``(messages, llm_config)``
+            for that cell.
+        n: Number of samples per cell (each gets a distinct ``sample_idx``).
+        priority: Priority assigned to all seeded rows.
+        build_metadata: Optional per-cell row-metadata builder.
+        chunk_size: Maximum rows per ``insert_many`` round-trip.
+        llm_config_key: Payload key for the serialized LlmConfig. Must
+            match the value passed to :func:`make_llm_process_fn`.
+        prompt_key: Payload key for the serialized message list. Must
+            match the value passed to :func:`make_llm_process_fn`.
+
+    Returns:
+        Cumulative :class:`InsertResult` summed across all chunks.
+    """
+
+    def _build_payload(cell: GridCell) -> dict[str, Any]:
+        messages, llm_config = build_request(cell)
+        return {
+            llm_config_key: llm_config.model_dump(mode="json"),
+            prompt_key: [message.model_dump(mode="json") for message in messages],
+        }
+
+    return seed_grid(
+        store,
+        axes=axes,
+        build_payload=_build_payload,
+        n=n,
+        priority=priority,
+        build_metadata=build_metadata,
+        chunk_size=chunk_size,
+    )

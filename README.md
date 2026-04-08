@@ -92,102 +92,93 @@ print(response.text)
 
 ### Filling a pool with LLM calls (requires Docker)
 
-The recommended way to populate a pool: define `LlmConfig`s and prompts,
-manually construct `PendingSample` rows whose payloads carry the serialized
-config and messages, insert them into the pending queue, and let parallel
-workers make the actual provider calls. Docker is used to auto-manage a
-Postgres project.
+The recommended way to populate a pool: declare each variant axis (LLM
+configs, prompts, datasets, …), pass them to `seed_llm_grid`, and let
+parallel workers make the actual provider calls. `seed_llm_grid` walks
+the cross product, builds per-cell payloads in the shape
+`make_llm_process_fn` consumes, deduplicates and upserts per-axis
+metadata, and bulk-inserts the pending rows in one round-trip. Docker
+is used to auto-manage a Postgres project.
 
 ```python
-from itertools import product
-
-from dr_llm import DbConfig, KeyColumn, PoolSchema, PoolStore
+from dr_llm import DbConfig, PoolSchema, PoolStore
 from dr_llm.llm import build_default_registry
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import Message
 from dr_llm.pool.db.runtime import DbRuntime
-from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
+from dr_llm.pool.llm_pool_adapter import make_llm_process_fn, seed_llm_grid
 from dr_llm.pool.pending.backend import PoolPendingBackend, PoolPendingBackendConfig
-from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pending.grid import Axis, AxisMember, GridCell
+from dr_llm.pool.pending.progress import drain, format_pool_progress_line
 from dr_llm.project.project_service import create_project
 from dr_llm.workers import WorkerConfig, start_workers
 
 # 1. Create a Docker-managed Postgres project
 project = create_project("my_eval")
 
-# 2. Define pool schema — keys are IDs, not raw values
-schema = PoolSchema(
-    name="my_eval",
-    key_columns=[KeyColumn(name="llm_config"), KeyColumn(name="prompt")],
-)
+# 2. Build a schema whose key columns match the axis names
+schema = PoolSchema.from_axis_names("my_eval", ["llm_config", "prompt"])
 runtime = DbRuntime(DbConfig(dsn=project.dsn))
 store = PoolStore(schema, runtime)
 store.ensure_schema()
 
-# 3. Define configs and prompts
-llm_configs = {
-    "gpt-4.1-mini": LlmConfig(
-        provider="openai", model="gpt-4.1-mini", max_tokens=64,
-    ),
-    "gemini-flash": LlmConfig(
-        provider="google", model="gemini-2.5-flash", max_tokens=64,
-    ),
-}
-prompts = {
-    "haiku": [Message(role="user", content="Write a haiku about programming.")],
-    "math": [Message(role="user", content="What is 17 * 23?")],
-}
-
-# 4. Manually build PendingSample rows for the (llm_config x prompt) cross
-#    product. Each payload carries the serialized LlmConfig and messages so
-#    workers can reconstruct the request.
-samples_per_cell = 2
-pending_samples: list[PendingSample] = []
-for cfg_id, prompt_id in product(llm_configs, prompts):
-    payload = {
-        "llm_config": llm_configs[cfg_id].model_dump(mode="json"),
-        "prompt": [m.model_dump(mode="json") for m in prompts[prompt_id]],
-    }
-    for sample_idx in range(samples_per_cell):
-        pending_samples.append(
-            PendingSample(
-                key_values={"llm_config": cfg_id, "prompt": prompt_id},
-                sample_idx=sample_idx,
-                payload=payload,
-            )
-        )
-
-# 5. Insert the pending rows in one batch
-store.pending.insert_many(pending_samples, ignore_conflicts=True)
-# 2 configs × 2 prompts × 2 samples = 8 pending rows
-
-# 6. Start workers — they call the real providers
-registry = build_default_registry()
-process_fn = make_llm_process_fn(registry)
-controller = start_workers(
-    PoolPendingBackend(
-        store,
-        config=PoolPendingBackendConfig(max_retries=1),
-    ),
-    process_fn=process_fn,
-    config=WorkerConfig(
-        num_workers=4,
-        thread_name_prefix="pool-fill",
-    ),
+# 3. Declare each axis as a list of AxisMembers
+llm_config_axis = Axis[LlmConfig](
+    name="llm_config",
+    members=[
+        AxisMember(
+            id="gpt-4.1-mini",
+            value=LlmConfig(provider="openai", model="gpt-4.1-mini", max_tokens=64),
+        ),
+        AxisMember(
+            id="gemini-flash",
+            value=LlmConfig(provider="google", model="gemini-2.5-flash", max_tokens=64),
+        ),
+    ],
+)
+prompt_axis = Axis[list[Message]](
+    name="prompt",
+    members=[
+        AxisMember(
+            id="haiku",
+            value=[Message(role="user", content="Write a haiku about programming.")],
+        ),
+        AxisMember(
+            id="math",
+            value=[Message(role="user", content="What is 17 * 23?")],
+        ),
+    ],
 )
 
-# 7. Wait for completion
-import time
-while True:
-    snap = controller.snapshot()
-    assert snap.backend_state is not None
-    if snap.backend_state.status_counts.in_flight == 0:
-        break
-    time.sleep(1)
-controller.stop()
-controller.join()
+# 4. Seed the cross product. seed_llm_grid handles payload shaping,
+#    sample_idx expansion, axis-metadata upserts, and bulk insert.
+def build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
+    return cell.values["prompt"], cell.values["llm_config"]
 
-# 8. Acquire samples (no-replacement within a run)
+seed_result = seed_llm_grid(
+    store,
+    axes=[llm_config_axis, prompt_axis],
+    build_request=build_request,
+    n=2,  # 2 configs × 2 prompts × n=2 = 8 pending rows
+)
+print(f"Seeded {seed_result.inserted} pending rows")
+
+# 5. Start workers — they call the real providers
+registry = build_default_registry()
+controller = start_workers(
+    PoolPendingBackend(store, config=PoolPendingBackendConfig(max_retries=1)),
+    process_fn=make_llm_process_fn(registry),
+    config=WorkerConfig(num_workers=4, thread_name_prefix="pool-fill"),
+)
+
+# 6. Drain to idle, printing one line per visible state change
+try:
+    drain(controller, on_change=lambda snap: print(format_pool_progress_line(snap)))
+finally:
+    controller.stop()
+    controller.join()
+
+# 7. Acquire samples (no-replacement within a run)
 from dr_llm.pool.models import AcquireQuery
 result = store.acquire(AcquireQuery(
     run_id="eval_run_1",
@@ -195,10 +186,9 @@ result = store.acquire(AcquireQuery(
     n=2,
 ))
 
-# 9. Clean up when done
+# 8. Clean up when done
 registry.close()
 runtime.close()
-project.destroy()
 ```
 
 See `scripts/demo-pool-fill.py` for a complete runnable example.
@@ -288,7 +278,7 @@ Creates a project, queries every available provider, stores results in a typed p
 uv run python scripts/demo-pool-fill.py
 ```
 
-Auto-creates a Docker Postgres project, manually constructs `PendingSample` rows for an `(llm_config, prompt)` pool with serialized `LlmConfig` and `Message` payloads, inserts them via `store.pending.insert_many`, starts workers that make real LLM calls via `make_llm_process_fn`, prints progress, shows response snippets, and destroys the project on exit. Pass `--dsn` to use an existing database instead. Run with `--help` for options.
+Auto-creates a Docker Postgres project, seeds an `(llm_config, prompt)` pool via `seed_llm_grid` from declared `Axis` instances, starts workers that make real LLM calls via `make_llm_process_fn`, drains the queue to idle with `drain`, shows response snippets, and destroys the project on exit. Pass `--dsn` to use an existing database instead. Run with `--help` for options.
 
 ### Reasoning and effort demo (live API / CLI checks)
 

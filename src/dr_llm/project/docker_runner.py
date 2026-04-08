@@ -26,7 +26,7 @@ def docker_error(args: tuple[str, ...], stderr: str) -> ProjectError:
         or "error during connect" in lowered
     ):
         return DockerUnavailableError()
-    if "no such container" in lowered:
+    if "no such container" in lowered or "no such object" in lowered:
         return DockerContainerNotFoundError()
     if "is not running" in lowered or "container is not running" in lowered:
         return DockerContainerNotRunningError()

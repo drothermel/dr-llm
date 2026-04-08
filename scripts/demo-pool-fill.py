@@ -11,18 +11,15 @@ project via project_service, runs the demo, and destroys it on exit.
 The demo:
   - Defines reasoning-valid LlmConfig instances for OpenAI and Google
   - Defines short prompts as Message lists
-  - Manually constructs PendingSample rows for the (llm_config x prompt) cross
-    product, embedding serialized configs/messages in each payload
-  - Inserts them via store.pending.insert_many
-  - Starts background workers using make_llm_process_fn (real LLM calls)
-  - Prints progress until the queued work is complete
+  - Seeds the (llm_config x prompt) cross product into the pending queue
+    using ``seed_llm_grid``
+  - Starts background workers using ``make_llm_process_fn`` (real LLM calls)
+  - Drains the queue with ``drain``, printing progress on visible state changes
 """
 
 from __future__ import annotations
 
 import shutil
-import time
-from itertools import product
 from typing import Annotated
 from uuid import uuid4
 
@@ -37,18 +34,18 @@ from dr_llm.llm.providers.reasoning import (
 )
 from dr_llm.llm.providers.registry import build_default_registry
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import KeyColumn, PoolSchema
-from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
+from dr_llm.pool.db.schema import PoolSchema
+from dr_llm.pool.llm_pool_adapter import make_llm_process_fn, seed_llm_grid
 from dr_llm.pool.pending.backend import (
     PoolPendingBackend,
     PoolPendingBackendConfig,
-    PoolPendingBackendState,
 )
-from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pending.grid import Axis, AxisMember, GridCell
+from dr_llm.pool.pending.progress import drain, format_pool_progress_line
 from dr_llm.pool.pool_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import create_project, destroy_project
-from dr_llm.workers import WorkerConfig, WorkerSnapshot, start_workers
+from dr_llm.workers import WorkerConfig, start_workers
 
 app = typer.Typer()
 
@@ -78,58 +75,42 @@ PROMPTS: dict[str, list[Message]] = {
 }
 
 
-def _build_pending_samples(
-    *,
-    llm_configs: dict[str, LlmConfig],
-    prompts: dict[str, list[Message]],
-    samples_per_cell: int,
-) -> list[PendingSample]:
-    """Build PendingSample rows for the (llm_config x prompt) cross product.
-
-    Each pending row stores its key IDs in ``key_values`` and the serialized
-    LlmConfig + messages in ``payload``, which is the shape that
-    ``make_llm_process_fn`` expects.
-    """
-    samples: list[PendingSample] = []
-    for cfg_id, prompt_id in product(llm_configs, prompts):
-        payload = {
-            "llm_config": llm_configs[cfg_id].model_dump(mode="json"),
-            "prompt": [m.model_dump(mode="json") for m in prompts[prompt_id]],
-        }
-        for sample_idx in range(samples_per_cell):
-            samples.append(
-                PendingSample(
-                    key_values={"llm_config": cfg_id, "prompt": prompt_id},
-                    sample_idx=sample_idx,
-                    payload=payload,
-                )
+def _llm_config_axis() -> Axis[LlmConfig]:
+    return Axis(
+        name="llm_config",
+        members=[
+            AxisMember[LlmConfig](
+                id=cfg_id,
+                value=cfg,
+                metadata={"provider": cfg.provider, "model": cfg.model},
             )
-    return samples
-
-
-def _print_progress(snapshot: WorkerSnapshot[PoolPendingBackendState]) -> None:
-    backend_state = snapshot.backend_state
-    if backend_state is None:
-        return
-    counts = backend_state.status_counts
-    worker_counts = snapshot.counts
-    print(
-        "Progress: "
-        f"claimed={worker_counts.claimed} "
-        f"completed={worker_counts.completed} "
-        f"failed={worker_counts.failed} "
-        f"pending={counts.pending} "
-        f"leased={counts.leased}"
+            for cfg_id, cfg in LLM_CONFIGS.items()
+        ],
     )
+
+
+def _prompt_axis() -> Axis[list[Message]]:
+    return Axis(
+        name="prompt",
+        members=[
+            AxisMember[list[Message]](
+                id=prompt_id,
+                value=messages,
+                metadata={"first_user_text": messages[0].content},
+            )
+            for prompt_id, messages in PROMPTS.items()
+        ],
+    )
+
+
+def _build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
+    return cell.values["prompt"], cell.values["llm_config"]
 
 
 def _run_demo(
     dsn: str, pool_name: str, num_workers: int, samples_per_cell: int
 ) -> None:
-    schema = PoolSchema(
-        name=pool_name,
-        key_columns=[KeyColumn(name="llm_config"), KeyColumn(name="prompt")],
-    )
+    schema = PoolSchema.from_axis_names(pool_name, ["llm_config", "prompt"])
     runtime = DbRuntime(DbConfig(dsn=dsn))
     registry = build_default_registry()
     store = PoolStore(schema, runtime)
@@ -137,26 +118,23 @@ def _run_demo(
     controller = None
 
     try:
-        pending_samples = _build_pending_samples(
-            llm_configs=LLM_CONFIGS,
-            prompts=PROMPTS,
-            samples_per_cell=samples_per_cell,
-        )
-        seed_result = store.pending.insert_many(
-            pending_samples, ignore_conflicts=True
+        seed_result = seed_llm_grid(
+            store,
+            axes=[_llm_config_axis(), _prompt_axis()],
+            build_request=_build_request,
+            n=samples_per_cell,
         )
         print(
             f"Seeded {seed_result.inserted} pending rows"
             f" (skipped {seed_result.skipped} existing rows)"
         )
 
-        process_fn = make_llm_process_fn(registry)
         controller = start_workers(
             PoolPendingBackend(
                 store,
                 config=PoolPendingBackendConfig(max_retries=1),
             ),
-            process_fn=process_fn,
+            process_fn=make_llm_process_fn(registry),
             config=WorkerConfig(
                 num_workers=num_workers,
                 min_poll_interval_s=0.5,
@@ -165,26 +143,12 @@ def _run_demo(
             ),
         )
         try:
-            last_progress: tuple[int, int, int, int, int] | None = None
-            while True:
-                snapshot = controller.snapshot()
-                worker_counts = snapshot.counts
-                if snapshot.backend_state is None:
-                    time.sleep(0.1)
-                    continue
-                current_progress = (
-                    worker_counts.claimed,
-                    worker_counts.completed,
-                    worker_counts.failed,
-                    snapshot.backend_state.status_counts.pending,
-                    snapshot.backend_state.status_counts.leased,
-                )
-                if current_progress != last_progress:
-                    _print_progress(snapshot)
-                    last_progress = current_progress
-                if snapshot.backend_state.status_counts.in_flight == 0:
-                    break
-                time.sleep(0.5)
+            drain(
+                controller,
+                on_change=lambda snap: print(
+                    f"Progress: {format_pool_progress_line(snap)}"
+                ),
+            )
         finally:
             controller.stop()
             final_snapshot = controller.join()
