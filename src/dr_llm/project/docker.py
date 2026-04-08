@@ -74,37 +74,22 @@ def wait_docker_ready(
     db_name: str,
     timeout_seconds: int = 30,
 ) -> ContainerStatus:
+    args = (
+        "exec",
+        container_name,
+        "pg_isready",
+        "-U",
+        db_user,
+        "-d",
+        db_name,
+    )
     for _ in range(timeout_seconds):
-        result = call_docker(
-            "exec",
-            container_name,
-            "pg_isready",
-            "-U",
-            db_user,
-            "-d",
-            db_name,
-            check=False,
-        )
+        result = _run_or_error(*args, check_return=False)
         if result.returncode == 0:
             return ContainerStatus.RUNNING
-        lowered_stderr = result.stderr.lower()
-        if (
-            "no such container" in lowered_stderr
-            or "cannot connect to the docker daemon" in lowered_stderr
-            or "error during connect" in lowered_stderr
-        ):
-            raise _docker_error(
-                (
-                    "exec",
-                    container_name,
-                    "pg_isready",
-                    "-U",
-                    db_user,
-                    "-d",
-                    db_name,
-                ),
-                result.stderr.strip(),
-            )
+        error = _docker_error(args, result.stderr.strip())
+        if isinstance(error, (DockerContainerNotFoundError, DockerUnavailableError)):
+            raise error
         sleep(1)
     raise DockerCommandError(
         f"Postgres in {container_name} did not become ready within {timeout_seconds}s"
@@ -167,6 +152,16 @@ def call_docker_bytes(
     return _call_docker_impl(*args, check=check, text=False, input=input)
 
 
+def _run_or_error(
+    *args: str,
+    check_return: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    result = call_docker(*args, check=False)
+    if check_return and result.returncode != 0:
+        raise _docker_error(args, result.stderr.strip())
+    return result
+
+
 def _copy_binary_stream(
     source: IO[bytes],
     dest: IO[bytes],
@@ -197,33 +192,20 @@ def _temp_environ(**updates: str) -> Generator[None, None, None]:
 
 def get_docker_project_metadata(
     container_name: str,
-    *,
-    label_prefix: str,
 ) -> DockerProjectMetadata | None:
-    result = call_docker(
+    args = (
         "inspect",
         "--format",
         "{{json .Config.Labels}}||{{json .State.Status}}",
         container_name,
-        check=False,
     )
+    result = _run_or_error(*args, check_return=False)
     if result.returncode != 0:
-        error = _docker_error(
-            (
-                "inspect",
-                "--format",
-                "{{json .Config.Labels}}||{{json .State.Status}}",
-                container_name,
-            ),
-            result.stderr.strip(),
-        )
+        error = _docker_error(args, result.stderr.strip())
         if isinstance(error, DockerContainerNotFoundError):
             return None
         raise error
-    return DockerProjectMetadata.from_inspect_output(
-        result.stdout.strip(),
-        label_prefix=label_prefix,
-    )
+    return DockerProjectMetadata.from_inspect_output(result.stdout.strip())
 
 
 def create_project_container(
@@ -256,17 +238,19 @@ def create_project_container(
 
 
 def call_docker_start(container_name: str) -> None:
-    result = call_docker("start", container_name, check=False)
+    args = ("start", container_name)
+    result = _run_or_error(*args, check_return=False)
     if result.returncode == 0 or "already running" in result.stderr.lower():
         return
-    raise _docker_error(("start", container_name), result.stderr.strip())
+    raise _docker_error(args, result.stderr.strip())
 
 
 def call_docker_stop(container_name: str) -> None:
-    result = call_docker("stop", container_name, check=False)
+    args = ("stop", container_name)
+    result = _run_or_error(*args, check_return=False)
     if result.returncode == 0 or "is not running" in result.stderr.lower():
         return
-    raise _docker_error(("stop", container_name), result.stderr.strip())
+    raise _docker_error(args, result.stderr.strip())
 
 
 def call_docker_destroy(container_name: str, volume_name: str) -> None:
@@ -429,36 +413,22 @@ def parse_docker_labels(raw: str) -> dict[str, str]:
     return labels
 
 
-def call_docker_list_labels(label_prefix: str) -> str:
-    name_key = f"{label_prefix}{DockerProjectMetadata.name_label_suffix}"
-    result = call_docker(
+def call_docker_list_labels() -> str:
+    args = (
         "ps",
         "-a",
         "--filter",
-        f"label={name_key}",
+        f"label={DockerProjectMetadata.name_label_key}",
         "--format",
         "{{json .}}",
-        check=False,
     )
-    if result.returncode != 0:
-        raise _docker_error(
-            (
-                "ps",
-                "-a",
-                "--filter",
-                f"label={name_key}",
-                "--format",
-                "{{json .}}",
-            ),
-            result.stderr.strip(),
-        )
-    return result.stdout.strip()
+    return _run_or_error(*args).stdout.strip()
 
 
-def get_all_docker_project_metadata(label_prefix: str) -> list[DockerProjectMetadata]:
+def get_all_docker_project_metadata() -> list[DockerProjectMetadata]:
     project_metadata: list[DockerProjectMetadata] = []
-    name_key = f"{label_prefix}{DockerProjectMetadata.name_label_suffix}"
-    for line in call_docker_list_labels(label_prefix).splitlines():
+    name_key = DockerProjectMetadata.name_label_key
+    for line in call_docker_list_labels().splitlines():
         if not line:
             continue
         data = json.loads(line)
@@ -470,7 +440,6 @@ def get_all_docker_project_metadata(label_prefix: str) -> list[DockerProjectMeta
             DockerProjectMetadata.from_labels_status(
                 labels=parsed,
                 status=status,
-                label_prefix=label_prefix,
             )
         )
     return project_metadata

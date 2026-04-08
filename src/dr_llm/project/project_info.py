@@ -70,7 +70,7 @@ class ProjectInfo(BaseModel):
     docker_image: ClassVar[str] = "postgres:16"
     container_prefix: ClassVar[str] = "dr-llm-pg-"
     volume_prefix: ClassVar[str] = "dr-llm-data-"
-    label_prefix: ClassVar[str] = "dr-llm.project"
+    label_prefix: ClassVar[str] = DockerProjectMetadata.label_prefix
     default_backup_dir: ClassVar[Path] = Path.home() / ".dr-llm" / "backups"
 
     name: str
@@ -124,10 +124,7 @@ class ProjectInfo(BaseModel):
     @classmethod
     def maybe_from_existing(cls, name: str) -> ProjectInfo | None:
         container_name = cls.get_container_name(name)
-        metadata = get_docker_project_metadata(
-            container_name,
-            label_prefix=cls.label_prefix,
-        )
+        metadata = get_docker_project_metadata(container_name)
         if metadata is None:
             return None
         return cls.from_metadata(metadata)
@@ -143,14 +140,14 @@ class ProjectInfo(BaseModel):
     def list_all(cls) -> list[ProjectInfo]:
         return [
             cls.from_metadata(metadata)
-            for metadata in get_all_docker_project_metadata(cls.label_prefix)
+            for metadata in get_all_docker_project_metadata()
         ]
 
     @classmethod
     def create_new(cls, name: str) -> ProjectInfo:
         claimed_ports = {
             metadata.port
-            for metadata in get_all_docker_project_metadata(cls.label_prefix)
+            for metadata in get_all_docker_project_metadata()
             if metadata.port is not None
         }
         created_at = datetime.now(UTC)
@@ -174,7 +171,6 @@ class ProjectInfo(BaseModel):
                     db_password=project_info.db_password,
                     docker_image=project_info.docker_image,
                     project=DockerProjectCreateMetadata(
-                        label_prefix=project_info.label_prefix,
                         name=project_info.name,
                         port=port,
                         created_at=created_at,

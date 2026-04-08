@@ -33,7 +33,7 @@ def test_create_new_retries_when_docker_reports_port_collision(
     monkeypatch.setattr(
         project_info_module,
         "get_all_docker_project_metadata",
-        lambda label_prefix: [],
+        lambda: [],
     )
 
     def fake_create(**kwargs: object) -> None:
@@ -66,7 +66,7 @@ def test_create_new_skips_ports_with_existing_listeners(
     monkeypatch.setattr(
         project_info_module,
         "get_all_docker_project_metadata",
-        lambda label_prefix: [],
+        lambda: [],
     )
     monkeypatch.setattr(
         project_info_module, "_port_has_listener", lambda port: port == 5500
@@ -97,7 +97,7 @@ def test_create_new_translates_container_conflict(
     monkeypatch.setattr(
         project_info_module,
         "get_all_docker_project_metadata",
-        lambda label_prefix: [],
+        lambda: [],
     )
 
     def fake_create(**kwargs: object) -> None:
@@ -122,7 +122,7 @@ def test_create_new_cleans_up_container_when_ready_check_fails(
     monkeypatch.setattr(
         project_info_module,
         "get_all_docker_project_metadata",
-        lambda label_prefix: [],
+        lambda: [],
     )
     monkeypatch.setattr(project_info_module, "_port_has_listener", lambda port: False)
     monkeypatch.setattr(
@@ -153,7 +153,7 @@ def test_get_by_name_raises_project_not_found(
     monkeypatch.setattr(
         project_info_module,
         "get_docker_project_metadata",
-        lambda container_name, label_prefix: None,
+        lambda container_name: None,
     )
 
     with pytest.raises(ProjectNotFoundError, match="Project 'demo' not found"):
