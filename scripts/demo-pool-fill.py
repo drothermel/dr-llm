@@ -180,9 +180,6 @@ def _run_demo(
                 f"-> {text!r}"
             )
     finally:
-        if controller is not None:
-            controller.stop()
-            controller.join()
         registry.close()
         runtime.close()
 

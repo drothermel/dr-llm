@@ -27,7 +27,7 @@ class AcquireQuery(BaseModel):
     run_id: str
     request_id: str = Field(default_factory=lambda: uuid4().hex)
     key_values: dict[str, Any] = Field(default_factory=dict)
-    n: int
+    n: int = Field(ge=0)
     consumer_tag: str = ""
 
 

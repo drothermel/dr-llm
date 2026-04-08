@@ -5,11 +5,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.llm.providers.reasoning import ReasoningWarning
 from dr_llm.llm.providers.reasoning import (
     GlmReasoning,
     OpenAIReasoning,
     OpenRouterReasoning,
+    ReasoningWarning,
     ReasoningSpec,
     ThinkingLevel,
 )

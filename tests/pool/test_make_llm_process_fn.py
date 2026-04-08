@@ -142,9 +142,10 @@ def test_failed_worker_call_emits_failure_event(
         ),
     )
 
-    with generation_log_context({"pool_name": "demo", "worker_id": "worker-1"}):
-        with pytest.raises(RuntimeError, match="API down"):
-            process_fn(sample)
+    with generation_log_context(
+        {"pool_name": "demo", "worker_id": "worker-1"}
+    ), pytest.raises(RuntimeError, match="API down"):
+        process_fn(sample)
 
     assert [event["event_type"] for event in events] == [
         "llm_call.started",

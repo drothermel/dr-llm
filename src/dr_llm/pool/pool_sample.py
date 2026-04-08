@@ -76,6 +76,12 @@ class PoolSample(BaseModel):
         return cols
 
     def to_db_insert_row(self, schema: PoolSchema) -> dict[str, Any]:
+        missing = set(schema.key_column_names) - set(self.key_values.keys())
+        if missing:
+            raise ValueError(
+                f"Missing key columns for PoolSample: {missing}. "
+                f"Expected: {set(schema.key_column_names)}"
+            )
         dumped = self.model_dump(by_alias=True, exclude={"created_at"})
         row: dict[str, Any] = {}
         for col_name, value in dumped.items():

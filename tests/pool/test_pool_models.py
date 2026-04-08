@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.models import (
     AcquireQuery,
@@ -15,6 +17,7 @@ from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample, SampleStatus
 from dr_llm.workers import WorkerSnapshot
+from pydantic import ValidationError
 
 _TEST_SCHEMA = PoolSchema(
     name="modeltest",
@@ -221,6 +224,18 @@ def test_pending_status_counts_from_rows_handles_partial_and_unknown() -> None:
 def test_acquire_query_auto_request_id() -> None:
     q = AcquireQuery(run_id="r1", key_values={"x": "a"}, n=5)
     assert q.request_id  # auto-generated
+
+
+def test_acquire_query_rejects_negative_n() -> None:
+    with pytest.raises(ValidationError, match="greater than or equal to 0"):
+        AcquireQuery(run_id="r1", key_values={"x": "a"}, n=-1)
+
+
+def test_pool_sample_to_db_insert_row_rejects_missing_key_column() -> None:
+    sample = PoolSample(key_values={"dim_a": "alpha"})
+
+    with pytest.raises(ValueError, match="Missing key columns for PoolSample"):
+        sample.to_db_insert_row(_TEST_SCHEMA)
 
 
 def test_worker_snapshot_defaults() -> None:
