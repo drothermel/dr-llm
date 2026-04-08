@@ -11,7 +11,6 @@ from uuid import uuid4
 from sqlalchemy import exists, func, literal, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from dr_llm.pool.db.metadata import MetadataStore
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.sql_helpers import (
@@ -21,6 +20,7 @@ from dr_llm.pool.db.sql_helpers import (
     validate_key_values,
 )
 from dr_llm.pool.db.tables import PoolTables
+from dr_llm.pool.metadata_store import MetadataStore
 from dr_llm.pool.models import AcquireQuery, AcquireResult, CoverageRow, InsertResult
 from dr_llm.pool.pending.store import PendingStore
 from dr_llm.pool.pool_sample import PoolSample
