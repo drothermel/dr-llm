@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 from pathlib import Path
 
 import pytest
@@ -8,8 +7,6 @@ from typer.testing import CliRunner
 
 import dr_llm.cli.project as project_cli
 from dr_llm.cli import app
-
-app_cli = importlib.import_module("dr_llm.cli.app")
 
 runner = CliRunner()
 
@@ -188,40 +185,8 @@ def test_project_use_still_looks_up_metadata(
     )
 
 
-def test_global_project_option_still_looks_up_metadata(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    looked_up: list[str] = []
-    monkeypatch.delenv("DR_LLM_DATABASE_URL", raising=False)
-
-    class FakeProjectInfo:
-        @classmethod
-        def get_by_name(cls, name: str) -> object:
-            looked_up.append(name)
-            return type(
-                "LookupResult",
-                (),
-                {
-                    "status": "running",
-                    "dsn": "postgresql://postgres:postgres@localhost:5500/dr_llm",
-                },
-            )()
-
-    monkeypatch.setattr(app_cli, "ProjectInfo", FakeProjectInfo)
-    monkeypatch.setattr(
-        project_cli,
-        "ProjectInfo",
-        type(
-            "FakeProjectListInfo",
-            (),
-            {
-                "list_all": classmethod(lambda cls: []),
-            },
-        ),
-    )
-
+def test_global_project_option_is_removed() -> None:
     result = runner.invoke(app, ["--project", "demo", "project", "list"])
 
-    assert result.exit_code == 0
-    assert looked_up == ["demo"]
-    assert result.stdout.strip() == "No projects found."
+    assert result.exit_code != 0
+    assert "No such option: --project" in result.output
