@@ -35,15 +35,16 @@ def project_list() -> None:
     if not projects:
         typer.echo("No projects found.")
         return
+    port_values = [
+        str(project.port) if project.port is not None else "-" for project in projects
+    ]
     name_w = max(len(project.name) for project in projects)
-    port_w = max(len(str(project.port)) for project in projects)
+    port_w = max(len(port) for port in port_values)
     header = f"{'NAME':<{name_w}}  {'PORT':<{port_w}}  STATUS"
     typer.echo(header)
     typer.echo("-" * len(header))
-    for project in projects:
-        typer.echo(
-            f"{project.name:<{name_w}}  {project.port:<{port_w}}  {project.status}"
-        )
+    for project, port in zip(projects, port_values, strict=True):
+        typer.echo(f"{project.name:<{name_w}}  {port:<{port_w}}  {project.status}")
 
 
 @project_app.command("start")

@@ -26,6 +26,7 @@ from dr_llm.project.errors import (
 )
 
 _VALID_PG_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+STREAM_CHUNK_SIZE = 1024 * 1024
 
 
 def _validate_pg_identifier(name: str, label: str = "identifier") -> str:
@@ -35,9 +36,6 @@ def _validate_pg_identifier(name: str, label: str = "identifier") -> str:
             f"(must match {_VALID_PG_IDENTIFIER.pattern})"
         )
     return name
-
-
-STREAM_CHUNK_SIZE = 1024 * 1024
 
 
 def _docker_error_detail(stderr: str) -> str:
@@ -345,7 +343,6 @@ def docker_swap_in_db(
 ) -> None:
     swap_in_db = f"dr_llm_restore_{uuid4().hex[:8]}"
     _validate_pg_identifier(swap_in_db, "database name")
-    _validate_pg_identifier(target_db_name, "database name")
     _call_docker_psql_admin(
         container_name,
         db_user,

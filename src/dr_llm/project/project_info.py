@@ -5,11 +5,12 @@ import socket
 from datetime import UTC, datetime
 from pathlib import Path
 from contextlib import suppress
-from typing import IO, ClassVar, cast
+from typing import ClassVar
 
 from pydantic import BaseModel, computed_field
 
 from dr_llm.project.docker import (
+    _validate_pg_identifier,
     call_docker_destroy,
     call_docker_pg_dump_stream,
     call_docker_start,
@@ -64,7 +65,7 @@ def _find_available_port(
 
 
 class ProjectInfo(BaseModel):
-    db_name: ClassVar[str] = "dr_llm"
+    db_name: ClassVar[str] = _validate_pg_identifier("dr_llm", "database name")
     db_user: ClassVar[str] = "postgres"
     db_password: ClassVar[str] = "postgres"
     docker_image: ClassVar[str] = "postgres:16"
@@ -83,34 +84,25 @@ class ProjectInfo(BaseModel):
     def dsn(self) -> str | None:
         if self.port is None:
             return None
-        return self.get_dsn(self.port)
+        return (
+            f"postgresql://{self.db_user}:{self.db_password}"
+            f"@localhost:{self.port}/{self.db_name}"
+        )
 
     @computed_field
     @property
     def volume_name(self) -> str:
-        return self.get_volume_name(self.name)
+        return f"{self.volume_prefix}{self.name}"
 
     @computed_field
     @property
     def container_name(self) -> str:
-        return self.get_container_name(self.name)
+        return f"{self.container_prefix}{self.name}"
 
     @computed_field
     @property
     def running(self) -> bool:
         return self.status == ContainerStatus.RUNNING
-
-    @classmethod
-    def get_volume_name(cls, name: str) -> str:
-        return f"{cls.volume_prefix}{name}"
-
-    @classmethod
-    def get_container_name(cls, name: str) -> str:
-        return f"{cls.container_prefix}{name}"
-
-    @classmethod
-    def get_dsn(cls, port: int) -> str:
-        return f"postgresql://{cls.db_user}:{cls.db_password}@localhost:{port}/{cls.db_name}"
 
     @classmethod
     def from_metadata(cls, metadata: DockerProjectMetadata) -> ProjectInfo:
@@ -123,7 +115,7 @@ class ProjectInfo(BaseModel):
 
     @classmethod
     def maybe_from_existing(cls, name: str) -> ProjectInfo | None:
-        container_name = cls.get_container_name(name)
+        container_name = f"{cls.container_prefix}{name}"
         metadata = get_docker_project_metadata(container_name)
         if metadata is None:
             return None
@@ -206,10 +198,11 @@ class ProjectInfo(BaseModel):
 
     @classmethod
     def start(cls, name: str) -> ProjectInfo:
+        container_name = f"{cls.container_prefix}{name}"
         try:
-            call_docker_start(cls.get_container_name(name))
+            call_docker_start(container_name)
             wait_docker_ready(
-                container_name=cls.get_container_name(name),
+                container_name=container_name,
                 db_user=cls.db_user,
                 db_name=cls.db_name,
             )
@@ -219,15 +212,18 @@ class ProjectInfo(BaseModel):
 
     @classmethod
     def stop(cls, name: str) -> None:
+        container_name = f"{cls.container_prefix}{name}"
         try:
-            call_docker_stop(cls.get_container_name(name))
+            call_docker_stop(container_name)
         except DockerContainerNotFoundError as exc:
             raise ProjectNotFoundError(f"Project '{name}' not found") from exc
 
     @classmethod
     def destroy(cls, name: str) -> None:
+        container_name = f"{cls.container_prefix}{name}"
+        volume_name = f"{cls.volume_prefix}{name}"
         try:
-            call_docker_destroy(cls.get_container_name(name), cls.get_volume_name(name))
+            call_docker_destroy(container_name, volume_name)
         except DockerContainerNotFoundError as exc:
             raise ProjectNotFoundError(f"Project '{name}' not found") from exc
 
@@ -243,10 +239,10 @@ class ProjectInfo(BaseModel):
             with gzip.open(backup_file, "wb") as backup_stream:
                 try:
                     call_docker_pg_dump_stream(
-                        container_name=cls.get_container_name(name),
+                        container_name=f"{cls.container_prefix}{name}",
                         db_user=cls.db_user,
                         db_name=cls.db_name,
-                        output_stream=cast(IO[bytes], backup_stream),
+                        output_stream=backup_stream,  # type: ignore[arg-type]
                     )
                 except DockerContainerNotFoundError as exc:
                     raise ProjectNotFoundError(f"Project '{name}' not found") from exc
@@ -270,8 +266,8 @@ class ProjectInfo(BaseModel):
         with gzip.open(backup_file, "rb") as sql_stream:
             try:
                 docker_swap_in_db(
-                    sql_stream=cast(IO[bytes], sql_stream),
-                    container_name=cls.get_container_name(name),
+                    sql_stream=sql_stream,  # type: ignore[arg-type]
+                    container_name=f"{cls.container_prefix}{name}",
                     db_user=cls.db_user,
                     target_db_name=cls.db_name,
                 )

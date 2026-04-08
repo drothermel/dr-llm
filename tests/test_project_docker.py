@@ -376,6 +376,25 @@ def test_docker_project_create_metadata_builds_expected_run_args() -> None:
     ]
 
 
+def test_docker_project_metadata_round_trips_create_labels() -> None:
+    created_at = datetime(2026, 4, 7, 12, 34, 56, tzinfo=UTC)
+    project = DockerProjectCreateMetadata(
+        name="demo",
+        port=5500,
+        created_at=created_at,
+    )
+
+    metadata = DockerProjectMetadata.from_labels_status(
+        labels=project.to_labels(),
+        status="running",
+    )
+
+    assert metadata.name == "demo"
+    assert metadata.port == 5500
+    assert metadata.created_at == created_at
+    assert metadata.status == ContainerStatus.RUNNING
+
+
 def test_temp_environ_sets_and_restores_missing_env_var(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
