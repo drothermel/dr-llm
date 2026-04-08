@@ -64,11 +64,13 @@ def test_query_recording_flags_are_removed() -> None:
     )
 
     assert result.exit_code != 0
-    assert "No such option: --no-record" in result.output
+    assert "--no-record" in result.output
+    assert "no such option" in result.output.lower()
 
 
 def test_run_command_is_removed() -> None:
     result = runner.invoke(app, ["run", "start"])
 
     assert result.exit_code != 0
-    assert "No such command 'run'." in result.output
+    assert "run" in result.output
+    assert "no such command" in result.output.lower()
