@@ -53,4 +53,8 @@ class MetadataStore:
             raw = conn.execute(stmt).scalar_one_or_none()
         if raw is None:
             return None
-        return raw if isinstance(raw, dict) else dict(raw)
+        if not isinstance(raw, dict):
+            raise TypeError(
+                f"Expected dict from JSONB column, got {type(raw)}",
+            )
+        return raw

@@ -27,6 +27,19 @@ _TYPE_MAP: dict[ColumnType, type[Any]] = {
 }
 
 
+def _sqlalchemy_type_for_column_type(column_type: ColumnType) -> type[Any]:
+    """Resolve the SQLAlchemy column type class for a schema ``ColumnType``."""
+    sql_type = _TYPE_MAP.get(column_type)
+    if sql_type is None:
+        msg = (
+            f"No SQLAlchemy type mapped for ColumnType {column_type!r}; "
+            f"add an entry for this value to _TYPE_MAP in dr_llm.pool.db.tables. "
+            f"ColumnType={ColumnType!r}, _TYPE_MAP keys={list(_TYPE_MAP)!r}"
+        )
+        raise ValueError(msg)
+    return sql_type
+
+
 class PoolTables:
     """Dynamic SQLAlchemy table metadata for a pool schema."""
 
@@ -218,6 +231,10 @@ class PoolTables:
 
     def _key_columns(self) -> list[Column[Any]]:
         return [
-            Column(key.name, _TYPE_MAP[key.type], nullable=False)
+            Column(
+                key.name,
+                _sqlalchemy_type_for_column_type(key.type),
+                nullable=False,
+            )
             for key in self.schema.key_columns
         ]

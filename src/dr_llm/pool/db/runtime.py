@@ -8,10 +8,11 @@ from time import sleep
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import create_engine
-from sqlalchemy.engine import Connection, make_url
+from sqlalchemy.engine import Connection
 from sqlalchemy.pool import QueuePool
 
 from dr_llm.errors import TransientPersistenceError
+from dr_llm.pool.db.dsn import sqlalchemy_dsn
 
 
 class DbConfig(BaseModel):
@@ -35,8 +36,7 @@ class DbRuntime:
     def __init__(self, config: DbConfig) -> None:
         self.config = config
         self.engine = create_engine(
-            _sqlalchemy_dsn(self.config.dsn),
-            future=True,
+            sqlalchemy_dsn(self.config.dsn),
             poolclass=QueuePool,
             pool_size=self.config.min_pool_size,
             max_overflow=max(0, self.config.max_pool_size - self.config.min_pool_size),
@@ -99,12 +99,3 @@ class DbRuntime:
             "SET statement_timeout = %s",
             (int(self.config.statement_timeout_ms),),
         )
-
-
-def _sqlalchemy_dsn(dsn: str) -> str:
-    url = make_url(dsn)
-    if "+" in url.drivername:
-        return url.render_as_string(hide_password=False)
-    return url.set(drivername=f"{url.drivername}+psycopg").render_as_string(
-        hide_password=False
-    )

@@ -50,11 +50,12 @@ class PendingStore:
         with self._runtime.begin() as conn:
             try:
                 inserted_pending_id = conn.execute(stmt).scalar_one_or_none()
-                return inserted_pending_id is not None
             except Exception as exc:
                 if ignore_conflicts and is_constraint_error(exc):
                     return False
                 raise
+            else:
+                return inserted_pending_id is not None
 
     def claim_pending(
         self,
