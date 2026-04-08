@@ -44,6 +44,7 @@ def test_create_new_retries_when_docker_reports_port_collision(
             raise DockerPortAllocatedError()
 
     monkeypatch.setattr(project_info_module, "create_project_container", fake_create)
+    monkeypatch.setattr(project_info_module, "_port_has_listener", lambda port: False)
     monkeypatch.setattr(
         project_info_module,
         "wait_docker_ready",
@@ -53,6 +54,39 @@ def test_create_new_retries_when_docker_reports_port_collision(
     project = ProjectInfo.create_new("demo")
 
     assert attempted_ports == [5500, 5501]
+    assert project.port == 5501
+    assert project.status == ContainerStatus.RUNNING
+
+
+def test_create_new_skips_ports_with_existing_listeners(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempted_ports: list[int] = []
+
+    monkeypatch.setattr(
+        project_info_module,
+        "get_all_docker_project_metadata",
+        lambda label_prefix: [],
+    )
+    monkeypatch.setattr(
+        project_info_module, "_port_has_listener", lambda port: port == 5500
+    )
+
+    def fake_create(**kwargs: object) -> None:
+        project = kwargs["project"]
+        assert isinstance(project, DockerProjectCreateMetadata)
+        attempted_ports.append(project.port)
+
+    monkeypatch.setattr(project_info_module, "create_project_container", fake_create)
+    monkeypatch.setattr(
+        project_info_module,
+        "wait_docker_ready",
+        lambda **kwargs: ContainerStatus.RUNNING,
+    )
+
+    project = ProjectInfo.create_new("demo")
+
+    assert attempted_ports == [5501]
     assert project.port == 5501
     assert project.status == ContainerStatus.RUNNING
 
@@ -71,12 +105,46 @@ def test_create_new_translates_container_conflict(
         raise DockerContainerConflictError()
 
     monkeypatch.setattr(project_info_module, "create_project_container", fake_create)
+    monkeypatch.setattr(project_info_module, "_port_has_listener", lambda port: False)
 
     with pytest.raises(
         ProjectAlreadyExistsError,
         match="Project 'demo' already exists",
     ):
         ProjectInfo.create_new("demo")
+
+
+def test_create_new_cleans_up_container_when_ready_check_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destroyed: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        project_info_module,
+        "get_all_docker_project_metadata",
+        lambda label_prefix: [],
+    )
+    monkeypatch.setattr(project_info_module, "_port_has_listener", lambda port: False)
+    monkeypatch.setattr(
+        project_info_module, "create_project_container", lambda **kwargs: None
+    )
+
+    def fake_wait_docker_ready(**kwargs: object) -> ContainerStatus:
+        _ = kwargs
+        raise ProjectError("container did not become ready")
+
+    def fake_destroy(container_name: str, volume_name: str) -> None:
+        destroyed.append((container_name, volume_name))
+
+    monkeypatch.setattr(
+        project_info_module, "wait_docker_ready", fake_wait_docker_ready
+    )
+    monkeypatch.setattr(project_info_module, "call_docker_destroy", fake_destroy)
+
+    with pytest.raises(ProjectError, match="container did not become ready"):
+        ProjectInfo.create_new("demo")
+
+    assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
 
 
 def test_get_by_name_raises_project_not_found(
@@ -101,7 +169,9 @@ def test_direct_operations_translate_missing_container_to_project_not_found(
         _ = (args, kwargs)
         raise DockerContainerNotFoundError()
 
-    monkeypatch.setattr(project_info_module, f"call_docker_{method_name}", raise_missing_container)
+    monkeypatch.setattr(
+        project_info_module, f"call_docker_{method_name}", raise_missing_container
+    )
 
     with pytest.raises(ProjectNotFoundError, match="Project 'demo' not found"):
         getattr(ProjectInfo, method_name)("demo")
@@ -129,7 +199,9 @@ def test_start_returns_fresh_project_metadata_after_ready(
         return ProjectInfo(name=name, port=5500, status=ContainerStatus.RUNNING)
 
     monkeypatch.setattr(project_info_module, "call_docker_start", fake_start)
-    monkeypatch.setattr(project_info_module, "wait_docker_ready", fake_wait_docker_ready)
+    monkeypatch.setattr(
+        project_info_module, "wait_docker_ready", fake_wait_docker_ready
+    )
     monkeypatch.setattr(ProjectInfo, "get_by_name", fake_get_by_name)
 
     project = ProjectInfo.start("demo")

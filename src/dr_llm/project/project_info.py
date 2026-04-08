@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import gzip
+import socket
 from datetime import UTC, datetime
 from pathlib import Path
+from contextlib import suppress
 from typing import IO, ClassVar, cast
 
 from pydantic import BaseModel, computed_field
@@ -34,6 +36,17 @@ from dr_llm.project.errors import (
 )
 
 BASE_PORT = 5500
+PORT_PROBE_TIMEOUT_SECONDS = 0.05
+
+
+def _port_has_listener(port: int) -> bool:
+    with suppress(OSError):
+        with socket.create_connection(
+            ("127.0.0.1", port),
+            timeout=PORT_PROBE_TIMEOUT_SECONDS,
+        ):
+            return True
+    return False
 
 
 def _find_available_port(
@@ -144,6 +157,9 @@ class ProjectInfo(BaseModel):
 
         while True:
             port = _find_available_port(claimed_ports)
+            if _port_has_listener(port):
+                claimed_ports.add(port)
+                continue
             project_info = cls(
                 name=name,
                 port=port,
@@ -169,16 +185,27 @@ class ProjectInfo(BaseModel):
                     f"Project '{name}' already exists"
                 ) from exc
             except DockerPortAllocatedError:
-                if project_info.port is None:
-                    raise
-                claimed_ports.add(project_info.port)
+                claimed_ports.add(port)
                 continue
 
-            project_info.status = wait_docker_ready(
-                container_name=project_info.container_name,
-                db_user=ProjectInfo.db_user,
-                db_name=ProjectInfo.db_name,
-            )
+            try:
+                project_info.status = wait_docker_ready(
+                    container_name=project_info.container_name,
+                    db_user=ProjectInfo.db_user,
+                    db_name=ProjectInfo.db_name,
+                )
+            except Exception as exc:
+                try:
+                    call_docker_destroy(
+                        project_info.container_name,
+                        project_info.volume_name,
+                    )
+                except Exception as cleanup_exc:
+                    exc.add_note(
+                        "Cleanup after failed project creation also failed: "
+                        f"{cleanup_exc}"
+                    )
+                raise
             return project_info
 
     @classmethod
