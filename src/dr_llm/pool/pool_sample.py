@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
@@ -12,7 +11,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    field_serializer,
     field_validator,
 )
 
@@ -57,24 +55,6 @@ class PoolSample(BaseModel):
     def _parse_json(cls, v: Any) -> Any:
         return parse_json_field(v) if isinstance(v, str) else v
 
-    @field_serializer("payload", "metadata")
-    def _dump_json(self, v: dict[str, Any]) -> str:
-        return json.dumps(v, default=str)
-
-    @field_serializer("status")
-    def _dump_status(self, v: SampleStatus) -> str:
-        return v.value
-
-    @classmethod
-    def db_select_columns(cls, schema: PoolSchema) -> list[str]:
-        cols: list[str] = []
-        for name, field in cls.model_fields.items():
-            if name == "key_values":
-                cols.extend(schema.key_column_names)
-            else:
-                cols.append(str(field.serialization_alias or name))
-        return cols
-
     def to_db_insert_row(self, schema: PoolSchema) -> dict[str, Any]:
         missing = set(schema.key_column_names) - set(self.key_values.keys())
         if missing:
@@ -82,7 +62,11 @@ class PoolSample(BaseModel):
                 f"Missing key columns for PoolSample: {missing}. "
                 f"Expected: {set(schema.key_column_names)}"
             )
-        dumped = self.model_dump(by_alias=True, exclude={"created_at"})
+        dumped = self.model_dump(
+            mode="json",
+            by_alias=True,
+            exclude={"created_at"},
+        )
         row: dict[str, Any] = {}
         for col_name, value in dumped.items():
             if col_name == "key_values":

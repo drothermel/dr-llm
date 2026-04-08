@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 from uuid import uuid4
 
-from psycopg.rows import dict_row
+from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.sql_helpers import (
     is_constraint_error,
-    key_where_clause,
-    q,
-    validate_key_filter,
+    key_filter_clause,
+    partial_key_filter_clause,
+    resolve_group_column,
     validate_key_values,
 )
-from dr_llm.pool.errors import PoolSchemaError
+from dr_llm.pool.db.tables import PoolTables
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample
@@ -29,37 +29,33 @@ logger = logging.getLogger(__name__)
 class PendingStore:
     """Pending sample lifecycle operations."""
 
-    def __init__(self, schema: PoolSchema, runtime: DbRuntime) -> None:
+    def __init__(
+        self, schema: PoolSchema, runtime: DbRuntime, tables: PoolTables
+    ) -> None:
         self._schema = schema
         self._runtime = runtime
+        self._tables = tables
 
     def insert_pending(
         self, sample: PendingSample, *, ignore_conflicts: bool = True
     ) -> bool:
         validate_key_values(self._schema, sample.key_values)
-        tbl = self._schema.pending_table
-        insert_row = sample.to_db_insert_row(self._schema)
-        cols = list(insert_row.keys())
-        placeholders = ", ".join(["%s"] * len(cols))
-        col_list = ", ".join(cols)
-        conflict = " ON CONFLICT DO NOTHING" if ignore_conflicts else ""
-        values = list(insert_row.values())
+        stmt = pg_insert(self._tables.pending).values(
+            **sample.to_db_insert_row(self._schema)
+        )
+        if ignore_conflicts:
+            stmt = stmt.on_conflict_do_nothing()
+        stmt = stmt.returning(self._tables.pending.c.pending_id)
 
-        with self._runtime.conn() as conn:
+        with self._runtime.begin() as conn:
             try:
-                cur = conn.execute(
-                    q(
-                        f"INSERT INTO {tbl} ({col_list}) VALUES ({placeholders}){conflict}"
-                    ),
-                    values,
-                )
-                conn.commit()
-                return (cur.rowcount or 0) > 0
+                inserted_pending_id = conn.execute(stmt).scalar_one_or_none()
             except Exception as exc:
-                conn.rollback()
                 if ignore_conflicts and is_constraint_error(exc):
                     return False
                 raise
+            else:
+                return inserted_pending_id is not None
 
     def claim_pending(
         self,
@@ -70,50 +66,49 @@ class PendingStore:
         key_filter: dict[str, Any] | None = None,
     ) -> list[PendingSample]:
         """Lease pending samples for processing via FOR UPDATE SKIP LOCKED."""
-        tbl = self._schema.pending_table
-
-        where_parts = ["(status = %s OR (status = %s AND lease_expires_at < now()))"]
-        params: list[Any] = [PendingStatus.pending.value, PendingStatus.leased.value]
-
-        if key_filter:
-            validate_key_filter(self._schema, key_filter)
-            for k, v in key_filter.items():
-                if k in self._schema.key_column_names:
-                    where_parts.append(f"{k} = %s")
-                    params.append(v)
-
-        where_clause = " AND ".join(where_parts)
-        params.extend([limit])
-
-        all_cols = PendingSample.db_select_columns(self._schema)
-        claim_sql = (
-            f"WITH candidates AS ("
-            f"  SELECT pending_id FROM {tbl} "
-            f"  WHERE {where_clause} "
-            f"  ORDER BY priority DESC, created_at ASC "
-            f"  LIMIT %s "
-            f"  FOR UPDATE SKIP LOCKED"
-            f") "
-            f"UPDATE {tbl} t SET "
-            f"  status = %s, "
-            f"  worker_id = %s, "
-            f"  lease_expires_at = now() + make_interval(secs => %s), "
-            f"  attempt_count = attempt_count + 1 "
-            f"FROM candidates c "
-            f"WHERE t.pending_id = c.pending_id "
-            f"RETURNING {', '.join(f't.{c}' for c in all_cols)}"
+        reusable = and_(
+            self._tables.pending.c.status == PendingStatus.leased.value,
+            self._tables.pending.c.lease_expires_at < func.now(),
         )
-        update_params = params + [PendingStatus.leased.value, worker_id, lease_seconds]
+        predicates = [
+            or_(
+                self._tables.pending.c.status == PendingStatus.pending.value,
+                reusable,
+            )
+        ]
+        partial_filter = partial_key_filter_clause(
+            self._schema, self._tables.pending, key_filter
+        )
+        if partial_filter is not None:
+            predicates.append(partial_filter)
 
-        with self._runtime.conn() as conn:
-            try:
-                with conn.cursor(row_factory=dict_row) as cur:
-                    rows = cur.execute(q(claim_sql), update_params).fetchall()
-                conn.commit()
-                return [PendingSample.from_db_row(self._schema, row) for row in rows]
-            except Exception:
-                conn.rollback()
-                raise
+        candidates = (
+            select(self._tables.pending.c.pending_id)
+            .where(*predicates)
+            .order_by(
+                self._tables.pending.c.priority.desc(),
+                self._tables.pending.c.created_at.asc(),
+            )
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+            .cte("candidates")
+        )
+        stmt = (
+            update(self._tables.pending)
+            .where(self._tables.pending.c.pending_id == candidates.c.pending_id)
+            .values(
+                status=PendingStatus.leased.value,
+                worker_id=worker_id,
+                lease_expires_at=func.now()
+                + func.make_interval(0, 0, 0, 0, 0, 0, lease_seconds),
+                attempt_count=self._tables.pending.c.attempt_count + 1,
+            )
+            .returning(*self._tables.pending_select_columns())
+        )
+
+        with self._runtime.begin() as conn:
+            rows = conn.execute(stmt).mappings().all()
+        return [PendingSample.from_db_row(self._schema, dict(row)) for row in rows]
 
     def promote_pending(
         self, *, pending_id: str, payload: dict[str, Any] | None = None
@@ -123,118 +118,96 @@ class PendingStore:
         Returns None if the pending_id doesn't exist or is not in 'leased' status.
         Inserts into samples table and marks the pending row as promoted.
         """
-        pending_tbl = self._schema.pending_table
-        samples_tbl = self._schema.samples_table
-        pending_cols = PendingSample.db_select_columns(self._schema)
+        stmt = (
+            select(*self._tables.pending_select_columns())
+            .where(self._tables.pending.c.pending_id == pending_id)
+            .with_for_update()
+        )
 
-        with self._runtime.conn() as conn:
-            try:
-                with conn.cursor(row_factory=dict_row) as cur:
-                    row = cur.execute(
-                        q(
-                            f"SELECT {', '.join(pending_cols)} FROM {pending_tbl} "
-                            f"WHERE pending_id = %s FOR UPDATE"
-                        ),
-                        [pending_id],
-                    ).fetchone()
+        with self._runtime.begin() as conn:
+            row = conn.execute(stmt).mappings().first()
+            if row is None or row["status"] != PendingStatus.leased.value:
+                return None
 
-                if row is None or row["status"] != PendingStatus.leased.value:
-                    conn.rollback()
-                    return None
-
-                pending_sample = PendingSample.from_db_row(self._schema, row)
-                final_payload = (
-                    payload if payload is not None else pending_sample.payload
+            pending_sample = PendingSample.from_db_row(self._schema, dict(row))
+            final_payload = payload if payload is not None else pending_sample.payload
+            sample = PoolSample(
+                sample_id=uuid4().hex,
+                sample_idx=pending_sample.sample_idx,
+                key_values=pending_sample.key_values,
+                payload=final_payload,
+                source_run_id=pending_sample.source_run_id,
+                metadata=pending_sample.metadata,
+            )
+            insert_stmt = pg_insert(self._tables.samples).values(
+                **sample.to_db_insert_row(self._schema)
+            )
+            insert_stmt = insert_stmt.on_conflict_do_nothing()
+            insert_stmt = insert_stmt.returning(self._tables.samples.c.sample_id)
+            inserted_sample_id = conn.execute(insert_stmt).scalar_one_or_none()
+            if inserted_sample_id is None:
+                logger.warning(
+                    "promote_pending: sample insert conflict for pending_id=%s",
+                    pending_id,
                 )
-                sample = PoolSample(
-                    sample_id=uuid4().hex,
-                    sample_idx=pending_sample.sample_idx,
-                    key_values=pending_sample.key_values,
-                    payload=final_payload,
-                    source_run_id=pending_sample.source_run_id,
-                    metadata=pending_sample.metadata,
-                )
-                insert_row = sample.to_db_insert_row(self._schema)
-                sample_cols = list(insert_row.keys())
-                placeholders = ", ".join(["%s"] * len(sample_cols))
-                values = list(insert_row.values())
+                return None
 
-                insert_cur = conn.execute(
-                    q(
-                        f"INSERT INTO {samples_tbl} ({', '.join(sample_cols)}) "
-                        f"VALUES ({placeholders}) ON CONFLICT DO NOTHING"
-                    ),
-                    values,
-                )
-
-                if (insert_cur.rowcount or 0) == 0:
-                    conn.rollback()
-                    logger.warning(
-                        "promote_pending: sample insert conflict for pending_id=%s",
-                        pending_id,
-                    )
-                    return None
-
-                conn.execute(
-                    q(f"UPDATE {pending_tbl} SET status = %s WHERE pending_id = %s"),
-                    [PendingStatus.promoted.value, pending_id],
-                )
-
-                conn.commit()
-                return sample
-            except Exception:
-                conn.rollback()
-                raise
+            conn.execute(
+                update(self._tables.pending)
+                .where(self._tables.pending.c.pending_id == pending_id)
+                .values(status=PendingStatus.promoted.value)
+            )
+            return sample
 
     def fail_pending(self, *, pending_id: str, worker_id: str, reason: str) -> None:
         """Mark a leased pending sample as failed."""
-        tbl = self._schema.pending_table
-        with self._runtime.conn() as conn:
-            conn.execute(
-                q(
-                    f"UPDATE {tbl} SET status = %s, "
-                    f"metadata_json = jsonb_set(COALESCE(metadata_json, '{{}}'), '{{fail_reason}}', %s::jsonb) "
-                    f"WHERE pending_id = %s AND worker_id = %s AND status = %s"
-                ),
-                [
-                    PendingStatus.failed.value,
-                    json.dumps(reason),
-                    pending_id,
-                    worker_id,
-                    PendingStatus.leased.value,
-                ],
+        metadata_patch = func.jsonb_build_object("fail_reason", reason)
+        stmt = (
+            update(self._tables.pending)
+            .where(
+                self._tables.pending.c.pending_id == pending_id,
+                self._tables.pending.c.worker_id == worker_id,
+                self._tables.pending.c.status == PendingStatus.leased.value,
             )
-            conn.commit()
+            .values(
+                status=PendingStatus.failed.value,
+                metadata_json=self._tables.pending.c.metadata_json.op("||")(
+                    metadata_patch
+                ),
+            )
+        )
+        with self._runtime.begin() as conn:
+            conn.execute(stmt)
 
     def release_pending_lease(self, *, pending_id: str, worker_id: str) -> None:
         """Release a lease, returning sample to pending status."""
-        tbl = self._schema.pending_table
-        with self._runtime.conn() as conn:
-            conn.execute(
-                q(
-                    f"UPDATE {tbl} SET status = %s, worker_id = NULL, lease_expires_at = NULL "
-                    f"WHERE pending_id = %s AND worker_id = %s AND status = %s"
-                ),
-                [
-                    PendingStatus.pending.value,
-                    pending_id,
-                    worker_id,
-                    PendingStatus.leased.value,
-                ],
+        stmt = (
+            update(self._tables.pending)
+            .where(
+                self._tables.pending.c.pending_id == pending_id,
+                self._tables.pending.c.worker_id == worker_id,
+                self._tables.pending.c.status == PendingStatus.leased.value,
             )
-            conn.commit()
+            .values(
+                status=PendingStatus.pending.value,
+                worker_id=None,
+                lease_expires_at=None,
+            )
+        )
+        with self._runtime.begin() as conn:
+            conn.execute(stmt)
 
     def pending_counts(self, *, key_values: dict[str, Any]) -> int:
         """Count in-flight pending samples (pending + leased) for given key dimensions."""
         validate_key_values(self._schema, key_values)
-        tbl = self._schema.pending_table
-        kw, kp = key_where_clause(self._schema, key_values)
-        with self._runtime.conn() as conn:
-            row = conn.execute(
-                q(f"SELECT COUNT(*) FROM {tbl} WHERE {kw} AND status IN (%s, %s)"),
-                kp + [PendingStatus.pending.value, PendingStatus.leased.value],
-            ).fetchone()
-            return row[0] if row else 0
+        stmt = select(func.count()).where(
+            key_filter_clause(self._schema, self._tables.pending, key_values),
+            self._tables.pending.c.status.in_(
+                [PendingStatus.pending.value, PendingStatus.leased.value]
+            ),
+        )
+        with self._runtime.connect() as conn:
+            return int(conn.execute(stmt).scalar_one())
 
     def pending_counts_grouped(
         self,
@@ -244,105 +217,92 @@ class PendingStore:
         group_values: list[Any],
     ) -> dict[str, int]:
         """Count pending samples grouped by one varying key dimension."""
-        if group_column not in self._schema.key_column_names:
-            raise PoolSchemaError(f"group_column {group_column!r} not in schema")
-        tbl = self._schema.pending_table
-
-        where_parts: list[str] = []
-        params: list[Any] = []
-        for kc in self._schema.key_columns:
-            if kc.name == group_column:
-                continue
-            if kc.name in base_key_values:
-                where_parts.append(f"{kc.name} = %s")
-                params.append(base_key_values[kc.name])
-
-        if group_values:
-            placeholders = ",".join(["%s"] * len(group_values))
-            where_parts.append(f"{group_column} IN ({placeholders})")
-            params.extend(group_values)
-
-        where_parts.append("status IN (%s, %s)")
-        params.extend([PendingStatus.pending.value, PendingStatus.leased.value])
-
-        where_clause = " AND ".join(where_parts)
-        sql_str = (
-            f"SELECT {group_column}, COUNT(*) FROM {tbl} "
-            f"WHERE {where_clause} GROUP BY {group_column}"
+        group_col = resolve_group_column(
+            self._schema, self._tables.pending, group_column
         )
-        with self._runtime.conn() as conn:
-            rows = conn.execute(q(sql_str), params).fetchall()
-            return {str(r[0]): int(r[1]) for r in rows if int(r[1]) > 0}
+        predicates = []
+        for key_column in self._schema.key_columns:
+            if key_column.name == group_column:
+                continue
+            if key_column.name in base_key_values:
+                predicates.append(
+                    self._tables.pending.c[key_column.name]
+                    == base_key_values[key_column.name]
+                )
+        if group_values:
+            predicates.append(group_col.in_(group_values))
+        predicates.append(
+            self._tables.pending.c.status.in_(
+                [PendingStatus.pending.value, PendingStatus.leased.value]
+            )
+        )
+        stmt = (
+            select(group_col.label("group_value"), func.count().label("cnt"))
+            .where(*predicates)
+            .group_by(group_col)
+        )
+        with self._runtime.connect() as conn:
+            rows = conn.execute(stmt).mappings().all()
+        return {
+            str(row["group_value"]): int(row["cnt"])
+            for row in rows
+            if int(row["cnt"]) > 0
+        }
 
     def bump_pending_priority(
         self, *, key_values: dict[str, Any], priority: int
     ) -> int:
         """Increase priority for pending samples matching key dims."""
         validate_key_values(self._schema, key_values)
-        tbl = self._schema.pending_table
-        kw, kp = key_where_clause(self._schema, key_values)
-        with self._runtime.conn() as conn:
-            cur = conn.execute(
-                q(
-                    f"UPDATE {tbl} SET priority = GREATEST(priority, %s) "
-                    f"WHERE {kw} AND status = %s"
-                ),
-                [priority, *kp, PendingStatus.pending.value],
+        stmt = (
+            update(self._tables.pending)
+            .where(
+                key_filter_clause(self._schema, self._tables.pending, key_values),
+                self._tables.pending.c.status == PendingStatus.pending.value,
             )
-            conn.commit()
-            return cur.rowcount or 0
+            .values(priority=func.greatest(self._tables.pending.c.priority, priority))
+        )
+        with self._runtime.begin() as conn:
+            result = conn.execute(stmt)
+            return result.rowcount or 0
 
     def bulk_load_pending(
         self, *, key_filter: dict[str, Any] | None = None
     ) -> list[PendingSample]:
         """Load in-flight pending samples, optionally filtered by partial key match."""
-        tbl = self._schema.pending_table
-        all_cols = PendingSample.db_select_columns(self._schema)
-        col_list = ", ".join(all_cols)
+        stmt = select(*self._tables.pending_select_columns()).where(
+            self._tables.pending.c.status.in_(
+                [PendingStatus.pending.value, PendingStatus.leased.value]
+            )
+        )
+        partial_filter = partial_key_filter_clause(
+            self._schema, self._tables.pending, key_filter
+        )
+        if partial_filter is not None:
+            stmt = stmt.where(partial_filter)
+        stmt = stmt.order_by(
+            self._tables.pending.c.priority.desc(),
+            self._tables.pending.c.created_at.asc(),
+        )
 
-        where_parts: list[str] = ["status IN (%s, %s)"]
-        params: list[Any] = [PendingStatus.pending.value, PendingStatus.leased.value]
-        if key_filter:
-            validate_key_filter(self._schema, key_filter)
-            for k, v in key_filter.items():
-                if k in self._schema.key_column_names:
-                    where_parts.append(f"{k} = %s")
-                    params.append(v)
-
-        where_clause = f"WHERE {' AND '.join(where_parts)}"
-
-        with self._runtime.conn() as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                rows = cur.execute(
-                    q(
-                        f"SELECT {col_list} FROM {tbl} {where_clause} "
-                        f"ORDER BY priority DESC, created_at ASC"
-                    ),
-                    params,
-                ).fetchall()
-
-            return [PendingSample.from_db_row(self._schema, row) for row in rows]
+        with self._runtime.connect() as conn:
+            rows = conn.execute(stmt).mappings().all()
+        return [PendingSample.from_db_row(self._schema, dict(row)) for row in rows]
 
     def status_counts(
         self, *, key_filter: dict[str, Any] | None = None
     ) -> PendingStatusCounts:
         """Count pending rows by lifecycle status."""
-        tbl = self._schema.pending_table
-
-        where_parts: list[str] = []
-        params: list[Any] = []
-        if key_filter:
-            validate_key_filter(self._schema, key_filter)
-            for key, value in key_filter.items():
-                if key in self._schema.key_column_names:
-                    where_parts.append(f"{key} = %s")
-                    params.append(value)
-
-        where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
-        sql_str = (
-            f"SELECT status, COUNT(*) AS cnt FROM {tbl} {where_clause} GROUP BY status"
+        stmt = select(
+            self._tables.pending.c.status,
+            func.count().label("cnt"),
+        ).group_by(self._tables.pending.c.status)
+        partial_filter = partial_key_filter_clause(
+            self._schema, self._tables.pending, key_filter
         )
+        if partial_filter is not None:
+            stmt = stmt.where(partial_filter)
 
-        with self._runtime.conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-            rows = cur.execute(q(sql_str), params).fetchall()
-        return PendingStatusCounts.from_rows(rows)
+        with self._runtime.connect() as conn:
+            rows = conn.execute(stmt).mappings().all()
+        return PendingStatusCounts.from_rows(dict(row) for row in rows)

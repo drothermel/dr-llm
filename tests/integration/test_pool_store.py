@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Generator
 from typing import Any
+from uuid import uuid4
 
 import psycopg
 import pytest
@@ -37,25 +38,10 @@ _POOL_TABLES = (
     _TEST_SCHEMA.samples_table,
 )
 
-_LEGACY_TABLES = (
-    "artifacts",
-    "llm_call_responses",
-    "llm_call_requests",
-    "llm_calls",
-    "run_parameters",
-    "runs",
-    "tool_call_dead_letters",
-    "tool_results",
-    "tool_calls",
-    "session_events",
-    "session_turns",
-    "sessions",
-)
-
 
 def _drop_tables(dsn: str) -> None:
     with psycopg.connect(dsn) as conn:
-        for tbl in _POOL_TABLES + _LEGACY_TABLES:
+        for tbl in _POOL_TABLES:
             conn.execute(
                 sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
                     sql.Identifier("public", tbl)
@@ -68,15 +54,19 @@ def _get_dsn() -> str | None:
     return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv("DR_LLM_DATABASE_URL")
 
 
-def _create_legacy_tables(dsn: str) -> None:
+def _index_exists(dsn: str, *, index_name: str) -> bool:
     with psycopg.connect(dsn) as conn:
-        for table_name in _LEGACY_TABLES:
-            conn.execute(
-                sql.SQL("CREATE TABLE IF NOT EXISTS {} (id TEXT)").format(
-                    sql.Identifier(table_name)
-                )
+        exists = conn.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND indexname = %s
             )
-        conn.commit()
+            """,
+            [index_name],
+        ).fetchone()
+    assert exists is not None
+    return bool(exists[0])
 
 
 @pytest.fixture(scope="module")
@@ -133,83 +123,6 @@ def _pending(dim_a: str = "a", dim_b: int = 1, **kwargs: Any) -> PendingSample:
 
 
 @pytest.mark.integration
-def test_store_init_does_not_drop_legacy_call_recorder_tables_by_default(
-    pool_store: PoolStore,  # noqa: ARG001
-) -> None:
-    dsn = _get_dsn()
-    assert dsn is not None
-    _create_legacy_tables(dsn)
-
-    fresh_runtime = DbRuntime(
-        DbConfig(
-            dsn=dsn,
-            min_pool_size=1,
-            max_pool_size=4,
-            application_name="pool_tests_cleanup",
-        )
-    )
-    fresh_store = PoolStore(_TEST_SCHEMA, fresh_runtime)
-    try:
-        fresh_store.init_schema()
-    finally:
-        fresh_runtime.close()
-
-    with psycopg.connect(dsn) as conn:
-        for table_name in _LEGACY_TABLES:
-            exists = conn.execute(
-                """
-                SELECT EXISTS (
-                    SELECT 1 FROM information_schema.tables
-                    WHERE table_schema = 'public' AND table_name = %s
-                )
-                """,
-                [table_name],
-            ).fetchone()
-            assert exists is not None
-            assert exists[0] is True
-
-
-@pytest.mark.integration
-def test_store_init_drops_legacy_call_recorder_tables_when_explicitly_enabled(
-    pool_store: PoolStore,  # noqa: ARG001
-) -> None:
-    dsn = _get_dsn()
-    assert dsn is not None
-    _create_legacy_tables(dsn)
-
-    fresh_runtime = DbRuntime(
-        DbConfig(
-            dsn=dsn,
-            min_pool_size=1,
-            max_pool_size=4,
-            application_name="pool_tests_cleanup_opt_in",
-        )
-    )
-    fresh_store = PoolStore(_TEST_SCHEMA, fresh_runtime)
-    try:
-        fresh_store.init_schema(
-            allow_destructive_cleanup=True,
-            dedicated_schema="public",
-        )
-    finally:
-        fresh_runtime.close()
-
-    with psycopg.connect(dsn) as conn:
-        for table_name in _LEGACY_TABLES:
-            exists = conn.execute(
-                """
-                SELECT EXISTS (
-                    SELECT 1 FROM information_schema.tables
-                    WHERE table_schema = 'public' AND table_name = %s
-                )
-                """,
-                [table_name],
-            ).fetchone()
-            assert exists is not None
-            assert exists[0] is False
-
-
-@pytest.mark.integration
 def test_insert_and_cell_depth(pool_store: PoolStore) -> None:
     s = _sample(sample_idx=0)
     assert pool_store.insert_sample(s) is True
@@ -240,6 +153,70 @@ def test_bulk_insert(pool_store: PoolStore) -> None:
     result = pool_store.insert_samples(samples)
     assert result.inserted == 5
     assert result.skipped == 0
+
+
+@pytest.mark.integration
+def test_init_schema_backfills_missing_unique_indexes() -> None:
+    dsn = _get_dsn()
+    if not dsn:
+        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+
+    schema = PoolSchema(
+        name=f"itest_idx_{uuid4().hex[:8]}",
+        key_columns=[
+            KeyColumn(name="dim_a"),
+            KeyColumn(name="dim_b", type=ColumnType.integer),
+        ],
+    )
+    runtime = DbRuntime(
+        DbConfig(
+            dsn=dsn,
+            min_pool_size=1,
+            max_pool_size=2,
+            application_name="pool_tests_index_backfill",
+        )
+    )
+    try:
+        store = PoolStore(schema, runtime)
+        store.init_schema()
+        store.insert_sample(
+            PoolSample(
+                key_values={"dim_a": "alpha", "dim_b": 1},
+                sample_idx=0,
+            )
+        )
+
+        index_name = f"uq_{schema.samples_table}_cell"
+        with psycopg.connect(dsn) as conn:
+            conn.execute(sql.SQL("DROP INDEX IF EXISTS {}").format(sql.Identifier(index_name)))
+            conn.commit()
+        assert _index_exists(dsn, index_name=index_name) is False
+
+        fresh_store = PoolStore(schema, runtime)
+        fresh_store.init_schema()
+
+        assert _index_exists(dsn, index_name=index_name) is True
+        assert fresh_store.insert_sample(
+            PoolSample(
+                key_values={"dim_a": "alpha", "dim_b": 1},
+                sample_idx=0,
+            )
+        ) is False
+    finally:
+        with psycopg.connect(dsn) as conn:
+            for table_name in (
+                schema.metadata_table,
+                schema.claims_table,
+                schema.pending_table,
+                schema.samples_table,
+            ):
+                conn.execute(
+                    sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
+                        sql.Identifier("public", table_name)
+                    )
+                )
+            conn.commit()
+        runtime.close()
 
 
 # --- Acquire ---
@@ -311,6 +288,31 @@ def test_pending_insert_and_count(pool_store: PoolStore) -> None:
     p = _pending(dim_a="pend", dim_b=1)
     assert pool_store.pending.insert_pending(p) is True
     assert pool_store.pending.pending_counts(key_values={"dim_a": "pend", "dim_b": 1}) == 1
+
+
+@pytest.mark.integration
+def test_runtime_applies_statement_timeout_setting() -> None:
+    dsn = _get_dsn()
+    if not dsn:
+        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+
+    runtime = DbRuntime(
+        DbConfig(
+            dsn=dsn,
+            min_pool_size=1,
+            max_pool_size=1,
+            application_name="pool_tests_timeout",
+            statement_timeout_ms=1234,
+        )
+    )
+    try:
+        with runtime.connect() as conn:
+            timeout_ms = conn.exec_driver_sql(
+                "SELECT setting::int FROM pg_settings WHERE name = 'statement_timeout'"
+            ).scalar_one()
+        assert timeout_ms == 1234
+    finally:
+        runtime.close()
 
 
 @pytest.mark.integration

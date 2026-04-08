@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, LiteralString, cast
+from collections.abc import Mapping
+from typing import Any
 
 from psycopg import errors as pg_errors
-from psycopg import sql
+from sqlalchemy import and_
+from sqlalchemy.engine import RowMapping
+from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy.sql.schema import Table
 
 from dr_llm.pool.errors import PoolSchemaError
 from dr_llm.pool.db.schema import PoolSchema
@@ -15,16 +20,14 @@ from dr_llm.pool.db.schema import PoolSchema
 logger = logging.getLogger(__name__)
 
 
-def q(query: str) -> sql.SQL:
-    """Wrap a dynamically built query string as sql.SQL for psycopg's type checker.
-
-    Safe because all interpolated identifiers (table/column names) are validated
-    against ^[a-z][a-z0-9_]*$ by PoolSchema/KeyColumn before reaching here.
-    """
-    return sql.SQL(cast(LiteralString, query))
-
-
 def is_constraint_error(exc: BaseException) -> bool:
+    if isinstance(exc, IntegrityError):
+        orig = exc.orig
+        return isinstance(
+            orig, (pg_errors.UniqueViolation, pg_errors.IntegrityConstraintViolation)
+        )
+    if isinstance(exc, DBAPIError) and exc.orig is not None:
+        return is_constraint_error(exc.orig)
     return isinstance(
         exc, (pg_errors.UniqueViolation, pg_errors.IntegrityConstraintViolation)
     )
@@ -50,19 +53,42 @@ def validate_key_values(schema: PoolSchema, key_values: dict[str, Any]) -> None:
         raise PoolSchemaError(f"Unexpected key columns: {extra}. Expected: {expected}")
 
 
-def key_where_clause(
-    schema: PoolSchema, key_values: dict[str, Any]
-) -> tuple[str, list[Any]]:
-    """Build WHERE clause for key column matching."""
-    conditions: list[str] = []
-    params: list[Any] = []
-    for kc in schema.key_columns:
-        conditions.append(f"{kc.name} = %s")
-        params.append(key_values[kc.name])
-    return " AND ".join(conditions), params
+def key_filter_clause(
+    schema: PoolSchema,
+    table: Table,
+    key_values: Mapping[str, Any],
+) -> ColumnElement[bool]:
+    validate_key_values(schema, dict(key_values))
+    return and_(*[table.c[kc.name] == key_values[kc.name] for kc in schema.key_columns])
 
 
-def key_values_from_row(schema: PoolSchema, row: dict[str, Any]) -> dict[str, Any]:
+def partial_key_filter_clause(
+    schema: PoolSchema,
+    table: Table,
+    key_filter: Mapping[str, Any] | None,
+) -> ColumnElement[bool] | None:
+    if not key_filter:
+        return None
+    validate_key_filter(schema, dict(key_filter))
+    conditions = [
+        table.c[key] == value
+        for key, value in key_filter.items()
+        if key in schema.key_column_names
+    ]
+    if not conditions:
+        return None
+    return and_(*conditions)
+
+
+def resolve_group_column(schema: PoolSchema, table: Table, group_column: str) -> Any:
+    if group_column not in schema.key_column_names:
+        raise PoolSchemaError(f"group_column {group_column!r} not in schema")
+    return table.c[group_column]
+
+
+def key_values_from_row(
+    schema: PoolSchema, row: Mapping[str, Any] | RowMapping
+) -> dict[str, Any]:
     return {name: row[name] for name in schema.key_column_names}
 
 

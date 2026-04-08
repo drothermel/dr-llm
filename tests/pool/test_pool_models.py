@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pydantic import BaseModel
 
 import pytest
 
@@ -81,9 +82,25 @@ def test_pool_sample_to_db_insert_row_uses_schema_key_order() -> None:
     ]
     assert row["dim_a"] == "alpha"
     assert row["dim_b"] == 3
-    assert row["payload_json"] == '{"score": 0.9}'
-    assert row["metadata_json"] == '{"source": "test"}'
+    assert row["payload_json"] == {"score": 0.9}
+    assert row["metadata_json"] == {"source": "test"}
     assert row["status"] == SampleStatus.superseded.value
+
+
+def test_pool_sample_to_db_insert_row_json_serializes_nested_values() -> None:
+    class RichPayload(BaseModel):
+        when: datetime
+
+    sample = PoolSample(
+        key_values={"dim_a": "alpha", "dim_b": 3},
+        payload={"rich": RichPayload(when=datetime(2024, 1, 2, tzinfo=UTC))},
+        metadata={"created_at": datetime(2024, 1, 3, tzinfo=UTC)},
+    )
+
+    row = sample.to_db_insert_row(_TEST_SCHEMA)
+
+    assert row["payload_json"] == {"rich": {"when": "2024-01-02T00:00:00Z"}}
+    assert row["metadata_json"] == {"created_at": "2024-01-03T00:00:00Z"}
 
 
 def test_pool_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
@@ -138,10 +155,26 @@ def test_pending_sample_to_db_insert_row_uses_schema_key_order() -> None:
     ]
     assert row["dim_a"] == "beta"
     assert row["dim_b"] == 4
-    assert row["payload_json"] == '{"partial": true}'
-    assert row["metadata_json"] == '{"attempt": 1}'
+    assert row["payload_json"] == {"partial": True}
+    assert row["metadata_json"] == {"attempt": 1}
     assert row["priority"] == 9
     assert row["status"] == PendingStatus.leased.value
+
+
+def test_pending_sample_to_db_insert_row_json_serializes_nested_values() -> None:
+    class RichPayload(BaseModel):
+        when: datetime
+
+    sample = PendingSample(
+        key_values={"dim_a": "beta", "dim_b": 4},
+        payload={"rich": RichPayload(when=datetime(2024, 6, 7, tzinfo=UTC))},
+        metadata={"updated_at": datetime(2024, 6, 8, tzinfo=UTC)},
+    )
+
+    row = sample.to_db_insert_row(_TEST_SCHEMA)
+
+    assert row["payload_json"] == {"rich": {"when": "2024-06-07T00:00:00Z"}}
+    assert row["metadata_json"] == {"updated_at": "2024-06-08T00:00:00Z"}
 
 
 def test_pending_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
