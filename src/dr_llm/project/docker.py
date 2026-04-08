@@ -430,11 +430,12 @@ def parse_docker_labels(raw: str) -> dict[str, str]:
 
 
 def call_docker_list_labels(label_prefix: str) -> str:
+    name_key = f"{label_prefix}{DockerProjectMetadata.name_label_suffix}"
     result = call_docker(
         "ps",
         "-a",
         "--filter",
-        f"label={label_prefix}.name",
+        f"label={name_key}",
         "--format",
         "{{json .}}",
         check=False,
@@ -445,7 +446,7 @@ def call_docker_list_labels(label_prefix: str) -> str:
                 "ps",
                 "-a",
                 "--filter",
-                f"label={label_prefix}.name",
+                f"label={name_key}",
                 "--format",
                 "{{json .}}",
             ),
@@ -454,23 +455,16 @@ def call_docker_list_labels(label_prefix: str) -> str:
     return result.stdout.strip()
 
 
-def get_claimed_project_ports(label_prefix: str) -> set[int]:
-    ports: set[int] = set()
-    for metadata in get_all_docker_project_metadata(label_prefix):
-        if metadata.port is not None:
-            ports.add(metadata.port)
-    return ports
-
-
 def get_all_docker_project_metadata(label_prefix: str) -> list[DockerProjectMetadata]:
     project_metadata: list[DockerProjectMetadata] = []
+    name_key = f"{label_prefix}{DockerProjectMetadata.name_label_suffix}"
     for line in call_docker_list_labels(label_prefix).splitlines():
         if not line:
             continue
         data = json.loads(line)
         status = data.get("State")
         parsed = parse_docker_labels(data.get("Labels", ""))
-        if DockerProjectMetadata.name_key(label_prefix) not in parsed:
+        if name_key not in parsed:
             continue
         project_metadata.append(
             DockerProjectMetadata.from_labels_status(
