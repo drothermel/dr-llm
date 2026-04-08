@@ -18,7 +18,7 @@ from collections.abc import Callable, Iterator
 from itertools import product
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from dr_llm.pool.models import InsertResult
 from dr_llm.pool.pending.pending_sample import PendingSample
@@ -64,6 +64,34 @@ class Axis[T](BaseModel):
     @property
     def effective_metadata_key_prefix(self) -> str:
         return self.metadata_key_prefix or self.name
+
+    @model_validator(mode="after")
+    def _validate_unique_member_ids(self) -> Axis[T]:
+        """Reject axes with duplicate AxisMember ids.
+
+        Without this check, two members sharing an id would each generate
+        a distinct GridCell with identical ``key_values`` but different
+        ``values``. The resulting PendingSample rows would either be
+        silently deduped at insert time (under-seeding) or surface as a
+        confusing late "Failed to promote leased pending sample" error
+        when the second worker tries to write to the unique
+        ``(key_columns..., sample_idx)`` index on the samples table.
+        Failing fast at construction time points the error at the actual
+        line declaring the bad axis.
+        """
+        seen: set[str] = set()
+        duplicates: list[str] = []
+        for member in self.members:
+            if member.id in seen:
+                duplicates.append(member.id)
+            else:
+                seen.add(member.id)
+        if duplicates:
+            raise ValueError(
+                f"Axis {self.name!r} has duplicate AxisMember ids: "
+                f"{sorted(set(duplicates))}"
+            )
+        return self
 
 
 class GridCell(BaseModel):

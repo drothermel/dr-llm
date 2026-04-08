@@ -90,6 +90,35 @@ def test_axis_effective_metadata_key_prefix_override() -> None:
     assert axis.effective_metadata_key_prefix == "prompt_template"
 
 
+def test_axis_rejects_duplicate_member_ids() -> None:
+    """Two AxisMembers sharing an id would generate distinct cells with
+    identical key_values, leading to silent under-seeding or a confusing
+    late promote failure. Catch it at axis construction time instead."""
+    with pytest.raises(ValueError, match=r"Axis 'prompt' has duplicate"):
+        Axis[str](
+            name="prompt",
+            members=[
+                AxisMember[str](id="p1", value="a"),
+                AxisMember[str](id="p2", value="b"),
+                AxisMember[str](id="p1", value="c"),
+            ],
+        )
+
+
+def test_axis_duplicate_member_id_error_lists_each_offender_once() -> None:
+    """Multiple distinct duplicates should each appear in the error message."""
+    with pytest.raises(ValueError, match=r"\['p1', 'p2'\]"):
+        Axis[str](
+            name="prompt",
+            members=[
+                AxisMember[str](id="p1", value="a"),
+                AxisMember[str](id="p1", value="b"),
+                AxisMember[str](id="p2", value="c"),
+                AxisMember[str](id="p2", value="d"),
+            ],
+        )
+
+
 def test_grid_cell_holds_key_values_and_values() -> None:
     cell = GridCell(
         key_values={"axis_a": "1", "axis_b": "2"},
