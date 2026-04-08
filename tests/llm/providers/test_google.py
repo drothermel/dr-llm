@@ -55,14 +55,17 @@ _THOUGHT_RESPONSE = {
 
 def test_rejects_unsupported_message_role() -> None:
     """model_construct can bypass validation; unsupported roles must not be dropped silently."""
-    tool_msg = Message.model_construct(role="tool", content="tool output")
+    tool_msg = Message.model_construct(role="tool", content="secret tool output")
     request = make_request(
         provider="google",
         model="gemini-test",
         messages=[tool_msg],
     )
-    with pytest.raises(ValueError, match=r"Unsupported Message\.role.*'tool'"):
+    with pytest.raises(ValueError, match=r"Unsupported Message\.role.*'tool'") as exc:
         GoogleRequest.from_llm_request(request, _GOOGLE_CONFIG)
+    message = str(exc.value)
+    assert "Content length: 18" in message
+    assert "secret tool output" not in message
 
 
 def test_payload_serializes_messages() -> None:

@@ -114,11 +114,11 @@ class GoogleRequest(BaseModel):
                 continue
             # e.g. Message.model_construct(role="tool", ...) bypasses validation
             role = message.role
-            preview = message.content[:500]
+            content_length = len(message.content)
             raise ValueError(
                 "Unsupported Message.role for Google generateContent: "
                 f"{role!r}. Supported roles are 'system', 'user', and 'assistant'. "
-                f"Content (truncated to 500 chars): {preview!r}"
+                f"Content length: {content_length}"
             )
         return contents
 

@@ -18,8 +18,8 @@ def fetch_google_models(
         raise ProviderSemanticError(
             f"Missing Google API key for catalog sync. Set {provider.config.api_key_env}"
         )
-    endpoint = f"{provider.config.base_url.rstrip('/')}/models?key={key}"
-    payload = get_json(url=endpoint)
+    endpoint = f"{provider.config.base_url.rstrip('/')}/models"
+    payload = get_json(url=endpoint, headers={"x-goog-api-key": key})
     items_raw = payload.get("models")
     items = items_raw if isinstance(items_raw, list) else []
     now = datetime.now(UTC)

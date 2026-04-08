@@ -5,9 +5,10 @@ from typing import Any
 import httpx
 import pytest
 
-from dr_llm.errors import ProviderTransportError
+from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
 from dr_llm.llm.providers.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.anthropic.request import AnthropicRequest
 from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import AnthropicReasoning, ThinkingLevel
@@ -22,7 +23,9 @@ _MOCK_RESPONSE: dict[str, Any] = {
 
 
 def _make_config() -> AnthropicConfig:
-    return AnthropicConfig(api_key="x", base_url="https://api.anthropic.com/v1/messages")
+    return AnthropicConfig(
+        api_key="x", base_url="https://api.anthropic.com/v1/messages"
+    )
 
 
 def test_payload_serializes_messages() -> None:
@@ -52,6 +55,20 @@ def test_payload_serializes_messages() -> None:
         {"role": "user", "content": [{"type": "text", "text": "hello"}]},
         {"role": "assistant", "content": [{"type": "text", "text": "hi there"}]},
     ]
+
+
+def test_missing_max_tokens_error_uses_actual_provider_name() -> None:
+    request = make_request(
+        provider="kimi-code",
+        model="kimi-k2-instruct",
+        max_tokens=256,
+    )
+    request = request.model_copy(update={"max_tokens": None})
+
+    with pytest.raises(
+        ProviderSemanticError, match="kimi-code requests require max_tokens"
+    ):
+        AnthropicRequest.from_llm_request(request, _make_config())
 
 
 def test_payload_serializes_effort_output_config() -> None:

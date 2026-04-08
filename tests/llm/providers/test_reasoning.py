@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from dr_llm.llm import OpenRouterReasoning as ExportedOpenRouterReasoning
 from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
 from dr_llm.llm.providers.anthropic.reasoning import AnthropicReasoningConfig
 from dr_llm.llm.providers.anthropic.reasoning import KimiCodeReasoningConfig
@@ -21,6 +22,10 @@ from dr_llm.llm.providers.reasoning import (
     ReasoningBudget,
     ThinkingLevel,
 )
+
+
+def test_top_level_package_exports_openrouter_reasoning() -> None:
+    assert ExportedOpenRouterReasoning is OpenRouterReasoning
 
 
 def test_openai_compat_rejects_anthropic_reasoning_shape() -> None:
@@ -56,18 +61,12 @@ def test_openai_compat_serializes_thinking_levels() -> None:
         ).to_reasoning_effort()
         == "minimal"
     )
-    assert (
-        OpenAICompatReasoningConfig.from_base(
-            GlmReasoning(thinking_level=ThinkingLevel.OFF)
-        ).to_extra_body()
-        == {"thinking": {"type": "disabled"}}
-    )
-    assert (
-        OpenAICompatReasoningConfig.from_base(
-            GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
-        ).to_extra_body()
-        == {"thinking": {"type": "enabled"}}
-    )
+    assert OpenAICompatReasoningConfig.from_base(
+        GlmReasoning(thinking_level=ThinkingLevel.OFF)
+    ).to_extra_body() == {"thinking": {"type": "disabled"}}
+    assert OpenAICompatReasoningConfig.from_base(
+        GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
+    ).to_extra_body() == {"thinking": {"type": "enabled"}}
 
 
 def test_openrouter_serializes_reasoning_payloads() -> None:
