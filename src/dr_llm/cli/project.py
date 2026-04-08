@@ -51,9 +51,9 @@ def project_list() -> None:
 def project_start(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
-    ProjectInfo.start(name)
+    project_info = ProjectInfo.start(name)
     typer.secho(
-        f"Project '{name}' is running.",
+        f"Project '{name}' is running on port {project_info.port}",
         fg=typer.colors.GREEN,
     )
 

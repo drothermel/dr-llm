@@ -107,6 +107,39 @@ def test_direct_operations_translate_missing_container_to_project_not_found(
         getattr(ProjectInfo, method_name)("demo")
 
 
+def test_start_returns_fresh_project_metadata_after_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started_containers: list[str] = []
+    waited_for: list[tuple[str, str, str]] = []
+
+    def fake_start(container_name: str) -> None:
+        started_containers.append(container_name)
+
+    def fake_wait_docker_ready(
+        *,
+        container_name: str,
+        db_user: str,
+        db_name: str,
+    ) -> ContainerStatus:
+        waited_for.append((container_name, db_user, db_name))
+        return ContainerStatus.RUNNING
+
+    def fake_get_by_name(name: str) -> ProjectInfo:
+        return ProjectInfo(name=name, port=5500, status=ContainerStatus.RUNNING)
+
+    monkeypatch.setattr(project_info_module, "call_docker_start", fake_start)
+    monkeypatch.setattr(project_info_module, "wait_docker_ready", fake_wait_docker_ready)
+    monkeypatch.setattr(ProjectInfo, "get_by_name", fake_get_by_name)
+
+    project = ProjectInfo.start("demo")
+
+    assert started_containers == ["dr-llm-pg-demo"]
+    assert waited_for == [("dr-llm-pg-demo", "postgres", "dr_llm")]
+    assert project.port == 5500
+    assert project.status == ContainerStatus.RUNNING
+
+
 def test_backup_does_not_precheck_cached_running_status(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

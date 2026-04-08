@@ -23,8 +23,9 @@ def test_project_start_does_not_lookup_project_first(
             raise AssertionError(f"unexpected lookup for {name}")
 
         @classmethod
-        def start(cls, name: str) -> None:
+        def start(cls, name: str) -> object:
             started.append(name)
+            return type("StartedProject", (), {"port": 5500})()
 
     monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
 
@@ -32,7 +33,7 @@ def test_project_start_does_not_lookup_project_first(
 
     assert result.exit_code == 0
     assert started == ["demo"]
-    assert result.stdout.strip() == "Project 'demo' is running."
+    assert result.stdout.strip() == "Project 'demo' is running on port 5500"
 
 
 def test_project_stop_does_not_lookup_project_first(

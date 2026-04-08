@@ -182,7 +182,7 @@ class ProjectInfo(BaseModel):
             return project_info
 
     @classmethod
-    def start(cls, name: str) -> None:
+    def start(cls, name: str) -> ProjectInfo:
         try:
             call_docker_start(cls.get_container_name(name))
             wait_docker_ready(
@@ -192,6 +192,7 @@ class ProjectInfo(BaseModel):
             )
         except DockerContainerNotFoundError as exc:
             raise ProjectNotFoundError(f"Project '{name}' not found") from exc
+        return cls.get_by_name(name)
 
     @classmethod
     def stop(cls, name: str) -> None:
@@ -238,8 +239,6 @@ class ProjectInfo(BaseModel):
 
     @classmethod
     def restore(cls, name: str, backup_file: Path) -> None:
-        if not backup_file.exists():
-            raise FileNotFoundError(f"Backup file not found: {backup_file}")
         if backup_file.suffixes[-2:] != [".sql", ".gz"]:
             raise ValueError(
                 "Restore only supports gzip-compressed SQL backups (.sql.gz)."
