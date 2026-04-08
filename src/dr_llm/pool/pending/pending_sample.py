@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from collections.abc import Mapping
 from typing import Any
@@ -11,7 +10,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    field_serializer,
     field_validator,
 )
 
@@ -55,24 +53,6 @@ class PendingSample(BaseModel):
     @classmethod
     def _parse_json(cls, v: Any) -> Any:
         return parse_json_field(v) if isinstance(v, str) else v
-
-    @field_serializer("payload", "metadata")
-    def _dump_json(self, v: dict[str, Any]) -> str:
-        return json.dumps(v, default=str)
-
-    @field_serializer("status")
-    def _dump_status(self, v: PendingStatus) -> str:
-        return v.value
-
-    @classmethod
-    def db_select_columns(cls, schema: PoolSchema) -> list[str]:
-        cols: list[str] = []
-        for name, field in cls.model_fields.items():
-            if name == "key_values":
-                cols.extend(schema.key_column_names)
-            else:
-                cols.append(str(field.serialization_alias or name))
-        return cols
 
     def to_db_insert_row(self, schema: PoolSchema) -> dict[str, Any]:
         missing = [kc for kc in schema.key_column_names if kc not in self.key_values]

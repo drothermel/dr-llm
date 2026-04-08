@@ -81,8 +81,8 @@ def test_pool_sample_to_db_insert_row_uses_schema_key_order() -> None:
     ]
     assert row["dim_a"] == "alpha"
     assert row["dim_b"] == 3
-    assert row["payload_json"] == '{"score": 0.9}'
-    assert row["metadata_json"] == '{"source": "test"}'
+    assert row["payload_json"] == {"score": 0.9}
+    assert row["metadata_json"] == {"source": "test"}
     assert row["status"] == SampleStatus.superseded.value
 
 
@@ -138,8 +138,8 @@ def test_pending_sample_to_db_insert_row_uses_schema_key_order() -> None:
     ]
     assert row["dim_a"] == "beta"
     assert row["dim_b"] == 4
-    assert row["payload_json"] == '{"partial": true}'
-    assert row["metadata_json"] == '{"attempt": 1}'
+    assert row["payload_json"] == {"partial": True}
+    assert row["metadata_json"] == {"attempt": 1}
     assert row["priority"] == 9
     assert row["status"] == PendingStatus.leased.value
 

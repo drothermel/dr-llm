@@ -5,12 +5,11 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from os import getenv
 from time import sleep
-from typing import Any
 
-import psycopg
-from psycopg import sql
-from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Connection, make_url
+from sqlalchemy.pool import QueuePool
 
 from dr_llm.errors import TransientPersistenceError
 
@@ -51,37 +50,40 @@ class DbConfig(BaseModel):
 class DbRuntime:
     def __init__(self, config: DbConfig) -> None:
         self.config = config
-        self.pool = ConnectionPool(
-            self.config.dsn,
-            min_size=self.config.min_pool_size,
-            max_size=self.config.max_pool_size,
-            open=False,
+        self.engine = create_engine(
+            _sqlalchemy_dsn(self.config.dsn),
+            future=True,
+            poolclass=QueuePool,
+            pool_size=self.config.min_pool_size,
+            max_overflow=max(0, self.config.max_pool_size - self.config.min_pool_size),
+            pool_pre_ping=True,
+            connect_args={"application_name": self.config.application_name},
         )
         self._legacy_cleanup_lock = threading.Lock()
         self._legacy_cleanup_done = False
-        self._pool_lock = threading.Lock()
-        self._pool_opened = False
+        self._engine_lock = threading.Lock()
+        self._engine_opened = False
         if self.config.open_on_init:
             self.open_pool()
 
     def close(self) -> None:
-        with self._pool_lock:
-            self.pool.close()
-            self._pool_opened = False
+        with self._engine_lock:
+            self.engine.dispose()
+            self._engine_opened = False
 
     def open_pool(self) -> None:
-        if self._pool_opened:
+        if self._engine_opened:
             return
-        with self._pool_lock:
-            if self._pool_opened:
+        with self._engine_lock:
+            if self._engine_opened:
                 return
             retries = max(1, int(self.config.pool_open_retries))
             last_exc: Exception | None = None
             for attempt in range(1, retries + 1):
                 try:
-                    self.pool.open(wait=True)
-                    self._pool_opened = True
-                    return
+                    with self.engine.connect():
+                        self._engine_opened = True
+                        return
                 except Exception as exc:  # noqa: BLE001
                     last_exc = exc
                     if attempt >= retries:
@@ -104,14 +106,17 @@ class DbRuntime:
         )
 
     @contextmanager
-    def conn(self) -> Generator[psycopg.Connection[tuple[Any, ...]], None, None]:
+    def connect(self) -> Generator[Connection, None, None]:
         self.open_pool()
-        with self.pool.connection() as conn:
-            if self.config.statement_timeout_ms is not None:
-                conn.execute(
-                    "SET statement_timeout = %s",
-                    [int(self.config.statement_timeout_ms)],
-                )
+        with self.engine.connect() as conn:
+            self._configure_connection(conn)
+            yield conn
+
+    @contextmanager
+    def begin(self) -> Generator[Connection, None, None]:
+        self.open_pool()
+        with self.engine.begin() as conn:
+            self._configure_connection(conn)
             yield conn
 
     def init_schema(
@@ -139,9 +144,10 @@ class DbRuntime:
         with self._legacy_cleanup_lock:
             if self._legacy_cleanup_done:
                 return
-            with self.conn() as conn:
-                current_schema_row = conn.execute("SELECT current_schema()").fetchone()
-                current_schema = current_schema_row[0] if current_schema_row else None
+            with self.begin() as conn:
+                current_schema = conn.exec_driver_sql(
+                    "SELECT current_schema()"
+                ).scalar_one()
                 if current_schema != validated_schema:
                     raise ValueError(
                         "Destructive legacy cleanup requires the current schema to "
@@ -149,13 +155,27 @@ class DbRuntime:
                         f"got {current_schema!r}"
                     )
                 for table_name in _LEGACY_TABLES:
-                    conn.execute(
-                        sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
-                            sql.Identifier(validated_schema, table_name)
-                        )
+                    conn.exec_driver_sql(
+                        f'DROP TABLE IF EXISTS "{validated_schema}"."{table_name}" CASCADE'
                     )
-                conn.commit()
             self._legacy_cleanup_done = True
+
+    def _configure_connection(self, conn: Connection) -> None:
+        if self.config.statement_timeout_ms is None:
+            return
+        conn.exec_driver_sql(
+            "SET statement_timeout = %s",
+            (int(self.config.statement_timeout_ms),),
+        )
+
+
+def _sqlalchemy_dsn(dsn: str) -> str:
+    url = make_url(dsn)
+    if "+" in url.drivername:
+        return url.render_as_string(hide_password=False)
+    return url.set(drivername=f"{url.drivername}+psycopg").render_as_string(
+        hide_password=False
+    )
 
 
 def _validate_dedicated_schema(dedicated_schema: str | None) -> str:

@@ -1,0 +1,5 @@
+Alembic is bootstrapped for future static-schema migrations.
+
+Dynamic pool tables named like `pool_<name>_{samples,claims,pending,metadata}` are
+runtime-owned and intentionally excluded from Alembic autogenerate and migration
+ownership until the pool schema design changes.
