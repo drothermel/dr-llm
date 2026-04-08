@@ -219,6 +219,29 @@ def test_project_list_reports_typed_project_errors(
     assert "docker unavailable" in result.output
 
 
+def test_project_backup_reports_file_not_found_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakeProjectInfo:
+        def __init__(self, name: str, **_: object) -> None:
+            self.name = name
+
+        def backup(self, output_dir: Path | None = None) -> Path:
+            _ = output_dir
+            raise FileNotFoundError("missing backup dir")
+
+    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+
+    result = runner.invoke(
+        app,
+        ["project", "backup", "demo", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 1
+    assert "missing backup dir" in result.output
+
+
 def test_global_project_option_is_removed() -> None:
     result = runner.invoke(app, ["--project", "demo", "project", "list"])
 
