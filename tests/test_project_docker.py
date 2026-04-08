@@ -328,17 +328,88 @@ def test_get_docker_project_metadata_returns_none_for_missing_container(
     assert docker_inspect.get_docker_project_metadata("demo") is None
 
 
-def test_parse_docker_labels_parses_docker_ps_label_string() -> None:
-    labels = docker_inspect.parse_docker_labels(
-        "dr-llm.project.created-at=2026-04-07T12:34:56+00:00,"
-        "dr-llm.project.name=demo,dr-llm.project.port=5500"
-    )
+def test_get_all_docker_project_metadata_inspects_each_listed_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_at = datetime(2026, 4, 7, 12, 34, 56, tzinfo=UTC)
+    inspect_calls: list[str] = []
 
-    assert labels == {
-        "dr-llm.project.created-at": "2026-04-07T12:34:56+00:00",
-        "dr-llm.project.name": "demo",
-        "dr-llm.project.port": "5500",
-    }
+    def fake_call_docker(
+        *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
+        _ = check
+        if args[0] == "ps":
+            assert args == (
+                "ps",
+                "-a",
+                "--filter",
+                f"label={DockerProjectMetadata.name_label_key}",
+                "--format",
+                "{{.Names}}",
+            )
+            return subprocess.CompletedProcess(
+                args=["docker", *args],
+                returncode=0,
+                stdout="dr-llm-pg-demo\ndr-llm-pg-other\n",
+                stderr="",
+            )
+        assert args[:3] == (
+            "inspect",
+            "--format",
+            DockerProjectMetadata.inspect_format(),
+        )
+        container = args[3]
+        inspect_calls.append(container)
+        # Label values include "," and "=" to prove the old comma-split parser
+        # would have corrupted them — JSON inspect output handles them safely.
+        labels = (
+            f'{{"dr-llm.project.name":"{container}",'
+            '"dr-llm.project.port":"5500",'
+            f'"dr-llm.project.created-at":"{created_at.isoformat()}",'
+            '"unrelated":"a,b=c"}'
+        )
+        return subprocess.CompletedProcess(
+            args=["docker", *args],
+            returncode=0,
+            stdout=f'{labels}||"running"',
+            stderr="",
+        )
+
+    monkeypatch.setattr(docker_runner, "call_docker", fake_call_docker)
+
+    metadata = docker_inspect.get_all_docker_project_metadata()
+
+    assert inspect_calls == ["dr-llm-pg-demo", "dr-llm-pg-other"]
+    assert [m.name for m in metadata] == ["dr-llm-pg-demo", "dr-llm-pg-other"]
+    assert all(m.port == 5500 for m in metadata)
+    assert all(m.created_at == created_at for m in metadata)
+    assert all(m.status == ContainerStatus.RUNNING for m in metadata)
+
+
+def test_get_all_docker_project_metadata_skips_containers_removed_during_listing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_call_docker(
+        *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
+        _ = check
+        if args[0] == "ps":
+            return subprocess.CompletedProcess(
+                args=["docker", *args],
+                returncode=0,
+                stdout="dr-llm-pg-gone\n",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(
+            args=["docker", *args],
+            returncode=1,
+            stdout="",
+            stderr="Error response from daemon: No such container: dr-llm-pg-gone",
+        )
+
+    monkeypatch.setattr(docker_runner, "call_docker", fake_call_docker)
+
+    assert docker_inspect.get_all_docker_project_metadata() == []
 
 
 def test_get_docker_project_metadata_parses_datetime_created_at(
