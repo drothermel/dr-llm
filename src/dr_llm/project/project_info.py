@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import gzip
-import socket
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
@@ -10,6 +9,7 @@ from pydantic import BaseModel, computed_field
 
 from dr_llm.project.docker import (
     ContainerStatus,
+    DockerPortAllocatedError,
     DockerProjectMetadata,
     call_docker_create,
     call_docker_destroy,
@@ -26,15 +26,6 @@ from dr_llm.project.docker import (
 BASE_PORT = 5500
 
 
-def _port_is_free(port: int) -> bool:
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("127.0.0.1", port))
-            return True
-    except OSError:
-        return False
-
-
 def _find_available_port(
     claimed_ports: set[int],
     base: int = BASE_PORT,
@@ -42,7 +33,7 @@ def _find_available_port(
 ) -> int:
     for offset in range(max_attempts):
         port = base + offset
-        if port not in claimed_ports and _port_is_free(port):
+        if port not in claimed_ports:
             return port
     raise RuntimeError(
         f"No available port found in range {base}-{base + max_attempts - 1}"
@@ -99,16 +90,6 @@ class ProjectInfo(BaseModel):
         return f"postgresql://{cls.db_user}:{cls.db_password}@localhost:{port}/{cls.db_name}"
 
     @classmethod
-    def check_exists(cls, container_name: str) -> bool:
-        return (
-            get_docker_project_metadata(
-                container_name,
-                label_prefix=cls.label_prefix,
-            )
-            is not None
-        )
-
-    @classmethod
     def from_metadata(cls, metadata: DockerProjectMetadata) -> ProjectInfo:
         return ProjectInfo(
             name=metadata.name,
@@ -145,41 +126,41 @@ class ProjectInfo(BaseModel):
     @classmethod
     def create_new(cls, name: str) -> ProjectInfo:
         claimed_ports = get_claimed_project_ports(cls.label_prefix)
-        project_info = cls(
-            name=name,
-            port=_find_available_port(claimed_ports),
-            created_at=datetime.now(UTC).isoformat(),
-        )
-        project_info.verify_not_exists()
-        call_docker_create(
-            volume_name=project_info.volume_name,
-            container_name=project_info.container_name,
-            db_name=project_info.db_name,
-            db_user=project_info.db_user,
-            db_password=project_info.db_password,
-            label_prefix=project_info.label_prefix,
-            name=project_info.name,
-            port=project_info.port,
-            created_at=project_info.created_at,
-            docker_image=project_info.docker_image,
-        )
-        project_info.status = wait_docker_ready(
-            container_name=project_info.container_name,
-            db_user=ProjectInfo.db_user,
-            db_name=ProjectInfo.db_name,
-        )
-        return project_info
+        created_at = datetime.now(UTC).isoformat()
 
-    def verify_exists(self) -> None:
-        if not ProjectInfo.check_exists(self.container_name):
-            raise RuntimeError(f"Project '{self.name}' not found")
+        while True:
+            project_info = cls(
+                name=name,
+                port=_find_available_port(claimed_ports),
+                created_at=created_at,
+            )
+            try:
+                call_docker_create(
+                    volume_name=project_info.volume_name,
+                    container_name=project_info.container_name,
+                    db_name=project_info.db_name,
+                    db_user=project_info.db_user,
+                    db_password=project_info.db_password,
+                    label_prefix=project_info.label_prefix,
+                    name=project_info.name,
+                    port=project_info.port,
+                    created_at=project_info.created_at,
+                    docker_image=project_info.docker_image,
+                )
+            except DockerPortAllocatedError:
+                if project_info.port is None:
+                    raise
+                claimed_ports.add(project_info.port)
+                continue
 
-    def verify_not_exists(self) -> None:
-        if ProjectInfo.check_exists(self.container_name):
-            raise RuntimeError(f"Project '{self.name}' already exists")
+            project_info.status = wait_docker_ready(
+                container_name=project_info.container_name,
+                db_user=ProjectInfo.db_user,
+                db_name=ProjectInfo.db_name,
+            )
+            return project_info
 
     def start(self) -> None:
-        self.verify_exists()
         if self.status != ContainerStatus.RUNNING:
             call_docker_start(self.container_name)
             self.status = wait_docker_ready(
@@ -189,21 +170,14 @@ class ProjectInfo(BaseModel):
             )
 
     def stop(self) -> None:
-        self.verify_exists()
         if self.status != ContainerStatus.STOPPED:
             call_docker_stop(self.container_name)
             self.status = ContainerStatus.STOPPED
 
     def destroy(self) -> None:
-        self.verify_exists()
         call_docker_destroy(self.container_name, self.volume_name)
 
     def backup(self, output_dir: Path | None = None) -> Path:
-        if not self.running:
-            raise RuntimeError(
-                f"Project '{self.name}' is {self.status} — start it before backing up"
-            )
-
         backup_dir = (output_dir or self.default_backup_dir) / self.name
         backup_dir.mkdir(parents=True, exist_ok=True)
 
@@ -221,14 +195,6 @@ class ProjectInfo(BaseModel):
         return backup_file
 
     def restore(self, backup_file: Path) -> None:
-        if not self.running:
-            raise RuntimeError(
-                f"Project '{self.name}' is {self.status} — start it before restoring"
-            )
-
-        if not backup_file.exists():
-            raise FileNotFoundError(f"Backup file not found: {backup_file}")
-
         if backup_file.suffix == ".gz":
             with gzip.open(backup_file, "rb") as f:
                 sql_bytes = f.read()

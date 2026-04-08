@@ -51,13 +51,13 @@ def project_start(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
     try:
-        project_info = ProjectInfo.get_by_name(name)
+        project_info = ProjectInfo(name=name)
         project_info.start()
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
     typer.secho(
-        f"Project '{name}' is running on port {project_info.port}",
+        f"Project '{name}' is running.",
         fg=typer.colors.GREEN,
     )
 
@@ -67,7 +67,7 @@ def project_stop(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
     try:
-        project_info = ProjectInfo.get_by_name(name)
+        project_info = ProjectInfo(name=name)
         project_info.stop()
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
@@ -111,7 +111,7 @@ def project_destroy(
         )
 
     try:
-        project_info = ProjectInfo.get_by_name(name)
+        project_info = ProjectInfo(name=name)
         project_info.destroy()
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
@@ -128,7 +128,7 @@ def project_backup(
     output_dir: Path | None = typer.Option(None, help="Custom backup directory."),
 ) -> None:
     try:
-        project_info = ProjectInfo.get_by_name(name)
+        project_info = ProjectInfo(name=name)
         path = project_info.backup(output_dir)
     except (RuntimeError, FileNotFoundError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
@@ -144,7 +144,7 @@ def project_restore(
     ),
 ) -> None:
     try:
-        project_info = ProjectInfo.get_by_name(name)
+        project_info = ProjectInfo(name=name)
         project_info.restore(backup_file)
     except (RuntimeError, FileNotFoundError, subprocess.CalledProcessError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)

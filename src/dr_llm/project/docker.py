@@ -110,6 +110,31 @@ class DockerProjectMetadata(BaseModel):
         return int(value)
 
 
+class DockerCommandError(RuntimeError):
+    """Base error for docker command failures."""
+
+
+class DockerContainerNotFoundError(DockerCommandError):
+    """Raised when a target container does not exist."""
+
+
+class DockerContainerNotRunningError(DockerCommandError):
+    """Raised when a target container exists but is not running."""
+
+
+class DockerContainerConflictError(DockerCommandError):
+    """Raised when Docker reports a container-name conflict."""
+
+
+class DockerPortAllocatedError(DockerCommandError):
+    """Raised when Docker cannot bind the requested host port."""
+
+
+def _docker_error_detail(stderr: str) -> str:
+    detail = stderr.strip()
+    return detail or "unknown docker error"
+
+
 def _docker_error(args: tuple[str, ...], stderr: str) -> RuntimeError:
     lowered = stderr.lower()
     if (
@@ -119,8 +144,19 @@ def _docker_error(args: tuple[str, ...], stderr: str) -> RuntimeError:
         return RuntimeError(
             "Docker is not available. Install Docker or start the daemon."
         )
+    if "no such container" in lowered:
+        return DockerContainerNotFoundError("Docker container not found.")
+    if "is not running" in lowered or "container is not running" in lowered:
+        return DockerContainerNotRunningError("Docker container is not running.")
+    if "container name" in lowered and "is already in use" in lowered:
+        return DockerContainerConflictError("Docker container name is already in use.")
+    if (
+        "port is already allocated" in lowered
+        or "bind: address already in use" in lowered
+    ):
+        return DockerPortAllocatedError("Docker host port is already allocated.")
     command = " ".join(["docker", *args])
-    detail = stderr or "unknown docker error"
+    detail = _docker_error_detail(stderr)
     return RuntimeError(f"Docker command failed: {command}\n{detail}")
 
 
@@ -221,7 +257,6 @@ def call_docker_create(
     port: int | None = None,
     created_at: str | None = None,
 ):
-    call_docker("volume", "create", volume_name)
     docker_cmd = [
         "run",
         "-d",
@@ -262,16 +297,28 @@ def call_docker_create(
 
 
 def call_docker_start(container_name: str) -> None:
-    call_docker("start", container_name)
+    result = call_docker("start", container_name, check=False)
+    if result.returncode == 0 or "already running" in result.stderr.lower():
+        return
+    raise _docker_error(("start", container_name), result.stderr.strip())
 
 
 def call_docker_stop(container_name: str) -> None:
-    call_docker("stop", container_name)
+    result = call_docker("stop", container_name, check=False)
+    if result.returncode == 0 or "is not running" in result.stderr.lower():
+        return
+    raise _docker_error(("stop", container_name), result.stderr.strip())
 
 
 def call_docker_destroy(container_name: str, volume_name: str) -> None:
-    call_docker("rm", "-f", container_name, check=False)
-    call_docker("volume", "rm", volume_name, check=False)
+    remove_container = call_docker("rm", "-f", container_name, check=False)
+    remove_volume = call_docker("volume", "rm", volume_name, check=False)
+    if remove_container.returncode != 0:
+        raise _docker_error(
+            ("rm", "-f", container_name), remove_container.stderr.strip()
+        )
+    if remove_volume.returncode != 0:
+        raise _docker_error(("volume", "rm", volume_name), remove_volume.stderr.strip())
 
 
 def call_docker_psql(
