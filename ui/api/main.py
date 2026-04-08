@@ -9,19 +9,19 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.catalog.fetchers import fetch_models_for_adapter
-from dr_llm.catalog.fetchers.static import (
+from dr_llm.llm.catalog.fetchers import fetch_models_for_provider
+from dr_llm.llm.catalog.fetchers.static import (
     CLAUDE_CODE_MODELS,
     CODEX_MODELS,
     KIMI_CODING_MODELS,
     MINIMAX_TEXT_MODELS,
 )
-from dr_llm.catalog.models import ModelCatalogEntry
+from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
-from dr_llm.providers.openrouter import openrouter_allowed_models
-from dr_llm.providers.openrouter.catalog import apply_openrouter_model_policies
-from dr_llm.providers import build_default_registry
-from dr_llm.providers.registry import ProviderRegistry
+from dr_llm.llm.providers.openrouter.policy import apply_openrouter_model_policies
+from dr_llm.llm.providers.openrouter.policy import openrouter_allowed_models
+from dr_llm.llm.providers.registry import build_default_registry
+from dr_llm.llm.providers.registry import ProviderRegistry
 
 # ---------------------------------------------------------------------------
 # Response models
@@ -101,7 +101,9 @@ _GOOGLE_COMMON_MODELS = [
     ("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite"),
 ]
 
-_OPENROUTER_COMMON_MODELS = [(model_id, model_id) for model_id in openrouter_allowed_models()]
+_OPENROUTER_COMMON_MODELS = [
+    (model_id, model_id) for model_id in openrouter_allowed_models()
+]
 
 _GLM_COMMON_MODELS = [
     ("glm-4.5", "GLM 4.5"),
@@ -214,9 +216,11 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
     """Get models for a provider.  Uses static data if the provider is unavailable."""
     registry = _get_registry(request.app)
     try:
-        adapter = registry.get(provider)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+        model_provider = registry.get(provider)
+    except KeyError as err:
+        raise HTTPException(
+            status_code=404, detail=f"Unknown provider: {provider}"
+        ) from err
 
     # Check if provider is available (has required env vars / executables)
     is_available = registry.availability_status(provider).available
@@ -232,7 +236,7 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
 
     # Try live fetch
     try:
-        entries, _raw = fetch_models_for_adapter(adapter)
+        entries, _raw = fetch_models_for_provider(model_provider)
         entries = apply_openrouter_model_policies(entries)
     except (ProviderTransportError, ProviderSemanticError) as exc:
         # Fall back to static
@@ -256,12 +260,14 @@ def sync_provider_models(provider: str, request: Request) -> SyncResultResponse:
     """Trigger a live model sync for a provider."""
     registry = _get_registry(request.app)
     try:
-        adapter = registry.get(provider)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+        model_provider = registry.get(provider)
+    except KeyError as err:
+        raise HTTPException(
+            status_code=404, detail=f"Unknown provider: {provider}"
+        ) from err
 
     try:
-        entries, _raw = fetch_models_for_adapter(adapter)
+        entries, _raw = fetch_models_for_provider(model_provider)
         entries = apply_openrouter_model_policies(entries)
     except (ProviderTransportError, ProviderSemanticError) as exc:
         error_msg = f"{type(exc).__name__}: {exc}"

@@ -10,7 +10,7 @@ Domain-neutral by design — shared across repos like `nl_latents` and `unitbenc
 Call providers, sync model catalogs, browse available models. File-based catalog cache, zero infrastructure.
 
 **Flow 2 — Pool (Postgres-backed):**
-Schema-driven sample pools with no-replacement acquisition, pending sample lifecycle, run/call recording, and per-project isolated databases via Docker.
+Schema-driven sample pools with no-replacement acquisition, pending sample lifecycle, and per-project isolated databases via Docker.
 
 ## Install
 
@@ -26,11 +26,10 @@ uv add dr-llm
 uv run dr-llm query \
   --provider openai \
   --model gpt-4.1 \
-  --message "Hello, what's 2+2?" \
-  --no-record
+  --message "Hello, what's 2+2?"
 ```
 
-No database needed with `--no-record`.
+No database needed.
 
 ### 2. List providers
 
@@ -74,9 +73,9 @@ Some providers use static model lists for `models sync` (no `/models` endpoint).
 ### Calling a provider
 
 ```python
-from dr_llm.providers import build_default_registry
-from dr_llm.providers.llm_request import LlmRequest
-from dr_llm.providers.models import Message
+from dr_llm.llm import build_default_registry
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.messages import Message
 
 registry = build_default_registry()
 adapter = registry.get("openai")
@@ -96,14 +95,16 @@ print(response.text)
 The recommended way to populate a pool: define `LlmConfig`s and prompts, seed the pending queue, and let parallel workers make the actual provider calls. Docker is used to auto-manage a Postgres project.
 
 ```python
-from dr_llm.pool import (
-    DbConfig, DbRuntime, KeyColumn, PoolSchema, PoolStore,
-    make_llm_process_fn, seed_pending, start_workers,
-)
+from dr_llm import DbConfig, KeyColumn, PoolSchema, PoolStore
+from dr_llm.pool.db.runtime import DbRuntime
+from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
+from dr_llm.pool.pending.backend import PoolPendingBackend, PoolPendingBackendConfig
+from dr_llm.pool.pending.fill_pending import seed_pending
 from dr_llm.project.project_info import ProjectInfo
-from dr_llm.providers import build_default_registry
-from dr_llm.providers.llm_config import LlmConfig
-from dr_llm.providers.models import Message
+from dr_llm.llm import build_default_registry
+from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.messages import Message
+from dr_llm.workers import WorkerConfig, start_workers
 
 # 1. Create a Docker-managed Postgres project
 project = ProjectInfo.create_new("my_eval")
@@ -141,20 +142,31 @@ seed_pending(store, key_grid={"llm_config": llm_configs, "prompt": prompts}, n=2
 # 5. Start workers — they call the real providers
 registry = build_default_registry()
 process_fn = make_llm_process_fn(registry)
-controller = start_workers(store, process_fn=process_fn, num_workers=4)
+controller = start_workers(
+    PoolPendingBackend(
+        store,
+        config=PoolPendingBackendConfig(max_retries=1),
+    ),
+    process_fn=process_fn,
+    config=WorkerConfig(
+        num_workers=4,
+        thread_name_prefix="pool-fill",
+    ),
+)
 
 # 6. Wait for completion
 import time
 while True:
     snap = controller.snapshot()
-    if snap.status_counts.pending == 0 and snap.status_counts.leased == 0:
+    assert snap.backend_state is not None
+    if snap.backend_state.status_counts.in_flight == 0:
         break
     time.sleep(1)
 controller.stop()
 controller.join()
 
 # 7. Acquire samples (no-replacement within a run)
-from dr_llm.pool import AcquireQuery
+from dr_llm.pool.models import AcquireQuery
 result = store.acquire(AcquireQuery(
     run_id="eval_run_1",
     key_values={"llm_config": "gpt-4.1-mini", "prompt": "math"},
@@ -182,15 +194,10 @@ dr-llm models sync-list [--provider NAME] [--supports-reasoning] [--model-contai
 dr-llm models show --provider NAME --model NAME
 
 # Query
-dr-llm query --provider NAME --model NAME --message TEXT [--no-record]
+dr-llm query --provider NAME --model NAME --message TEXT
 dr-llm query --provider openai --model gpt-5-mini --reasoning-json '{"kind":"openai","thinking_level":"high"}' --message TEXT
 dr-llm query --provider google --model gemini-2.5-flash --reasoning-json '{"kind":"google","thinking_level":"budget","budget_tokens":512}' --message TEXT
 dr-llm query --provider openrouter --model openai/gpt-oss-20b --reasoning-json '{"kind":"openrouter","effort":"high"}' --message TEXT
-
-# Runs (requires DB)
-dr-llm run start [--run-type TYPE] [--metadata-json JSON]
-dr-llm run finish --run-id ID --status success|failed|canceled
-dr-llm run list-calls [--run-id ID]
 
 # Projects (Docker-managed Postgres)
 dr-llm project create NAME
@@ -204,7 +211,7 @@ dr-llm project destroy NAME --yes-really-delete-everything
 
 ## Configuration
 
-Generation transcript logging (default on):
+Generation transcript logging (default on, used for LLM call debugging):
 
 | Variable | Default |
 |---|---|

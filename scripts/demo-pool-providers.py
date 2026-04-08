@@ -34,13 +34,13 @@ from typing import Any
 
 import typer
 
-from dr_llm.pool.sample_models import PoolSample
-from dr_llm.pool.pool_schema import KeyColumn, PoolSchema
+from dr_llm.pool.db.runtime import DbConfig, DbRuntime
+from dr_llm.pool.db.schema import KeyColumn, PoolSchema
+from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.sample_store import PoolStore
-from dr_llm.providers import build_default_registry
-from dr_llm.providers.provider_config import ProviderAvailabilityStatus
 from dr_llm.project.project_info import ProjectInfo
-from dr_llm.pool.runtime import DbConfig, DbRuntime
+from dr_llm.llm.providers.registry import build_default_registry
+from dr_llm.llm.providers.config import ProviderAvailabilityStatus
 
 app = typer.Typer()
 
@@ -196,7 +196,6 @@ def query_provider(
         model,
         "--message",
         prompt,
-        "--no-record",
     ]
     if provider in {"anthropic", "kimi-code"}:
         args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])

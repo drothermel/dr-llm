@@ -11,17 +11,15 @@ import pytest
 from psycopg import sql
 
 from dr_llm.errors import TransientPersistenceError
+from dr_llm.pool.db.runtime import DbConfig, DbRuntime
+from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
-from dr_llm.pool.sample_models import (
-    AcquireQuery,
-    PendingSample,
-    PendingStatus,
-    PoolSample,
-)
-from dr_llm.pool.pool_schema import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.models import AcquireQuery
+from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pending.pending_status import PendingStatus
+from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_service import PoolService
 from dr_llm.pool.sample_store import PoolStore
-from dr_llm.pool.runtime import DbConfig, DbRuntime
 
 
 _TEST_SCHEMA = PoolSchema(
@@ -39,18 +37,46 @@ _POOL_TABLES = (
     _TEST_SCHEMA.samples_table,
 )
 
+_LEGACY_TABLES = (
+    "artifacts",
+    "llm_call_responses",
+    "llm_call_requests",
+    "llm_calls",
+    "run_parameters",
+    "runs",
+    "tool_call_dead_letters",
+    "tool_results",
+    "tool_calls",
+    "session_events",
+    "session_turns",
+    "sessions",
+)
+
 
 def _drop_tables(dsn: str) -> None:
     with psycopg.connect(dsn) as conn:
-        for tbl in _POOL_TABLES:
+        for tbl in _POOL_TABLES + _LEGACY_TABLES:
             conn.execute(
-                sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(sql.Identifier(tbl))
+                sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
+                    sql.Identifier("public", tbl)
+                )
             )
         conn.commit()
 
 
 def _get_dsn() -> str | None:
     return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv("DR_LLM_DATABASE_URL")
+
+
+def _create_legacy_tables(dsn: str) -> None:
+    with psycopg.connect(dsn) as conn:
+        for table_name in _LEGACY_TABLES:
+            conn.execute(
+                sql.SQL("CREATE TABLE IF NOT EXISTS {} (id TEXT)").format(
+                    sql.Identifier(table_name)
+                )
+            )
+        conn.commit()
 
 
 @pytest.fixture(scope="module")
@@ -87,6 +113,7 @@ def _sample(dim_a: str = "a", dim_b: int = 1, **kwargs: Any) -> PoolSample:
         key_values={"dim_a": dim_a, "dim_b": dim_b},
         payload=kwargs.get("payload", {"data": "test"}),
         source_run_id=kwargs.get("source_run_id"),
+        metadata=kwargs.get("metadata", {}),
         sample_idx=kwargs.get("sample_idx"),
     )
 
@@ -96,11 +123,90 @@ def _pending(dim_a: str = "a", dim_b: int = 1, **kwargs: Any) -> PendingSample:
         key_values={"dim_a": dim_a, "dim_b": dim_b},
         sample_idx=kwargs.get("sample_idx", 0),
         payload=kwargs.get("payload", {"partial": True}),
+        source_run_id=kwargs.get("source_run_id"),
+        metadata=kwargs.get("metadata", {}),
         priority=kwargs.get("priority", 0),
     )
 
 
 # --- Sample CRUD ---
+
+
+@pytest.mark.integration
+def test_store_init_does_not_drop_legacy_call_recorder_tables_by_default(
+    pool_store: PoolStore,  # noqa: ARG001
+) -> None:
+    dsn = _get_dsn()
+    assert dsn is not None
+    _create_legacy_tables(dsn)
+
+    fresh_runtime = DbRuntime(
+        DbConfig(
+            dsn=dsn,
+            min_pool_size=1,
+            max_pool_size=4,
+            application_name="pool_tests_cleanup",
+        )
+    )
+    fresh_store = PoolStore(_TEST_SCHEMA, fresh_runtime)
+    try:
+        fresh_store.init_schema()
+    finally:
+        fresh_runtime.close()
+
+    with psycopg.connect(dsn) as conn:
+        for table_name in _LEGACY_TABLES:
+            exists = conn.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = %s
+                )
+                """,
+                [table_name],
+            ).fetchone()
+            assert exists is not None
+            assert exists[0] is True
+
+
+@pytest.mark.integration
+def test_store_init_drops_legacy_call_recorder_tables_when_explicitly_enabled(
+    pool_store: PoolStore,  # noqa: ARG001
+) -> None:
+    dsn = _get_dsn()
+    assert dsn is not None
+    _create_legacy_tables(dsn)
+
+    fresh_runtime = DbRuntime(
+        DbConfig(
+            dsn=dsn,
+            min_pool_size=1,
+            max_pool_size=4,
+            application_name="pool_tests_cleanup_opt_in",
+        )
+    )
+    fresh_store = PoolStore(_TEST_SCHEMA, fresh_runtime)
+    try:
+        fresh_store.init_schema(
+            allow_destructive_cleanup=True,
+            dedicated_schema="public",
+        )
+    finally:
+        fresh_runtime.close()
+
+    with psycopg.connect(dsn) as conn:
+        for table_name in _LEGACY_TABLES:
+            exists = conn.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = %s
+                )
+                """,
+                [table_name],
+            ).fetchone()
+            assert exists is not None
+            assert exists[0] is False
 
 
 @pytest.mark.integration
@@ -141,7 +247,17 @@ def test_bulk_insert(pool_store: PoolStore) -> None:
 
 @pytest.mark.integration
 def test_acquire_basic(pool_store: PoolStore) -> None:
-    for i in range(3):
+    pool_store.insert_sample(
+        _sample(
+            dim_a="acq",
+            dim_b=1,
+            sample_idx=0,
+            payload={"data": "primary"},
+            source_run_id="seed-run",
+            metadata={"kind": "primary"},
+        )
+    )
+    for i in range(1, 3):
         pool_store.insert_sample(_sample(dim_a="acq", dim_b=1, sample_idx=i))
 
     q = AcquireQuery(run_id="run1", key_values={"dim_a": "acq", "dim_b": 1}, n=2)
@@ -150,6 +266,10 @@ def test_acquire_basic(pool_store: PoolStore) -> None:
     assert len(result.samples) == 2
     assert result.samples[0].sample_idx == 0
     assert result.samples[1].sample_idx == 1
+    assert result.samples[0].payload == {"data": "primary"}
+    assert result.samples[0].source_run_id == "seed-run"
+    assert result.samples[0].metadata == {"kind": "primary"}
+    assert result.samples[0].status.value == "active"
 
 
 @pytest.mark.integration
@@ -195,7 +315,14 @@ def test_pending_insert_and_count(pool_store: PoolStore) -> None:
 
 @pytest.mark.integration
 def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
-    p = _pending(dim_a="promote", dim_b=1, sample_idx=0)
+    p = _pending(
+        dim_a="promote",
+        dim_b=1,
+        sample_idx=0,
+        payload={"partial": True, "draft": 1},
+        source_run_id="pending-run",
+        metadata={"source": "seed"},
+    )
     pool_store.pending.insert_pending(p)
 
     claimed = pool_store.pending.claim_pending(
@@ -205,6 +332,10 @@ def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
     assert len(claimed) == 1
     assert claimed[0].status == PendingStatus.leased
     assert claimed[0].worker_id == "w1"
+    assert claimed[0].payload == {"partial": True, "draft": 1}
+    assert claimed[0].source_run_id == "pending-run"
+    assert claimed[0].metadata == {"source": "seed"}
+    assert claimed[0].attempt_count == 1
 
     # Promote with final payload
     sample = pool_store.pending.promote_pending(
@@ -213,6 +344,8 @@ def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
     )
     assert sample is not None
     assert sample.payload["final"] is True
+    assert sample.source_run_id == "pending-run"
+    assert sample.metadata == {"source": "seed"}
     assert pool_store.cell_depth(key_values={"dim_a": "promote", "dim_b": 1}) == 1
 
 
@@ -287,22 +420,46 @@ def test_bulk_load(pool_store: PoolStore) -> None:
 def test_bulk_load_with_filter(pool_store: PoolStore) -> None:
     # Insert some known samples
     for i in range(3):
-        pool_store.insert_sample(_sample(dim_a="bload", dim_b=99, sample_idx=i))
+        pool_store.insert_sample(
+            _sample(
+                dim_a="bload",
+                dim_b=99,
+                sample_idx=i,
+                payload={"loaded": i},
+                source_run_id=f"bulk-run-{i}",
+                metadata={"batch": i},
+            )
+        )
 
     filtered = pool_store.bulk_load(key_filter={"dim_a": "bload", "dim_b": 99})
     assert len(filtered) == 3
     assert all(s.key_values["dim_a"] == "bload" for s in filtered)
+    assert filtered[0].payload == {"loaded": 0}
+    assert filtered[0].source_run_id == "bulk-run-0"
+    assert filtered[0].metadata == {"batch": 0}
 
 
 @pytest.mark.integration
 def test_bulk_load_pending(pool_store: PoolStore) -> None:
-    pool_store.pending.insert_pending(_pending(dim_a="blp", dim_b=70, sample_idx=0))
+    pool_store.pending.insert_pending(
+        _pending(
+            dim_a="blp",
+            dim_b=70,
+            sample_idx=0,
+            payload={"partial": "first"},
+            source_run_id="pending-seed-0",
+            metadata={"batch": 0},
+        )
+    )
     pool_store.pending.insert_pending(_pending(dim_a="blp", dim_b=70, sample_idx=1))
 
     results = pool_store.pending.bulk_load_pending(key_filter={"dim_a": "blp", "dim_b": 70})
     assert len(results) == 2
     assert all(isinstance(r, PendingSample) for r in results)
     assert all(r.key_values["dim_a"] == "blp" for r in results)
+    assert results[0].payload == {"partial": "first"}
+    assert results[0].source_run_id == "pending-seed-0"
+    assert results[0].metadata == {"batch": 0}
 
 
 @pytest.mark.integration

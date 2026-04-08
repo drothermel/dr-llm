@@ -25,22 +25,26 @@ from uuid import uuid4
 
 import typer
 
-from dr_llm.pool import (
-    DbConfig,
-    DbRuntime,
-    KeyColumn,
-    PoolSchema,
-    PoolStore,
-    make_llm_process_fn,
-    seed_pending,
-    start_workers,
+from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.reasoning import (
+    GoogleReasoning,
+    OpenAIReasoning,
+    ThinkingLevel,
 )
-from dr_llm.pool.sample_models import WorkerSnapshot
+from dr_llm.llm.providers.registry import build_default_registry
+from dr_llm.pool.db.runtime import DbConfig, DbRuntime
+from dr_llm.pool.db.schema import KeyColumn, PoolSchema
+from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
+from dr_llm.pool.pending.backend import (
+    PoolPendingBackend,
+    PoolPendingBackendConfig,
+    PoolPendingBackendState,
+)
+from dr_llm.pool.pending.fill_pending import seed_pending
+from dr_llm.pool.sample_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
-from dr_llm.providers import build_default_registry
-from dr_llm.providers.llm_config import LlmConfig
-from dr_llm.providers.models import Message
-from dr_llm.providers.reasoning import GoogleReasoning, OpenAIReasoning, ThinkingLevel
+from dr_llm.workers import WorkerConfig, WorkerSnapshot, start_workers
 
 app = typer.Typer()
 
@@ -65,23 +69,31 @@ LLM_CONFIGS: dict[str, LlmConfig] = {
 
 PROMPTS: dict[str, list[Message]] = {
     "haiku": [Message(role="user", content="Write a haiku about programming.")],
-    "math": [Message(role="user", content="What is 17 * 23? Reply with just the number.")],
+    "math": [
+        Message(role="user", content="What is 17 * 23? Reply with just the number.")
+    ],
 }
 
 
-def _print_progress(snapshot: WorkerSnapshot) -> None:
-    counts = snapshot.status_counts
+def _print_progress(snapshot: WorkerSnapshot[PoolPendingBackendState]) -> None:
+    backend_state = snapshot.backend_state
+    if backend_state is None:
+        return
+    counts = backend_state.status_counts
+    worker_counts = snapshot.counts
     print(
         "Progress: "
-        f"claimed={snapshot.claimed} "
-        f"promoted={snapshot.promoted} "
-        f"failed={snapshot.failed} "
+        f"claimed={worker_counts.claimed} "
+        f"completed={worker_counts.completed} "
+        f"failed={worker_counts.failed} "
         f"pending={counts.pending} "
         f"leased={counts.leased}"
     )
 
 
-def _run_demo(dsn: str, pool_name: str, num_workers: int, samples_per_cell: int) -> None:
+def _run_demo(
+    dsn: str, pool_name: str, num_workers: int, samples_per_cell: int
+) -> None:
     schema = PoolSchema(
         name=pool_name,
         key_columns=[KeyColumn(name="llm_config"), KeyColumn(name="prompt")],
@@ -108,38 +120,45 @@ def _run_demo(dsn: str, pool_name: str, num_workers: int, samples_per_cell: int)
 
         process_fn = make_llm_process_fn(registry)
         controller = start_workers(
-            store,
+            PoolPendingBackend(
+                store,
+                config=PoolPendingBackendConfig(max_retries=1),
+            ),
             process_fn=process_fn,
-            num_workers=num_workers,
-            min_poll_interval_s=0.5,
-            max_poll_interval_s=3.0,
-            max_retries=1,
+            config=WorkerConfig(
+                num_workers=num_workers,
+                min_poll_interval_s=0.5,
+                max_poll_interval_s=3.0,
+                thread_name_prefix="pool-fill",
+            ),
         )
         try:
             last_progress: tuple[int, int, int, int, int] | None = None
             while True:
                 snapshot = controller.snapshot()
+                worker_counts = snapshot.counts
+                if snapshot.backend_state is None:
+                    time.sleep(0.1)
+                    continue
                 current_progress = (
-                    snapshot.claimed,
-                    snapshot.promoted,
-                    snapshot.failed,
-                    snapshot.status_counts.pending,
-                    snapshot.status_counts.leased,
+                    worker_counts.claimed,
+                    worker_counts.completed,
+                    worker_counts.failed,
+                    snapshot.backend_state.status_counts.pending,
+                    snapshot.backend_state.status_counts.leased,
                 )
                 if current_progress != last_progress:
                     _print_progress(snapshot)
                     last_progress = current_progress
-                if (
-                    snapshot.status_counts.pending == 0
-                    and snapshot.status_counts.leased == 0
-                ):
+                if snapshot.backend_state.status_counts.in_flight == 0:
                     break
                 time.sleep(0.5)
         finally:
             controller.stop()
             final_snapshot = controller.join()
 
-        final_counts = final_snapshot.status_counts
+        assert final_snapshot.backend_state is not None
+        final_counts = final_snapshot.backend_state.status_counts
         print(
             "Final queue counts: "
             f"pending={final_counts.pending} "
@@ -161,9 +180,6 @@ def _run_demo(dsn: str, pool_name: str, num_workers: int, samples_per_cell: int)
                 f"-> {text!r}"
             )
     finally:
-        if controller is not None:
-            controller.stop()
-            controller.join()
         registry.close()
         runtime.close()
 
@@ -186,7 +202,9 @@ def main(
     ] = 2,
     samples_per_cell: Annotated[
         int,
-        typer.Option(help="Number of samples to queue for each (llm_config, prompt) cell."),
+        typer.Option(
+            help="Number of samples to queue for each (llm_config, prompt) cell."
+        ),
     ] = 1,
 ) -> None:
     if dsn is not None:

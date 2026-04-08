@@ -1,0 +1,166 @@
+from __future__ import annotations
+
+import threading
+from collections.abc import Generator
+from contextlib import contextmanager
+from os import getenv
+from time import sleep
+from typing import Any
+
+import psycopg
+from psycopg import sql
+from psycopg_pool import ConnectionPool
+from pydantic import BaseModel, ConfigDict, Field
+
+from dr_llm.errors import TransientPersistenceError
+
+
+_LEGACY_TABLES = (
+    "artifacts",
+    "llm_call_responses",
+    "llm_call_requests",
+    "llm_calls",
+    "run_parameters",
+    "runs",
+    "tool_call_dead_letters",
+    "tool_results",
+    "tool_calls",
+    "session_events",
+    "session_turns",
+    "sessions",
+)
+
+
+class DbConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    dsn: str = Field(
+        default_factory=lambda: getenv(
+            "DR_LLM_DATABASE_URL", "postgresql://localhost/dr_llm"
+        )
+    )
+    min_pool_size: int = 4
+    max_pool_size: int = 64
+    statement_timeout_ms: int | None = None
+    application_name: str = "dr_llm"
+    open_on_init: bool = False
+    pool_open_retries: int = 3
+    pool_open_retry_backoff_seconds: float = 0.1
+
+
+class DbRuntime:
+    def __init__(self, config: DbConfig) -> None:
+        self.config = config
+        self.pool = ConnectionPool(
+            self.config.dsn,
+            min_size=self.config.min_pool_size,
+            max_size=self.config.max_pool_size,
+            open=False,
+        )
+        self._legacy_cleanup_lock = threading.Lock()
+        self._legacy_cleanup_done = False
+        self._pool_lock = threading.Lock()
+        self._pool_opened = False
+        if self.config.open_on_init:
+            self.open_pool()
+
+    def close(self) -> None:
+        with self._pool_lock:
+            self.pool.close()
+            self._pool_opened = False
+
+    def open_pool(self) -> None:
+        if self._pool_opened:
+            return
+        with self._pool_lock:
+            if self._pool_opened:
+                return
+            retries = max(1, int(self.config.pool_open_retries))
+            last_exc: Exception | None = None
+            for attempt in range(1, retries + 1):
+                try:
+                    self.pool.open(wait=True)
+                    self._pool_opened = True
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    last_exc = exc
+                    if attempt >= retries:
+                        break
+                    sleep(max(0.0, float(self.config.pool_open_retry_backoff_seconds)))
+            raise TransientPersistenceError(
+                f"Failed to open connection pool after {retries} attempts: {last_exc}"
+            ) from last_exc
+
+    def initialize(
+        self,
+        *,
+        allow_destructive_cleanup: bool = False,
+        dedicated_schema: str | None = None,
+    ) -> None:
+        self.open_pool()
+        self.cleanup_legacy_tables(
+            allow_destructive_cleanup=allow_destructive_cleanup,
+            dedicated_schema=dedicated_schema,
+        )
+
+    @contextmanager
+    def conn(self) -> Generator[psycopg.Connection[tuple[Any, ...]], None, None]:
+        self.open_pool()
+        with self.pool.connection() as conn:
+            if self.config.statement_timeout_ms is not None:
+                conn.execute(
+                    "SET statement_timeout = %s",
+                    [int(self.config.statement_timeout_ms)],
+                )
+            yield conn
+
+    def init_schema(
+        self,
+        *,
+        allow_destructive_cleanup: bool = False,
+        dedicated_schema: str | None = None,
+    ) -> None:
+        self.cleanup_legacy_tables(
+            allow_destructive_cleanup=allow_destructive_cleanup,
+            dedicated_schema=dedicated_schema,
+        )
+
+    def cleanup_legacy_tables(
+        self,
+        *,
+        allow_destructive_cleanup: bool = False,
+        dedicated_schema: str | None = None,
+    ) -> None:
+        if not allow_destructive_cleanup:
+            return
+        validated_schema = _validate_dedicated_schema(dedicated_schema)
+        if self._legacy_cleanup_done:
+            return
+        with self._legacy_cleanup_lock:
+            if self._legacy_cleanup_done:
+                return
+            with self.conn() as conn:
+                current_schema_row = conn.execute("SELECT current_schema()").fetchone()
+                current_schema = current_schema_row[0] if current_schema_row else None
+                if current_schema != validated_schema:
+                    raise ValueError(
+                        "Destructive legacy cleanup requires the current schema to "
+                        f"match dedicated_schema={validated_schema!r}; "
+                        f"got {current_schema!r}"
+                    )
+                for table_name in _LEGACY_TABLES:
+                    conn.execute(
+                        sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
+                            sql.Identifier(validated_schema, table_name)
+                        )
+                    )
+                conn.commit()
+            self._legacy_cleanup_done = True
+
+
+def _validate_dedicated_schema(dedicated_schema: str | None) -> str:
+    if dedicated_schema is None or not dedicated_schema.strip():
+        raise ValueError(
+            "Destructive legacy cleanup requires a non-empty dedicated_schema"
+        )
+    return dedicated_schema.strip()

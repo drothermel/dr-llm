@@ -5,7 +5,7 @@ from typing import Any, cast
 import pytest
 
 from dr_llm.pool.errors import PoolSchemaError
-from dr_llm.pool.pool_fill import seed_pending
+from dr_llm.pool.pending.fill_pending import seed_pending
 from dr_llm.pool.sample_store import PoolStore
 
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
 from collections.abc import Iterable
@@ -11,26 +10,25 @@ from uuid import uuid4
 
 from psycopg.rows import dict_row
 
-from dr_llm.pool.ddl import generate_ddl
-from dr_llm.pool.metadata_store import MetadataStore
-from dr_llm.pool.pending_store import PendingStore
-from dr_llm.pool.pool_schema import PoolSchema
-from dr_llm.pool.runtime import DbRuntime
-from dr_llm.pool.sample_models import (
-    AcquireQuery,
-    AcquireResult,
-    CoverageRow,
-    InsertResult,
-    PoolSample,
-)
-from dr_llm.pool.sql_helpers import (
+from dr_llm.pool.db.ddl import generate_ddl
+from dr_llm.pool.db.metadata import MetadataStore
+from dr_llm.pool.db.runtime import DbRuntime
+from dr_llm.pool.db.schema import PoolSchema
+from dr_llm.pool.db.sql_helpers import (
     is_constraint_error,
     key_where_clause,
-    parse_json_field,
     q,
     validate_key_filter,
     validate_key_values,
 )
+from dr_llm.pool.models import (
+    AcquireQuery,
+    AcquireResult,
+    CoverageRow,
+    InsertResult,
+)
+from dr_llm.pool.pending.store import PendingStore
+from dr_llm.pool.pool_sample import PoolSample
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +62,22 @@ class PoolStore:
     def metadata(self) -> MetadataStore:
         return self._metadata
 
-    def init_schema(self) -> None:
+    def init_schema(
+        self,
+        *,
+        allow_destructive_cleanup: bool = False,
+        dedicated_schema: str | None = None,
+    ) -> None:
         """Create pool tables if they don't exist."""
         if self._schema_initialized:
             return
         with self._schema_lock:
             if self._schema_initialized:
                 return
-            self._runtime.open_pool()
+            self._runtime.cleanup_legacy_tables(
+                allow_destructive_cleanup=allow_destructive_cleanup,
+                dedicated_schema=dedicated_schema,
+            )
             ddl = generate_ddl(self._schema)
             with self._runtime.conn() as conn:
                 conn.execute(q(ddl))
@@ -120,36 +126,12 @@ class PoolStore:
     ) -> bool:
         """Insert with explicit sample_idx."""
         tbl = self._schema.samples_table
-        key_names = self._schema.key_column_names
-        cols = (
-            ["sample_id"]
-            + key_names
-            + [
-                "sample_idx",
-                "payload_json",
-                "source_run_id",
-                "call_id",
-                "metadata_json",
-                "status",
-            ]
-        )
+        insert_row = sample.to_db_insert_row(self._schema)
+        cols = list(insert_row.keys())
         placeholders = ", ".join(["%s"] * len(cols))
         col_list = ", ".join(cols)
         conflict = " ON CONFLICT DO NOTHING" if ignore_conflicts else ""
-
-        values = [sample.sample_id]
-        for name in key_names:
-            values.append(sample.key_values[name])
-        values.extend(
-            [
-                sample.sample_idx,
-                json.dumps(sample.payload, default=str),
-                sample.source_run_id,
-                sample.call_id,
-                json.dumps(sample.metadata, default=str),
-                sample.status.value,
-            ]
-        )
+        values = list(insert_row.values())
 
         with self._runtime.conn() as conn:
             try:
@@ -172,34 +154,22 @@ class PoolStore:
     ) -> bool:
         """Insert with auto-incrementing sample_idx via CTE."""
         tbl = self._schema.samples_table
-        key_names = self._schema.key_column_names
 
         kw, kp = key_where_clause(self._schema, sample.key_values)
 
-        cols = (
-            ["sample_id"]
-            + key_names
-            + [
-                "sample_idx",
-                "payload_json",
-                "source_run_id",
-                "call_id",
-                "metadata_json",
-                "status",
-            ]
-        )
+        insert_row = sample.to_db_insert_row(self._schema)
+        cols = list(insert_row.keys())
         col_list = ", ".join(cols)
         conflict = " ON CONFLICT DO NOTHING" if ignore_conflicts else ""
 
-        select_parts: list[str] = ["%s"]  # sample_id
-        for _ in key_names:
+        select_parts: list[str] = []
+        values: list[Any] = list(kp)
+        for col_name, value in insert_row.items():
+            if col_name == "sample_idx":
+                select_parts.append("next_idx.idx")
+                continue
             select_parts.append("%s")
-        select_parts.append("next_idx.idx")  # sample_idx from CTE
-        select_parts.append("%s")  # payload_json
-        select_parts.append("%s")  # source_run_id
-        select_parts.append("%s")  # call_id
-        select_parts.append("%s")  # metadata_json
-        select_parts.append("%s")  # status
+            values.append(value)
 
         insert_sql = (
             f"WITH next_idx AS ("
@@ -209,20 +179,6 @@ class PoolStore:
             f"INSERT INTO {tbl} ({col_list}) "
             f"SELECT {', '.join(select_parts)} "
             f"FROM next_idx{conflict}"
-        )
-
-        values: list[Any] = list(kp)
-        values.append(sample.sample_id)
-        for name in key_names:
-            values.append(sample.key_values[name])
-        values.extend(
-            [
-                json.dumps(sample.payload, default=str),
-                sample.source_run_id,
-                sample.call_id,
-                json.dumps(sample.metadata, default=str),
-                sample.status.value,
-            ]
         )
 
         with self._runtime.conn() as conn:
@@ -280,39 +236,15 @@ class PoolStore:
     ) -> InsertResult:
         """Batch insert samples that have explicit sample_idx values."""
         tbl = self._schema.samples_table
-        key_names = self._schema.key_column_names
-        cols = (
-            ["sample_id"]
-            + key_names
-            + [
-                "sample_idx",
-                "payload_json",
-                "source_run_id",
-                "call_id",
-                "metadata_json",
-                "status",
-            ]
-        )
+        first_row = samples[0].to_db_insert_row(self._schema)
+        cols = list(first_row.keys())
         placeholders = ", ".join(["%s"] * len(cols))
         col_list = ", ".join(cols)
         conflict = " ON CONFLICT DO NOTHING" if ignore_conflicts else ""
 
-        all_values: list[list[Any]] = []
-        for sample in samples:
-            values: list[Any] = [sample.sample_id]
-            for name in key_names:
-                values.append(sample.key_values[name])
-            values.extend(
-                [
-                    sample.sample_idx,
-                    json.dumps(sample.payload, default=str),
-                    sample.source_run_id,
-                    sample.call_id,
-                    json.dumps(sample.metadata, default=str),
-                    sample.status.value,
-                ]
-            )
-            all_values.append(values)
+        all_values = [
+            list(sample.to_db_insert_row(self._schema).values()) for sample in samples
+        ]
 
         values_clause = ", ".join(f"({placeholders})" for _ in all_values)
         flat_params = [v for row in all_values for v in row]
@@ -345,13 +277,11 @@ class PoolStore:
         validate_key_values(self._schema, query.key_values)
         samples_tbl = self._schema.samples_table
         claims_tbl = self._schema.claims_table
-        key_names = self._schema.key_column_names
         kw, kp = key_where_clause(self._schema, query.key_values)
 
         select_sql = (
-            "SELECT sample_id, sample_idx, payload_json, source_run_id, "
-            "call_id, metadata_json, status, created_at, "
-            + ", ".join(key_names)
+            "SELECT "
+            + ", ".join(PoolSample.db_select_columns(self._schema))
             + f" FROM {samples_tbl} "
             f"WHERE {kw} "
             f"AND status = 'active' "
@@ -372,18 +302,7 @@ class PoolStore:
                 claimed = 0
 
                 for idx, row in enumerate(rows):
-                    key_vals = {name: row[name] for name in key_names}
-                    sample = PoolSample(
-                        sample_id=row["sample_id"],
-                        sample_idx=row["sample_idx"],
-                        key_values=key_vals,
-                        payload=parse_json_field(row["payload_json"]),
-                        source_run_id=row["source_run_id"],
-                        call_id=row["call_id"],
-                        metadata=parse_json_field(row["metadata_json"]),
-                        status=row["status"],
-                        created_at=row["created_at"],
-                    )
+                    sample = PoolSample.from_db_row(self._schema, row)
 
                     claim_id = uuid4().hex
                     try:
@@ -454,8 +373,7 @@ class PoolStore:
         """Return sample counts grouped by all key dimensions."""
         self.init_schema()
         tbl = self._schema.samples_table
-        key_names = self._schema.key_column_names
-        key_list = ", ".join(key_names)
+        key_list = ", ".join(self._schema.key_column_names)
         with self._runtime.conn() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 rows = cur.execute(
@@ -465,7 +383,9 @@ class PoolStore:
                 ).fetchall()
             return [
                 CoverageRow(
-                    key_values={name: row[name] for name in key_names},
+                    key_values={
+                        name: row[name] for name in self._schema.key_column_names
+                    },
                     count=row["cnt"],
                 )
                 for row in rows
@@ -491,21 +411,7 @@ class PoolStore:
         """Load all samples, optionally filtered by partial key match."""
         self.init_schema()
         tbl = self._schema.samples_table
-        key_names = self._schema.key_column_names
-
-        all_cols = (
-            ["sample_id"]
-            + key_names
-            + [
-                "sample_idx",
-                "payload_json",
-                "source_run_id",
-                "call_id",
-                "metadata_json",
-                "status",
-                "created_at",
-            ]
-        )
+        all_cols = PoolSample.db_select_columns(self._schema)
         col_list = ", ".join(all_cols)
 
         where_parts: list[str] = []
@@ -528,20 +434,4 @@ class PoolStore:
                     params,
                 ).fetchall()
 
-            results: list[PoolSample] = []
-            for row in rows:
-                key_vals = {name: row[name] for name in key_names}
-                results.append(
-                    PoolSample(
-                        sample_id=row["sample_id"],
-                        sample_idx=row["sample_idx"],
-                        key_values=key_vals,
-                        payload=parse_json_field(row["payload_json"]),
-                        source_run_id=row["source_run_id"],
-                        call_id=row["call_id"],
-                        metadata=parse_json_field(row["metadata_json"]),
-                        status=row["status"],
-                        created_at=row["created_at"],
-                    )
-                )
-            return results
+            return [PoolSample.from_db_row(self._schema, row) for row in rows]

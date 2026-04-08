@@ -10,11 +10,9 @@ from .models import models_app
 from .project import project_app
 from .providers import register as register_providers
 from .query import register as register_query
-from .run import run_app
 
 app = typer.Typer()
 
-app.add_typer(run_app, name="run")
 app.add_typer(models_app, name="models")
 app.add_typer(project_app, name="project")
 register_providers(app)

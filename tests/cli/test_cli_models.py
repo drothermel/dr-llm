@@ -7,8 +7,8 @@ import pytest
 from typer.testing import CliRunner
 
 import dr_llm.cli.models as models_cli
-from dr_llm.catalog.model_blacklist import blacklisted_models
-from dr_llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery, ModelCatalogSyncResult
+from dr_llm.llm.catalog.model_blacklist import blacklisted_models
+from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery, ModelCatalogSyncResult
 from dr_llm.cli import app
 
 runner = CliRunner()
