@@ -8,9 +8,6 @@ from typing import IO, ClassVar, cast
 from pydantic import BaseModel, computed_field
 
 from dr_llm.project.docker import (
-    ContainerStatus,
-    DockerPortAllocatedError,
-    DockerProjectMetadata,
     call_docker_create,
     call_docker_destroy,
     call_docker_pg_dump_stream,
@@ -20,6 +17,18 @@ from dr_llm.project.docker import (
     get_all_docker_project_metadata,
     get_docker_project_metadata,
     wait_docker_ready,
+)
+from dr_llm.project.docker_project_metadata import (
+    ContainerStatus,
+    DockerProjectMetadata,
+)
+from dr_llm.project.errors import (
+    DockerContainerConflictError,
+    DockerContainerNotFoundError,
+    DockerPortAllocatedError,
+    ProjectAlreadyExistsError,
+    ProjectError,
+    ProjectNotFoundError,
 )
 
 BASE_PORT = 5500
@@ -34,7 +43,7 @@ def _find_available_port(
         port = base + offset
         if port not in claimed_ports:
             return port
-    raise RuntimeError(
+    raise ProjectError(
         f"No available port found in range {base}-{base + max_attempts - 1}"
     )
 
@@ -112,7 +121,7 @@ class ProjectInfo(BaseModel):
     def get_by_name(cls, name: str) -> ProjectInfo:
         project_info = cls.maybe_from_existing(name)
         if project_info is None:
-            raise RuntimeError(f"Project '{name}' not found")
+            raise ProjectNotFoundError(f"Project '{name}' not found")
         return project_info
 
     @classmethod
@@ -150,6 +159,10 @@ class ProjectInfo(BaseModel):
                     created_at=project_info.created_at,
                     docker_image=project_info.docker_image,
                 )
+            except DockerContainerConflictError as exc:
+                raise ProjectAlreadyExistsError(
+                    f"Project '{name}' already exists"
+                ) from exc
             except DockerPortAllocatedError:
                 if project_info.port is None:
                     raise
@@ -165,20 +178,29 @@ class ProjectInfo(BaseModel):
 
     def start(self) -> None:
         if self.status != ContainerStatus.RUNNING:
-            call_docker_start(self.container_name)
-            self.status = wait_docker_ready(
-                container_name=self.container_name,
-                db_user=self.db_user,
-                db_name=self.db_name,
-            )
+            try:
+                call_docker_start(self.container_name)
+                self.status = wait_docker_ready(
+                    container_name=self.container_name,
+                    db_user=self.db_user,
+                    db_name=self.db_name,
+                )
+            except DockerContainerNotFoundError as exc:
+                raise ProjectNotFoundError(f"Project '{self.name}' not found") from exc
 
     def stop(self) -> None:
         if self.status != ContainerStatus.STOPPED:
-            call_docker_stop(self.container_name)
-            self.status = ContainerStatus.STOPPED
+            try:
+                call_docker_stop(self.container_name)
+                self.status = ContainerStatus.STOPPED
+            except DockerContainerNotFoundError as exc:
+                raise ProjectNotFoundError(f"Project '{self.name}' not found") from exc
 
     def destroy(self) -> None:
-        call_docker_destroy(self.container_name, self.volume_name)
+        try:
+            call_docker_destroy(self.container_name, self.volume_name)
+        except DockerContainerNotFoundError as exc:
+            raise ProjectNotFoundError(f"Project '{self.name}' not found") from exc
 
     def backup(self, output_dir: Path | None = None) -> Path:
         backup_dir = (output_dir or self.default_backup_dir) / self.name
@@ -189,12 +211,17 @@ class ProjectInfo(BaseModel):
 
         try:
             with gzip.open(backup_file, "wb") as backup_stream:
-                call_docker_pg_dump_stream(
-                    container_name=self.container_name,
-                    db_user=self.db_user,
-                    db_name=self.db_name,
-                    output_stream=cast(IO[bytes], backup_stream),
-                )
+                try:
+                    call_docker_pg_dump_stream(
+                        container_name=self.container_name,
+                        db_user=self.db_user,
+                        db_name=self.db_name,
+                        output_stream=cast(IO[bytes], backup_stream),
+                    )
+                except DockerContainerNotFoundError as exc:
+                    raise ProjectNotFoundError(
+                        f"Project '{self.name}' not found"
+                    ) from exc
         except Exception:
             backup_file.unlink(missing_ok=True)
             raise
@@ -210,9 +237,12 @@ class ProjectInfo(BaseModel):
             )
 
         with gzip.open(backup_file, "rb") as sql_stream:
-            docker_swap_in_db(
-                sql_stream=cast(IO[bytes], sql_stream),
-                container_name=self.container_name,
-                db_user=self.db_user,
-                target_db_name=self.db_name,
-            )
+            try:
+                docker_swap_in_db(
+                    sql_stream=cast(IO[bytes], sql_stream),
+                    container_name=self.container_name,
+                    db_user=self.db_user,
+                    target_db_name=self.db_name,
+                )
+            except DockerContainerNotFoundError as exc:
+                raise ProjectNotFoundError(f"Project '{self.name}' not found") from exc

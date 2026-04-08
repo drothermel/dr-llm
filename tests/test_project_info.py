@@ -7,9 +7,13 @@ from typing import IO
 import pytest
 
 import dr_llm.project.project_info as project_info_module
-from dr_llm.project.docker import (
+from dr_llm.project.docker_project_metadata import (
     ContainerStatus,
+)
+from dr_llm.project.errors import ProjectAlreadyExistsError, ProjectNotFoundError
+from dr_llm.project.errors import (
     DockerContainerConflictError,
+    DockerContainerNotFoundError,
     DockerPortAllocatedError,
 )
 from dr_llm.project.project_info import ProjectInfo
@@ -31,7 +35,7 @@ def test_create_new_retries_when_docker_reports_port_collision(
         assert isinstance(port, int)
         attempted_ports.append(port)
         if port == 5500:
-            raise DockerPortAllocatedError("Docker host port is already allocated.")
+            raise DockerPortAllocatedError()
 
     monkeypatch.setattr(project_info_module, "call_docker_create", fake_create)
     monkeypatch.setattr(
@@ -47,7 +51,7 @@ def test_create_new_retries_when_docker_reports_port_collision(
     assert project.status == ContainerStatus.RUNNING
 
 
-def test_create_new_propagates_container_conflict(
+def test_create_new_translates_container_conflict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -58,15 +62,43 @@ def test_create_new_propagates_container_conflict(
 
     def fake_create(**kwargs: object) -> None:
         _ = kwargs
-        raise DockerContainerConflictError("Docker container name is already in use.")
+        raise DockerContainerConflictError()
 
     monkeypatch.setattr(project_info_module, "call_docker_create", fake_create)
 
     with pytest.raises(
-        DockerContainerConflictError,
-        match="Docker container name is already in use.",
+        ProjectAlreadyExistsError,
+        match="Project 'demo' already exists",
     ):
         ProjectInfo.create_new("demo")
+
+
+def test_get_by_name_raises_project_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        project_info_module,
+        "get_docker_project_metadata",
+        lambda container_name, label_prefix: None,
+    )
+
+    with pytest.raises(ProjectNotFoundError, match="Project 'demo' not found"):
+        ProjectInfo.get_by_name("demo")
+
+
+@pytest.mark.parametrize("method_name", ["start", "stop", "destroy"])
+def test_direct_operations_translate_missing_container_to_project_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+    method_name: str,
+) -> None:
+    def raise_missing_container(*args: object, **kwargs: object) -> None:
+        _ = (args, kwargs)
+        raise DockerContainerNotFoundError()
+
+    monkeypatch.setattr(project_info_module, f"call_docker_{method_name}", raise_missing_container)
+
+    with pytest.raises(ProjectNotFoundError, match="Project 'demo' not found"):
+        getattr(ProjectInfo(name="demo"), method_name)()
 
 
 def test_backup_does_not_precheck_cached_running_status(
@@ -96,6 +128,30 @@ def test_backup_does_not_precheck_cached_running_status(
     assert backup_file.exists()
     with gzip.open(backup_file, "rb") as f:
         assert f.read() == b"select 1;\n"
+
+
+def test_backup_translates_missing_container_to_project_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fake_pg_dump_stream(
+        *,
+        container_name: str,
+        db_user: str,
+        db_name: str,
+        output_stream: IO[bytes],
+    ) -> None:
+        _ = (container_name, db_user, db_name, output_stream)
+        raise DockerContainerNotFoundError()
+
+    monkeypatch.setattr(
+        project_info_module,
+        "call_docker_pg_dump_stream",
+        fake_pg_dump_stream,
+    )
+
+    with pytest.raises(ProjectNotFoundError, match="Project 'demo' not found"):
+        ProjectInfo(name="demo").backup(tmp_path)
 
 
 def test_restore_does_not_precheck_cached_running_status(
@@ -130,6 +186,30 @@ def test_restore_does_not_precheck_cached_running_status(
     assert captured["sql_bytes"] == b"select 1;\n"
     assert captured["container_name"] == "dr-llm-pg-demo"
     assert captured["target_db_name"] == "dr_llm"
+
+
+def test_restore_translates_missing_container_to_project_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    backup_file = tmp_path / "demo.sql.gz"
+    with gzip.open(backup_file, "wb") as f:
+        f.write(b"select 1;\n")
+
+    def fake_swap_in_db(
+        *,
+        sql_stream: IO[bytes],
+        container_name: str,
+        db_user: str,
+        target_db_name: str,
+    ) -> None:
+        _ = (sql_stream, container_name, db_user, target_db_name)
+        raise DockerContainerNotFoundError()
+
+    monkeypatch.setattr(project_info_module, "docker_swap_in_db", fake_swap_in_db)
+
+    with pytest.raises(ProjectNotFoundError, match="Project 'demo' not found"):
+        ProjectInfo(name="demo").restore(backup_file)
 
 
 def test_restore_missing_file_raises_native_file_not_found(

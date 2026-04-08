@@ -5,12 +5,23 @@ import os
 import re
 import subprocess
 from contextlib import suppress
-from enum import StrEnum
 from time import sleep
-from typing import IO, ClassVar
+from typing import IO
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict
+from dr_llm.project.docker_project_metadata import (
+    ContainerStatus,
+    DockerProjectMetadata,
+)
+from dr_llm.project.errors import (
+    DockerCommandError,
+    DockerContainerConflictError,
+    DockerContainerNotFoundError,
+    DockerContainerNotRunningError,
+    DockerPortAllocatedError,
+    DockerUnavailableError,
+    ProjectError,
+)
 
 _VALID_PG_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
@@ -25,112 +36,6 @@ def _validate_pg_identifier(name: str, label: str = "identifier") -> str:
     return name
 
 
-class ContainerStatus(StrEnum):
-    RUNNING = "running"
-    STOPPED = "stopped"
-    UNKNOWN = "unknown"
-
-    @classmethod
-    def default(cls) -> ContainerStatus:
-        return cls.UNKNOWN
-
-    @classmethod
-    def from_docker(cls, status: str) -> ContainerStatus:
-        """Map a Docker container status string to ContainerStatus."""
-        if status == "running":
-            return cls.RUNNING
-        if status in ("exited", "created", "paused", "restarting", "removing", "dead"):
-            return cls.STOPPED
-        return cls.UNKNOWN
-
-
-class DockerProjectMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    inspect_delimiter: ClassVar[str] = "||"
-
-    name: str
-    port: int | None = None
-    created_at: str | None = None
-    status: ContainerStatus = ContainerStatus.UNKNOWN
-
-    @classmethod
-    def name_key(cls, label_prefix: str) -> str:
-        return f"{label_prefix}.name"
-
-    @classmethod
-    def port_key(cls, label_prefix: str) -> str:
-        return f"{label_prefix}.port"
-
-    @classmethod
-    def created_at_key(cls, label_prefix: str) -> str:
-        return f"{label_prefix}.created-at"
-
-    @classmethod
-    def from_inspect_output(
-        cls,
-        raw: str,
-        *,
-        label_prefix: str,
-    ) -> DockerProjectMetadata:
-        labels, status = cls._parse_inspect_output(raw)
-        return cls.from_labels_status(
-            labels=labels,
-            status=status,
-            label_prefix=label_prefix,
-        )
-
-    @classmethod
-    def from_labels_status(
-        cls,
-        *,
-        labels: dict[str, str],
-        status: str | None,
-        label_prefix: str,
-    ) -> DockerProjectMetadata:
-        return cls(
-            name=labels[cls.name_key(label_prefix)],
-            port=cls._parse_port(labels.get(cls.port_key(label_prefix))),
-            created_at=labels.get(cls.created_at_key(label_prefix)),
-            status=ContainerStatus.from_docker(status)
-            if status
-            else ContainerStatus.default(),
-        )
-
-    @classmethod
-    def _parse_inspect_output(cls, raw: str) -> tuple[dict[str, str], str | None]:
-        labels_raw, status_raw = raw.split(cls.inspect_delimiter, 1)
-        labels = json.loads(labels_raw)
-        status = json.loads(status_raw) if status_raw else None
-        return labels, status
-
-    @staticmethod
-    def _parse_port(value: str | None) -> int | None:
-        if value is None or value == "":
-            return None
-        return int(value)
-
-
-class DockerCommandError(RuntimeError):
-    """Base error for docker command failures."""
-
-
-class DockerContainerNotFoundError(DockerCommandError):
-    """Raised when a target container does not exist."""
-
-
-class DockerContainerNotRunningError(DockerCommandError):
-    """Raised when a target container exists but is not running."""
-
-
-class DockerContainerConflictError(DockerCommandError):
-    """Raised when Docker reports a container-name conflict."""
-
-
-class DockerPortAllocatedError(DockerCommandError):
-    """Raised when Docker cannot bind the requested host port."""
-
-
 STREAM_CHUNK_SIZE = 1024 * 1024
 
 
@@ -139,29 +44,27 @@ def _docker_error_detail(stderr: str) -> str:
     return detail or "unknown docker error"
 
 
-def _docker_error(args: tuple[str, ...], stderr: str) -> RuntimeError:
+def _docker_error(args: tuple[str, ...], stderr: str) -> ProjectError:
     lowered = stderr.lower()
     if (
         "cannot connect to the docker daemon" in lowered
         or "error during connect" in lowered
     ):
-        return RuntimeError(
-            "Docker is not available. Install Docker or start the daemon."
-        )
+        return DockerUnavailableError()
     if "no such container" in lowered:
-        return DockerContainerNotFoundError("Docker container not found.")
+        return DockerContainerNotFoundError()
     if "is not running" in lowered or "container is not running" in lowered:
-        return DockerContainerNotRunningError("Docker container is not running.")
+        return DockerContainerNotRunningError()
     if "container name" in lowered and "is already in use" in lowered:
-        return DockerContainerConflictError("Docker container name is already in use.")
+        return DockerContainerConflictError()
     if (
         "port is already allocated" in lowered
         or "bind: address already in use" in lowered
     ):
-        return DockerPortAllocatedError("Docker host port is already allocated.")
+        return DockerPortAllocatedError()
     command = " ".join(["docker", *args])
     detail = _docker_error_detail(stderr)
-    return RuntimeError(f"Docker command failed: {command}\n{detail}")
+    return DockerCommandError(f"Docker command failed: {command}\n{detail}")
 
 
 def wait_docker_ready(
@@ -183,8 +86,26 @@ def wait_docker_ready(
         )
         if result.returncode == 0:
             return ContainerStatus.RUNNING
+        lowered_stderr = result.stderr.lower()
+        if (
+            "no such container" in lowered_stderr
+            or "cannot connect to the docker daemon" in lowered_stderr
+            or "error during connect" in lowered_stderr
+        ):
+            raise _docker_error(
+                (
+                    "exec",
+                    container_name,
+                    "pg_isready",
+                    "-U",
+                    db_user,
+                    "-d",
+                    db_name,
+                ),
+                result.stderr.strip(),
+            )
         sleep(1)
-    raise RuntimeError(
+    raise DockerCommandError(
         f"Postgres in {container_name} did not become ready within {timeout_seconds}s"
     )
 
@@ -198,9 +119,7 @@ def call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[s
             check=False,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError(
-            "Docker is not available. Install Docker or start the daemon."
-        ) from exc
+        raise DockerUnavailableError() from exc
     if check and result.returncode != 0:
         raise _docker_error(args, result.stderr.strip())
     return result
@@ -219,9 +138,7 @@ def call_docker_bytes(
             check=False,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError(
-            "Docker is not available. Install Docker or start the daemon."
-        ) from exc
+        raise DockerUnavailableError() from exc
     if check and result.returncode != 0:
         stderr = result.stderr.decode(errors="replace").strip()
         raise _docker_error(args, stderr)
@@ -255,7 +172,18 @@ def get_docker_project_metadata(
         check=False,
     )
     if result.returncode != 0:
-        return None
+        error = _docker_error(
+            (
+                "inspect",
+                "--format",
+                "{{json .Config.Labels}}||{{json .State.Status}}",
+                container_name,
+            ),
+            result.stderr.strip(),
+        )
+        if isinstance(error, DockerContainerNotFoundError):
+            return None
+        raise error
     return DockerProjectMetadata.from_inspect_output(
         result.stdout.strip(),
         label_prefix=label_prefix,
@@ -378,9 +306,7 @@ def call_docker_psql_input_stream(
             stderr=subprocess.PIPE,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError(
-            "Docker is not available. Install Docker or start the daemon."
-        ) from exc
+        raise DockerUnavailableError() from exc
     assert process.stdin is not None
     try:
         _copy_binary_stream(sql_stream, process.stdin)
@@ -488,9 +414,7 @@ def call_docker_pg_dump_stream(
             stderr=subprocess.PIPE,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError(
-            "Docker is not available. Install Docker or start the daemon."
-        ) from exc
+        raise DockerUnavailableError() from exc
     assert process.stdout is not None
     try:
         _copy_binary_stream(process.stdout, output_stream)
@@ -529,6 +453,18 @@ def call_docker_list_labels(label_prefix: str) -> str:
         "{{json .}}",
         check=False,
     )
+    if result.returncode != 0:
+        raise _docker_error(
+            (
+                "ps",
+                "-a",
+                "--filter",
+                f"label={label_prefix}.name",
+                "--format",
+                "{{json .}}",
+            ),
+            result.stderr.strip(),
+        )
     return result.stdout.strip()
 
 

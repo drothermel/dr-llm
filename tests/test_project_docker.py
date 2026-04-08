@@ -7,6 +7,14 @@ from typing import IO, cast
 import pytest
 
 import dr_llm.project.docker as docker_module
+from dr_llm.project.docker_project_metadata import ContainerStatus
+from dr_llm.project.errors import DockerUnavailableError
+from dr_llm.project.errors import (
+    DockerContainerConflictError,
+    DockerContainerNotFoundError,
+    DockerContainerNotRunningError,
+    DockerPortAllocatedError,
+)
 
 
 @pytest.mark.parametrize(
@@ -14,34 +22,34 @@ import dr_llm.project.docker as docker_module
     [
         (
             "Cannot connect to the Docker daemon at unix:///var/run/docker.sock.",
-            RuntimeError,
+            DockerUnavailableError,
             "Docker is not available. Install Docker or start the daemon.",
         ),
         (
             "Error response from daemon: No such container: demo",
-            docker_module.DockerContainerNotFoundError,
+            DockerContainerNotFoundError,
             "Docker container not found.",
         ),
         (
             "Error response from daemon: Container abc123 is not running",
-            docker_module.DockerContainerNotRunningError,
+            DockerContainerNotRunningError,
             "Docker container is not running.",
         ),
         (
             'Conflict. The container name "/demo" is already in use by container abc123.',
-            docker_module.DockerContainerConflictError,
+            DockerContainerConflictError,
             "Docker container name is already in use.",
         ),
         (
             "Bind for 0.0.0.0:5500 failed: port is already allocated",
-            docker_module.DockerPortAllocatedError,
+            DockerPortAllocatedError,
             "Docker host port is already allocated.",
         ),
     ],
 )
 def test_docker_error_maps_common_failures(
     stderr: str,
-    expected_type: type[RuntimeError],
+    expected_type: type[Exception],
     expected_message: str,
 ) -> None:
     err = docker_module._docker_error(("ps",), stderr)
@@ -114,8 +122,84 @@ def test_wait_docker_ready_returns_immediately_on_success(
 
     status = docker_module.wait_docker_ready("demo", "postgres", "dr_llm")
 
-    assert status == docker_module.ContainerStatus.RUNNING
+    assert status == ContainerStatus.RUNNING
     assert sleep_calls == []
+
+
+def test_wait_docker_ready_raises_missing_container_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleep_calls: list[int] = []
+
+    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        _ = check
+        assert args == (
+            "exec",
+            "demo",
+            "pg_isready",
+            "-U",
+            "postgres",
+            "-d",
+            "dr_llm",
+        )
+        return subprocess.CompletedProcess(
+            args=["docker", *args],
+            returncode=1,
+            stdout="",
+            stderr="Error response from daemon: No such container: demo",
+        )
+
+    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+    monkeypatch.setattr(docker_module, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    with pytest.raises(DockerContainerNotFoundError):
+        docker_module.wait_docker_ready("demo", "postgres", "dr_llm")
+
+    assert sleep_calls == []
+
+
+def test_get_docker_project_metadata_raises_docker_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        _ = check
+        assert args == (
+            "inspect",
+            "--format",
+            "{{json .Config.Labels}}||{{json .State.Status}}",
+            "demo",
+        )
+        return subprocess.CompletedProcess(
+            args=["docker", *args],
+            returncode=1,
+            stdout="",
+            stderr="Cannot connect to the Docker daemon at unix:///var/run/docker.sock.",
+        )
+
+    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+
+    with pytest.raises(DockerUnavailableError):
+        docker_module.get_docker_project_metadata("demo", label_prefix="dr-llm.project")
+
+
+def test_get_docker_project_metadata_returns_none_for_missing_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        _ = check
+        return subprocess.CompletedProcess(
+            args=["docker", *args],
+            returncode=1,
+            stdout="",
+            stderr="Error response from daemon: No such container: demo",
+        )
+
+    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+
+    assert (
+        docker_module.get_docker_project_metadata("demo", label_prefix="dr-llm.project")
+        is None
+    )
 
 
 def test_call_docker_destroy_attempts_volume_cleanup_before_raising(
@@ -141,7 +225,7 @@ def test_call_docker_destroy_attempts_volume_cleanup_before_raising(
 
     monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
 
-    with pytest.raises(docker_module.DockerContainerNotFoundError):
+    with pytest.raises(DockerContainerNotFoundError):
         docker_module.call_docker_destroy("demo", "demo-volume")
 
     assert calls == [

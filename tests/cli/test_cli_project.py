@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 import dr_llm.cli.project as project_cli
 from dr_llm.cli import app
+from dr_llm.project.errors import ProjectError
 
 runner = CliRunner()
 
@@ -183,6 +184,39 @@ def test_project_use_still_looks_up_metadata(
         result.stdout.strip()
         == "export DR_LLM_DATABASE_URL=postgresql://postgres:postgres@localhost:5500/dr_llm"
     )
+
+
+def test_project_create_reports_typed_project_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeProjectInfo:
+        @classmethod
+        def create_new(cls, name: str) -> object:
+            _ = name
+            raise ProjectError("typed project failure")
+
+    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+
+    result = runner.invoke(app, ["project", "create", "demo"])
+
+    assert result.exit_code == 1
+    assert "typed project failure" in result.output
+
+
+def test_project_list_reports_typed_project_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeProjectInfo:
+        @classmethod
+        def list_all(cls) -> list[object]:
+            raise ProjectError("docker unavailable")
+
+    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+
+    result = runner.invoke(app, ["project", "list"])
+
+    assert result.exit_code == 1
+    assert "docker unavailable" in result.output
 
 
 def test_global_project_option_is_removed() -> None:

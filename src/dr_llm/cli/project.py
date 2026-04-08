@@ -6,6 +6,7 @@ from pathlib import Path
 
 import typer
 
+from dr_llm.project.errors import ProjectError
 from dr_llm.project.project_info import ProjectInfo
 
 project_app = typer.Typer(help="Manage isolated dr-llm project databases")
@@ -20,7 +21,7 @@ def project_create(
     """Create a new project with its own Postgres container and persistent volume."""
     try:
         project_info = ProjectInfo.create_new(name)
-    except RuntimeError as exc:
+    except ProjectError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
     typer.echo(
@@ -31,7 +32,11 @@ def project_create(
 @project_app.command("list")
 def project_list() -> None:
     """List all dr-llm projects."""
-    projects = ProjectInfo.list_all()
+    try:
+        projects = ProjectInfo.list_all()
+    except ProjectError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
     if not projects:
         typer.echo("No projects found.")
         return
@@ -53,7 +58,7 @@ def project_start(
     try:
         project_info = ProjectInfo(name=name)
         project_info.start()
-    except RuntimeError as exc:
+    except ProjectError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
     typer.secho(
@@ -69,7 +74,7 @@ def project_stop(
     try:
         project_info = ProjectInfo(name=name)
         project_info.stop()
-    except RuntimeError as exc:
+    except ProjectError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
     typer.secho(f"Project '{name}' stopped. Data is preserved.", fg=typer.colors.GREEN)
@@ -82,7 +87,7 @@ def project_use(
     """Print the export command to set DR_LLM_DATABASE_URL for a project."""
     try:
         project_info = ProjectInfo.get_by_name(name)
-    except RuntimeError as exc:
+    except ProjectError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
     if not project_info.running:
@@ -113,7 +118,7 @@ def project_destroy(
     try:
         project_info = ProjectInfo(name=name)
         project_info.destroy()
-    except RuntimeError as exc:
+    except ProjectError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
     typer.secho(
@@ -130,7 +135,7 @@ def project_backup(
     try:
         project_info = ProjectInfo(name=name)
         path = project_info.backup(output_dir)
-    except (RuntimeError, FileNotFoundError) as exc:
+    except (ProjectError, FileNotFoundError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
     typer.secho(f"Backup saved to {path}", fg=typer.colors.GREEN)
@@ -144,7 +149,7 @@ def project_restore(
     try:
         project_info = ProjectInfo(name=name)
         project_info.restore(backup_file)
-    except (RuntimeError, FileNotFoundError, subprocess.CalledProcessError) as exc:
+    except (ProjectError, FileNotFoundError, subprocess.CalledProcessError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
     typer.secho(f"Restored '{name}' from {backup_file}", fg=typer.colors.GREEN)
