@@ -62,6 +62,7 @@ class PendingSample(BaseModel):
                 f"{list(schema.key_column_names)!r}; missing: {missing!r}"
             )
         dumped = self.model_dump(
+            mode="json",
             by_alias=True,
             exclude={"worker_id", "lease_expires_at", "attempt_count", "created_at"},
         )

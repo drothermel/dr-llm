@@ -62,7 +62,11 @@ class PoolSample(BaseModel):
                 f"Missing key columns for PoolSample: {missing}. "
                 f"Expected: {set(schema.key_column_names)}"
             )
-        dumped = self.model_dump(by_alias=True, exclude={"created_at"})
+        dumped = self.model_dump(
+            mode="json",
+            by_alias=True,
+            exclude={"created_at"},
+        )
         row: dict[str, Any] = {}
         for col_name, value in dumped.items():
             if col_name == "key_values":

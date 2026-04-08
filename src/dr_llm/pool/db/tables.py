@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     text,
 )
+from sqlalchemy.engine import Connection
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 
 from dr_llm.pool.db.schema import ColumnType, PoolSchema
@@ -90,6 +91,12 @@ class PoolTables:
             self.pending.c.attempt_count,
             self.pending.c.created_at,
         ]
+
+    def ensure_indexes(self, bind: Connection) -> None:
+        """Backfill any missing named indexes for runtime-owned pool tables."""
+        for table in self.all_tables:
+            for index in table.indexes:
+                index.create(bind=bind, checkfirst=True)
 
     def _build_samples_table(self) -> Table:
         tbl = Table(

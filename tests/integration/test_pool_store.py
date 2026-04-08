@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Generator
 from typing import Any
+from uuid import uuid4
 
 import psycopg
 import pytest
@@ -51,6 +52,21 @@ def _drop_tables(dsn: str) -> None:
 
 def _get_dsn() -> str | None:
     return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv("DR_LLM_DATABASE_URL")
+
+
+def _index_exists(dsn: str, *, index_name: str) -> bool:
+    with psycopg.connect(dsn) as conn:
+        exists = conn.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND indexname = %s
+            )
+            """,
+            [index_name],
+        ).fetchone()
+    assert exists is not None
+    return bool(exists[0])
 
 
 @pytest.fixture(scope="module")
@@ -137,6 +153,70 @@ def test_bulk_insert(pool_store: PoolStore) -> None:
     result = pool_store.insert_samples(samples)
     assert result.inserted == 5
     assert result.skipped == 0
+
+
+@pytest.mark.integration
+def test_init_schema_backfills_missing_unique_indexes() -> None:
+    dsn = _get_dsn()
+    if not dsn:
+        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+
+    schema = PoolSchema(
+        name=f"itest_idx_{uuid4().hex[:8]}",
+        key_columns=[
+            KeyColumn(name="dim_a"),
+            KeyColumn(name="dim_b", type=ColumnType.integer),
+        ],
+    )
+    runtime = DbRuntime(
+        DbConfig(
+            dsn=dsn,
+            min_pool_size=1,
+            max_pool_size=2,
+            application_name="pool_tests_index_backfill",
+        )
+    )
+    try:
+        store = PoolStore(schema, runtime)
+        store.init_schema()
+        store.insert_sample(
+            PoolSample(
+                key_values={"dim_a": "alpha", "dim_b": 1},
+                sample_idx=0,
+            )
+        )
+
+        index_name = f"uq_{schema.samples_table}_cell"
+        with psycopg.connect(dsn) as conn:
+            conn.execute(sql.SQL("DROP INDEX IF EXISTS {}").format(sql.Identifier(index_name)))
+            conn.commit()
+        assert _index_exists(dsn, index_name=index_name) is False
+
+        fresh_store = PoolStore(schema, runtime)
+        fresh_store.init_schema()
+
+        assert _index_exists(dsn, index_name=index_name) is True
+        assert fresh_store.insert_sample(
+            PoolSample(
+                key_values={"dim_a": "alpha", "dim_b": 1},
+                sample_idx=0,
+            )
+        ) is False
+    finally:
+        with psycopg.connect(dsn) as conn:
+            for table_name in (
+                schema.metadata_table,
+                schema.claims_table,
+                schema.pending_table,
+                schema.samples_table,
+            ):
+                conn.execute(
+                    sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
+                        sql.Identifier("public", table_name)
+                    )
+                )
+            conn.commit()
+        runtime.close()
 
 
 # --- Acquire ---

@@ -74,6 +74,7 @@ class PoolStore:
                     tables=self._tables.all_tables,
                     checkfirst=True,
                 )
+                self._tables.ensure_indexes(conn)
             self._schema_initialized = True
 
     # --- Sample CRUD ---
