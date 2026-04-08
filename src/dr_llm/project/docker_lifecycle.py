@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
-from time import sleep
+from time import monotonic, sleep
+
+import psycopg
 
 from dr_llm.project.docker_project_metadata import (
     ContainerStatus,
@@ -45,6 +47,48 @@ def wait_docker_ready(
     raise DockerCommandError(
         f"Postgres in {container_name} did not become ready within {timeout_seconds}s"
     )
+
+
+def wait_dsn_ready(
+    dsn: str,
+    *,
+    timeout_seconds: int = 30,
+    poll_interval_s: float = 0.5,
+    connect_timeout_s: int = 2,
+) -> None:
+    """Probe the host-side Postgres TCP listener until ``SELECT 1`` succeeds.
+
+    Complements :func:`wait_docker_ready`. ``pg_isready`` runs *inside* the
+    container against the local Unix socket and reports ready as soon as
+    the postmaster is up — but the host-mapped TCP listener can still be
+    bouncing connections during init (e.g. while the postmaster finishes
+    user/role setup or recovery). Callers that hand the published DSN to
+    SQLAlchemy/psycopg right after :func:`wait_docker_ready` returns can
+    hit a "server closed the connection unexpectedly" error.
+
+    This helper opens a *fresh* psycopg connection to ``dsn`` and runs
+    ``SELECT 1``, retrying every ``poll_interval_s`` until either the probe
+    succeeds or ``timeout_seconds`` elapses. Use it after
+    :func:`wait_docker_ready` so the container is known alive before we
+    keep banging on the TCP listener.
+    """
+    deadline = monotonic() + timeout_seconds
+    last_error: psycopg.OperationalError | None = None
+    while True:
+        try:
+            with psycopg.connect(dsn, connect_timeout=connect_timeout_s) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                    cur.fetchone()
+            return
+        except psycopg.OperationalError as exc:
+            last_error = exc
+        if monotonic() >= deadline:
+            raise DockerCommandError(
+                f"Postgres did not accept SQL connections at {dsn} within "
+                f"{timeout_seconds}s: {last_error}"
+            )
+        sleep(poll_interval_s)
 
 
 def create_project_container(

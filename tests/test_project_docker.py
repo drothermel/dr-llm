@@ -294,6 +294,117 @@ def test_wait_docker_ready_raises_missing_container_immediately(
     assert sleep_calls == []
 
 
+class _FakeCursor:
+    def __init__(self) -> None:
+        self.executed: list[str] = []
+
+    def execute(self, sql: str) -> None:
+        self.executed.append(sql)
+
+    def fetchone(self) -> tuple[int]:
+        return (1,)
+
+    def __enter__(self) -> _FakeCursor:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+
+class _FakeConnection:
+    def __init__(self) -> None:
+        self.cursor_obj = _FakeCursor()
+
+    def cursor(self) -> _FakeCursor:
+        return self.cursor_obj
+
+    def __enter__(self) -> _FakeConnection:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+
+def test_wait_dsn_ready_returns_immediately_on_first_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleep_calls: list[float] = []
+    connect_calls: list[tuple[str, int]] = []
+
+    def fake_connect(dsn: str, *, connect_timeout: int = 0) -> _FakeConnection:
+        connect_calls.append((dsn, connect_timeout))
+        return _FakeConnection()
+
+    monkeypatch.setattr(docker_lifecycle.psycopg, "connect", fake_connect)
+    monkeypatch.setattr(
+        docker_lifecycle, "sleep", lambda seconds: sleep_calls.append(seconds)
+    )
+
+    docker_lifecycle.wait_dsn_ready(
+        "postgresql://postgres:postgres@localhost:5500/dr_llm"
+    )
+
+    assert connect_calls == [
+        ("postgresql://postgres:postgres@localhost:5500/dr_llm", 2)
+    ]
+    assert sleep_calls == []
+
+
+def test_wait_dsn_ready_retries_until_postgres_accepts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three OperationalErrors followed by a successful connect should
+    return cleanly without raising."""
+    import psycopg
+
+    sleep_calls: list[float] = []
+    attempts = {"count": 0}
+
+    def fake_connect(dsn: str, *, connect_timeout: int = 0) -> _FakeConnection:
+        _ = (dsn, connect_timeout)
+        attempts["count"] += 1
+        if attempts["count"] < 4:
+            raise psycopg.OperationalError("server closed the connection")
+        return _FakeConnection()
+
+    monkeypatch.setattr(docker_lifecycle.psycopg, "connect", fake_connect)
+    monkeypatch.setattr(
+        docker_lifecycle, "sleep", lambda seconds: sleep_calls.append(seconds)
+    )
+
+    docker_lifecycle.wait_dsn_ready(
+        "postgresql://postgres:postgres@localhost:5500/dr_llm",
+        poll_interval_s=0.01,
+    )
+
+    assert attempts["count"] == 4
+    # 3 sleeps (after each of the 3 failed attempts; success skips sleep).
+    assert sleep_calls == [0.01, 0.01, 0.01]
+
+
+def test_wait_dsn_ready_raises_after_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import psycopg
+
+    monotonic_values = iter([0.0, 0.0, 1.0, 2.0, 3.0, 4.0])
+
+    def fake_connect(dsn: str, *, connect_timeout: int = 0) -> _FakeConnection:
+        _ = (dsn, connect_timeout)
+        raise psycopg.OperationalError("server closed the connection")
+
+    monkeypatch.setattr(docker_lifecycle.psycopg, "connect", fake_connect)
+    monkeypatch.setattr(docker_lifecycle, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(docker_lifecycle, "monotonic", lambda: next(monotonic_values))
+
+    with pytest.raises(DockerCommandError, match="did not accept SQL connections"):
+        docker_lifecycle.wait_dsn_ready(
+            "postgresql://postgres:postgres@localhost:5500/dr_llm",
+            timeout_seconds=2,
+            poll_interval_s=0.01,
+        )
+
+
 def test_get_docker_project_metadata_raises_docker_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

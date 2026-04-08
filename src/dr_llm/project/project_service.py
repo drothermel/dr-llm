@@ -16,6 +16,7 @@ from dr_llm.project.docker_lifecycle import (
     call_docker_stop,
     create_project_container,
     wait_docker_ready,
+    wait_dsn_ready,
 )
 from dr_llm.project.docker_project_metadata import (
     ContainerStatus,
@@ -146,11 +147,17 @@ def _create_container_with_port_retry(
 
 def _wait_ready_or_destroy(project: ProjectInfo) -> ContainerStatus:
     try:
-        return wait_docker_ready(
+        status = wait_docker_ready(
             container_name=project.container_name,
             db_user=ProjectInfo.db_user,
             db_name=ProjectInfo.db_name,
         )
+        # Defeat the startup race where pg_isready returns OK against the
+        # in-container Unix socket while the host-mapped TCP listener is
+        # still bouncing connections during init.
+        assert project.dsn is not None, "newly-created project must have a port"
+        wait_dsn_ready(project.dsn)
+        return status
     except Exception as exc:
         _destroy_noting_cleanup_failure(project, original_exc=exc)
         raise
@@ -180,7 +187,10 @@ def start_project(name: str) -> ProjectInfo:
         )
     except DockerContainerNotFoundError as exc:
         raise ProjectNotFoundError(f"Project '{name}' not found") from exc
-    return get_project(name)
+    project = get_project(name)
+    if project.dsn is not None:
+        wait_dsn_ready(project.dsn)
+    return project
 
 
 def stop_project(name: str) -> None:
