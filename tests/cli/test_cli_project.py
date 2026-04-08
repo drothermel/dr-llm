@@ -7,27 +7,23 @@ from typer.testing import CliRunner
 
 import dr_llm.cli.project as project_cli
 from dr_llm.cli import app
+from dr_llm.project.docker_project_metadata import ContainerStatus
 from dr_llm.project.errors import ProjectError
+from dr_llm.project.project_info import ProjectInfo
 
 runner = CliRunner()
 
 
-def test_project_start_does_not_lookup_project_first(
+def test_project_start_invokes_service_and_reports_port(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     started: list[str] = []
 
-    class FakeProjectInfo:
-        @classmethod
-        def get_by_name(cls, name: str) -> FakeProjectInfo:
-            raise AssertionError(f"unexpected lookup for {name}")
+    def fake_start_project(name: str) -> ProjectInfo:
+        started.append(name)
+        return ProjectInfo(name=name, port=5500, status=ContainerStatus.RUNNING)
 
-        @classmethod
-        def start(cls, name: str) -> object:
-            started.append(name)
-            return type("StartedProject", (), {"port": 5500})()
-
-    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+    monkeypatch.setattr(project_cli, "start_project", fake_start_project)
 
     result = runner.invoke(app, ["project", "start", "demo"])
 
@@ -36,21 +32,15 @@ def test_project_start_does_not_lookup_project_first(
     assert result.stdout.strip() == "Project 'demo' is running on port 5500"
 
 
-def test_project_stop_does_not_lookup_project_first(
+def test_project_stop_invokes_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stopped: list[str] = []
 
-    class FakeProjectInfo:
-        @classmethod
-        def get_by_name(cls, name: str) -> FakeProjectInfo:
-            raise AssertionError(f"unexpected lookup for {name}")
+    def fake_stop_project(name: str) -> None:
+        stopped.append(name)
 
-        @classmethod
-        def stop(cls, name: str) -> None:
-            stopped.append(name)
-
-    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+    monkeypatch.setattr(project_cli, "stop_project", fake_stop_project)
 
     result = runner.invoke(app, ["project", "stop", "demo"])
 
@@ -59,21 +49,15 @@ def test_project_stop_does_not_lookup_project_first(
     assert result.stdout.strip() == "Project 'demo' stopped. Data is preserved."
 
 
-def test_project_destroy_does_not_lookup_project_first(
+def test_project_destroy_invokes_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     destroyed: list[str] = []
 
-    class FakeProjectInfo:
-        @classmethod
-        def get_by_name(cls, name: str) -> FakeProjectInfo:
-            raise AssertionError(f"unexpected lookup for {name}")
+    def fake_destroy_project(name: str) -> None:
+        destroyed.append(name)
 
-        @classmethod
-        def destroy(cls, name: str) -> None:
-            destroyed.append(name)
-
-    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+    monkeypatch.setattr(project_cli, "destroy_project", fake_destroy_project)
 
     result = runner.invoke(
         app,
@@ -88,25 +72,18 @@ def test_project_destroy_does_not_lookup_project_first(
     )
 
 
-def test_project_backup_does_not_lookup_project_first(
+def test_project_backup_invokes_service(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     backup_path = tmp_path / "demo.sql.gz"
-    backed_up: list[str] = []
+    backed_up: list[tuple[str, Path | None]] = []
 
-    class FakeProjectInfo:
-        @classmethod
-        def get_by_name(cls, name: str) -> FakeProjectInfo:
-            raise AssertionError(f"unexpected lookup for {name}")
+    def fake_backup_project(name: str, output_dir: Path | None = None) -> Path:
+        backed_up.append((name, output_dir))
+        return backup_path
 
-        @classmethod
-        def backup(cls, name: str, output_dir: Path | None = None) -> Path:
-            assert output_dir == tmp_path
-            backed_up.append(name)
-            return backup_path
-
-    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+    monkeypatch.setattr(project_cli, "backup_project", fake_backup_project)
 
     result = runner.invoke(
         app,
@@ -114,11 +91,11 @@ def test_project_backup_does_not_lookup_project_first(
     )
 
     assert result.exit_code == 0
-    assert backed_up == ["demo"]
+    assert backed_up == [("demo", tmp_path)]
     assert result.stdout.strip() == f"Backup saved to {backup_path}"
 
 
-def test_project_restore_does_not_lookup_project_first(
+def test_project_restore_invokes_service(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -126,16 +103,10 @@ def test_project_restore_does_not_lookup_project_first(
     backup_file = tmp_path / "demo.sql.gz"
     backup_file.write_bytes(b"")
 
-    class FakeProjectInfo:
-        @classmethod
-        def get_by_name(cls, name: str) -> FakeProjectInfo:
-            raise AssertionError(f"unexpected lookup for {name}")
+    def fake_restore_project(name: str, backup_path: Path) -> None:
+        restored.append((name, backup_path))
 
-        @classmethod
-        def restore(cls, name: str, backup_path: Path) -> None:
-            restored.append((name, backup_path))
-
-    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+    monkeypatch.setattr(project_cli, "restore_project", fake_restore_project)
 
     result = runner.invoke(
         app,
@@ -147,25 +118,16 @@ def test_project_restore_does_not_lookup_project_first(
     assert result.stdout.strip() == f"Restored 'demo' from {backup_file}"
 
 
-def test_project_use_still_looks_up_metadata(
+def test_project_use_prints_export_for_running_project(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     looked_up: list[str] = []
 
-    class FakeProjectInfo:
-        @classmethod
-        def get_by_name(cls, name: str) -> object:
-            looked_up.append(name)
-            return type(
-                "LookupResult",
-                (),
-                {
-                    "running": True,
-                    "dsn": "postgresql://postgres:postgres@localhost:5500/dr_llm",
-                },
-            )()
+    def fake_get_project(name: str) -> ProjectInfo:
+        looked_up.append(name)
+        return ProjectInfo(name=name, port=5500, status=ContainerStatus.RUNNING)
 
-    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+    monkeypatch.setattr(project_cli, "get_project", fake_get_project)
 
     result = runner.invoke(app, ["project", "use", "demo"])
 
@@ -180,13 +142,11 @@ def test_project_use_still_looks_up_metadata(
 def test_project_create_reports_typed_project_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class FakeProjectInfo:
-        @classmethod
-        def create_new(cls, name: str) -> object:
-            _ = name
-            raise ProjectError("typed project failure")
+    def fake_create_project(name: str) -> ProjectInfo:
+        _ = name
+        raise ProjectError("typed project failure")
 
-    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+    monkeypatch.setattr(project_cli, "create_project", fake_create_project)
 
     result = runner.invoke(app, ["project", "create", "demo"])
 
@@ -197,12 +157,10 @@ def test_project_create_reports_typed_project_errors(
 def test_project_list_reports_typed_project_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class FakeProjectInfo:
-        @classmethod
-        def list_all(cls) -> list[object]:
-            raise ProjectError("docker unavailable")
+    def fake_list_projects() -> list[ProjectInfo]:
+        raise ProjectError("docker unavailable")
 
-    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+    monkeypatch.setattr(project_cli, "list_projects", fake_list_projects)
 
     result = runner.invoke(app, ["project", "list"])
 
@@ -214,15 +172,11 @@ def test_project_backup_reports_file_not_found_errors(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    class FakeProjectInfo:
-        def __init__(self, name: str, **_: object) -> None:
-            self.name = name
+    def fake_backup_project(name: str, output_dir: Path | None = None) -> Path:
+        _ = (name, output_dir)
+        raise FileNotFoundError("missing backup dir")
 
-        def backup(self, output_dir: Path | None = None) -> Path:
-            _ = output_dir
-            raise FileNotFoundError("missing backup dir")
-
-    monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
+    monkeypatch.setattr(project_cli, "backup_project", fake_backup_project)
 
     result = runner.invoke(
         app,

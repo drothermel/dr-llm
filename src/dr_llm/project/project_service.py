@@ -18,6 +18,7 @@ from dr_llm.project.docker import (
     wait_docker_ready,
 )
 from dr_llm.project.docker_project_metadata import (
+    ContainerStatus,
     DockerProjectCreateMetadata,
     DockerProjectMetadata,
 )
@@ -91,13 +92,18 @@ def list_projects() -> list[ProjectInfo]:
 
 
 def create_project(name: str) -> ProjectInfo:
+    project = _allocate_port_and_create_container(name)
+    project.status = _wait_ready_or_destroy(project)
+    return project
+
+
+def _allocate_port_and_create_container(name: str) -> ProjectInfo:
     claimed_ports = {
         metadata.port
         for metadata in get_all_docker_project_metadata()
         if metadata.port is not None
     }
     created_at = datetime.now(UTC)
-
     while True:
         port = _find_available_port(claimed_ports)
         if _port_has_listener(port):
@@ -119,29 +125,36 @@ def create_project(name: str) -> ProjectInfo:
                 ),
             )
         except DockerContainerConflictError as exc:
-            raise ProjectAlreadyExistsError(
-                f"Project '{name}' already exists"
-            ) from exc
+            raise ProjectAlreadyExistsError(f"Project '{name}' already exists") from exc
         except DockerPortAllocatedError:
             claimed_ports.add(port)
             continue
-
-        try:
-            project.status = wait_docker_ready(
-                container_name=project.container_name,
-                db_user=ProjectInfo.db_user,
-                db_name=ProjectInfo.db_name,
-            )
-        except Exception as exc:
-            try:
-                call_docker_destroy(project.container_name, project.volume_name)
-            except Exception as cleanup_exc:
-                exc.add_note(
-                    "Cleanup after failed project creation also failed: "
-                    f"{cleanup_exc}"
-                )
-            raise
         return project
+
+
+def _wait_ready_or_destroy(project: ProjectInfo) -> ContainerStatus:
+    try:
+        return wait_docker_ready(
+            container_name=project.container_name,
+            db_user=ProjectInfo.db_user,
+            db_name=ProjectInfo.db_name,
+        )
+    except Exception as exc:
+        _destroy_noting_cleanup_failure(project, original_exc=exc)
+        raise
+
+
+def _destroy_noting_cleanup_failure(
+    project: ProjectInfo,
+    *,
+    original_exc: BaseException,
+) -> None:
+    try:
+        call_docker_destroy(project.container_name, project.volume_name)
+    except Exception as cleanup_exc:
+        original_exc.add_note(
+            f"Cleanup after failed project creation also failed: {cleanup_exc}"
+        )
 
 
 def start_project(name: str) -> ProjectInfo:
@@ -206,9 +219,7 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
 
 def restore_project(name: str, backup_file: Path) -> None:
     if backup_file.suffixes[-2:] != [".sql", ".gz"]:
-        raise ValueError(
-            "Restore only supports gzip-compressed SQL backups (.sql.gz)."
-        )
+        raise ValueError("Restore only supports gzip-compressed SQL backups (.sql.gz).")
 
     handle = ProjectInfo(name=name)
     with gzip.open(backup_file, "rb") as sql_stream:
