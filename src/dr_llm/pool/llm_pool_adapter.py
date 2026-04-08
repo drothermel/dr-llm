@@ -36,8 +36,7 @@ def make_llm_process_fn(
 
     Expects pending samples whose ``payload`` contains serialized
     :class:`LlmConfig` (under *llm_config_key*) and ``list[Message]``
-    (under *prompt_key*), as produced by :func:`seed_pending` with rich
-    grid values.
+    (under *prompt_key*).
     """
 
     def _process(sample: PendingSample) -> dict[str, Any]:

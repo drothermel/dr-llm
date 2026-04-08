@@ -300,4 +300,3 @@ def test_pending_and_db_packages_have_no_re_exports() -> None:
     assert not hasattr(pool_db, "RunStatus")
     assert not hasattr(pending, "PendingSample")
     assert not hasattr(pending, "PendingStore")
-    assert not hasattr(pending, "seed_pending")

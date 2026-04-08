@@ -92,18 +92,24 @@ print(response.text)
 
 ### Filling a pool with LLM calls (requires Docker)
 
-The recommended way to populate a pool: define `LlmConfig`s and prompts, seed the pending queue, and let parallel workers make the actual provider calls. Docker is used to auto-manage a Postgres project.
+The recommended way to populate a pool: define `LlmConfig`s and prompts,
+manually construct `PendingSample` rows whose payloads carry the serialized
+config and messages, insert them into the pending queue, and let parallel
+workers make the actual provider calls. Docker is used to auto-manage a
+Postgres project.
 
 ```python
+from itertools import product
+
 from dr_llm import DbConfig, KeyColumn, PoolSchema, PoolStore
-from dr_llm.pool.db.runtime import DbRuntime
-from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
-from dr_llm.pool.pending.backend import PoolPendingBackend, PoolPendingBackendConfig
-from dr_llm.pool.pending.fill_pending import seed_pending
-from dr_llm.project.project_service import create_project
 from dr_llm.llm import build_default_registry
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import Message
+from dr_llm.pool.db.runtime import DbRuntime
+from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
+from dr_llm.pool.pending.backend import PoolPendingBackend, PoolPendingBackendConfig
+from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.project.project_service import create_project
 from dr_llm.workers import WorkerConfig, start_workers
 
 # 1. Create a Docker-managed Postgres project
@@ -121,12 +127,10 @@ store.ensure_schema()
 # 3. Define configs and prompts
 llm_configs = {
     "gpt-4.1-mini": LlmConfig(
-        provider="openai", model="gpt-4.1-mini",
-        max_tokens=64,
+        provider="openai", model="gpt-4.1-mini", max_tokens=64,
     ),
     "gemini-flash": LlmConfig(
-        provider="google", model="gemini-2.5-flash",
-        max_tokens=64,
+        provider="google", model="gemini-2.5-flash", max_tokens=64,
     ),
 }
 prompts = {
@@ -134,12 +138,30 @@ prompts = {
     "math": [Message(role="user", content="What is 17 * 23?")],
 }
 
-# 4. Seed pending queue — cross product of configs × prompts × n
-seed_pending(store, key_grid={"llm_config": llm_configs, "prompt": prompts}, n=2)
-# Creates 2×2×2 = 8 pending samples, each with the full LlmConfig and
-# prompt messages serialized in its payload
+# 4. Manually build PendingSample rows for the (llm_config x prompt) cross
+#    product. Each payload carries the serialized LlmConfig and messages so
+#    workers can reconstruct the request.
+samples_per_cell = 2
+pending_samples: list[PendingSample] = []
+for cfg_id, prompt_id in product(llm_configs, prompts):
+    payload = {
+        "llm_config": llm_configs[cfg_id].model_dump(mode="json"),
+        "prompt": [m.model_dump(mode="json") for m in prompts[prompt_id]],
+    }
+    for sample_idx in range(samples_per_cell):
+        pending_samples.append(
+            PendingSample(
+                key_values={"llm_config": cfg_id, "prompt": prompt_id},
+                sample_idx=sample_idx,
+                payload=payload,
+            )
+        )
 
-# 5. Start workers — they call the real providers
+# 5. Insert the pending rows in one batch
+store.pending.insert_many(pending_samples, ignore_conflicts=True)
+# 2 configs × 2 prompts × 2 samples = 8 pending rows
+
+# 6. Start workers — they call the real providers
 registry = build_default_registry()
 process_fn = make_llm_process_fn(registry)
 controller = start_workers(
@@ -154,7 +176,7 @@ controller = start_workers(
     ),
 )
 
-# 6. Wait for completion
+# 7. Wait for completion
 import time
 while True:
     snap = controller.snapshot()
@@ -165,7 +187,7 @@ while True:
 controller.stop()
 controller.join()
 
-# 7. Acquire samples (no-replacement within a run)
+# 8. Acquire samples (no-replacement within a run)
 from dr_llm.pool.models import AcquireQuery
 result = store.acquire(AcquireQuery(
     run_id="eval_run_1",
@@ -173,7 +195,7 @@ result = store.acquire(AcquireQuery(
     n=2,
 ))
 
-# 8. Clean up when done
+# 9. Clean up when done
 registry.close()
 runtime.close()
 project.destroy()
@@ -240,7 +262,7 @@ uv run pytest tests/ -v -m "not integration"
 ./scripts/run-tests-local.sh
 ```
 
-`pytest` now defaults to `pytest-xdist`, so `uv run pytest tests/ -v -m "not integration"` runs the safe non-integration suite in parallel. `run-tests-local.sh` forces `-n 0`, auto-creates a temporary Docker Postgres project, runs `pytest -m integration`, and destroys it on exit. Pass extra pytest args for targeted runs: `./scripts/run-tests-local.sh -k test_pool_fill`.
+`pytest` now defaults to `pytest-xdist`, so `uv run pytest tests/ -v -m "not integration"` runs the safe non-integration suite in parallel. `run-tests-local.sh` forces `-n 0`, auto-creates a temporary Docker Postgres project, runs `pytest -m integration`, and destroys it on exit. Pass extra pytest args for targeted runs: `./scripts/run-tests-local.sh -k test_pool_store`.
 
 ## Demo Scripts
 
@@ -266,7 +288,7 @@ Creates a project, queries every available provider, stores results in a typed p
 uv run python scripts/demo-pool-fill.py
 ```
 
-Auto-creates a Docker Postgres project, seeds a pending queue for an `(llm_config, prompt)` pool using `LlmConfig` and `Message` objects, starts workers that make real LLM calls via `make_llm_process_fn`, prints progress, shows response snippets, and destroys the project on exit. Pass `--dsn` to use an existing database instead. Run with `--help` for options.
+Auto-creates a Docker Postgres project, manually constructs `PendingSample` rows for an `(llm_config, prompt)` pool with serialized `LlmConfig` and `Message` payloads, inserts them via `store.pending.insert_many`, starts workers that make real LLM calls via `make_llm_process_fn`, prints progress, shows response snippets, and destroys the project on exit. Pass `--dsn` to use an existing database instead. Run with `--help` for options.
 
 ### Reasoning and effort demo (live API / CLI checks)
 

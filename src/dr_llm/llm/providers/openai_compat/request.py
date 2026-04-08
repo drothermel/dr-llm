@@ -10,6 +10,9 @@ from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
 from dr_llm.llm.providers.openai_compat.reasoning import OpenAICompatReasoningConfig
+from dr_llm.llm.providers.openai_compat.thinking import (
+    openai_uses_max_completion_tokens,
+)
 
 if TYPE_CHECKING:
     from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
@@ -90,6 +93,12 @@ class OpenAICompatRequest(BaseModel):
         payload = self.model_dump(
             mode="json", exclude_none=True, exclude={"extra_body"}
         )
+        if (
+            self.provider == "openai"
+            and "max_tokens" in payload
+            and openai_uses_max_completion_tokens(self.model)
+        ):
+            payload["max_completion_tokens"] = payload.pop("max_tokens")
         overlapping_keys = sorted(set(self.extra_body) & set(payload))
         if overlapping_keys:
             conflicts = ", ".join(overlapping_keys)
