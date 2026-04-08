@@ -62,14 +62,22 @@ class PoolStore:
     def metadata(self) -> MetadataStore:
         return self._metadata
 
-    def init_schema(self) -> None:
+    def init_schema(
+        self,
+        *,
+        allow_destructive_cleanup: bool = False,
+        dedicated_schema: str | None = None,
+    ) -> None:
         """Create pool tables if they don't exist."""
         if self._schema_initialized:
             return
         with self._schema_lock:
             if self._schema_initialized:
                 return
-            self._runtime.cleanup_legacy_tables()
+            self._runtime.cleanup_legacy_tables(
+                allow_destructive_cleanup=allow_destructive_cleanup,
+                dedicated_schema=dedicated_schema,
+            )
             ddl = generate_ddl(self._schema)
             with self._runtime.conn() as conn:
                 conn.execute(q(ddl))

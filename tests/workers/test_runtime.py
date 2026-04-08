@@ -109,6 +109,33 @@ class FakeWorkerBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
             self._events.append(f"exit:{item}:{worker_id}")
 
 
+class ExplodingClaimBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
+    def claim(self, *, worker_id: str, lease_seconds: int) -> list[str]:
+        del worker_id, lease_seconds
+        raise RuntimeError("claim exploded")
+
+    def complete(
+        self,
+        *,
+        item: str,
+        result: dict[str, Any],
+        worker_id: str,
+    ) -> None:
+        raise AssertionError("complete should never be called")
+
+    def handle_process_error(
+        self,
+        *,
+        item: str,
+        worker_id: str,
+        exc: Exception,
+    ) -> ErrorDecision:
+        raise AssertionError("handle_process_error should never be called")
+
+    def snapshot(self) -> FakeBackendState:
+        return FakeBackendState()
+
+
 def _wait_for(
     controller: WorkerController[FakeBackendState],
     predicate: Callable[[WorkerSnapshot[FakeBackendState]], bool],
@@ -344,3 +371,20 @@ def test_snapshot_counts_are_frozen() -> None:
 
     with pytest.raises(ValidationError, match="Instance is frozen"):
         snapshot.counts.claimed = 1
+
+
+def test_join_shuts_down_executor_on_non_timeout_exception() -> None:
+    controller = start_workers(
+        ExplodingClaimBackend(),
+        process_fn=lambda item: {"item": item},
+        config=WorkerConfig(
+            num_workers=1,
+            min_poll_interval_s=0.01,
+            max_poll_interval_s=0.05,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="claim exploded"):
+        controller.join(timeout=5.0)
+
+    assert controller._joined is True

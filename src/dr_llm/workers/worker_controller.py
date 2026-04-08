@@ -50,6 +50,7 @@ class WorkerController(Generic[TBackendState]):
     def join(self, timeout: float | None = None) -> WorkerSnapshot[TBackendState]:
         """Wait for workers to exit, returning a final snapshot."""
         deadline = None if timeout is None else time.monotonic() + timeout
+        timed_out = False
         try:
             for future in self._futures:
                 remaining = None
@@ -59,11 +60,13 @@ class WorkerController(Generic[TBackendState]):
                         raise TimeoutError("Timed out waiting for workers to stop")
                 future.result(timeout=remaining)
         except TimeoutError:
-            if not self._joined:
-                self._executor.shutdown(wait=False, cancel_futures=False)
-                self._joined = True
+            timed_out = True
             raise
-        if not self._joined:
-            self._executor.shutdown(wait=True, cancel_futures=False)
-            self._joined = True
+        finally:
+            if not self._joined:
+                self._executor.shutdown(
+                    wait=not timed_out,
+                    cancel_futures=False,
+                )
+                self._joined = True
         return self.snapshot()

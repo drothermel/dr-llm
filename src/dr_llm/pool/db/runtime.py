@@ -91,9 +91,17 @@ class DbRuntime:
                 f"Failed to open connection pool after {retries} attempts: {last_exc}"
             ) from last_exc
 
-    def initialize(self) -> None:
+    def initialize(
+        self,
+        *,
+        allow_destructive_cleanup: bool = False,
+        dedicated_schema: str | None = None,
+    ) -> None:
         self.open_pool()
-        self.cleanup_legacy_tables()
+        self.cleanup_legacy_tables(
+            allow_destructive_cleanup=allow_destructive_cleanup,
+            dedicated_schema=dedicated_schema,
+        )
 
     @contextmanager
     def conn(self) -> Generator[psycopg.Connection[tuple[Any, ...]], None, None]:
@@ -106,21 +114,53 @@ class DbRuntime:
                 )
             yield conn
 
-    def init_schema(self) -> None:
-        self.cleanup_legacy_tables()
+    def init_schema(
+        self,
+        *,
+        allow_destructive_cleanup: bool = False,
+        dedicated_schema: str | None = None,
+    ) -> None:
+        self.cleanup_legacy_tables(
+            allow_destructive_cleanup=allow_destructive_cleanup,
+            dedicated_schema=dedicated_schema,
+        )
 
-    def cleanup_legacy_tables(self) -> None:
+    def cleanup_legacy_tables(
+        self,
+        *,
+        allow_destructive_cleanup: bool = False,
+        dedicated_schema: str | None = None,
+    ) -> None:
+        if not allow_destructive_cleanup:
+            return
+        validated_schema = _validate_dedicated_schema(dedicated_schema)
         if self._legacy_cleanup_done:
             return
         with self._legacy_cleanup_lock:
             if self._legacy_cleanup_done:
                 return
             with self.conn() as conn:
+                current_schema_row = conn.execute("SELECT current_schema()").fetchone()
+                current_schema = current_schema_row[0] if current_schema_row else None
+                if current_schema != validated_schema:
+                    raise ValueError(
+                        "Destructive legacy cleanup requires the current schema to "
+                        f"match dedicated_schema={validated_schema!r}; "
+                        f"got {current_schema!r}"
+                    )
                 for table_name in _LEGACY_TABLES:
                     conn.execute(
                         sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
-                            sql.Identifier(table_name)
+                            sql.Identifier(validated_schema, table_name)
                         )
                     )
                 conn.commit()
             self._legacy_cleanup_done = True
+
+
+def _validate_dedicated_schema(dedicated_schema: str | None) -> str:
+    if dedicated_schema is None or not dedicated_schema.strip():
+        raise ValueError(
+            "Destructive legacy cleanup requires a non-empty dedicated_schema"
+        )
+    return dedicated_schema.strip()
