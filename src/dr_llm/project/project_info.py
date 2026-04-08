@@ -18,7 +18,6 @@ from dr_llm.project.docker import (
     call_docker_stop,
     docker_swap_in_db,
     get_all_docker_project_metadata,
-    get_claimed_project_ports,
     get_docker_project_metadata,
     wait_docker_ready,
 )
@@ -125,7 +124,11 @@ class ProjectInfo(BaseModel):
 
     @classmethod
     def create_new(cls, name: str) -> ProjectInfo:
-        claimed_ports = get_claimed_project_ports(cls.label_prefix)
+        claimed_ports = {
+            metadata.port
+            for metadata in get_all_docker_project_metadata(cls.label_prefix)
+            if metadata.port is not None
+        }
         created_at = datetime.now(UTC).isoformat()
 
         while True:

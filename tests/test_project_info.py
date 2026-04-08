@@ -22,8 +22,8 @@ def test_create_new_retries_when_docker_reports_port_collision(
 
     monkeypatch.setattr(
         project_info_module,
-        "get_claimed_project_ports",
-        lambda label_prefix: set(),
+        "get_all_docker_project_metadata",
+        lambda label_prefix: [],
     )
 
     def fake_create(**kwargs: object) -> None:
@@ -52,8 +52,8 @@ def test_create_new_propagates_container_conflict(
 ) -> None:
     monkeypatch.setattr(
         project_info_module,
-        "get_claimed_project_ports",
-        lambda label_prefix: set(),
+        "get_all_docker_project_metadata",
+        lambda label_prefix: [],
     )
 
     def fake_create(**kwargs: object) -> None:
