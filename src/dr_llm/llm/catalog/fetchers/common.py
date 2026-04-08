@@ -1,11 +1,30 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
+from dr_llm.llm.catalog.models import ModelCatalogEntry
+from dr_llm.llm.coercion import as_bool, as_int, first_bool
+
+__all__ = [
+    "api_key_from_env",
+    "as_bool",
+    "as_int",
+    "fetch_models_with_template",
+    "get_json",
+    "require_api_key",
+    "resolve_supports_vision",
+]
+
+
+def resolve_supports_vision(item: dict[str, Any], *keys: str) -> bool | None:
+    """Resolve a vision-support flag from the first matching boolean-ish key."""
+    return first_bool(*(item.get(key) for key in keys))
 
 
 def api_key_from_env(name: str) -> str | None:
@@ -14,6 +33,17 @@ def api_key_from_env(name: str) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+def require_api_key(*, api_key: str | None, env_var: str, label: str) -> str:
+    """Resolve an API key from explicit value or environment, raising on absence."""
+    normalized_api_key = api_key.strip() if api_key is not None else None
+    key = normalized_api_key or api_key_from_env(env_var)
+    if not key:
+        raise ProviderSemanticError(
+            f"Missing {label} API key for catalog sync. Set {env_var}"
+        )
+    return key
 
 
 def get_json(
@@ -46,10 +76,35 @@ def get_json(
     return payload
 
 
-def as_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except Exception:  # noqa: BLE001
-        return None
+def fetch_models_with_template(
+    *,
+    url: str,
+    headers: dict[str, str] | None,
+    items_key: str,
+    item_processor: Callable[[dict[str, Any], datetime], ModelCatalogEntry | None],
+) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+    """Fetch a JSON catalog and map each item to a `ModelCatalogEntry`.
+
+    The processor receives the raw item dict and the shared `fetched_at` timestamp.
+    Returning `None` skips the item (e.g., when the item lacks a usable ID).
+    """
+    payload = get_json(url=url, headers=headers)
+    if items_key not in payload:
+        raise ValueError(
+            f"catalog payload missing items_key={items_key!r}: payload={payload!r}"
+        )
+    items_raw = payload[items_key]
+    if not isinstance(items_raw, list):
+        raise ValueError(
+            f"catalog payload has non-list items_key={items_key!r}: payload={payload!r}"
+        )
+    items = items_raw
+    now = datetime.now(UTC)
+    out: list[ModelCatalogEntry] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        entry = item_processor(item, now)
+        if entry is not None:
+            out.append(entry)
+    return out, payload

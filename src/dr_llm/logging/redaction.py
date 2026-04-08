@@ -10,7 +10,7 @@ _REDACT_KEYS = {
     "credentials",
     "api_key",
     "apikey",
-    "x-api-key",
+    "x_api_key",
     "private_key",
     "client_secret",
     "access_token",
@@ -33,6 +33,9 @@ def redact_payload(payload: Any, *, enabled: bool) -> Any:
 
 def _redact(value: Any) -> Any:
     if isinstance(value, Mapping):
+        # Keys are coerced to str so the redacted output is always JSON-safe;
+        # mixed-type-key dicts collapse on string collisions, which is
+        # acceptable since redacted records are for human/log inspection.
         return {
             str(key): (
                 "[REDACTED]"

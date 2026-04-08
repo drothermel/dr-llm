@@ -66,12 +66,11 @@ def test_fetch_models_for_provider_passes_kimi_config_to_fetcher(
     )
 
     def fake_fetch_kimi_models(
-        *,
-        api_key: str | None = None,
-        provider_name: str = "",
+        received_provider: KimiCodeProvider,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-        assert api_key == "kimi-secret"
-        assert provider_name == "kimi-code"
+        assert received_provider is provider
+        assert received_provider.config.api_key == "kimi-secret"
+        assert received_provider.name == "kimi-code"
         return [], {"source": "kimi"}
 
     monkeypatch.setattr(

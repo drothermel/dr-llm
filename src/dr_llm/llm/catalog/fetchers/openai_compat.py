@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from dr_llm.llm.catalog.fetchers.common import api_key_from_env, get_json
-from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
+from dr_llm.llm.catalog.fetchers.common import (
+    api_key_from_env,
+    fetch_models_with_template,
+)
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogPricing
+from dr_llm.llm.coercion import as_float, as_int
+from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
 from dr_llm.llm.providers.reasoning_capabilities import (
     ReasoningCapabilities,
     reasoning_capabilities_for_model,
@@ -21,82 +25,82 @@ def fetch_openai_compat_models(
     headers: dict[str, str] | None = None
     if key:
         headers = {"Authorization": f"Bearer {key}"}
-    payload = get_json(url=endpoint, headers=headers)
-    items_raw = payload.get("data")
-    items = items_raw if isinstance(items_raw, list) else []
-    now = datetime.now(timezone.utc)
-    out: list[ModelCatalogEntry] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        model_id = str(item.get("id") or item.get("name") or "").strip()
-        if not model_id:
-            continue
-        pricing = _parse_pricing(item.get("pricing"))
-        supported_params = item.get("supported_parameters")
-        supports_reasoning = None
-        reasoning_capabilities = reasoning_capabilities_for_model(
-            provider=provider.name,
-            model=model_id,
+
+    def process(item: dict[str, Any], now: datetime) -> ModelCatalogEntry | None:
+        return _process_openai_model_item(
+            item=item, now=now, provider_name=provider.name
         )
-        if isinstance(supported_params, list):
-            normalized = {str(param) for param in supported_params}
-            supports_reasoning = (
-                "reasoning" in normalized or "reasoning.effort" in normalized
-            )
-            if supports_reasoning and reasoning_capabilities is None:
-                reasoning_capabilities = ReasoningCapabilities(mode="openai_effort")
-        out.append(
-            ModelCatalogEntry(
-                provider=provider.name,
-                model=model_id,
-                display_name=str(item.get("name") or model_id),
-                context_window=_as_int(item.get("context_length")),
-                max_output_tokens=_as_int(item.get("max_output_tokens")),
-                supports_reasoning=supports_reasoning,
-                reasoning_capabilities=reasoning_capabilities,
-                supports_vision=_detect_supports_vision(item),
-                pricing=pricing,
-                metadata=item,
-                fetched_at=now,
-                source_quality="live",
-            )
-        )
-    return out, payload
+
+    return fetch_models_with_template(
+        url=endpoint,
+        headers=headers,
+        items_key="data",
+        item_processor=process,
+    )
 
 
-def _as_int(value: Any) -> int | None:
-    if value is None:
+def _process_openai_model_item(
+    *,
+    item: dict[str, Any],
+    now: datetime,
+    provider_name: str,
+) -> ModelCatalogEntry | None:
+    model_id = str(item.get("id") or item.get("name") or "").strip()
+    if not model_id:
         return None
-    try:
-        return int(value)
-    except Exception:  # noqa: BLE001
-        return None
+    pricing = _parse_pricing(item.get("pricing"))
+    reasoning_capabilities = reasoning_capabilities_for_model(
+        provider=provider_name,
+        model=model_id,
+    )
+    supports_reasoning, reasoning_capabilities = _resolve_reasoning_support(
+        supported_params=item.get("supported_parameters"),
+        reasoning_capabilities=reasoning_capabilities,
+    )
+    return ModelCatalogEntry(
+        provider=provider_name,
+        model=model_id,
+        display_name=str(item.get("name") or model_id),
+        context_window=as_int(item.get("context_length")),
+        max_output_tokens=as_int(item.get("max_output_tokens")),
+        supports_reasoning=supports_reasoning,
+        reasoning_capabilities=reasoning_capabilities,
+        supports_vision=_detect_supports_vision(item),
+        pricing=pricing,
+        metadata=item,
+        fetched_at=now,
+        source_quality="live",
+    )
 
 
-def _as_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except Exception:  # noqa: BLE001
-        return None
+def _resolve_reasoning_support(
+    *,
+    supported_params: Any,
+    reasoning_capabilities: ReasoningCapabilities | None,
+) -> tuple[bool | None, ReasoningCapabilities | None]:
+    if not isinstance(supported_params, list):
+        return None, reasoning_capabilities
+    normalized = {str(param) for param in supported_params}
+    supports_reasoning = "reasoning" in normalized or "reasoning.effort" in normalized
+    if supports_reasoning and reasoning_capabilities is None:
+        reasoning_capabilities = ReasoningCapabilities(mode="openai_effort")
+    return supports_reasoning, reasoning_capabilities
 
 
 def _parse_pricing(value: Any) -> ModelCatalogPricing | None:
     if not isinstance(value, dict):
         return None
     input_cost = (
-        _as_float(value.get("prompt"))
+        as_float(value.get("prompt"))
         if value.get("prompt") is not None
-        else _as_float(value.get("input"))
+        else as_float(value.get("input"))
     )
     output_cost = (
-        _as_float(value.get("completion"))
+        as_float(value.get("completion"))
         if value.get("completion") is not None
-        else _as_float(value.get("output"))
+        else as_float(value.get("output"))
     )
-    reasoning_cost = _as_float(value.get("reasoning"))
+    reasoning_cost = as_float(value.get("reasoning"))
     if input_cost is None and output_cost is None and reasoning_cost is None:
         return None
     # Most OpenRouter/OpenAI-compatible metadata expresses price per-token.

@@ -14,6 +14,13 @@ class PendingStatus(StrEnum):
     failed = "failed"
 
 
+IN_FLIGHT_STATUSES: frozenset[PendingStatus] = frozenset(
+    {PendingStatus.pending, PendingStatus.leased}
+)
+# Non-terminal pending statuses: rows still waiting to be processed or currently
+# leased by a worker.
+
+
 class PendingStatusCounts(BaseModel):
     """Counts of pending rows by lifecycle status."""
 
@@ -37,14 +44,7 @@ class PendingStatusCounts(BaseModel):
     def from_rows(
         cls,
         rows: Iterable[Mapping[str, Any]],
-        *,
-        status_key: str = "status",
-        count_key: str = "cnt",
     ) -> PendingStatusCounts:
         """Build counts from grouped query rows, defaulting unknown statuses to 0."""
-        counts: dict[str, int] = {s.value: 0 for s in PendingStatus}
-        for row in rows:
-            status = row[status_key]
-            if status in counts:
-                counts[status] = int(row[count_key])
-        return cls(**counts)
+        by_status = {row["status"]: int(row["cnt"]) for row in rows}
+        return cls(**{s: by_status.get(s, 0) for s in PendingStatus})

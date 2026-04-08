@@ -1,72 +1,81 @@
 from __future__ import annotations
 
 import threading
-import time
-from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Generic, TypeVar
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 
 from pydantic import BaseModel
 
-from dr_llm.workers.backend import WorkerBackend
-from dr_llm.workers.threadsafe_worker_stats import ThreadsafeWorkerStats
 from dr_llm.workers.models import WorkerSnapshot
+from dr_llm.workers.threadsafe_worker_stats import ThreadsafeWorkerStats
 
-TBackendState = TypeVar("TBackendState", bound=BaseModel)
 
-
-class WorkerController(Generic[TBackendState]):
+class WorkerController[TBackendState: BaseModel]:
     """Manage background workers draining a generic lease-based backend."""
 
     def __init__(
         self,
         *,
-        backend: WorkerBackend[Any, Any, TBackendState],
+        get_backend_state: Callable[[], TBackendState | None],
         executor: ThreadPoolExecutor,
         futures: list[Future[None]],
         stop_event: threading.Event,
-        stats: ThreadsafeWorkerStats[TBackendState],
-        worker_count: int,
+        stats: ThreadsafeWorkerStats,
     ) -> None:
-        self._backend = backend
+        self._get_backend_state = get_backend_state
         self._executor = executor
         self._futures = futures
         self._stop_event = stop_event
         self._stats = stats
-        self._worker_count = worker_count
-        self._joined = False
+        self._final_snapshot: WorkerSnapshot[TBackendState] | None = None
+        self._join_lock = threading.Lock()
+
+    @property
+    def final_snapshot(self) -> WorkerSnapshot[TBackendState] | None:
+        """Snapshot captured when :meth:`join` runs its cleanup, if any."""
+        return self._final_snapshot
 
     def stop(self) -> None:
         """Request graceful worker shutdown."""
         self._stop_event.set()
 
+    def wait_for_stop(self, timeout: float | None = None) -> bool:
+        """Block until stop has been requested. Returns True if stop fired."""
+        return self._stop_event.wait(timeout)
+
     def snapshot(self) -> WorkerSnapshot[TBackendState]:
         """Return cumulative worker stats plus current backend state."""
-        return self._stats.snapshot(
-            worker_count=self._worker_count,
+        return WorkerSnapshot(
+            worker_count=len(self._futures),
             stop_requested=self._stop_event.is_set(),
-            backend_state=self._backend.snapshot(),
+            counts=self._stats.snapshot(),
+            backend_state=self._get_backend_state(),
         )
 
     def join(self, timeout: float | None = None) -> WorkerSnapshot[TBackendState]:
-        """Wait for workers to exit, returning a final snapshot."""
-        deadline = None if timeout is None else time.monotonic() + timeout
-        timed_out = False
-        try:
-            for future in self._futures:
-                remaining = None
-                if deadline is not None:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise TimeoutError("Timed out waiting for workers to stop")
-                future.result(timeout=remaining)
-        except TimeoutError:
-            timed_out = True
-            raise
-        finally:
-            if not self._joined:
-                self._executor.shutdown(
-                    wait=not timed_out,
-                    cancel_futures=False,
-                )
-                self._joined = True
-        return self.snapshot()
+        """Wait for workers to exit, returning a final snapshot.
+
+        Safe to call multiple times: subsequent calls return the snapshot
+        cached on the first call without re-waiting or re-raising.
+        """
+        if self._final_snapshot is not None:
+            return self._final_snapshot
+
+        with self._join_lock:
+            if self._final_snapshot is not None:
+                return self._final_snapshot
+
+            _, not_done = wait(self._futures, timeout=timeout)
+            all_done = not not_done
+            try:
+                if not_done:
+                    raise TimeoutError("Timed out waiting for workers to stop")
+                for future in self._futures:
+                    future.result()
+                self._final_snapshot = self.snapshot()
+            finally:
+                # Skip waiting on shutdown after a timeout to avoid blocking
+                # indefinitely on workers that failed to stop.
+                self._executor.shutdown(wait=all_done, cancel_futures=False)
+            assert self._final_snapshot is not None
+            return self._final_snapshot

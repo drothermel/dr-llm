@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import subprocess
+import threading
+from collections.abc import Callable
 from contextlib import suppress
 from typing import IO, cast
 from uuid import uuid4
@@ -60,6 +62,43 @@ def _call_docker_psql_admin(
     )
 
 
+def _run_docker_process(
+    args: tuple[str, ...],
+    *,
+    stdin: int | None = None,
+    stdout: int | None = None,
+    operation: Callable[[subprocess.Popen[bytes]], None],
+) -> None:
+    try:
+        process = subprocess.Popen(
+            ["docker", *args],
+            stdin=stdin,
+            stdout=stdout,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        raise DockerUnavailableError() from exc
+    stderr_chunks: list[str] = []
+
+    def read_stderr() -> None:
+        stderr_chunks.append(read_process_stderr(process))
+
+    stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+    stderr_thread.start()
+    try:
+        operation(process)
+    except Exception:
+        process.kill()
+        process.wait()
+        stderr_thread.join()
+        raise
+
+    stderr_thread.join()
+    stderr = "".join(stderr_chunks)
+    if process.wait() != 0:
+        raise docker_error(args, stderr)
+
+
 def call_docker_psql_input_stream(
     container_name: str,
     db_user: str,
@@ -75,29 +114,22 @@ def call_docker_psql_input_stream(
         db_user,
         db_name,
     )
-    try:
-        process = subprocess.Popen(
-            ["docker", *args],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-    except FileNotFoundError as exc:
-        raise DockerUnavailableError() from exc
-    stdin = cast(IO[bytes], process.stdin)
-    try:
-        copy_binary_stream(sql_stream, stdin)
-    except Exception:
-        process.kill()
-        process.wait()
-        raise
-    finally:
-        with suppress(BrokenPipeError):
-            stdin.close()
 
-    stderr = read_process_stderr(process)
-    if process.wait() != 0:
-        raise docker_error(args, stderr)
+    def write_sql(process: subprocess.Popen[bytes]) -> None:
+        process_stdin = cast(IO[bytes], process.stdin)
+        try:
+            with suppress(BrokenPipeError):
+                copy_binary_stream(sql_stream, process_stdin)
+        finally:
+            with suppress(BrokenPipeError):
+                process_stdin.close()
+
+    _run_docker_process(
+        args,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        operation=write_sql,
+    )
 
 
 def call_docker_pg_dump_stream(
@@ -114,27 +146,19 @@ def call_docker_pg_dump_stream(
         db_user,
         db_name,
     )
-    try:
-        process = subprocess.Popen(
-            ["docker", *args],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-    except FileNotFoundError as exc:
-        raise DockerUnavailableError() from exc
-    stdout = cast(IO[bytes], process.stdout)
-    try:
-        copy_binary_stream(stdout, output_stream)
-    except Exception:
-        process.kill()
-        process.wait()
-        raise
-    finally:
-        stdout.close()
 
-    stderr = read_process_stderr(process)
-    if process.wait() != 0:
-        raise docker_error(args, stderr)
+    def read_dump(process: subprocess.Popen[bytes]) -> None:
+        process_stdout = cast(IO[bytes], process.stdout)
+        try:
+            copy_binary_stream(process_stdout, output_stream)
+        finally:
+            process_stdout.close()
+
+    _run_docker_process(
+        args,
+        stdout=subprocess.PIPE,
+        operation=read_dump,
+    )
 
 
 def docker_swap_in_db(

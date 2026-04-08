@@ -38,13 +38,12 @@ def test_pool_sample_defaults() -> None:
 
 
 def test_acquire_result_deficit() -> None:
-    r = AcquireResult(samples=[], claimed=0)
+    r = AcquireResult(samples=[])
+    assert r.claimed == 0
     assert r.deficit(5) == 5
 
-    r2 = AcquireResult(
-        samples=[PoolSample(key_values={"x": "a"})] * 3,
-        claimed=3,
-    )
+    r2 = AcquireResult(samples=[PoolSample(key_values={"x": "a"})] * 3)
+    assert r2.claimed == 3
     assert r2.deficit(5) == 2
     assert r2.deficit(3) == 0
     assert r2.deficit(1) == 0
@@ -57,7 +56,7 @@ def test_pending_sample_defaults() -> None:
     assert p.attempt_count == 0
 
 
-def test_pool_sample_to_db_insert_row_uses_schema_key_order() -> None:
+def test_pool_sample_to_db_insert_row_splats_key_values() -> None:
     sample = PoolSample(
         sample_id="sample-1",
         sample_idx=7,
@@ -68,9 +67,9 @@ def test_pool_sample_to_db_insert_row_uses_schema_key_order() -> None:
         status=SampleStatus.superseded,
     )
 
-    row = sample.to_db_insert_row(_TEST_SCHEMA)
+    row = sample.to_db_insert_row()
 
-    assert list(row.keys()) == [
+    assert set(row.keys()) == {
         "sample_id",
         "dim_a",
         "dim_b",
@@ -79,10 +78,13 @@ def test_pool_sample_to_db_insert_row_uses_schema_key_order() -> None:
         "source_run_id",
         "metadata_json",
         "status",
-    ]
+    }
+    assert row["sample_id"] == "sample-1"
+    assert row["sample_idx"] == 7
     assert row["dim_a"] == "alpha"
     assert row["dim_b"] == 3
     assert row["payload_json"] == {"score": 0.9}
+    assert row["source_run_id"] == "run-1"
     assert row["metadata_json"] == {"source": "test"}
     assert row["status"] == SampleStatus.superseded.value
 
@@ -97,7 +99,7 @@ def test_pool_sample_to_db_insert_row_json_serializes_nested_values() -> None:
         metadata={"created_at": datetime(2024, 1, 3, tzinfo=UTC)},
     )
 
-    row = sample.to_db_insert_row(_TEST_SCHEMA)
+    row = sample.to_db_insert_row()
 
     assert row["payload_json"] == {"rich": {"when": "2024-01-02T00:00:00Z"}}
     assert row["metadata_json"] == {"created_at": "2024-01-03T00:00:00Z"}
@@ -112,9 +114,9 @@ def test_pool_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
             "dim_a": "alpha",
             "dim_b": 3,
             "sample_idx": 7,
-            "payload_json": '{"score": 0.9}',
+            "payload_json": {"score": 0.9},
             "source_run_id": "run-1",
-            "metadata_json": '{"source": "test"}',
+            "metadata_json": {"source": "test"},
             "status": "superseded",
             "created_at": created_at,
         },
@@ -128,7 +130,7 @@ def test_pool_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
     assert sample.created_at == created_at
 
 
-def test_pending_sample_to_db_insert_row_uses_schema_key_order() -> None:
+def test_pending_sample_to_db_insert_row_splats_key_values() -> None:
     sample = PendingSample(
         pending_id="pending-1",
         key_values={"dim_b": 4, "dim_a": "beta"},
@@ -140,9 +142,9 @@ def test_pending_sample_to_db_insert_row_uses_schema_key_order() -> None:
         status=PendingStatus.leased,
     )
 
-    row = sample.to_db_insert_row(_TEST_SCHEMA)
+    row = sample.to_db_insert_row()
 
-    assert list(row.keys()) == [
+    assert set(row.keys()) == {
         "pending_id",
         "dim_a",
         "dim_b",
@@ -152,10 +154,13 @@ def test_pending_sample_to_db_insert_row_uses_schema_key_order() -> None:
         "metadata_json",
         "priority",
         "status",
-    ]
+    }
+    assert row["pending_id"] == "pending-1"
+    assert row["sample_idx"] == 2
     assert row["dim_a"] == "beta"
     assert row["dim_b"] == 4
     assert row["payload_json"] == {"partial": True}
+    assert row["source_run_id"] == "run-2"
     assert row["metadata_json"] == {"attempt": 1}
     assert row["priority"] == 9
     assert row["status"] == PendingStatus.leased.value
@@ -171,7 +176,7 @@ def test_pending_sample_to_db_insert_row_json_serializes_nested_values() -> None
         metadata={"updated_at": datetime(2024, 6, 8, tzinfo=UTC)},
     )
 
-    row = sample.to_db_insert_row(_TEST_SCHEMA)
+    row = sample.to_db_insert_row()
 
     assert row["payload_json"] == {"rich": {"when": "2024-06-07T00:00:00Z"}}
     assert row["metadata_json"] == {"updated_at": "2024-06-08T00:00:00Z"}
@@ -187,9 +192,9 @@ def test_pending_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
             "dim_a": "beta",
             "dim_b": 4,
             "sample_idx": 2,
-            "payload_json": '{"partial": true}',
+            "payload_json": {"partial": True},
             "source_run_id": "run-2",
-            "metadata_json": '{"attempt": 1}',
+            "metadata_json": {"attempt": 1},
             "priority": 9,
             "status": "leased",
             "worker_id": "worker-1",
@@ -264,13 +269,6 @@ def test_acquire_query_rejects_negative_n() -> None:
         AcquireQuery(run_id="r1", key_values={"x": "a"}, n=-1)
 
 
-def test_pool_sample_to_db_insert_row_rejects_missing_key_column() -> None:
-    sample = PoolSample(key_values={"dim_a": "alpha"})
-
-    with pytest.raises(ValueError, match="Missing key columns for PoolSample"):
-        sample.to_db_insert_row(_TEST_SCHEMA)
-
-
 def test_worker_snapshot_defaults() -> None:
     snapshot = WorkerSnapshot[PoolPendingBackendState](
         worker_count=2,
@@ -302,4 +300,3 @@ def test_pending_and_db_packages_have_no_re_exports() -> None:
     assert not hasattr(pool_db, "RunStatus")
     assert not hasattr(pending, "PendingSample")
     assert not hasattr(pending, "PendingStore")
-    assert not hasattr(pending, "seed_pending")

@@ -48,31 +48,15 @@ MINIMAX_TEXT_MODELS = [
 ]
 
 
-def fetch_static_headless_models(
-    provider: CodexHeadlessProvider | ClaudeHeadlessProvider,
+def _build_static_catalog_entries(
+    *,
+    provider: Provider,
+    models: list[tuple[str, str]],
+    docs_url: str,
+    supports_vision: bool | None,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+    source_meta = {"source": "static", "docs_url": docs_url}
     now = datetime.now(UTC)
-    if isinstance(provider, CodexHeadlessProvider):
-        source_meta = {"source": "static", "docs_url": CODEX_DOCS_URL}
-        entries = [
-            ModelCatalogEntry(
-                provider=provider.name,
-                model=model_id,
-                display_name=display_name,
-                reasoning_capabilities=reasoning_capabilities_for_model(
-                    provider=provider.name,
-                    model=model_id,
-                ),
-                supports_vision=None,
-                source_quality="static",
-                fetched_at=now,
-                metadata=source_meta,
-            )
-            for model_id, display_name in CODEX_MODELS
-        ]
-        return entries, source_meta
-    # Default: ClaudeHeadlessProvider (native Anthropic)
-    source_meta = {"source": "static", "docs_url": CLAUDE_CODE_DOCS_URL}
     entries = [
         ModelCatalogEntry(
             provider=provider.name,
@@ -82,35 +66,45 @@ def fetch_static_headless_models(
                 provider=provider.name,
                 model=model_id,
             ),
-            supports_vision=True,
+            supports_vision=supports_vision,
             source_quality="static",
             fetched_at=now,
             metadata=source_meta,
         )
-        for model_id, display_name in CLAUDE_CODE_MODELS
+        for model_id, display_name in models
     ]
     return entries, source_meta
+
+
+def fetch_static_headless_models(
+    provider: CodexHeadlessProvider | ClaudeHeadlessProvider,
+) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+    if isinstance(provider, CodexHeadlessProvider):
+        return _build_static_catalog_entries(
+            provider=provider,
+            models=CODEX_MODELS,
+            docs_url=CODEX_DOCS_URL,
+            supports_vision=None,
+        )
+    if isinstance(provider, ClaudeHeadlessProvider):
+        return _build_static_catalog_entries(
+            provider=provider,
+            models=CLAUDE_CODE_MODELS,
+            docs_url=CLAUDE_CODE_DOCS_URL,
+            supports_vision=True,
+        )
+    raise ValueError(
+        "Unsupported static headless provider for catalog fetch: "
+        f"type={type(provider).__name__} name={provider.name!r}"
+    )
 
 
 def fetch_static_minimax_models(
     provider: Provider,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    now = datetime.now(UTC)
-    source_meta = {"source": "static", "docs_url": MINIMAX_DOCS_URL}
-    entries = [
-        ModelCatalogEntry(
-            provider=provider.name,
-            model=model_id,
-            display_name=display_name,
-            reasoning_capabilities=reasoning_capabilities_for_model(
-                provider=provider.name,
-                model=model_id,
-            ),
-            supports_vision=None,
-            source_quality="static",
-            fetched_at=now,
-            metadata=source_meta,
-        )
-        for model_id, display_name in MINIMAX_TEXT_MODELS
-    ]
-    return entries, source_meta
+    return _build_static_catalog_entries(
+        provider=provider,
+        models=MINIMAX_TEXT_MODELS,
+        docs_url=MINIMAX_DOCS_URL,
+        supports_vision=None,
+    )

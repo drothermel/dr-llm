@@ -34,10 +34,11 @@ from typing import Any
 
 import typer
 
+from _demo_utils import BOLD, CYAN, GREEN, RED, RESET, YELLOW, fail, ok, step, warn
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.pool_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import (
     create_project,
@@ -48,13 +49,6 @@ from dr_llm.llm.providers.registry import build_default_registry
 from dr_llm.llm.providers.config import ProviderAvailabilityStatus
 
 app = typer.Typer()
-
-BOLD = "\033[1m"
-CYAN = "\033[0;36m"
-GREEN = "\033[0;32m"
-RED = "\033[0;31m"
-YELLOW = "\033[0;33m"
-RESET = "\033[0m"
 
 DEFAULT_PROMPT = "What is 2+2? Answer in one sentence."
 DEFAULT_PROJECT = "demo-pool"
@@ -84,22 +78,6 @@ POOL_SCHEMA = PoolSchema(
 # --- Helpers ---
 
 
-def step(msg: str) -> None:
-    print(f"\n{BOLD}{CYAN}-- {msg}{RESET}\n")
-
-
-def ok(msg: str) -> None:
-    print(f"{GREEN}  ok: {msg}{RESET}")
-
-
-def fail(msg: str) -> None:
-    print(f"{RED}  FAIL: {msg}{RESET}")
-
-
-def warn(msg: str) -> None:
-    print(f"{YELLOW}  skip: {msg}{RESET}")
-
-
 def run_cli(*args: str, timeout: int = API_TIMEOUT) -> dict[str, Any]:
     """Run a dr-llm CLI command and return parsed JSON output."""
     cmd = ["uv", "run", "dr-llm", *args]
@@ -113,12 +91,6 @@ def run_cli(*args: str, timeout: int = API_TIMEOUT) -> dict[str, Any]:
         stderr = result.stderr.strip()[:500]
         raise RuntimeError(f"CLI command failed: {' '.join(args)}\n{stderr}")
     return json.loads(result.stdout)
-
-
-def run_cli_quiet(*args: str, timeout: int = API_TIMEOUT) -> None:
-    """Run a dr-llm CLI command, ignoring output and errors."""
-    cmd = ["uv", "run", "dr-llm", *args]
-    subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
 # --- Detection ---
@@ -326,7 +298,7 @@ def main(
         step("3. Initializing pool")
         runtime = DbRuntime(DbConfig(dsn=project.dsn, min_pool_size=1, max_pool_size=4))
         store = PoolStore(POOL_SCHEMA, runtime)
-        store.init_schema()
+        store.ensure_schema()
         ok(
             f"Pool '{POOL_SCHEMA.name}' ready "
             f"(tables: {POOL_SCHEMA.samples_table}, {POOL_SCHEMA.claims_table}, ...)"

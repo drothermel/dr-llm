@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm.providers.reasoning_capability_types import ReasoningCapabilities
 from dr_llm.llm.providers.thinking_utils import matches_family
 
 OPENAI_THINKING_SUPPORTED_MODELS = [
@@ -80,3 +81,17 @@ def openai_supports_off_thinking(model: str) -> bool:
         normalized=normalized,
         families=OPENAI_OFF_THINKING_SUPPORTED_MODELS,
     )
+
+
+def openai_uses_max_completion_tokens(model: str) -> bool:
+    """OpenAI gpt-5 family models reject ``max_tokens`` and require
+    ``max_completion_tokens`` instead. The set of affected models matches
+    the configurable-thinking family.
+    """
+    return openai_supports_configurable_thinking(model)
+
+
+def reasoning_capabilities_for_openai(model: str) -> ReasoningCapabilities | None:
+    if openai_supports_configurable_thinking(model):
+        return ReasoningCapabilities(mode="openai_effort")
+    return None

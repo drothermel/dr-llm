@@ -16,7 +16,7 @@ def test_generation_log_sink_writes_redacted_jsonl(tmp_path: Path) -> None:
             log_dir=tmp_path,
             rotate_bytes=1024 * 1024,
             backups=2,
-            redact_secrets=True,
+            redact_enabled=True,
             max_event_bytes=1024 * 1024,
         )
     )
@@ -50,7 +50,7 @@ def test_generation_log_sink_is_thread_safe(tmp_path: Path) -> None:
             log_dir=tmp_path,
             rotate_bytes=1024 * 1024 * 1024,
             backups=2,
-            redact_secrets=False,
+            redact_enabled=False,
             max_event_bytes=1024 * 1024,
         )
     )

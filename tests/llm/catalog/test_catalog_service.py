@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -24,6 +25,7 @@ class _DummyProvider(Provider):
 
 class _FakeRepo:
     def __init__(self) -> None:
+        self.actions: list[str] = []
         self.snapshots: list[dict[str, Any]] = []
         self.replaced: dict[str, list[ModelCatalogEntry]] = {}
 
@@ -35,6 +37,7 @@ class _FakeRepo:
         raw_payload: dict[str, Any] | None = None,
         error_text: str | None = None,
     ) -> str:
+        self.actions.append("snapshot")
         self.snapshots.append(
             {
                 "provider": provider,
@@ -51,6 +54,7 @@ class _FakeRepo:
         provider: str,
         entries: list[ModelCatalogEntry],
     ) -> int:
+        self.actions.append("replace")
         self.replaced[provider] = entries
         return len(entries)
 
@@ -88,15 +92,11 @@ def test_sync_writes_snapshots_and_replaces_models(
         "dr_llm.llm.catalog.service.fetch_models_for_provider",
         fake_fetch,
     )
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_out_of_registry_provider_models",
-        lambda provider: ([], {"data": []}),
-    )
-
-    results = service.sync_models_detailed(provider="dummy")
+    results = asyncio.run(service.sync_models_detailed(provider="dummy"))
     assert len(results) == 1
     assert results[0].success
     assert results[0].entry_count == 1
+    assert repo.actions == ["replace", "snapshot"]
     assert repo.snapshots
     assert repo.replaced["dummy"][0].model == "dummy-model"
 
@@ -117,12 +117,7 @@ def test_sync_records_failure_on_fetch_error(
         "dr_llm.llm.catalog.service.fetch_models_for_provider",
         failing_fetch,
     )
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_out_of_registry_provider_models",
-        lambda provider: ([], {"data": []}),
-    )
-
-    results = service.sync_models_detailed(provider="dummy")
+    results = asyncio.run(service.sync_models_detailed(provider="dummy"))
     assert len(results) == 1
     assert not results[0].success
     assert "network timeout" in (results[0].error or "")
@@ -163,12 +158,7 @@ def test_sync_filters_blacklisted_models_before_replace(
         "dr_llm.llm.catalog.service.fetch_models_for_provider",
         fake_fetch,
     )
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_out_of_registry_provider_models",
-        lambda provider: ([], {"data": []}),
-    )
-
-    results = service.sync_models_detailed(provider="anthropic")
+    results = asyncio.run(service.sync_models_detailed(provider="anthropic"))
     assert len(results) == 1
     assert results[0].success
     assert results[0].entry_count == 1
@@ -217,12 +207,7 @@ def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata(
         "dr_llm.llm.catalog.service.fetch_models_for_provider",
         fake_fetch,
     )
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_out_of_registry_provider_models",
-        lambda provider: ([], {"data": []}),
-    )
-
-    results = service.sync_models_detailed(provider="openrouter")
+    results = asyncio.run(service.sync_models_detailed(provider="openrouter"))
     assert len(results) == 1
     assert results[0].success
     assert [entry.model for entry in repo.replaced["openrouter"]] == [
@@ -231,3 +216,54 @@ def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata(
     ]
     assert repo.replaced["openrouter"][0].supports_reasoning is True
     assert repo.replaced["openrouter"][1].supports_reasoning is False
+
+
+def test_sync_records_failure_when_replace_fails_without_success_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _ReplaceFailsRepo(_FakeRepo):
+        def replace_provider_models(
+            self,
+            *,
+            provider: str,
+            entries: list[ModelCatalogEntry],
+        ) -> int:
+            self.actions.append("replace")
+            raise RuntimeError(f"replace failed for {provider} with {len(entries)} entries")
+
+    registry = ProviderRegistry()
+    registry.register(_DummyProvider())
+    repo = _ReplaceFailsRepo()
+    service = ModelCatalogService(registry=registry, repository=repo)
+
+    def fake_fetch(provider: Any) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+        return (
+            [
+                ModelCatalogEntry(
+                    provider=provider.name,
+                    model="dummy-model",
+                    source_quality="live",
+                )
+            ],
+            {"data": [{"id": "dummy-model"}]},
+        )
+
+    monkeypatch.setattr(
+        "dr_llm.llm.catalog.service.fetch_models_for_provider",
+        fake_fetch,
+    )
+
+    results = asyncio.run(service.sync_models_detailed(provider="dummy"))
+
+    assert len(results) == 1
+    assert not results[0].success
+    assert "replace failed for dummy with 1 entries" in (results[0].error or "")
+    assert repo.actions == ["replace", "snapshot"]
+    assert repo.snapshots == [
+        {
+            "provider": "dummy",
+            "status": "failed",
+            "raw_payload": {},
+            "error_text": results[0].error,
+        }
+    ]

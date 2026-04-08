@@ -1,79 +1,30 @@
 from __future__ import annotations
 
-import time
-
 import httpx
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential_jitter,
-)
 
-from dr_llm.errors import ProviderTransportError
-from dr_llm.llm.request import LlmRequest
-from dr_llm.llm.response import LlmResponse
-from dr_llm.logging import emit_generation_event
 from dr_llm.llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.llm.providers.anthropic.request import AnthropicRequest
 from dr_llm.llm.providers.anthropic.response import AnthropicResponse
-from dr_llm.llm.providers.base import Provider
+from dr_llm.llm.providers.api_provider import ApiProvider
+from dr_llm.llm.request import LlmRequest
 
 
-class AnthropicProvider(Provider):
+class AnthropicProvider(ApiProvider):
     _config: AnthropicConfig
 
     def __init__(
-        self, config: AnthropicConfig | None = None, client: httpx.Client | None = None
+        self,
+        config: AnthropicConfig | None = None,
+        client: httpx.Client | None = None,
     ) -> None:
-        self._config = config or AnthropicConfig()
-        self._owns_client = client is None
-        self._client = client or httpx.Client(timeout=self._config.timeout_seconds)
-
-    def close(self) -> None:
-        if self._owns_client:
-            self._client.close()
-
-    def __enter__(self) -> AnthropicProvider:
-        return self
-
-    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
-        self.close()
+        super().__init__(config=config or AnthropicConfig(), client=client)
 
     @property
     def config(self) -> AnthropicConfig:
         return self._config
 
-    @retry(
-        retry=retry_if_exception_type(
-            (httpx.TimeoutException, httpx.TransportError, ProviderTransportError)
-        ),
-        wait=wait_exponential_jitter(initial=0.5, max=8),
-        stop=stop_after_attempt(3),
-        reraise=True,
-    )
-    def generate(self, request: LlmRequest) -> LlmResponse:
-        provider_request = AnthropicRequest.from_llm_request(request, self._config)
-        started = time.perf_counter()
-        try:
-            response = self._client.post(
-                provider_request.endpoint(),
-                headers=provider_request.headers(),
-                json=provider_request.json_payload(),
-            )
-        except (httpx.TimeoutException, httpx.TransportError) as exc:
-            raise ProviderTransportError(
-                f"anthropic HTTP request failed: {exc}"
-            ) from exc
-        latency_ms = int((time.perf_counter() - started) * 1000)
-        provider_response = AnthropicResponse.from_http_response(response)
-        emit_generation_event(
-            event_type="provider.raw_response",
-            stage="anthropic.http_response",
-            payload=provider_response.event_payload(provider_request),
-        )
-        return provider_response.to_llm_response(
-            request,
-            latency_ms=latency_ms,
-            warnings=provider_request.warnings,
-        )
+    def _build_request(self, request: LlmRequest) -> AnthropicRequest:
+        return AnthropicRequest.from_llm_request(request, self._config)
+
+    def _parse_response(self, response: httpx.Response) -> AnthropicResponse:
+        return AnthropicResponse.from_http_response(response)

@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import Any, ParamSpec, TypeVar
+from typing import Any
 
 import typer
 from pydantic import ValidationError
@@ -16,9 +16,6 @@ from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogSyncResult
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.config import ProviderAvailabilityStatus
 
-P = ParamSpec("P")
-R = TypeVar("R")
-
 
 def _emit(payload: Any) -> None:
     typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
@@ -26,10 +23,10 @@ def _emit(payload: Any) -> None:
 
 def handle_cli_errors(
     *handled_errors: type[Exception],
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
-        def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
             try:
                 return func(*args, **kwargs)
             except handled_errors as exc:
@@ -78,12 +75,7 @@ def _render_providers_table(statuses: list[ProviderAvailabilityStatus]) -> None:
     )
 
 
-def _sync_failure_summary(result: ModelCatalogSyncResult) -> str:
-    error = result.error.splitlines()[0] if result.error else "unknown error"
-    return f"{result.provider} ({error})"
-
-
-def _sync_failure_message(result: ModelCatalogSyncResult) -> str:
+def _first_error_line(result: ModelCatalogSyncResult) -> str:
     return result.error.splitlines()[0] if result.error else "unknown error"
 
 
@@ -94,13 +86,14 @@ def _render_models_sync_summary(results: list[ModelCatalogSyncResult]) -> None:
     if failures:
         if len(failures) == 1 and not successes:
             typer.secho(
-                f"Model sync failed for {failures[0].provider}: {_sync_failure_message(failures[0])}",
+                f"Model sync failed for {failures[0].provider}: {_first_error_line(failures[0])}",
                 fg=typer.colors.RED,
                 err=True,
             )
         else:
             failure_text = ", ".join(
-                _sync_failure_summary(result) for result in failures
+                f"{result.provider} ({_first_error_line(result)})"
+                for result in failures
             )
             typer.secho(
                 f"Model sync failed for {len(failures)}/{len(results)} providers: {failure_text}",

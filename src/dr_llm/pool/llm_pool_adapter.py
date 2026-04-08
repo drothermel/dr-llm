@@ -9,11 +9,25 @@ from uuid import uuid4
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.registry import ProviderRegistry
-from dr_llm.logging import emit_generation_event, generation_log_context
-from dr_llm.logging.events import get_generation_log_context
+from dr_llm.logging.events import generation_log_context, get_generation_log_context
+from dr_llm.logging.sinks import emit_generation_event
 from dr_llm.pool.pending.pending_sample import PendingSample
 
 ProcessFn = Callable[[PendingSample], dict[str, Any]]
+
+
+def _require_payload_field(sample: PendingSample, key: str) -> Any:
+    if key not in sample.payload:
+        raise KeyError(
+            f"PendingSample.payload is missing key {key!r}; "
+            "was the pool seeded with a rich grid for this column?"
+        )
+    value = sample.payload[key]
+    if value is None:
+        raise ValueError(
+            f"PendingSample.payload[{key!r}] is present but has explicit None value"
+        )
+    return value
 
 
 def make_llm_process_fn(
@@ -26,23 +40,12 @@ def make_llm_process_fn(
 
     Expects pending samples whose ``payload`` contains serialized
     :class:`LlmConfig` (under *llm_config_key*) and ``list[Message]``
-    (under *prompt_key*), as produced by :func:`seed_pending` with rich
-    grid values.
+    (under *prompt_key*).
     """
 
     def _process(sample: PendingSample) -> dict[str, Any]:
-        raw_config = sample.payload.get(llm_config_key)
-        if raw_config is None:
-            raise KeyError(
-                f"Pending sample payload missing {llm_config_key!r}; "
-                "was the pool seeded with a rich grid for this column?"
-            )
-        raw_messages = sample.payload.get(prompt_key)
-        if raw_messages is None:
-            raise KeyError(
-                f"Pending sample payload missing {prompt_key!r}; "
-                "was the pool seeded with a rich grid for this column?"
-            )
+        raw_config = _require_payload_field(sample, llm_config_key)
+        raw_messages = _require_payload_field(sample, prompt_key)
 
         config = LlmConfig(**raw_config)
         messages = [Message(**message) for message in raw_messages]

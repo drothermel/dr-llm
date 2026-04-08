@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from dr_llm.llm import OpenRouterReasoning as ExportedOpenRouterReasoning
 from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
 from dr_llm.llm.providers.anthropic.reasoning import AnthropicReasoningConfig
 from dr_llm.llm.providers.anthropic.reasoning import KimiCodeReasoningConfig
+from dr_llm.llm.providers.anthropic.reasoning import MiniMaxReasoningConfig
+from dr_llm.llm.providers.anthropic.reasoning import validate_reasoning_for_kimi_code
+from dr_llm.llm.providers.anthropic.reasoning import validate_reasoning_for_minimax
 from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig
 from dr_llm.llm.providers.headless.reasoning import (
     ClaudeHeadlessReasoningConfig,
@@ -22,10 +24,6 @@ from dr_llm.llm.providers.reasoning import (
     ReasoningBudget,
     ThinkingLevel,
 )
-
-
-def test_top_level_package_exports_openrouter_reasoning() -> None:
-    assert ExportedOpenRouterReasoning is OpenRouterReasoning
 
 
 def test_openai_compat_rejects_anthropic_reasoning_shape() -> None:
@@ -46,27 +44,27 @@ def test_openai_compat_serializes_thinking_levels() -> None:
     assert (
         OpenAICompatReasoningConfig.from_base(
             OpenAIReasoning(thinking_level=ThinkingLevel.NA)
-        ).to_reasoning_effort()
+        ).reasoning_effort
         is None
     )
     assert (
         OpenAICompatReasoningConfig.from_base(
             OpenAIReasoning(thinking_level=ThinkingLevel.OFF)
-        ).to_reasoning_effort()
+        ).reasoning_effort
         == "none"
     )
     assert (
         OpenAICompatReasoningConfig.from_base(
             OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL)
-        ).to_reasoning_effort()
+        ).reasoning_effort
         == "minimal"
     )
     assert OpenAICompatReasoningConfig.from_base(
         GlmReasoning(thinking_level=ThinkingLevel.OFF)
-    ).to_extra_body() == {"thinking": {"type": "disabled"}}
+    ).extra_body == {"thinking": {"type": "disabled"}}
     assert OpenAICompatReasoningConfig.from_base(
         GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
-    ).to_extra_body() == {"thinking": {"type": "enabled"}}
+    ).extra_body == {"thinking": {"type": "enabled"}}
 
 
 def test_openrouter_serializes_reasoning_payloads() -> None:
@@ -74,12 +72,12 @@ def test_openrouter_serializes_reasoning_payloads() -> None:
         OpenRouterReasoning(enabled=False),
         provider="openrouter",
         model="deepseek/deepseek-chat-v3.1",
-    ).to_extra_body() == {"reasoning": {"enabled": False}}
+    ).extra_body == {"reasoning": {"enabled": False}}
     assert OpenAICompatReasoningConfig.from_base(
         OpenRouterReasoning(effort="low"),
         provider="openrouter",
         model="openai/gpt-oss-20b",
-    ).to_extra_body() == {"reasoning": {"effort": "low"}}
+    ).extra_body == {"reasoning": {"effort": "low"}}
 
 
 def test_anthropic_rejects_non_anthropic_reasoning_config() -> None:
@@ -97,7 +95,7 @@ def test_anthropic_serializes_manual_thinking() -> None:
             display="omitted",
         )
     )
-    assert result.thinking_payload() == {
+    assert result.thinking == {
         "type": "enabled",
         "budget_tokens": 2048,
         "display": "omitted",
@@ -108,68 +106,102 @@ def test_anthropic_off_omits_thinking() -> None:
     result = AnthropicReasoningConfig.from_base(
         AnthropicReasoning(thinking_level=ThinkingLevel.OFF)
     )
-    assert result.thinking_payload() == {}
+    assert result.thinking == {}
 
 
 def test_kimi_code_serializes_supported_reasoning_controls() -> None:
     assert (
         KimiCodeReasoningConfig.from_base(
             AnthropicReasoning(thinking_level=ThinkingLevel.NA)
-        ).thinking_payload()
+        ).thinking
         == {}
     )
     assert KimiCodeReasoningConfig.from_base(
         AnthropicReasoning(thinking_level=ThinkingLevel.OFF)
-    ).thinking_payload() == {"type": "disabled"}
+    ).thinking == {"type": "disabled"}
     assert KimiCodeReasoningConfig.from_base(
         AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
-    ).thinking_payload() == {"type": "adaptive"}
+    ).thinking == {"type": "adaptive"}
     assert KimiCodeReasoningConfig.from_base(
         AnthropicReasoning(
             thinking_level=ThinkingLevel.BUDGET,
             budget_tokens=1024,
         )
-    ).thinking_payload() == {"type": "enabled", "budget_tokens": 1024}
+    ).thinking == {"type": "enabled", "budget_tokens": 1024}
+
+
+def test_kimi_code_validation_rejects_unsupported_anthropic_levels() -> None:
+    for thinking_level in (
+        ThinkingLevel.MINIMAL,
+        ThinkingLevel.LOW,
+        ThinkingLevel.MEDIUM,
+        ThinkingLevel.HIGH,
+    ):
+        with pytest.raises(
+            ValueError,
+            match=(
+                "kimi-code supports only anthropic thinking levels "
+                "'na', 'off', 'adaptive', and 'budget'"
+            ),
+        ):
+            validate_reasoning_for_kimi_code(
+                model="kimi-for-coding",
+                reasoning=AnthropicReasoning(thinking_level=thinking_level),
+            )
+
+
+def test_minimax_validation_and_serializer_both_require_explicit_na() -> None:
+    with pytest.raises(
+        ValueError,
+        match="reasoning is required for provider='minimax' model='MiniMax-M2.7'",
+    ):
+        validate_reasoning_for_minimax(model="MiniMax-M2.7", reasoning=None)
+
+    with pytest.raises(
+        ProviderSemanticError,
+        match="minimax requires explicit AnthropicReasoning\\(thinking_level='na'\\)",
+    ):
+        MiniMaxReasoningConfig.from_base(None)
 
 
 def test_claude_headless_accepts_adaptive_and_na() -> None:
     assert (
         ClaudeHeadlessReasoningConfig.from_base(
             AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
-        ).to_cli_args()
+        ).cli_args
         == []
     )
     assert (
         ClaudeHeadlessReasoningConfig.from_base(
             AnthropicReasoning(thinking_level=ThinkingLevel.NA)
-        ).to_cli_args()
+        ).cli_args
         == []
     )
 
 
 def test_google_serializes_budget_family_controls() -> None:
-    assert GoogleReasoningConfig.from_base(
-        ReasoningBudget(tokens=512)
-    ).to_payload() == {"thinkingBudget": 512}
+    assert GoogleReasoningConfig.from_base(ReasoningBudget(tokens=512)).payload == {
+        "thinkingBudget": 512
+    }
     assert GoogleReasoningConfig.from_base(
         GoogleReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
-    ).to_payload() == {"thinkingBudget": -1}
+    ).payload == {"thinkingBudget": -1}
     assert GoogleReasoningConfig.from_base(
         GoogleReasoning(thinking_level=ThinkingLevel.OFF)
-    ).to_payload() == {"thinkingBudget": 0}
+    ).payload == {"thinkingBudget": 0}
     assert GoogleReasoningConfig.from_base(
         GoogleReasoning(
             thinking_level=ThinkingLevel.BUDGET,
             budget_tokens=1024,
             include_thoughts=True,
         )
-    ).to_payload() == {"thinkingBudget": 1024, "includeThoughts": True}
+    ).payload == {"thinkingBudget": 1024, "includeThoughts": True}
 
 
 def test_google_serializes_level() -> None:
     assert GoogleReasoningConfig.from_base(
         GoogleReasoning(thinking_level=ThinkingLevel.LOW)
-    ).to_payload() == {"thinkingLevel": "low"}
+    ).payload == {"thinkingLevel": "low"}
 
 
 def test_claude_headless_rejects_reasoning_config() -> None:
@@ -183,15 +215,15 @@ def test_codex_headless_serializes_reasoning_levels() -> None:
     assert (
         CodexHeadlessReasoningConfig.from_base(
             CodexReasoning(thinking_level=ThinkingLevel.NA)
-        ).to_cli_args()
+        ).cli_args
         == []
     )
     assert CodexHeadlessReasoningConfig.from_base(
         CodexReasoning(thinking_level=ThinkingLevel.OFF)
-    ).to_cli_args() == ["-c", 'model_reasoning_effort="none"']
+    ).cli_args == ["-c", 'model_reasoning_effort="none"']
     assert CodexHeadlessReasoningConfig.from_base(
         CodexReasoning(thinking_level=ThinkingLevel.HIGH)
-    ).to_cli_args() == ["-c", 'model_reasoning_effort="high"']
+    ).cli_args == ["-c", 'model_reasoning_effort="high"']
 
 
 def test_codex_headless_rejects_non_codex_reasoning() -> None:

@@ -25,11 +25,11 @@ class MetadataStore:
         self._runtime = runtime
         self._tables = tables
 
-    def upsert_metadata(self, key: str, value_json: dict[str, Any]) -> None:
+    def upsert(self, key: str, value: dict[str, Any]) -> None:
         stmt = pg_insert(self._tables.metadata_table).values(
             pool_name=self._schema.name,
             key=key,
-            value_json=value_json,
+            value_json=value,
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[
@@ -44,13 +44,10 @@ class MetadataStore:
         with self._runtime.begin() as conn:
             conn.execute(stmt)
 
-    def get_metadata(self, key: str) -> dict[str, Any] | None:
+    def get(self, key: str) -> dict[str, Any] | None:
         stmt = select(self._tables.metadata_table.c.value_json).where(
             self._tables.metadata_table.c.pool_name == self._schema.name,
             self._tables.metadata_table.c.key == key,
         )
         with self._runtime.connect() as conn:
-            raw = conn.execute(stmt).scalar_one_or_none()
-        if raw is None:
-            return None
-        return raw
+            return conn.execute(stmt).scalar_one_or_none()

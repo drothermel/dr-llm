@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from dr_llm.logging import generation_log_context
+from dr_llm.logging.events import generation_log_context
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import CallMode, Message
 from dr_llm.llm.providers.usage import TokenUsage
@@ -142,9 +142,10 @@ def test_failed_worker_call_emits_failure_event(
         ),
     )
 
-    with generation_log_context(
-        {"pool_name": "demo", "worker_id": "worker-1"}
-    ), pytest.raises(RuntimeError, match="API down"):
+    with (
+        generation_log_context({"pool_name": "demo", "worker_id": "worker-1"}),
+        pytest.raises(RuntimeError, match="API down"),
+    ):
         process_fn(sample)
 
     assert [event["event_type"] for event in events] == [
@@ -183,6 +184,15 @@ def test_missing_prompt_key_raises() -> None:
     sample = _make_sample({"llm_config": config.model_dump()})
 
     with pytest.raises(KeyError, match="prompt"):
+        process_fn(sample)
+
+
+def test_explicit_none_payload_field_raises_value_error() -> None:
+    registry = _make_registry()
+    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    sample = _make_sample({"llm_config": None, "prompt": [{"role": "user", "content": "hi"}]})
+
+    with pytest.raises(ValueError, match=r"PendingSample\.payload\['llm_config'\]"):
         process_fn(sample)
 
 

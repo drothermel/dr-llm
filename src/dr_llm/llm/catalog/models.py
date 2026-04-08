@@ -5,7 +5,20 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from dr_llm.llm.providers.reasoning_capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.reasoning_capability_types import ReasoningCapabilities
+
+
+def _derive_supports_reasoning_from_capabilities(
+    capabilities: Any,
+) -> bool | None:
+    if capabilities is None:
+        return None
+    if isinstance(capabilities, ReasoningCapabilities):
+        return capabilities.supports_reasoning
+    if isinstance(capabilities, dict):
+        mode = capabilities.get("mode", "unsupported")
+        return mode != "unsupported"
+    return None
 
 
 class ModelCatalogPricing(BaseModel):
@@ -44,15 +57,17 @@ class ModelCatalogEntry(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     fetched_at: datetime | None = None
 
-    @model_validator(mode="after")
-    def _derive_supports_reasoning(self) -> ModelCatalogEntry:
-        if self.reasoning_capabilities is not None:
-            object.__setattr__(
-                self,
-                "supports_reasoning",
-                self.reasoning_capabilities.supports_reasoning,
-            )
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def _populate_supports_reasoning(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        derived = _derive_supports_reasoning_from_capabilities(
+            data.get("reasoning_capabilities")
+        )
+        if derived is not None:
+            data["supports_reasoning"] = derived
+        return data
 
 
 class ModelCatalogQuery(BaseModel):

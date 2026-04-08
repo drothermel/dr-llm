@@ -1,22 +1,107 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from dr_llm.errors import HeadlessExecutionError
-from dr_llm.llm.providers.reasoning import ReasoningWarning
+from dr_llm.llm.providers.anthropic.thinking import (
+    ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
+)
+from dr_llm.llm.providers.headless.codex_thinking import (
+    codex_supports_configurable_thinking,
+    codex_supports_minimal_thinking,
+    codex_supports_off_thinking,
+)
 from dr_llm.llm.providers.reasoning import (
     AnthropicReasoning,
+    BaseProviderReasoningConfig,
     CodexReasoning,
+    ReasoningBudget,
     ReasoningSpec,
     ThinkingLevel,
+    dispatch_reasoning_validation,
+    is_reasoning_unsupported,
+    unsupported_reasoning_kind_message,
+    validate_budget_range,
+    validate_discrete_thinking_level,
+)
+from dr_llm.llm.providers.reasoning_capabilities import (
+    reasoning_capabilities_for_model,
 )
 
 
-class ClaudeHeadlessReasoningConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
+def validate_reasoning_for_codex(
+    *, model: str, reasoning: ReasoningSpec | None
+) -> None:
+    def _validate_native(spec: CodexReasoning) -> None:
+        if not codex_supports_configurable_thinking(model):
+            raise ValueError(f"codex thinking is not supported for model={model!r}")
+        validate_discrete_thinking_level(
+            provider="codex",
+            model=model,
+            thinking_level=spec.thinking_level,
+            supports_off=codex_supports_off_thinking(model),
+            supports_minimal=codex_supports_minimal_thinking(model),
+        )
 
+    def _validate_top_budget(budget: ReasoningBudget) -> None:
+        capabilities = reasoning_capabilities_for_model(provider="codex", model=model)
+        if is_reasoning_unsupported(capabilities):
+            raise ValueError(
+                f"Reasoning is not supported for provider='codex' model={model!r}"
+            )
+        assert capabilities is not None
+        validate_budget_range(
+            provider="codex",
+            model=model,
+            label="reasoning budget",
+            tokens=budget.tokens,
+            capabilities=capabilities,
+        )
+
+    dispatch_reasoning_validation(
+        provider="codex",
+        model=model,
+        reasoning=reasoning,
+        native_spec_type=CodexReasoning,
+        requires_reasoning=codex_supports_configurable_thinking(model),
+        validate_native=_validate_native,
+        validate_top_budget=_validate_top_budget,
+    )
+
+
+def validate_reasoning_for_claude_code(
+    *, model: str, reasoning: ReasoningSpec | None
+) -> None:
+    if reasoning is None:
+        if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
+            raise ValueError(
+                f"reasoning is required for provider='claude-code' model={model!r}"
+            )
+        return
+    if isinstance(reasoning, ReasoningBudget):
+        raise TypeError(
+            f"claude-code does not support budget thinking for model={model!r}"
+        )
+    if not isinstance(reasoning, AnthropicReasoning):
+        raise TypeError(
+            f"claude-code reasoning is not supported for kind={reasoning.kind!r}"
+        )
+    if reasoning.display is not None:
+        raise ValueError("claude-code does not support anthropic display controls")
+    if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
+        if reasoning.thinking_level != ThinkingLevel.ADAPTIVE:
+            raise ValueError(
+                f"claude-code model {model!r} only supports anthropic thinking_level='adaptive'"
+            )
+        return
+    if reasoning.thinking_level != ThinkingLevel.NA:
+        raise ValueError(
+            f"claude-code model {model!r} does not support explicit anthropic thinking; use thinking_level='na'"
+        )
+
+
+class ClaudeHeadlessReasoningConfig(BaseProviderReasoningConfig):
     cli_args: list[str] = Field(default_factory=list)
-    warnings: list[ReasoningWarning] = Field(default_factory=list)
 
     @classmethod
     def from_base(
@@ -35,18 +120,12 @@ class ClaudeHeadlessReasoningConfig(BaseModel):
             ):
                 return cls()
         raise HeadlessExecutionError(
-            f"claude headless reasoning serializer received unsupported config kind={config.kind!r}"
+            unsupported_reasoning_kind_message("claude headless", config)
         )
 
-    def to_cli_args(self) -> list[str]:
-        return self.cli_args
 
-
-class CodexHeadlessReasoningConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
+class CodexHeadlessReasoningConfig(BaseProviderReasoningConfig):
     cli_args: list[str] = Field(default_factory=list)
-    warnings: list[ReasoningWarning] = Field(default_factory=list)
 
     @classmethod
     def from_base(
@@ -71,8 +150,5 @@ class CodexHeadlessReasoningConfig(BaseModel):
                     cli_args=["-c", f'model_reasoning_effort="{thinking_level}"']
                 )
         raise HeadlessExecutionError(
-            f"codex headless reasoning serializer received unsupported config kind={config.kind!r}"
+            unsupported_reasoning_kind_message("codex headless", config)
         )
-
-    def to_cli_args(self) -> list[str]:
-        return self.cli_args

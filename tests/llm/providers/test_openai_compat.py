@@ -13,6 +13,7 @@ from dr_llm.llm.providers.openai_compat.request import OpenAICompatRequest
 from dr_llm.llm.providers.openai_compat.response import OpenAICompatResponse
 from dr_llm.llm.providers.reasoning import (
     GlmReasoning,
+    OpenAIReasoning,
     OpenRouterReasoning,
     ThinkingLevel,
 )
@@ -152,6 +153,41 @@ def test_glm_request_serializes_native_thinking_payload() -> None:
     provider_request = OpenAICompatRequest.from_llm_request(request, glm_config)
     assert provider_request.reasoning_effort is None
     assert provider_request.json_payload()["thinking"] == {"type": "enabled"}
+
+
+def test_openai_gpt5_swaps_max_tokens_for_max_completion_tokens() -> None:
+    openai_config = OpenAICompatConfig(
+        name="openai",
+        base_url="https://api.openai.com/v1",
+        api_key="x",
+    )
+    request = make_request(
+        provider="openai",
+        model="gpt-5-mini",
+        max_tokens=64,
+        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
+    )
+    provider_request = OpenAICompatRequest.from_llm_request(request, openai_config)
+    payload = provider_request.json_payload()
+    assert "max_tokens" not in payload
+    assert payload["max_completion_tokens"] == 64
+
+
+def test_openai_legacy_model_keeps_max_tokens() -> None:
+    openai_config = OpenAICompatConfig(
+        name="openai",
+        base_url="https://api.openai.com/v1",
+        api_key="x",
+    )
+    request = make_request(
+        provider="openai",
+        model="gpt-4.1-mini",
+        max_tokens=64,
+    )
+    provider_request = OpenAICompatRequest.from_llm_request(request, openai_config)
+    payload = provider_request.json_payload()
+    assert payload["max_tokens"] == 64
+    assert "max_completion_tokens" not in payload
 
 
 def test_request_rejects_extra_body_key_collisions() -> None:

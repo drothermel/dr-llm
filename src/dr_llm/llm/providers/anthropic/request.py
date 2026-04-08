@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,6 +11,7 @@ from dr_llm.llm.providers.anthropic.reasoning import (
     KimiCodeReasoningConfig,
     MiniMaxReasoningConfig,
 )
+from dr_llm.llm.providers.api_config import resolve_api_key
 from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.messages import Message
@@ -73,10 +73,10 @@ class AnthropicRequest(BaseModel):
             system=system or None,
             temperature=request.temperature,
             top_p=request.top_p,
-            thinking=reasoning_mapping.thinking_payload() or None,
+            thinking=reasoning_mapping.thinking or None,
             output_config=output_config,
             base_url=config.base_url,
-            api_key=cls._resolve_api_key(config=config),
+            api_key=resolve_api_key(config, label="Anthropic"),
             anthropic_version=config.anthropic_version,
             warnings=reasoning_mapping.warnings,
         )
@@ -84,15 +84,6 @@ class AnthropicRequest(BaseModel):
     @staticmethod
     def _missing_max_tokens_error(provider: str) -> ProviderSemanticError:
         return ProviderSemanticError(f"{provider} requests require max_tokens")
-
-    @staticmethod
-    def _resolve_api_key(*, config: AnthropicConfig) -> str:
-        key = config.api_key or os.getenv(config.api_key_env)
-        if not key:
-            raise ProviderSemanticError(
-                f"Missing Anthropic API key. Set {config.api_key_env} or pass config.api_key"
-            )
-        return key
 
     @staticmethod
     def _to_anthropic_messages(

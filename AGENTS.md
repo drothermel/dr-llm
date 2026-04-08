@@ -19,7 +19,7 @@ Fix all issues reported by these commands before considering the task complete.
 
 `./scripts/run-tests-local.sh` auto-creates a temporary Docker Postgres project, runs `pytest -m integration -n 0`, and destroys it on exit. No manual setup needed — just Docker.
 
-For targeted runs, pass extra pytest args: `./scripts/run-tests-local.sh -k test_pool_fill`
+For targeted runs, pass extra pytest args: `./scripts/run-tests-local.sh -k test_pool_store`
 
 ## CI Parity
 

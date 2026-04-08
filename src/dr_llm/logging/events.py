@@ -1,12 +1,31 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
+from collections.abc import Generator
 from threading import get_ident
-from typing import Any, Generator
+from types import MappingProxyType
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+# Single source of truth for which context fields propagate from the active
+# generation_log_context() into a logged event. Adding a new propagated field
+# means appending it here and adding the matching attribute below — nothing
+# else in the logging stack needs to change. thread_id is intentionally absent:
+# it is captured at emit time so it reflects the emitting thread, not the
+# thread that opened the context (ContextVars propagate across awaits and
+# threads).
+_CONTEXT_FIELDS: tuple[str, ...] = (
+    "call_id",
+    "run_id",
+    "provider",
+    "model",
+    "mode",
+)
 
 
 class GenerationLogEvent(BaseModel):
@@ -20,27 +39,44 @@ class GenerationLogEvent(BaseModel):
     provider: str | None = None
     model: str | None = None
     mode: str | None = None
-    thread_id: int | None = None
+    thread_id: int = Field(default_factory=get_ident)
     payload: dict[str, Any] = Field(default_factory=dict)
 
+    @classmethod
+    def from_context(
+        cls,
+        *,
+        event_type: str,
+        stage: str,
+        payload: dict[str, Any],
+        context: Mapping[str, Any],
+    ) -> GenerationLogEvent:
+        data: dict[str, Any] = {
+            "event_type": event_type,
+            "stage": stage,
+            "payload": payload,
+        }
+        for field in _CONTEXT_FIELDS:
+            data[field] = context.get(field)
+        return cls.model_validate(data)
 
-_GENERATION_LOG_CONTEXT: ContextVar[dict[str, Any] | None] = ContextVar(
+
+_EMPTY_CONTEXT: Mapping[str, Any] = MappingProxyType({})
+
+_GENERATION_LOG_CONTEXT: ContextVar[Mapping[str, Any]] = ContextVar(
     "dr_llm_generation_log_context",
-    default=None,
+    default=_EMPTY_CONTEXT,
 )
 
 
 def get_generation_log_context() -> dict[str, Any]:
-    current = _GENERATION_LOG_CONTEXT.get()
-    return dict(current) if isinstance(current, dict) else {}
+    return dict(_GENERATION_LOG_CONTEXT.get())
 
 
 @contextmanager
 def generation_log_context(values: dict[str, Any]) -> Generator[None, None, None]:
-    current = get_generation_log_context()
-    merged = {**current, **values}
-    merged.setdefault("thread_id", get_ident())
-    token = _GENERATION_LOG_CONTEXT.set(dict(merged))
+    merged = {**_GENERATION_LOG_CONTEXT.get(), **values}
+    token = _GENERATION_LOG_CONTEXT.set(MappingProxyType(merged))
     try:
         yield
     finally:

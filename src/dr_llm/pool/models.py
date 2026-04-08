@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from dr_llm.pool.pool_sample import PoolSample
 
@@ -17,6 +17,13 @@ class InsertResult(BaseModel):
     inserted: int = 0
     skipped: int = 0
     failed: int = 0
+
+    def __add__(self, other: InsertResult) -> InsertResult:
+        return InsertResult(
+            inserted=self.inserted + other.inserted,
+            skipped=self.skipped + other.skipped,
+            failed=self.failed + other.failed,
+        )
 
 
 class AcquireQuery(BaseModel):
@@ -37,7 +44,11 @@ class AcquireResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     samples: list[PoolSample] = Field(default_factory=list)
-    claimed: int = 0
+
+    @computed_field
+    @property
+    def claimed(self) -> int:
+        return len(self.samples)
 
     def deficit(self, requested_n: int) -> int:
         return max(requested_n - len(self.samples), 0)

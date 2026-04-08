@@ -10,13 +10,15 @@ from typing import Any
 from dr_llm.pool.errors import PoolTopupError
 from dr_llm.pool.models import AcquireQuery, AcquireResult
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.pool_store import PoolStore
 
 logger = logging.getLogger(__name__)
 
 
 class PoolService:
     """Top-up orchestration: acquire from pool, generate missing, re-acquire."""
+
+    _INITIAL_POLL_INTERVAL_S = 0.05
 
     def __init__(
         self,
@@ -51,25 +53,19 @@ class PoolService:
         5. Re-acquire and return combined result
         """
         result = self._store.acquire(query)
-        deficit = result.deficit(query.n)
-        if deficit <= 0:
+        if self._is_satisfied(result, query):
             return result
 
-        # Wait for pending samples that might be in-flight
-        pending_count = self._store.pending.pending_counts(key_values=query.key_values)
-        if pending_count > 0:
-            self._store.pending.bump_pending_priority(
-                key_values=query.key_values,
-                priority=self._pending_priority_bump,
-            )
-            result = self._wait_and_reacquire(query, result)
-            deficit = result.deficit(query.n)
-            if deficit <= 0:
-                return result
+        result = self._wait_and_reacquire(query, result)
+        if self._is_satisfied(result, query):
+            return result
 
-        # Generate missing samples via caller-provided function
+        deficit = result.deficit(query.n)
         try:
-            generated = self._generate_topup(query.key_values, deficit, generator_fn)
+            logger.info(
+                "Generating %d top-up samples for %s", deficit, query.key_values
+            )
+            generated = generator_fn(query.key_values, deficit)
         except Exception as exc:
             raise PoolTopupError(
                 f"Top-up generation failed for {query.key_values}: {exc}"
@@ -85,61 +81,50 @@ class PoolService:
             )
 
             # Re-acquire to pick up the new samples
-            reacquire_query = AcquireQuery(
-                run_id=query.run_id,
-                request_id=query.request_id,
-                key_values=query.key_values,
-                n=deficit,
-                consumer_tag=query.consumer_tag,
-            )
-            extra = self._store.acquire(reacquire_query)
-            return AcquireResult(
-                samples=result.samples + extra.samples,
-                claimed=result.claimed + extra.claimed,
-            )
+            reacquired = self._store.acquire(query.model_copy(update={"n": deficit}))
+            return AcquireResult(samples=result.samples + reacquired.samples)
 
         return result
 
     def _wait_and_reacquire(
-        self, query: AcquireQuery, partial: AcquireResult
+        self, query: AcquireQuery, acquired_so_far: AcquireResult
     ) -> AcquireResult:
-        """Poll for pending samples to be promoted, then re-acquire.
+        """Bump pending priority then poll for promoted samples to be acquired.
 
-        Note: blocks the calling thread with time.sleep. Use from sync contexts
-        only; an async variant would be needed for asyncio callers.
+        ``bump_priority`` returns 0 when no pending rows match — that
+        signal lets us short-circuit the wait without a separate count query.
+        Polls back off exponentially from 50ms toward ``pending_poll_interval_s``
+        so the first promoted sample is observed within ~50ms instead of being
+        pinned to the long ceiling.
         """
+        bumped = self._store.pending.bump_priority(
+            key_values=query.key_values,
+            priority=self._pending_priority_bump,
+        )
+        if bumped == 0:
+            return acquired_so_far
+
         deadline = time.monotonic() + self._pending_poll_timeout_s
-        deficit = partial.deficit(query.n)
+        sleep_s = self._INITIAL_POLL_INTERVAL_S
 
-        while time.monotonic() < deadline and deficit > 0:
-            time.sleep(self._pending_poll_interval_s)
-            pending = self._store.pending.pending_counts(key_values=query.key_values)
-            if pending == 0:
+        while not self._is_satisfied(acquired_so_far, query):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 break
+            time.sleep(min(sleep_s, remaining))
+            sleep_s = min(sleep_s * 2.0, self._pending_poll_interval_s)
 
-            reacquire_query = AcquireQuery(
-                run_id=query.run_id,
-                request_id=query.request_id,
-                key_values=query.key_values,
-                n=deficit,
-                consumer_tag=query.consumer_tag,
-            )
-            extra = self._store.acquire(reacquire_query)
-            if extra.claimed > 0:
-                partial = AcquireResult(
-                    samples=partial.samples + extra.samples,
-                    claimed=partial.claimed + extra.claimed,
+            deficit = acquired_so_far.deficit(query.n)
+            reacquired = self._store.acquire(query.model_copy(update={"n": deficit}))
+            if reacquired.claimed > 0:
+                acquired_so_far = AcquireResult(
+                    samples=acquired_so_far.samples + reacquired.samples,
                 )
-                deficit = partial.deficit(query.n)
+                continue
 
-        return partial
+        return acquired_so_far
 
-    def _generate_topup(
-        self,
-        key_values: dict[str, Any],
-        deficit: int,
-        generator_fn: Callable[[dict[str, Any], int], list[PoolSample]],
-    ) -> list[PoolSample]:
-        """Generate top-up samples via the caller-provided function."""
-        logger.info("Generating %d top-up samples for %s", deficit, key_values)
-        return generator_fn(key_values, deficit)
+    @staticmethod
+    def _is_satisfied(result: AcquireResult, query: AcquireQuery) -> bool:
+        """True when ``result`` already holds enough samples for ``query``."""
+        return result.deficit(query.n) <= 0

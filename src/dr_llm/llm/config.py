@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from dr_llm.llm.providers.effort import EffortSpec, validate_effort
-from dr_llm.llm.request import LlmRequest, validate_max_tokens
+from dr_llm.llm.providers.effort import EffortSpec
+from dr_llm.llm.request import LlmRequest, validate_llm_constraints
 from dr_llm.llm.messages import Message
-from dr_llm.llm.providers.reasoning import ReasoningSpec, validate_reasoning
+from dr_llm.llm.providers.reasoning import ReasoningSpec
 
 
 class LlmConfig(BaseModel):
@@ -21,18 +21,11 @@ class LlmConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_generation_params(self) -> LlmConfig:
-        validate_max_tokens(
+        validate_llm_constraints(
             provider=self.provider,
+            model=self.model,
             max_tokens=self.max_tokens,
-        )
-        validate_effort(
-            provider=self.provider,
-            model=self.model,
             effort=self.effort,
-        )
-        validate_reasoning(
-            provider=self.provider,
-            model=self.model,
             reasoning=self.reasoning,
         )
         return self

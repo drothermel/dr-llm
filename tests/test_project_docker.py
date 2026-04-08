@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import os
 import subprocess
+import threading
 from datetime import UTC, datetime
 from typing import cast
 
@@ -732,3 +733,75 @@ def test_docker_swap_in_db_creates_restores_and_swaps_temp_db(
             ),
         ),
     ]
+
+
+def test_call_docker_psql_input_stream_suppresses_broken_pipe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BrokenPipeWriter:
+        def write(self, _data: object) -> int:
+            raise BrokenPipeError
+
+        def close(self) -> None:
+            raise BrokenPipeError
+
+    fake_process = subprocess.Popen[bytes].__new__(subprocess.Popen)
+    fake_process.stdin = BrokenPipeWriter()
+
+    def fake_run_docker_process(
+        args: tuple[str, ...],
+        *,
+        stdin: int | None = None,
+        stdout: int | None = None,
+        operation,
+    ) -> None:
+        del args, stdin, stdout
+        operation(fake_process)
+
+    monkeypatch.setattr(docker_psql, "_run_docker_process", fake_run_docker_process)
+
+    docker_psql.call_docker_psql_input_stream(
+        container_name="demo",
+        db_user="postgres",
+        db_name="dr_llm",
+        sql_stream=io.BytesIO(b"select 1;\n"),
+    )
+
+
+def test_run_docker_process_reads_stderr_concurrently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stderr_started = threading.Event()
+
+    class FakeProcess:
+        def __init__(self) -> None:
+            self.stderr = io.BytesIO(b"boom")
+
+        def wait(self) -> int:
+            return 1
+
+        def kill(self) -> None:
+            return None
+
+    fake_process = FakeProcess()
+
+    def fake_popen(*args, **kwargs):
+        del args, kwargs
+        return fake_process
+
+    def fake_read_process_stderr(process) -> str:
+        assert process is fake_process
+        stderr_started.set()
+        return "boom"
+
+    monkeypatch.setattr(docker_psql.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(docker_psql, "read_process_stderr", fake_read_process_stderr)
+
+    with pytest.raises(DockerCommandError, match="boom"):
+        docker_psql._run_docker_process(
+            ("exec", "demo", "psql"),
+            operation=lambda process: (
+                stderr_started.wait(0.5)
+                or (_ for _ in ()).throw(AssertionError("stderr reader did not start"))
+            ),
+        )

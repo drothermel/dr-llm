@@ -28,25 +28,12 @@ _TYPE_MAP: dict[ColumnType, type[Any]] = {
 }
 
 
-def _sqlalchemy_type_for_column_type(column_type: ColumnType) -> type[Any]:
-    """Resolve the SQLAlchemy column type class for a schema ``ColumnType``."""
-    sql_type = _TYPE_MAP.get(column_type)
-    if sql_type is None:
-        msg = (
-            f"No SQLAlchemy type mapped for ColumnType {column_type!r}; "
-            f"add an entry for this value to _TYPE_MAP in dr_llm.pool.db.tables. "
-            f"ColumnType={ColumnType!r}, _TYPE_MAP keys={list(_TYPE_MAP)!r}"
-        )
-        raise ValueError(msg)
-    return sql_type
-
-
 class PoolTables:
     """Dynamic SQLAlchemy table metadata for a pool schema."""
 
     def __init__(self, schema: PoolSchema) -> None:
         self.schema = schema
-        self.metadata = MetaData()
+        self.sa_metadata = MetaData()
         self.samples = self._build_samples_table()
         self.claims = self._build_claims_table()
         self.pending = self._build_pending_table()
@@ -57,6 +44,7 @@ class PoolTables:
         self.pending_key_columns = [
             self.pending.c[name] for name in schema.key_column_names
         ]
+        self._build_indexes()
         self.all_tables = [
             self.samples,
             self.claims,
@@ -99,9 +87,9 @@ class PoolTables:
                 index.create(bind=bind, checkfirst=True)
 
     def _build_samples_table(self) -> Table:
-        tbl = Table(
+        return Table(
             self.schema.samples_table,
-            self.metadata,
+            self.sa_metadata,
             Column("sample_id", Text, primary_key=True),
             *self._key_columns(),
             Column("sample_idx", Integer, nullable=False),
@@ -126,22 +114,11 @@ class PoolTables:
                 server_default=text("now()"),
             ),
         )
-        Index(
-            f"uq_{self.schema.samples_table}_cell",
-            *[tbl.c[name] for name in self.schema.key_column_names],
-            tbl.c.sample_idx,
-            unique=True,
-        )
-        Index(
-            f"idx_{self.schema.samples_table}_key",
-            *[tbl.c[name] for name in self.schema.key_column_names],
-        )
-        return tbl
 
     def _build_claims_table(self) -> Table:
-        tbl = Table(
+        return Table(
             self.schema.claims_table,
-            self.metadata,
+            self.sa_metadata,
             Column("claim_id", Text, primary_key=True),
             Column("run_id", Text, nullable=False),
             Column("request_id", Text, nullable=False),
@@ -155,19 +132,11 @@ class PoolTables:
                 server_default=text("now()"),
             ),
         )
-        Index(
-            f"uq_{self.schema.claims_table}_run_sample",
-            tbl.c.run_id,
-            tbl.c.sample_id,
-            unique=True,
-        )
-        Index(f"idx_{self.schema.claims_table}_run", tbl.c.run_id)
-        return tbl
 
     def _build_pending_table(self) -> Table:
-        tbl = Table(
+        return Table(
             self.schema.pending_table,
-            self.metadata,
+            self.sa_metadata,
             Column("pending_id", Text, primary_key=True),
             *self._key_columns(),
             Column("sample_idx", Integer, nullable=False),
@@ -196,28 +165,46 @@ class PoolTables:
                 server_default=text("now()"),
             ),
         )
+
+    def _build_indexes(self) -> None:
+        Index(
+            f"uq_{self.schema.samples_table}_cell",
+            *self.samples_key_columns,
+            self.samples.c.sample_idx,
+            unique=True,
+        )
+        Index(
+            f"idx_{self.schema.samples_table}_key",
+            *self.samples_key_columns,
+        )
+        Index(
+            f"uq_{self.schema.claims_table}_run_sample",
+            self.claims.c.run_id,
+            self.claims.c.sample_id,
+            unique=True,
+        )
+        Index(f"idx_{self.schema.claims_table}_run", self.claims.c.run_id)
         Index(
             f"uq_{self.schema.pending_table}_cell",
-            *[tbl.c[name] for name in self.schema.key_column_names],
-            tbl.c.sample_idx,
+            *self.pending_key_columns,
+            self.pending.c.sample_idx,
             unique=True,
         )
         Index(
             f"idx_{self.schema.pending_table}_status_priority",
-            tbl.c.status,
-            tbl.c.priority.desc(),
-            tbl.c.created_at.asc(),
+            self.pending.c.status,
+            self.pending.c.priority.desc(),
+            self.pending.c.created_at.asc(),
         )
         Index(
             f"idx_{self.schema.pending_table}_key",
-            *[tbl.c[name] for name in self.schema.key_column_names],
+            *self.pending_key_columns,
         )
-        return tbl
 
     def _build_metadata_table(self) -> Table:
         return Table(
             self.schema.metadata_table,
-            self.metadata,
+            self.sa_metadata,
             Column("pool_name", Text, nullable=False),
             Column("key", Text, nullable=False),
             Column("value_json", JSONB, nullable=False),
@@ -238,10 +225,6 @@ class PoolTables:
 
     def _key_columns(self) -> list[Column[Any]]:
         return [
-            Column(
-                key.name,
-                _sqlalchemy_type_for_column_type(key.type),
-                nullable=False,
-            )
+            Column(key.name, _TYPE_MAP[key.type], nullable=False)
             for key in self.schema.key_columns
         ]

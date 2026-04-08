@@ -1,0 +1,433 @@
+baidu/ernie-4.5-21b-a3b-thinking:
+  request_style: enabled_flag
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: true
+  verified: true
+  notes: 'Live-tested: reasoning is required and enabled=false is rejected.'
+baidu/ernie-4.5-21b-a3b:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+baidu/ernie-4.5-300b-a47b:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+bytedance-seed/seed-1.6-flash:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+bytedance-seed/seed-2.0-mini:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+bytedance-seed/seed-2.0-lite:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+bytedance-seed/seed-1.6:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+deepseek/deepseek-v3.2:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+deepseek/deepseek-chat-v3.1:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+  verified: true
+  notes: 'Live-tested: boolean reasoning toggle works and enabled=false clears tracked reasoning.'
+deepseek/deepseek-chat-v3-0324:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+deepseek/deepseek-chat:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+  verified: true
+  notes: 'Live-tested: reasoning params are effectively ignored; no tracked reasoning channel is exposed.'
+deepseek/deepseek-r1-distill-llama-70b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+deepseek/deepseek-r1-0528:
+  request_style: enabled_flag
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: true
+  verified: true
+  notes: 'Live-tested: reasoning is required and enabled=false is rejected.'
+deepseek/deepseek-r1:
+  request_style: enabled_flag
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: true
+  verified: true
+  notes: 'Live-tested: reasoning is required and enabled=false is rejected.'
+meta-llama/llama-3.1-8b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+  verified: true
+  notes: 'Live-tested: no tracked reasoning support was exposed.'
+meta-llama/llama-3-8b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+meta-llama/llama-3.2-1b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+meta-llama/llama-3.2-3b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+meta-llama/llama-4-scout:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+meta-llama/llama-3.3-70b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+meta-llama/llama-4-maverick:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+meta-llama/llama-3.1-70b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+meta-llama/llama-3-70b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/mistral-nemo:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/mistral-small-3.1-24b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+  verified: true
+  notes: 'Live-tested: no tracked reasoning support was exposed.'
+mistralai/mistral-small-24b-instruct-2501:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/ministral-3b-2512:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/mistral-small-3.2-24b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/mistral-7b-instruct-v0.1:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/mistral-small-creative:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/ministral-8b-2512:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/devstral-small:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/ministral-14b-2512:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/mistral-small-2603:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+  verified: true
+  notes: 'Live-tested: boolean reasoning toggle works.'
+mistralai/mistral-saba:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/codestral-2508:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/mixtral-8x7b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/mistral-large-2512:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/devstral-2512:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/mistral-medium-3.1:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/devstral-medium:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+mistralai/mistral-medium-3:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+nvidia/nemotron-nano-9b-v2:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+  verified: true
+  notes: 'Live-tested via the :free route: enabled=false still returned tracked reasoning, so route behavior may be inconsistent.'
+nvidia/nemotron-3-nano-30b-a3b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+nvidia/llama-3.3-nemotron-super-49b-v1.5:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+nvidia/nemotron-3-super-120b-a12b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+nvidia/llama-3.1-nemotron-ultra-253b-v1:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+openai/gpt-oss-20b:
+  request_style: effort
+  supports_disable: false
+  allowed_efforts:
+  - low
+  - medium
+  - high
+  default_enabled: true
+  verified: true
+  notes: 'Live-tested: accepts reasoning.effort=low|medium|high and rejects disable.'
+openai/gpt-oss-120b:
+  request_style: effort
+  supports_disable: false
+  allowed_efforts:
+  - low
+  - medium
+  - high
+  default_enabled: true
+  verified: true
+  notes: 'Live-tested: accepts reasoning.effort=low|medium|high and rejects disable.'
+qwen/qwen2.5-coder-7b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+qwen/qwen-2.5-7b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+qwen/qwen3.5-9b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen3-235b-a22b-2507:
+  request_style: effort
+  supports_disable: false
+  allowed_efforts:
+  - low
+  - medium
+  - high
+  default_enabled: true
+qwen/qwen3-14b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen3-32b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen3-coder-30b-a3b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+qwen/qwen3-30b-a3b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen3-8b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen3-30b-a3b-instruct-2507:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+qwen/qwen3-30b-a3b-thinking-2507:
+  request_style: enabled_flag
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: true
+  verified: true
+  notes: 'Live-tested: reasoning is required and enabled=false is rejected.'
+qwen/qwen-2.5-72b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+qwen/qwq-32b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen3-next-80b-a3b-thinking:
+  request_style: enabled_flag
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: true
+  verified: true
+  notes: 'Live-tested: reasoning is required and enabled=false is rejected.'
+qwen/qwen3-coder-next:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+qwen/qwen3-next-80b-a3b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+  verified: true
+  notes: 'Live-tested: no tracked reasoning support was exposed.'
+qwen/qwen3-coder:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+qwen/qwen3.5-35b-a3b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen3-235b-a22b-thinking-2507:
+  request_style: enabled_flag
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: true
+  verified: true
+  notes: 'Live-tested: reasoning is required and enabled=false is rejected.'
+qwen/qwen3.5-27b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen3.5-122b-a10b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen-2.5-coder-32b-instruct:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+qwen/qwen3-235b-a22b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen3.5-397b-a17b:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen3-max-thinking:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+qwen/qwen3-max:
+  request_style: none
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: false
+stepfun/step-3.5-flash:
+  request_style: enabled_flag
+  supports_disable: false
+  allowed_efforts: []
+  default_enabled: true
+  verified: true
+  notes: 'Live-tested: reasoning is required and enabled=false is rejected.'
+xiaomi/mimo-v2-flash:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+  verified: true
+  notes: 'Live-tested: boolean reasoning toggle works.'
+xiaomi/mimo-v2-pro:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null

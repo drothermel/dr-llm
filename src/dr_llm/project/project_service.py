@@ -98,17 +98,23 @@ def list_projects() -> list[ProjectInfo]:
 
 
 def create_project(name: str) -> ProjectInfo:
-    project = _allocate_port_and_create_container(name)
+    claimed_ports = _collect_claimed_ports()
+    project = _create_container_with_port_retry(name, claimed_ports)
     status = _wait_ready_or_destroy(project)
     return project.model_copy(update={"status": status})
 
 
-def _allocate_port_and_create_container(name: str) -> ProjectInfo:
-    claimed_ports = {
+def _collect_claimed_ports() -> set[int]:
+    return {
         metadata.port
         for metadata in get_all_docker_project_metadata()
         if metadata.port is not None
     }
+
+
+def _create_container_with_port_retry(
+    name: str, claimed_ports: set[int]
+) -> ProjectInfo:
     created_at = datetime.now(UTC)
     while True:
         port = _find_available_port(claimed_ports)

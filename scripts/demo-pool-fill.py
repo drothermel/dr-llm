@@ -11,7 +11,9 @@ project via project_service, runs the demo, and destroys it on exit.
 The demo:
   - Defines reasoning-valid LlmConfig instances for OpenAI and Google
   - Defines short prompts as Message lists
-  - Seeds the pending queue with the full (llm_config x prompt) cross product
+  - Manually constructs PendingSample rows for the (llm_config x prompt) cross
+    product, embedding serialized configs/messages in each payload
+  - Inserts them via store.pending.insert_many
   - Starts background workers using make_llm_process_fn (real LLM calls)
   - Prints progress until the queued work is complete
 """
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 import shutil
 import time
+from itertools import product
 from typing import Annotated
 from uuid import uuid4
 
@@ -41,8 +44,8 @@ from dr_llm.pool.pending.backend import (
     PoolPendingBackendConfig,
     PoolPendingBackendState,
 )
-from dr_llm.pool.pending.fill_pending import seed_pending
-from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pool_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import create_project, destroy_project
 from dr_llm.workers import WorkerConfig, WorkerSnapshot, start_workers
@@ -53,7 +56,6 @@ LLM_CONFIGS: dict[str, LlmConfig] = {
     "gpt-5-mini-low": LlmConfig(
         provider="openai",
         model="gpt-5-mini",
-        temperature=0.7,
         max_tokens=64,
         reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
     ),
@@ -74,6 +76,35 @@ PROMPTS: dict[str, list[Message]] = {
         Message(role="user", content="What is 17 * 23? Reply with just the number.")
     ],
 }
+
+
+def _build_pending_samples(
+    *,
+    llm_configs: dict[str, LlmConfig],
+    prompts: dict[str, list[Message]],
+    samples_per_cell: int,
+) -> list[PendingSample]:
+    """Build PendingSample rows for the (llm_config x prompt) cross product.
+
+    Each pending row stores its key IDs in ``key_values`` and the serialized
+    LlmConfig + messages in ``payload``, which is the shape that
+    ``make_llm_process_fn`` expects.
+    """
+    samples: list[PendingSample] = []
+    for cfg_id, prompt_id in product(llm_configs, prompts):
+        payload = {
+            "llm_config": llm_configs[cfg_id].model_dump(mode="json"),
+            "prompt": [m.model_dump(mode="json") for m in prompts[prompt_id]],
+        }
+        for sample_idx in range(samples_per_cell):
+            samples.append(
+                PendingSample(
+                    key_values={"llm_config": cfg_id, "prompt": prompt_id},
+                    sample_idx=sample_idx,
+                    payload=payload,
+                )
+            )
+    return samples
 
 
 def _print_progress(snapshot: WorkerSnapshot[PoolPendingBackendState]) -> None:
@@ -102,17 +133,17 @@ def _run_demo(
     runtime = DbRuntime(DbConfig(dsn=dsn))
     registry = build_default_registry()
     store = PoolStore(schema, runtime)
+    store.ensure_schema()
     controller = None
 
     try:
-        store.init_schema()
-        seed_result = seed_pending(
-            store,
-            key_grid={
-                "llm_config": LLM_CONFIGS,
-                "prompt": PROMPTS,
-            },
-            n=samples_per_cell,
+        pending_samples = _build_pending_samples(
+            llm_configs=LLM_CONFIGS,
+            prompts=PROMPTS,
+            samples_per_cell=samples_per_cell,
+        )
+        seed_result = store.pending.insert_many(
+            pending_samples, ignore_conflicts=True
         )
         print(
             f"Seeded {seed_result.inserted} pending rows"

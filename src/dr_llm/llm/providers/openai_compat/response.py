@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError, ProviderTransportError
+from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import LlmResponse
 from dr_llm.llm.messages import CallMode
 from dr_llm.llm.providers.reasoning import ReasoningWarning
 from dr_llm.llm.providers.openai_compat.request import OpenAICompatRequest
-from dr_llm.llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
+from dr_llm.llm.providers.response_validation import (
+    parse_http_response_body,
+    validate_http_response,
+)
+from dr_llm.llm.providers.usage import CostInfo, build_usage_and_reasoning
 
 
 class _OpenAICompatUsageDetails(BaseModel):
@@ -55,7 +58,7 @@ class OpenAICompatResponse(BaseModel):
 
     status_code: int
     response_text_preview: str = Field(exclude=True)
-    raw_json: dict[str, Any] | None = Field(default=None, exclude=True, repr=False)
+    raw_json: Any | None = Field(default=None, exclude=True, repr=False)
     choices: list[_OpenAICompatChoice] = Field(default_factory=list)
     usage: _OpenAICompatUsage | None = None
     json_error: str | None = Field(default=None, exclude=True, repr=False)
@@ -63,37 +66,17 @@ class OpenAICompatResponse(BaseModel):
 
     @classmethod
     def from_http_response(cls, response: httpx.Response) -> OpenAICompatResponse:
-        raw_json: dict[str, Any] | None = None
-        choices: list[_OpenAICompatChoice] = []
-        usage: _OpenAICompatUsage | None = None
-        json_error: str | None = None
-        response_shape_error: str | None = None
-
-        try:
-            body_raw = response.json()
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            json_error = str(exc)
-        else:
-            if not isinstance(body_raw, dict):
-                response_shape_error = "expected JSON object"
-            else:
-                raw_json = body_raw
-                try:
-                    parsed = _OpenAICompatResponseBody(**body_raw)
-                except ValidationError as exc:
-                    response_shape_error = str(exc)
-                else:
-                    choices = parsed.choices
-                    usage = parsed.usage
-
+        raw_json, parsed, json_error, shape_error = parse_http_response_body(
+            response, _OpenAICompatResponseBody
+        )
         return cls(
             status_code=response.status_code,
             response_text_preview=response.text[:500],
             raw_json=raw_json,
-            choices=choices,
-            usage=usage,
+            choices=parsed.choices if parsed else [],
+            usage=parsed.usage if parsed else None,
             json_error=json_error,
-            response_shape_error=response_shape_error,
+            response_shape_error=shape_error,
         )
 
     def event_payload(self, request: OpenAICompatRequest) -> dict[str, Any]:
@@ -109,22 +92,13 @@ class OpenAICompatResponse(BaseModel):
         }
 
     def _validated_choice(self, *, provider_name: str) -> _OpenAICompatChoice:
-        if self.status_code >= 500 or self.status_code == 429:
-            raise ProviderTransportError(
-                f"{provider_name} transient error status={self.status_code} body={self.response_text_preview}"
-            )
-        if self.status_code >= 400:
-            raise ProviderSemanticError(
-                f"{provider_name} request rejected status={self.status_code} body={self.response_text_preview}"
-            )
-        if self.json_error is not None:
-            raise ProviderTransportError(
-                f"{provider_name} invalid JSON response: {self.json_error}"
-            )
-        if self.response_shape_error is not None:
-            raise ProviderSemanticError(
-                f"{provider_name} response shape invalid: {self.response_shape_error}"
-            )
+        validate_http_response(
+            provider_label=provider_name,
+            status_code=self.status_code,
+            response_text_preview=self.response_text_preview,
+            json_error=self.json_error,
+            response_shape_error=self.response_shape_error,
+        )
         if not self.choices:
             raise ProviderSemanticError(f"{provider_name} response missing choices")
         return self.choices[0]
@@ -138,20 +112,19 @@ class OpenAICompatResponse(BaseModel):
     ) -> LlmResponse:
         choice = self._validated_choice(provider_name=request.provider)
         message = choice.message
-        usage_raw = (
-            self.usage.model_dump(mode="json", exclude_none=True) if self.usage else {}
+        usage_dump = (
+            self.usage.model_dump(mode="json", exclude_none=True)
+            if self.usage
+            else None
         )
-        reasoning_tokens = TokenUsage.extract_reasoning_tokens(usage_raw)
-        usage = TokenUsage.from_raw(
+        usage, reasoning, reasoning_details = build_usage_and_reasoning(
+            usage_dump=usage_dump,
             prompt_tokens=self.usage.prompt_tokens if self.usage else None,
             completion_tokens=self.usage.completion_tokens if self.usage else None,
             total_tokens=self.usage.total_tokens if self.usage else None,
-            reasoning_tokens=reasoning_tokens,
+            reasoning_source=message.model_dump(mode="json", exclude_none=True),
         )
-        reasoning, reasoning_details = parse_reasoning(
-            message.model_dump(mode="json", exclude_none=True)
-        )
-        raw_json = self.raw_json or {}
+        raw_json = self.raw_json if isinstance(self.raw_json, dict) else {}
         return LlmResponse(
             text=message.content or "",
             finish_reason=choice.finish_reason,

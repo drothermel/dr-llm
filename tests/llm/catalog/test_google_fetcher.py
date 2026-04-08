@@ -23,7 +23,7 @@ def test_google_catalog_fetch_passes_api_key_via_header(
         captured["timeout_seconds"] = timeout_seconds
         return {"models": []}
 
-    monkeypatch.setattr("dr_llm.llm.catalog.fetchers.google.get_json", fake_get_json)
+    monkeypatch.setattr("dr_llm.llm.catalog.fetchers.common.get_json", fake_get_json)
     provider = GoogleProvider(
         config=APIProviderConfig(
             name="google",
