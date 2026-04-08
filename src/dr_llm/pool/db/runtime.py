@@ -7,7 +7,7 @@ from os import getenv
 from time import sleep
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.pool import QueuePool
 
@@ -95,7 +95,12 @@ class DbRuntime:
     def _configure_connection(self, conn: Connection) -> None:
         if self.config.statement_timeout_ms is None:
             return
-        conn.exec_driver_sql(
-            "SET statement_timeout = %s",
-            (int(self.config.statement_timeout_ms),),
+        conn.execute(
+            select(
+                func.set_config(
+                    "statement_timeout",
+                    str(int(self.config.statement_timeout_ms)),
+                    False,
+                )
+            )
         )

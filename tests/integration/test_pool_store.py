@@ -211,6 +211,31 @@ def test_pending_insert_and_count(pool_store: PoolStore) -> None:
 
 
 @pytest.mark.integration
+def test_runtime_applies_statement_timeout_setting() -> None:
+    dsn = _get_dsn()
+    if not dsn:
+        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+
+    runtime = DbRuntime(
+        DbConfig(
+            dsn=dsn,
+            min_pool_size=1,
+            max_pool_size=1,
+            application_name="pool_tests_timeout",
+            statement_timeout_ms=1234,
+        )
+    )
+    try:
+        with runtime.connect() as conn:
+            timeout_ms = conn.exec_driver_sql(
+                "SELECT setting::int FROM pg_settings WHERE name = 'statement_timeout'"
+            ).scalar_one()
+        assert timeout_ms == 1234
+    finally:
+        runtime.close()
+
+
+@pytest.mark.integration
 def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
     p = _pending(
         dim_a="promote",

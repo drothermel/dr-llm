@@ -6,8 +6,8 @@ import logging
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import and_, cast, func, literal, or_, select, update
-from sqlalchemy.dialects.postgresql import INTERVAL, JSONB, insert as pg_insert
+from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
@@ -100,7 +100,7 @@ class PendingStore:
                 status=PendingStatus.leased.value,
                 worker_id=worker_id,
                 lease_expires_at=func.now()
-                + cast(literal(f"{lease_seconds} seconds"), INTERVAL),
+                + func.make_interval(0, 0, 0, 0, 0, 0, lease_seconds),
                 attempt_count=self._tables.pending.c.attempt_count + 1,
             )
             .returning(*self._tables.pending_select_columns())
@@ -171,10 +171,9 @@ class PendingStore:
             )
             .values(
                 status=PendingStatus.failed.value,
-                metadata_json=func.coalesce(
-                    self._tables.pending.c.metadata_json,
-                    literal({}, type_=JSONB),
-                ).op("||")(metadata_patch),
+                metadata_json=self._tables.pending.c.metadata_json.op("||")(
+                    metadata_patch
+                ),
             )
         )
         with self._runtime.begin() as conn:

@@ -57,7 +57,12 @@ class PoolStore:
     def init_schema(
         self,
     ) -> None:
-        """Create pool tables if they don't exist."""
+        """Create dynamic pool tables if they don't exist.
+
+        These tables remain runtime-owned because their physical names derive from
+        PoolSchema. Alembic intentionally excludes them until the pool schema
+        design moves away from per-pool table sets.
+        """
         if self._schema_initialized:
             return
         with self._schema_lock:

@@ -16,6 +16,9 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = MetaData()
+# Pool tables are named per PoolSchema at runtime, so Alembic intentionally does
+# not own them yet. Runtime initialization remains the source of truth until the
+# pool schema design moves away from dynamic per-pool physical tables.
 _POOL_TABLE_RE = re.compile(r"^pool_[a-z][a-z0-9_]*_(samples|claims|pending|metadata)$")
 
 
