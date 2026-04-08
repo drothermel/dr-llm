@@ -26,7 +26,6 @@ from dr_llm.llm.providers.reasoning import (
     is_reasoning_unsupported,
     unsupported_reasoning_kind_message,
     validate_allowed_thinking_levels,
-    validate_budget_range,
     validate_discrete_thinking_level,
 )
 from dr_llm.llm.providers.reasoning_capabilities import (
@@ -49,21 +48,9 @@ def validate_reasoning_for_openai(
         )
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
-        capabilities = reasoning_capabilities_for_model(provider="openai", model=model)
-        if capabilities is None:
-            raise ValueError(
-                f"Reasoning is not allowed for provider='openai' model={model!r}: reasoning capabilities are unknown"
-            )
-        if capabilities.mode == "unsupported":
-            raise ValueError(
-                f"Reasoning is not supported for provider='openai' model={model!r}"
-            )
-        validate_budget_range(
-            provider="openai",
-            model=model,
-            label="reasoning budget",
-            tokens=budget.tokens,
-            capabilities=capabilities,
+        del budget
+        raise ValueError(
+            f"Top-level reasoning budgets are not supported for provider='openai' model={model!r}; use OpenAIReasoning(thinking_level=...)"
         )
 
     dispatch_reasoning_validation(
@@ -108,19 +95,9 @@ def validate_reasoning_for_openrouter(
         )
         return
     if isinstance(reasoning, ReasoningBudget):
-        if is_reasoning_unsupported(capabilities):
-            raise ValueError(
-                f"Reasoning is not supported for provider='openrouter' model={model!r}"
-            )
-        assert capabilities is not None
-        validate_budget_range(
-            provider="openrouter",
-            model=model,
-            label="reasoning budget",
-            tokens=reasoning.tokens,
-            capabilities=capabilities,
+        raise ValueError(
+            f"Top-level reasoning budgets are not supported for provider='openrouter' model={model!r}; use OpenRouterReasoning or OpenAIReasoning"
         )
-        return
     raise ValueError(
         f"openrouter reasoning is not supported for kind={reasoning.kind!r}"
     )
@@ -184,19 +161,9 @@ def validate_reasoning_for_glm(*, model: str, reasoning: ReasoningSpec | None) -
         )
         return
     if isinstance(reasoning, ReasoningBudget):
-        if is_reasoning_unsupported(capabilities):
-            raise ValueError(
-                f"Reasoning is not supported for provider='glm' model={model!r}"
-            )
-        assert capabilities is not None
-        validate_budget_range(
-            provider="glm",
-            model=model,
-            label="reasoning budget",
-            tokens=reasoning.tokens,
-            capabilities=capabilities,
+        raise ValueError(
+            f"Top-level reasoning budgets are not supported for provider='glm' model={model!r}; use GlmReasoning(thinking_level=...)"
         )
-        return
     raise ValueError(f"glm reasoning is not supported for kind={reasoning.kind!r}")
 
 

@@ -50,7 +50,7 @@ class GenerationLogEvent(BaseModel):
         stage: str,
         payload: dict[str, Any],
         context: Mapping[str, Any],
-    ) -> "GenerationLogEvent":
+    ) -> GenerationLogEvent:
         data: dict[str, Any] = {
             "event_type": event_type,
             "stage": stage,

@@ -17,7 +17,8 @@ class PendingStatus(StrEnum):
 IN_FLIGHT_STATUSES: frozenset[PendingStatus] = frozenset(
     {PendingStatus.pending, PendingStatus.leased}
 )
-"""Non-terminal statuses (samples still being worked on)."""
+# Non-terminal pending statuses: rows still waiting to be processed or currently
+# leased by a worker.
 
 
 class PendingStatusCounts(BaseModel):

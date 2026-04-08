@@ -42,7 +42,7 @@ def _policies() -> dict[str, OpenRouterModelPolicy]:
         .read_text(encoding="utf-8")
     )
     return {
-        model: OpenRouterModelPolicy.model_validate({"model": model, **fields})
+        model: OpenRouterModelPolicy(model=model, **fields)
         for model, fields in raw.items()
     }
 

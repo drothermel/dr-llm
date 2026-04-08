@@ -46,9 +46,8 @@ class KeyedSampleBase(BaseModel):
 
     @classmethod
     def from_db_row(cls, schema: PoolSchema, row: Mapping[str, Any]) -> Self:
-        return cls.model_validate(
-            {**row, "key_values": key_values_from_row(schema, dict(row))}
-        )
+        row_dict = dict(row)
+        return cls(**row_dict, key_values=key_values_from_row(schema, row_dict))
 
     def _base_insert_row(self) -> dict[str, Any]:
         """Shared payload/metadata/source_run_id + key_values for insert rows.

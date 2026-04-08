@@ -25,7 +25,7 @@ def validate_http_response(
     errors). ``ProviderSemanticError`` covers client errors and shape failures
     that retrying will not resolve.
     """
-    if status_code >= 500 or status_code == 429:
+    if status_code >= 500 or status_code in {408, 429}:
         raise ProviderTransportError(
             f"{provider_label} transient error status={status_code} body={response_text_preview}"
         )

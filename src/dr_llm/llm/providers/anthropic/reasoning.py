@@ -126,6 +126,16 @@ def validate_reasoning_for_kimi_code(
         )
     if reasoning.display is not None:
         raise ValueError("kimi-code does not support anthropic display controls")
+    if reasoning.thinking_level not in {
+        ThinkingLevel.NA,
+        ThinkingLevel.OFF,
+        ThinkingLevel.ADAPTIVE,
+        ThinkingLevel.BUDGET,
+    }:
+        raise ValueError(
+            "kimi-code supports only anthropic thinking levels "
+            "'na', 'off', 'adaptive', and 'budget'"
+        )
     if reasoning.thinking_level == ThinkingLevel.BUDGET:
         _validate_anthropic_budget_for_provider(
             provider="kimi-code", model=model, budget_tokens=reasoning.budget_tokens
@@ -136,12 +146,9 @@ def validate_reasoning_for_minimax(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
     if reasoning is None:
-        capabilities = reasoning_capabilities_for_model(provider="minimax", model=model)
-        if not is_reasoning_unsupported(capabilities):
-            raise ValueError(
-                f"reasoning is required for provider='minimax' model={model!r}"
-            )
-        return
+        raise ValueError(
+            f"reasoning is required for provider='minimax' model={model!r}"
+        )
     if isinstance(reasoning, ReasoningBudget):
         raise ValueError(
             "minimax requires anthropic reasoning configs; "

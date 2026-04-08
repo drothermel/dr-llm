@@ -45,6 +45,7 @@ def key_filter_clause(
     table: Table,
     key_values: Mapping[str, Any],
 ) -> ColumnElement[bool]:
+    validate_key_values(schema, dict(key_values))
     return and_(*[table.c[kc.name] == key_values[kc.name] for kc in schema.key_columns])
 
 
@@ -147,7 +148,10 @@ def execute_insert_count(
                 if parameters is None
                 else conn.execute(stmt, parameters)
             )
-            return len(list(result.scalars()))
+            inserted = 0
+            for _ in result.scalars():
+                inserted += 1
+            return inserted
         except Exception as exc:
             if ignore_conflicts and is_constraint_error(exc):
                 return 0

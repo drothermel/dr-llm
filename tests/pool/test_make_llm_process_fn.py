@@ -187,6 +187,15 @@ def test_missing_prompt_key_raises() -> None:
         process_fn(sample)
 
 
+def test_explicit_none_payload_field_raises_value_error() -> None:
+    registry = _make_registry()
+    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    sample = _make_sample({"llm_config": None, "prompt": [{"role": "user", "content": "hi"}]})
+
+    with pytest.raises(ValueError, match=r"PendingSample\.payload\['llm_config'\]"):
+        process_fn(sample)
+
+
 def test_custom_key_names() -> None:
     registry = _make_registry()
     config = LlmConfig(provider="openai", model="gpt-4.1-mini")

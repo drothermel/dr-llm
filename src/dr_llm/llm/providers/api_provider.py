@@ -91,22 +91,23 @@ class ApiProvider(Provider):
         """Decode an ``httpx.Response`` into the provider-specific response shape."""
 
     @retry(
-        retry=retry_if_exception_type(
-            (httpx.TimeoutException, httpx.TransportError, ProviderTransportError)
-        ),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.TransportError)),
         wait=wait_exponential_jitter(initial=0.5, max=8),
         stop=stop_after_attempt(3),
         reraise=True,
     )
+    def _post_with_retry(self, provider_request: ApiProviderRequest) -> httpx.Response:
+        return self._client.post(
+            provider_request.endpoint(),
+            headers=provider_request.headers(),
+            json=provider_request.json_payload(),
+        )
+
     def generate(self, request: LlmRequest) -> LlmResponse:
         provider_request = self._build_request(request)
         started = time.perf_counter()
         try:
-            response = self._client.post(
-                provider_request.endpoint(),
-                headers=provider_request.headers(),
-                json=provider_request.json_payload(),
-            )
+            response = self._post_with_retry(provider_request)
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             raise ProviderTransportError(
                 f"{self.name} HTTP request failed: {exc}"

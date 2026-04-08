@@ -12,13 +12,11 @@ _ANTHROPIC_EFFORT_SUPPORTED_SET = frozenset(ANTHROPIC_EFFORT_SUPPORTED_MODELS)
 
 
 def _supports_anthropic_effort(model: str) -> bool:
-    if model in _ANTHROPIC_EFFORT_SUPPORTED_SET:
-        return True
-    if model.startswith("claude-opus-4-6"):
-        return True
-    if model.startswith("claude-sonnet-4-6"):
-        return True
-    return False
+    return (
+        model.startswith("claude-opus-4-6")
+        or model.startswith("claude-sonnet-4-6")
+        or model in _ANTHROPIC_EFFORT_SUPPORTED_SET
+    )
 
 
 def supported_effort_levels_for_anthropic(model: str) -> tuple[EffortSpec, ...]:

@@ -133,6 +133,37 @@ class ExplodingClaimBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]
         return FakeBackendState()
 
 
+class BlockingClaimBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
+    def __init__(self) -> None:
+        self.release = threading.Event()
+
+    def claim(self, *, worker_id: str, lease_seconds: int) -> str | None:
+        del worker_id, lease_seconds
+        self.release.wait()
+        return None
+
+    def complete(
+        self,
+        *,
+        item: str,
+        result: dict[str, Any],
+        worker_id: str,
+    ) -> None:
+        raise AssertionError("complete should never be called")
+
+    def handle_process_error(
+        self,
+        *,
+        item: str,
+        worker_id: str,
+        exc: Exception,
+    ) -> ErrorDecision:
+        raise AssertionError("handle_process_error should never be called")
+
+    def snapshot(self) -> FakeBackendState:
+        return FakeBackendState()
+
+
 def _wait_for(
     controller: WorkerController[FakeBackendState],
     predicate: Callable[[WorkerSnapshot[FakeBackendState]], bool],
@@ -384,4 +415,26 @@ def test_join_shuts_down_executor_on_non_timeout_exception() -> None:
     with pytest.raises(RuntimeError, match="claim exploded"):
         controller.join(timeout=5.0)
 
-    assert controller.final_snapshot is not None
+    assert controller.final_snapshot is None
+
+
+def test_join_does_not_cache_final_snapshot_on_timeout() -> None:
+    backend = BlockingClaimBackend()
+    controller = start_workers(
+        backend,
+        process_fn=lambda item: {"item": item},
+        config=WorkerConfig(
+            num_workers=1,
+            min_poll_interval_s=0.01,
+            max_poll_interval_s=0.05,
+        ),
+    )
+
+    try:
+        with pytest.raises(TimeoutError, match="Timed out waiting for workers to stop"):
+            controller.join(timeout=0.01)
+        assert controller.final_snapshot is None
+    finally:
+        controller.stop()
+        backend.release.set()
+        controller.join(timeout=5.0)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dr_llm.llm.catalog.model_blacklist import (
+    OpenAIModelPrice,
     blacklist_reason,
     openai_language_model_pricing,
 )
@@ -66,6 +67,17 @@ def test_openai_language_model_pricing_values() -> None:
     assert pricing["gpt-4"].output_cost_per_1m == 60.0
     assert pricing["gpt-5.1-codex-mini"].input_cost_per_1m == 0.25
     assert pricing["gpt-5.1-codex-mini"].output_cost_per_1m == 2.0
+
+
+def test_openai_language_model_pricing_returns_a_fresh_copy() -> None:
+    pricing = openai_language_model_pricing()
+    removed = pricing.pop("gpt-5.4")
+
+    latest_pricing = openai_language_model_pricing()
+
+    assert isinstance(removed, OpenAIModelPrice)
+    assert "gpt-5.4" in latest_pricing
+    assert latest_pricing is not pricing
 
 
 def test_google_irrelevant_models_are_blacklisted() -> None:

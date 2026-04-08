@@ -37,7 +37,8 @@ def api_key_from_env(name: str) -> str | None:
 
 def require_api_key(*, api_key: str | None, env_var: str, label: str) -> str:
     """Resolve an API key from explicit value or environment, raising on absence."""
-    key = api_key or api_key_from_env(env_var)
+    normalized_api_key = api_key.strip() if api_key is not None else None
+    key = normalized_api_key or api_key_from_env(env_var)
     if not key:
         raise ProviderSemanticError(
             f"Missing {label} API key for catalog sync. Set {env_var}"
@@ -88,8 +89,16 @@ def fetch_models_with_template(
     Returning `None` skips the item (e.g., when the item lacks a usable ID).
     """
     payload = get_json(url=url, headers=headers)
-    items_raw = payload.get(items_key)
-    items = items_raw if isinstance(items_raw, list) else []
+    if items_key not in payload:
+        raise ValueError(
+            f"catalog payload missing items_key={items_key!r}: payload={payload!r}"
+        )
+    items_raw = payload[items_key]
+    if not isinstance(items_raw, list):
+        raise ValueError(
+            f"catalog payload has non-list items_key={items_key!r}: payload={payload!r}"
+        )
+    items = items_raw
     now = datetime.now(UTC)
     out: list[ModelCatalogEntry] = []
     for item in items:

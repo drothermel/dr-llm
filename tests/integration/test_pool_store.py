@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Generator
 from typing import Any
 from uuid import uuid4
@@ -136,6 +137,21 @@ def test_insert_auto_idx(pool_store: PoolStore) -> None:
     assert pool_store.insert_sample(s1) is True
     assert pool_store.insert_sample(s2) is True
     assert pool_store.cell_depth(key_values={"dim_a": "auto", "dim_b": 10}) == 2
+
+
+@pytest.mark.integration
+def test_insert_auto_idx_concurrent(pool_store: PoolStore) -> None:
+    dim_a = f"auto_concurrent_{uuid4().hex[:8]}"
+
+    def insert_one(_: int) -> bool:
+        return pool_store.insert_sample(_sample(dim_a=dim_a, dim_b=11))
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        inserted = list(executor.map(insert_one, range(8)))
+
+    assert all(inserted)
+    rows = pool_store.bulk_load(key_filter={"dim_a": dim_a, "dim_b": 11})
+    assert sorted(row.sample_idx for row in rows) == list(range(8))
 
 
 @pytest.mark.integration
@@ -367,6 +383,16 @@ def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
     assert sample.source_run_id == "pending-run"
     assert sample.metadata == {"source": "seed"}
     assert pool_store.cell_depth(key_values={"dim_a": "promote", "dim_b": 1}) == 1
+
+
+@pytest.mark.integration
+def test_pending_claim_rejects_non_positive_lease(pool_store: PoolStore) -> None:
+    with pytest.raises(ValueError, match="lease_seconds must be a positive integer"):
+        pool_store.pending.claim(
+            worker_id="w1",
+            lease_seconds=0,
+            key_filter={"dim_a": "noop", "dim_b": 1},
+        )
 
 
 @pytest.mark.integration

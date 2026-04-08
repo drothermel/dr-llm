@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import cache
 from importlib.resources import files
+from types import MappingProxyType
 
 import yaml
 from pydantic import BaseModel, ConfigDict
@@ -24,6 +25,9 @@ class OpenAIModelPrice(BaseModel):
     output_cost_per_1m: float
 
 
+_OPENAI_MODEL_PRICING: MappingProxyType[str, OpenAIModelPrice] | None = None
+
+
 @cache
 def _blacklist() -> dict[tuple[str, str], str]:
     raw = yaml.safe_load(
@@ -38,16 +42,18 @@ def _blacklist() -> dict[tuple[str, str], str]:
     }
 
 
-@cache
 def openai_language_model_pricing() -> dict[str, OpenAIModelPrice]:
-    raw = yaml.safe_load(
-        files("dr_llm.llm.catalog.data")
-        .joinpath("openai_pricing.yml")
-        .read_text(encoding="utf-8")
-    )
-    return {
-        model: OpenAIModelPrice.model_validate(price) for model, price in raw.items()
-    }
+    global _OPENAI_MODEL_PRICING
+    if _OPENAI_MODEL_PRICING is None:
+        raw = yaml.safe_load(
+            files("dr_llm.llm.catalog.data")
+            .joinpath("openai_pricing.yml")
+            .read_text(encoding="utf-8")
+        )
+        _OPENAI_MODEL_PRICING = MappingProxyType(
+            {model: OpenAIModelPrice(**price) for model, price in raw.items()}
+        )
+    return dict(_OPENAI_MODEL_PRICING)
 
 
 def blacklist_reason(*, provider: str, model: str) -> str | None:

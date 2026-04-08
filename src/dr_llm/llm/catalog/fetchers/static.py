@@ -86,11 +86,16 @@ def fetch_static_headless_models(
             docs_url=CODEX_DOCS_URL,
             supports_vision=None,
         )
-    return _build_static_catalog_entries(
-        provider=provider,
-        models=CLAUDE_CODE_MODELS,
-        docs_url=CLAUDE_CODE_DOCS_URL,
-        supports_vision=True,
+    if isinstance(provider, ClaudeHeadlessProvider):
+        return _build_static_catalog_entries(
+            provider=provider,
+            models=CLAUDE_CODE_MODELS,
+            docs_url=CLAUDE_CODE_DOCS_URL,
+            supports_vision=True,
+        )
+    raise ValueError(
+        "Unsupported static headless provider for catalog fetch: "
+        f"type={type(provider).__name__} name={provider.name!r}"
     )
 
 

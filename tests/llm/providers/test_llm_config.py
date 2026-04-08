@@ -484,6 +484,12 @@ def test_openrouter_supported_models_require_explicit_reasoning() -> None:
             provider="openrouter",
             model="openai/gpt-oss-20b",
         )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openrouter",
+            model="deepseek/deepseek-chat-v3.1",
+            reasoning=ReasoningBudget(tokens=1024),
+        )
 
 
 def test_openai_gpt5_rejects_off_before_51() -> None:
@@ -501,6 +507,12 @@ def test_openai_51_plus_rejects_minimal() -> None:
             provider="openai",
             model="gpt-5.1",
             reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL),
+        )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5.1",
+            reasoning=ReasoningBudget(tokens=1024),
         )
 
 
@@ -674,6 +686,12 @@ def test_google_level_models_accept_only_level_controls() -> None:
             model="gemma-4-31b-it",
             reasoning=GoogleReasoning(thinking_level=ThinkingLevel.MEDIUM),
         )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="google",
+            model="gemini-3-flash-preview",
+            reasoning=ReasoningBudget(tokens=1024),
+        )
 
 
 def test_google_unsupported_models_allow_omission_and_reject_explicit_reasoning() -> None:
@@ -710,6 +728,12 @@ def test_glm_accepts_explicit_off_and_adaptive() -> None:
         model="glm-4.5",
         reasoning=GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
     )
+    with pytest.raises(ValidationError):
+        LlmConfig(
+            provider="glm",
+            model="glm-4.5",
+            reasoning=ReasoningBudget(tokens=1024),
+        )
 
 
 def test_glm_rejects_unsupported_thinking_levels_and_wrong_kinds() -> None:

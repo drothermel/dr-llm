@@ -122,9 +122,6 @@ class PoolService:
                 )
                 continue
 
-            if self._store.pending.count_in_flight(key_values=query.key_values) == 0:
-                break
-
         return acquired_so_far
 
     @staticmethod

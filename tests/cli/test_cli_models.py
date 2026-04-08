@@ -8,7 +8,11 @@ from typer.testing import CliRunner
 
 import dr_llm.cli.models as models_cli
 from dr_llm.llm.catalog.model_blacklist import blacklisted_models
-from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery, ModelCatalogSyncResult
+from dr_llm.llm.catalog.models import (
+    ModelCatalogEntry,
+    ModelCatalogQuery,
+    ModelCatalogSyncResult,
+)
 from dr_llm.cli import app
 
 runner = CliRunner()
@@ -24,7 +28,7 @@ def _fake_catalog_service(
         def __init__(self, *, registry: object, repository: object = None) -> None:
             _ = registry, repository
 
-        def sync_models_detailed(
+        async def sync_models_detailed(
             self, provider: str | None = None
         ) -> list[ModelCatalogSyncResult]:
             _ = provider

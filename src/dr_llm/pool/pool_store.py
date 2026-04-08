@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Iterable, Iterator
 from typing import Any
 
-from sqlalchemy import Column, Integer, Text, exists, func, literal, select, values
+from sqlalchemy import Text, exists, func, literal, select
+from sqlalchemy.engine import Connection
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql.elements import ColumnElement
 
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.sql_helpers import (
-    execute_insert_count,
     insert_keyed_samples,
+    is_constraint_error,
     key_filter_clause,
     stream_select_rows,
     validate_key_values,
@@ -101,77 +104,101 @@ class PoolStore:
     def _batch_insert_auto_idx(
         self, samples: list[PoolSample], *, ignore_conflicts: bool = True
     ) -> InsertResult:
-        """Insert auto-idx samples in one statement.
-
-        Pre-computes per-cell row offsets in Python, then issues one
-        ``INSERT...SELECT FROM (VALUES ...)`` where each row's
-        ``sample_idx`` is derived as ``max(existing for cell) + row_offset``
-        via a correlated subquery against the samples table. ON CONFLICT
-        DO NOTHING tolerates the rare race against concurrent inserters
-        for the same cell.
-        """
+        """Insert auto-idx samples with transaction-scoped per-cell allocation."""
         if not samples:
             return InsertResult()
 
         samples_table = self._tables.samples
         key_names = self.schema.key_column_names
-
-        # Assign each row a 1-based row_idx within its key cell. The offset
-        # is later added to max(sample_idx) per cell to derive unique
-        # sample_idx values without an extra round-trip.
-        cell_offsets: dict[tuple[Any, ...], int] = {}
-        records: list[dict[str, Any]] = []
+        base_rows: list[dict[str, Any]] = []
         for sample in samples:
             row = sample.to_db_insert_row()
             row.pop("sample_idx", None)
+            base_rows.append(row)
+
+        for attempt in range(1, self._AUTO_IDX_INSERT_RETRIES + 1):
+            try:
+                with self._runtime.begin() as conn:
+                    rows = self._allocate_auto_idx_rows(
+                        conn, base_rows=base_rows, key_names=key_names
+                    )
+                    stmt = pg_insert(samples_table).returning(samples_table.c.sample_id)
+                    if ignore_conflicts:
+                        stmt = stmt.on_conflict_do_nothing()
+                    result = (
+                        conn.execute(stmt.values(**rows[0]))
+                        if len(rows) == 1
+                        else conn.execute(stmt, rows)
+                    )
+                    inserted = 0
+                    for _ in result.scalars():
+                        inserted += 1
+                return InsertResult(inserted=inserted, skipped=len(samples) - inserted)
+            except Exception as exc:
+                if is_constraint_error(exc):
+                    if attempt < self._AUTO_IDX_INSERT_RETRIES:
+                        continue
+                    if ignore_conflicts:
+                        return InsertResult(inserted=0, skipped=len(samples))
+                raise
+        raise AssertionError("auto-idx insert retry loop exhausted unexpectedly")
+
+    def _allocate_auto_idx_rows(
+        self,
+        conn: Connection,
+        *,
+        base_rows: list[dict[str, Any]],
+        key_names: list[str],
+    ) -> list[dict[str, Any]]:
+        samples_table = self._tables.samples
+        cell_keys = sorted(
+            {tuple(row[name] for name in key_names) for row in base_rows},
+            key=repr,
+        )
+        for cell_key in cell_keys:
+            conn.execute(
+                select(func.pg_advisory_xact_lock(self._cell_lock_id(cell_key)))
+            )
+
+        max_sample_idx_by_cell: dict[tuple[Any, ...], int] = {}
+        for cell_key in cell_keys:
+            key_values = dict(zip(key_names, cell_key, strict=True))
+            max_sample_idx_by_cell[cell_key] = int(
+                conn.execute(
+                    select(
+                        func.coalesce(func.max(samples_table.c.sample_idx), -1)
+                    ).where(key_filter_clause(self.schema, samples_table, key_values))
+                ).scalar_one()
+            )
+
+        cell_offsets: dict[tuple[Any, ...], int] = {}
+        rows: list[dict[str, Any]] = []
+        for base_row in base_rows:
+            row = dict(base_row)
             cell_key = tuple(row[name] for name in key_names)
             cell_offsets[cell_key] = cell_offsets.get(cell_key, 0) + 1
-            row["row_idx"] = cell_offsets[cell_key]
-            records.append(row)
-
-        # Wrap pre-offset records in a SQL VALUES table. Column types are
-        # pulled from samples_table.c[name].type so VALUES rows bind with the
-        # correct postgres types; row_idx is hard-coded Integer since it's a
-        # synthetic per-cell offset (not a real samples column).
-        record_keys = list(records[0].keys())
-        value_columns: list[Column[Any]] = [
-            Column(
-                name,
-                Integer() if name == "row_idx" else samples_table.c[name].type,
+            row["sample_idx"] = (
+                max_sample_idx_by_cell[cell_key] + cell_offsets[cell_key]
             )
-            for name in record_keys
-        ]
-        input_data = values(*value_columns, name="input_data").data(
-            [tuple(record[name] for name in record_keys) for record in records]
-        )
+            rows.append(row)
+        return rows
 
-        # Build INSERT ... SELECT FROM input_data. Each row's sample_idx
-        # becomes max(existing for cell) + row_idx via a correlated scalar
-        # subquery against the samples table.
-        max_subquery = (
-            select(func.coalesce(func.max(samples_table.c.sample_idx), -1))
-            .where(*[samples_table.c[name] == input_data.c[name] for name in key_names])
-            .scalar_subquery()
+    def _cell_lock_id(self, cell_key: tuple[Any, ...]) -> int:
+        lock_payload = json.dumps(
+            {
+                "pool": self.schema.samples_table,
+                "key_values": {
+                    name: value
+                    for name, value in zip(
+                        self.schema.key_column_names, cell_key, strict=True
+                    )
+                },
+            },
+            sort_keys=True,
+            separators=(",", ":"),
         )
-        non_idx_keys = [name for name in record_keys if name != "row_idx"]
-        target_columns = [*non_idx_keys, "sample_idx"]
-        select_exprs: list[Any] = [
-            input_data.c[name].label(name) for name in non_idx_keys
-        ]
-        select_exprs.append((max_subquery + input_data.c.row_idx).label("sample_idx"))
-        stmt = (
-            pg_insert(samples_table)
-            .from_select(
-                target_columns,
-                select(*select_exprs).select_from(input_data),
-            )
-            .returning(samples_table.c.sample_id)
-        )
-
-        inserted = execute_insert_count(
-            self._runtime, stmt, ignore_conflicts=ignore_conflicts
-        )
-        return InsertResult(inserted=inserted, skipped=len(samples) - inserted)
+        digest = hashlib.blake2b(lock_payload.encode("utf-8"), digest_size=8).digest()
+        return int.from_bytes(digest, byteorder="big", signed=True)
 
     def acquire(self, query: AcquireQuery) -> AcquireResult:
         """Acquire up to query.n unclaimed samples for given key dimensions.
@@ -339,3 +366,5 @@ class PoolStore:
         )
         for row in rows:
             yield PoolSample.from_db_row(self.schema, row)
+
+    _AUTO_IDX_INSERT_RETRIES = 3

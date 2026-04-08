@@ -123,7 +123,7 @@ class GoogleResponse(BaseModel):
             if self.usageMetadata
             else None
         )
-        raw_json = self.raw_json if isinstance(self.raw_json, dict) else {}
+        raw_json_dict = self.raw_json if isinstance(self.raw_json, dict) else {}
         usage, fallback_reasoning, fallback_reasoning_details = (
             build_usage_and_reasoning(
                 usage_dump=usage_dump,
@@ -138,7 +138,7 @@ class GoogleResponse(BaseModel):
                 total_tokens=(
                     self.usageMetadata.totalTokenCount if self.usageMetadata else None
                 ),
-                reasoning_source=raw_json,
+                reasoning_source=raw_json_dict,
             )
         )
         reasoning = "\n".join(thought_chunks) if thought_chunks else fallback_reasoning
@@ -149,8 +149,8 @@ class GoogleResponse(BaseModel):
             usage=usage,
             reasoning=reasoning,
             reasoning_details=reasoning_details,
-            cost=CostInfo.from_raw(raw_json),
-            raw_json=raw_json,
+            cost=CostInfo.from_raw(raw_json_dict),
+            raw_json=raw_json_dict,
             latency_ms=latency_ms,
             provider=request.provider,
             model=request.model,

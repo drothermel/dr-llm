@@ -43,6 +43,10 @@ def validate_reasoning_for_google(
             raise ValueError(
                 f"Reasoning is not supported for provider='google' model={model!r}"
             )
+        if capabilities.mode == "google_level":
+            raise ValueError(
+                f"Top-level reasoning budget is not supported for provider='google' model={model!r} with capabilities.mode={capabilities.mode!r}"
+            )
         validate_budget_range(
             provider="google",
             model=model,

@@ -88,6 +88,10 @@ class PendingStore:
         key_filter: dict[str, Any] | None = None,
     ) -> PendingSample | None:
         """Lease one pending sample for processing via FOR UPDATE SKIP LOCKED."""
+        if lease_seconds <= 0:
+            raise ValueError(
+                f"lease_seconds must be a positive integer; got {lease_seconds}"
+            )
         p = self._pending
         reusable = and_(
             p.c.status == PendingStatus.leased,

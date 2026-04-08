@@ -12,6 +12,8 @@ from typing import Any
 def as_int(value: Any) -> int | None:
     if value is None:
         return None
+    if type(value) is bool:
+        return None
     try:
         return int(value)
     except (TypeError, ValueError):

@@ -72,9 +72,10 @@ class WorkerController[TBackendState: BaseModel]:
                     raise TimeoutError("Timed out waiting for workers to stop")
                 for future in self._futures:
                     future.result()
+                self._final_snapshot = self.snapshot()
             finally:
                 # Skip waiting on shutdown after a timeout to avoid blocking
                 # indefinitely on workers that failed to stop.
                 self._executor.shutdown(wait=all_done, cancel_futures=False)
-                self._final_snapshot = self.snapshot()
+            assert self._final_snapshot is not None
             return self._final_snapshot

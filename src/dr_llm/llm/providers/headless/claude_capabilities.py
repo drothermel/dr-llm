@@ -23,6 +23,9 @@ def reasoning_capabilities_for_claude_code(
 
 
 def supported_effort_levels_for_claude_code(model: str) -> tuple[EffortSpec, ...]:
+    # Claude Code reasoning capabilities are prefix-based via
+    # `CLAUDE_HEADLESS_CAPABILITY_RULES`, but effort support is intentionally
+    # narrower and limited to `_CLAUDE_HEADLESS_EFFORT_SUPPORTED_SET`.
     if model not in _CLAUDE_HEADLESS_EFFORT_SUPPORTED_SET:
         return ()
     return FULL_EFFORT

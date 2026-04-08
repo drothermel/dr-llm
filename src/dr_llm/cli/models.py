@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import suppress
 
 import typer
 
 from dr_llm.llm.catalog.file_store import FileCatalogStore
 from dr_llm.llm.catalog.model_blacklist import blacklisted_models
-from dr_llm.llm.catalog.models import ModelCatalogQuery
+from dr_llm.llm.catalog.models import ModelCatalogQuery, ModelCatalogSyncResult
 from dr_llm.llm.catalog.service import ModelCatalogService
 from dr_llm.llm.providers.registry import ProviderRegistry
 from dr_llm.llm.providers.registry import build_default_registry
@@ -34,6 +35,14 @@ def _canonical_provider_name(
     with suppress(KeyError):
         return registry.get(provider).name
     return provider
+
+
+def _sync_models(
+    *,
+    svc: ModelCatalogService,
+    provider: str | None,
+) -> list[ModelCatalogSyncResult]:
+    return asyncio.run(svc.sync_models_detailed(provider=provider))
 
 
 def _emit_models_list(
@@ -107,7 +116,7 @@ def models_sync(
 ) -> None:
     """Sync provider model catalog."""
     svc, _ = _catalog_service()
-    results = svc.sync_models_detailed(provider=provider)
+    results = _sync_models(svc=svc, provider=provider)
     exit_code = 1 if any(not result.success for result in results) else 0
     if verbose:
         common._emit(
@@ -172,7 +181,7 @@ def models_sync_list(
 ) -> None:
     """Sync models first, then list them."""
     svc, registry = _catalog_service()
-    results = svc.sync_models_detailed(provider=provider)
+    results = _sync_models(svc=svc, provider=provider)
     if any(not result.success for result in results):
         common._render_models_sync_summary(results)
         return

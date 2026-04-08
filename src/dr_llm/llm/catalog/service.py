@@ -53,13 +53,13 @@ class ModelCatalogService:
         self._registry = registry
         self._repository = repository
 
-    def sync_models_detailed(
+    async def sync_models_detailed(
         self,
         *,
         provider: str | None = None,
     ) -> list[ModelCatalogSyncResult]:
         targets = self._resolve_targets(provider=provider)
-        return asyncio.run(self._sync_targets_in_parallel(targets))
+        return await self._sync_targets_in_parallel(targets)
 
     async def _sync_targets_in_parallel(
         self, targets: list[str]
@@ -76,12 +76,12 @@ class ModelCatalogService:
     def _sync_one_provider(self, target: str) -> ModelCatalogSyncResult:
         try:
             entries, raw_payload = self._fetch_provider(target)
+            entries = apply_openrouter_model_policies(
+                filter_blacklisted_entries(entries)
+            )
+            return self._record_sync_success(target, entries, raw_payload)
         except Exception as exc:  # noqa: BLE001
-            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                raise
             return self._record_sync_failure(target, exc)
-        entries = apply_openrouter_model_policies(filter_blacklisted_entries(entries))
-        return self._record_sync_success(target, entries, raw_payload)
 
     def _record_sync_success(
         self,
@@ -91,14 +91,14 @@ class ModelCatalogService:
     ) -> ModelCatalogSyncResult:
         snapshot_id: str | None = None
         if self._repository is not None:
+            self._repository.replace_provider_models(
+                provider=target,
+                entries=entries,
+            )
             snapshot_id = self._repository.record_model_catalog_snapshot(
                 provider=target,
                 status="success",
                 raw_payload=raw_payload,
-            )
-            self._repository.replace_provider_models(
-                provider=target,
-                entries=entries,
             )
         return ModelCatalogSyncResult(
             provider=target,

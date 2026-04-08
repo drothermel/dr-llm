@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import threading
 from collections.abc import Callable
 from contextlib import suppress
 from typing import IO, cast
@@ -77,14 +78,23 @@ def _run_docker_process(
         )
     except FileNotFoundError as exc:
         raise DockerUnavailableError() from exc
+    stderr_chunks: list[str] = []
+
+    def read_stderr() -> None:
+        stderr_chunks.append(read_process_stderr(process))
+
+    stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+    stderr_thread.start()
     try:
         operation(process)
     except Exception:
         process.kill()
         process.wait()
+        stderr_thread.join()
         raise
 
-    stderr = read_process_stderr(process)
+    stderr_thread.join()
+    stderr = "".join(stderr_chunks)
     if process.wait() != 0:
         raise docker_error(args, stderr)
 
@@ -108,7 +118,8 @@ def call_docker_psql_input_stream(
     def write_sql(process: subprocess.Popen[bytes]) -> None:
         process_stdin = cast(IO[bytes], process.stdin)
         try:
-            copy_binary_stream(sql_stream, process_stdin)
+            with suppress(BrokenPipeError):
+                copy_binary_stream(sql_stream, process_stdin)
         finally:
             with suppress(BrokenPipeError):
                 process_stdin.close()

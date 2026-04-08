@@ -17,11 +17,15 @@ ProcessFn = Callable[[PendingSample], dict[str, Any]]
 
 
 def _require_payload_field(sample: PendingSample, key: str) -> Any:
-    value = sample.payload.get(key)
-    if value is None:
+    if key not in sample.payload:
         raise KeyError(
-            f"Pending sample payload missing {key!r}; "
+            f"PendingSample.payload is missing key {key!r}; "
             "was the pool seeded with a rich grid for this column?"
+        )
+    value = sample.payload[key]
+    if value is None:
+        raise ValueError(
+            f"PendingSample.payload[{key!r}] is present but has explicit None value"
         )
     return value
 

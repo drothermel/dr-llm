@@ -5,6 +5,9 @@ import pytest
 from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
 from dr_llm.llm.providers.anthropic.reasoning import AnthropicReasoningConfig
 from dr_llm.llm.providers.anthropic.reasoning import KimiCodeReasoningConfig
+from dr_llm.llm.providers.anthropic.reasoning import MiniMaxReasoningConfig
+from dr_llm.llm.providers.anthropic.reasoning import validate_reasoning_for_kimi_code
+from dr_llm.llm.providers.anthropic.reasoning import validate_reasoning_for_minimax
 from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig
 from dr_llm.llm.providers.headless.reasoning import (
     ClaudeHeadlessReasoningConfig,
@@ -125,6 +128,40 @@ def test_kimi_code_serializes_supported_reasoning_controls() -> None:
             budget_tokens=1024,
         )
     ).thinking == {"type": "enabled", "budget_tokens": 1024}
+
+
+def test_kimi_code_validation_rejects_unsupported_anthropic_levels() -> None:
+    for thinking_level in (
+        ThinkingLevel.MINIMAL,
+        ThinkingLevel.LOW,
+        ThinkingLevel.MEDIUM,
+        ThinkingLevel.HIGH,
+    ):
+        with pytest.raises(
+            ValueError,
+            match=(
+                "kimi-code supports only anthropic thinking levels "
+                "'na', 'off', 'adaptive', and 'budget'"
+            ),
+        ):
+            validate_reasoning_for_kimi_code(
+                model="kimi-for-coding",
+                reasoning=AnthropicReasoning(thinking_level=thinking_level),
+            )
+
+
+def test_minimax_validation_and_serializer_both_require_explicit_na() -> None:
+    with pytest.raises(
+        ValueError,
+        match="reasoning is required for provider='minimax' model='MiniMax-M2.7'",
+    ):
+        validate_reasoning_for_minimax(model="MiniMax-M2.7", reasoning=None)
+
+    with pytest.raises(
+        ProviderSemanticError,
+        match="minimax requires explicit AnthropicReasoning\\(thinking_level='na'\\)",
+    ):
+        MiniMaxReasoningConfig.from_base(None)
 
 
 def test_claude_headless_accepts_adaptive_and_na() -> None:

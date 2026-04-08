@@ -130,7 +130,11 @@ def test_payload_omits_thinking_for_off() -> None:
 
 
 def test_invalid_json_raises_transport_error() -> None:
+    call_count = 0
+
     def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
         return httpx.Response(status_code=200, text="{")
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -144,3 +148,29 @@ def test_invalid_json_raises_transport_error() -> None:
                 max_tokens=256,
             )
         )
+    assert call_count == 1
+
+
+def test_transport_failure_retries_raw_http_send_only_once_before_success() -> None:
+    call_count = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise httpx.ConnectError("boom")
+        return httpx.Response(status_code=200, json=_MOCK_RESPONSE)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    adapter = AnthropicProvider(config=_make_config(), client=client)
+
+    result = adapter.generate(
+        make_request(
+            provider="anthropic",
+            model="claude-3-5-haiku-20241022",
+            max_tokens=256,
+        )
+    )
+
+    assert result.text == "done"
+    assert call_count == 2
