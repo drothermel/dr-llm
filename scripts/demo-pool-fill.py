@@ -42,13 +42,18 @@ from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
 from dr_llm.pool.pending.backend import (
     PoolPendingBackend,
     PoolPendingBackendConfig,
-    PoolPendingBackendState,
 )
 from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pending.progress import (
+    ProgressKey,
+    format_pool_progress_line,
+    pool_is_idle,
+    pool_progress_key,
+)
 from dr_llm.pool.pool_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import create_project, destroy_project
-from dr_llm.workers import WorkerConfig, WorkerSnapshot, start_workers
+from dr_llm.workers import WorkerConfig, start_workers
 
 app = typer.Typer()
 
@@ -107,22 +112,6 @@ def _build_pending_samples(
     return samples
 
 
-def _print_progress(snapshot: WorkerSnapshot[PoolPendingBackendState]) -> None:
-    backend_state = snapshot.backend_state
-    if backend_state is None:
-        return
-    counts = backend_state.status_counts
-    worker_counts = snapshot.counts
-    print(
-        "Progress: "
-        f"claimed={worker_counts.claimed} "
-        f"completed={worker_counts.completed} "
-        f"failed={worker_counts.failed} "
-        f"pending={counts.pending} "
-        f"leased={counts.leased}"
-    )
-
-
 def _run_demo(
     dsn: str, pool_name: str, num_workers: int, samples_per_cell: int
 ) -> None:
@@ -165,24 +154,14 @@ def _run_demo(
             ),
         )
         try:
-            last_progress: tuple[int, int, int, int, int] | None = None
+            last_key: ProgressKey | None = None
             while True:
                 snapshot = controller.snapshot()
-                worker_counts = snapshot.counts
-                if snapshot.backend_state is None:
-                    time.sleep(0.1)
-                    continue
-                current_progress = (
-                    worker_counts.claimed,
-                    worker_counts.completed,
-                    worker_counts.failed,
-                    snapshot.backend_state.status_counts.pending,
-                    snapshot.backend_state.status_counts.leased,
-                )
-                if current_progress != last_progress:
-                    _print_progress(snapshot)
-                    last_progress = current_progress
-                if snapshot.backend_state.status_counts.in_flight == 0:
+                key = pool_progress_key(snapshot)
+                if key != last_key:
+                    print(f"Progress: {format_pool_progress_line(snapshot)}")
+                    last_key = key
+                if pool_is_idle(snapshot):
                     break
                 time.sleep(0.5)
         finally:

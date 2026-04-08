@@ -109,6 +109,11 @@ from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
 from dr_llm.pool.pending.backend import PoolPendingBackend, PoolPendingBackendConfig
 from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pending.progress import (
+    format_pool_progress_line,
+    pool_is_idle,
+    pool_progress_key,
+)
 from dr_llm.project.project_service import create_project
 from dr_llm.workers import WorkerConfig, start_workers
 
@@ -176,12 +181,16 @@ controller = start_workers(
     ),
 )
 
-# 7. Wait for completion
+# 7. Wait for completion, printing one line per visible change
 import time
+last_key = None
 while True:
     snap = controller.snapshot()
-    assert snap.backend_state is not None
-    if snap.backend_state.status_counts.in_flight == 0:
+    key = pool_progress_key(snap)
+    if key != last_key:
+        print(format_pool_progress_line(snap))
+        last_key = key
+    if pool_is_idle(snap):
         break
     time.sleep(1)
 controller.stop()
