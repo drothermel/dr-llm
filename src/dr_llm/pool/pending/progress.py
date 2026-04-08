@@ -9,8 +9,12 @@ call site.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
+
 from dr_llm.pool.pending.backend import PoolPendingBackendState
 from dr_llm.workers.models import WorkerSnapshot
+from dr_llm.workers.worker_controller import WorkerController
 
 ProgressKey = tuple[int, int, int, int, int]
 
@@ -93,3 +97,33 @@ def pool_is_idle(
     if backend_state is None:
         return False
     return backend_state.status_counts.in_flight == 0
+
+
+def drain(
+    controller: WorkerController[PoolPendingBackendState],
+    *,
+    on_change: Callable[[WorkerSnapshot[PoolPendingBackendState]], None] | None = None,
+    poll_interval_s: float = 0.5,
+) -> WorkerSnapshot[PoolPendingBackendState]:
+    """Block until the controller's backend reports no in-flight work.
+
+    Polls the controller every ``poll_interval_s`` seconds and returns
+    the first snapshot for which :func:`pool_is_idle` is true. When
+    ``on_change`` is provided, it is called with the latest snapshot
+    only when :func:`pool_progress_key` differs from the previous poll
+    — so callers get one notification per visible-state change rather
+    than one per poll. Note: this does *not* call ``controller.stop()``
+    or ``controller.join()``; the caller still owns shutdown.
+    """
+    if poll_interval_s <= 0:
+        raise ValueError(f"poll_interval_s must be > 0, got {poll_interval_s}")
+    last_key: ProgressKey | None = None
+    while True:
+        snapshot = controller.snapshot()
+        key = pool_progress_key(snapshot)
+        if on_change is not None and key != last_key:
+            on_change(snapshot)
+            last_key = key
+        if pool_is_idle(snapshot):
+            return snapshot
+        time.sleep(poll_interval_s)

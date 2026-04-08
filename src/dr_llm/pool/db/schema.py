@@ -67,6 +67,20 @@ class PoolSchema(BaseModel):
             raise ValueError("PoolSchema requires at least one KeyColumn")
         return self
 
+    @classmethod
+    def from_axis_names(cls, name: str, axis_names: list[str]) -> PoolSchema:
+        """Build a schema from a list of axis names, all typed as text.
+
+        Convenience for the common case where the schema's key columns are
+        the names of cross-product axes (see ``dr_llm.pool.pending.grid``).
+        Each axis name becomes one ``KeyColumn`` with default ``ColumnType.text``;
+        names are validated through the same regex as the regular constructor.
+        """
+        return cls(
+            name=name,
+            key_columns=[KeyColumn(name=axis_name) for axis_name in axis_names],
+        )
+
     @computed_field
     @property
     def samples_table(self) -> str:
