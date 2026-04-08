@@ -11,7 +11,6 @@ from dr_llm.llm.messages import CallMode, Message
 from dr_llm.llm.providers.usage import TokenUsage
 from dr_llm.llm.response import LlmResponse
 from dr_llm.pool import llm_pool_adapter
-from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
 from dr_llm.pool.pending.pending_sample import PendingSample
 
 
@@ -54,7 +53,7 @@ def _sample_payload() -> dict[str, Any]:
 
 def test_dispatches_via_registry() -> None:
     registry = _make_registry()
-    process_fn = make_llm_process_fn(registry)
+    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
     sample = _make_sample(_sample_payload())
 
     result = process_fn(sample)
@@ -74,7 +73,7 @@ def test_dispatches_via_registry() -> None:
 def test_returns_full_response_dump() -> None:
     response = _make_response()
     registry = _make_registry(response)
-    process_fn = make_llm_process_fn(registry)
+    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
     sample = _make_sample(_sample_payload())
 
     result = process_fn(sample)
@@ -85,7 +84,7 @@ def test_returns_full_response_dump() -> None:
 
 def test_process_result_has_no_call_id() -> None:
     registry = _make_registry()
-    process_fn = make_llm_process_fn(registry)
+    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
     sample = _make_sample(_sample_payload())
 
     result = process_fn(sample)
@@ -95,7 +94,7 @@ def test_process_result_has_no_call_id() -> None:
 
 def test_emits_worker_logging_events(monkeypatch: pytest.MonkeyPatch) -> None:
     registry = _make_registry()
-    process_fn = make_llm_process_fn(registry)
+    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
     sample = _make_sample(_sample_payload())
     events: list[dict[str, Any]] = []
 
@@ -131,7 +130,7 @@ def test_failed_worker_call_emits_failure_event(
     adapter.mode = CallMode.api
     registry = MagicMock()
     registry.get.return_value = adapter
-    process_fn = make_llm_process_fn(registry)
+    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
     sample = _make_sample(_sample_payload())
     events: list[dict[str, Any]] = []
 
@@ -160,7 +159,7 @@ def test_error_propagates() -> None:
     adapter.mode = CallMode.api
     registry = MagicMock()
     registry.get.return_value = adapter
-    process_fn = make_llm_process_fn(registry)
+    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
     sample = _make_sample(_sample_payload())
 
     with pytest.raises(RuntimeError, match="API down"):
@@ -169,7 +168,7 @@ def test_error_propagates() -> None:
 
 def test_missing_llm_config_key_raises() -> None:
     registry = _make_registry()
-    process_fn = make_llm_process_fn(registry)
+    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
     sample = _make_sample({"prompt": [{"role": "user", "content": "hi"}]})
 
     with pytest.raises(KeyError, match="llm_config"):
@@ -178,7 +177,7 @@ def test_missing_llm_config_key_raises() -> None:
 
 def test_missing_prompt_key_raises() -> None:
     registry = _make_registry()
-    process_fn = make_llm_process_fn(registry)
+    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
     config = LlmConfig(provider="openai", model="gpt-4.1-mini")
     sample = _make_sample({"llm_config": config.model_dump()})
 
@@ -190,7 +189,7 @@ def test_custom_key_names() -> None:
     registry = _make_registry()
     config = LlmConfig(provider="openai", model="gpt-4.1-mini")
     messages = [Message(role="user", content="custom")]
-    process_fn = make_llm_process_fn(
+    process_fn = llm_pool_adapter.make_llm_process_fn(
         registry, llm_config_key="model_cfg", prompt_key="msgs"
     )
     sample = _make_sample(

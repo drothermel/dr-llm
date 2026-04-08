@@ -39,12 +39,11 @@ def test_get_unknown_raises_key_error() -> None:
         registry.get("nonexistent")
 
 
-def test_close_releases_adapters() -> None:
+def test_close_releases_adapters(fake_provider: FakeProvider) -> None:
     registry = ProviderRegistry()
-    adapter = FakeProvider(name="fake")
-    registry.register(adapter)
+    registry.register(fake_provider)
     registry.close()
-    assert adapter.close_calls == 1
+    assert fake_provider.close_calls == 1
     assert registry.names() == set()
 
 

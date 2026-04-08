@@ -61,7 +61,7 @@ def test_rejects_unsupported_message_role() -> None:
         model="gemini-test",
         messages=[tool_msg],
     )
-    with pytest.raises(ValueError, match="Unsupported Message.role.*'tool'"):
+    with pytest.raises(ValueError, match=r"Unsupported Message\.role.*'tool'"):
         GoogleRequest.from_llm_request(request, _GOOGLE_CONFIG)
 
 

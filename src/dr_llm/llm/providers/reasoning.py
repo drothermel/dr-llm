@@ -445,7 +445,7 @@ def _validate_anthropic_reasoning(
                     "anthropic budget thinking requires budget_tokens when "
                     "thinking_level is 'budget'"
                 )
-            if type(budget_tokens) is not int:
+            if not isinstance(budget_tokens, int):
                 raise ValueError(
                     "anthropic budget_tokens must be int, got "
                     f"{type(budget_tokens).__name__}"
@@ -656,11 +656,6 @@ def _validate_google_reasoning(
                     "google budget thinking requires budget_tokens when "
                     "thinking_level is 'budget'"
                 )
-            if type(budget_tokens) is not int:
-                raise ValueError(
-                    "google budget_tokens must be int, got "
-                    f"{type(budget_tokens).__name__}"
-                )
             if budget_tokens < 0:
                 raise ValueError("google budget_tokens must be >= 0")
             _validate_budget_range(
@@ -749,13 +744,32 @@ def _validate_allowed_thinking_levels(
     )
 
 
+_GOOGLE_LITERAL_TO_THINKING_LEVEL: dict[str, ThinkingLevel] = {
+    "minimal": ThinkingLevel.MINIMAL,
+    "low": ThinkingLevel.LOW,
+    "medium": ThinkingLevel.MEDIUM,
+    "high": ThinkingLevel.HIGH,
+}
+
+
 def _google_literal_to_thinking_level(level: str) -> ThinkingLevel:
-    return {
-        "minimal": ThinkingLevel.MINIMAL,
-        "low": ThinkingLevel.LOW,
-        "medium": ThinkingLevel.MEDIUM,
-        "high": ThinkingLevel.HIGH,
-    }[level]
+    mapped = _GOOGLE_LITERAL_TO_THINKING_LEVEL.get(level)
+    if mapped is None:
+        expected_literals = ", ".join(sorted(_GOOGLE_LITERAL_TO_THINKING_LEVEL))
+        expected_members = ", ".join(
+            e.name
+            for e in sorted(
+                _GOOGLE_LITERAL_TO_THINKING_LEVEL.values(),
+                key=lambda x: x.value,
+            )
+        )
+        raise ValueError(
+            f"_google_literal_to_thinking_level: invalid google thinking level string "
+            f"{level!r}; expected one of {{{expected_literals}}} "
+            f"(ThinkingLevel members: {expected_members}). "
+            f"Valid strings map to ThinkingLevel; see _google_literal_to_thinking_level."
+        )
+    return mapped
 
 
 def _requires_explicit_reasoning(
