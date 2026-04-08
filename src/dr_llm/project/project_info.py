@@ -3,7 +3,7 @@ from __future__ import annotations
 import gzip
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import ClassVar
+from typing import IO, ClassVar, cast
 
 from pydantic import BaseModel, computed_field
 
@@ -13,7 +13,7 @@ from dr_llm.project.docker import (
     DockerProjectMetadata,
     call_docker_create,
     call_docker_destroy,
-    call_docker_pg_dump,
+    call_docker_pg_dump_stream,
     call_docker_start,
     call_docker_stop,
     docker_swap_in_db,
@@ -184,26 +184,32 @@ class ProjectInfo(BaseModel):
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         backup_file = backup_dir / f"{self.name}_{timestamp}.sql.gz"
 
-        result = call_docker_pg_dump(
-            container_name=self.container_name,
-            db_user=self.db_user,
-            db_name=self.db_name,
-        )
-        with gzip.open(backup_file, "wb") as f:
-            f.write(result.stdout)
+        try:
+            with gzip.open(backup_file, "wb") as backup_stream:
+                call_docker_pg_dump_stream(
+                    container_name=self.container_name,
+                    db_user=self.db_user,
+                    db_name=self.db_name,
+                    output_stream=cast(IO[bytes], backup_stream),
+                )
+        except Exception:
+            backup_file.unlink(missing_ok=True)
+            raise
 
         return backup_file
 
     def restore(self, backup_file: Path) -> None:
-        if backup_file.suffix == ".gz":
-            with gzip.open(backup_file, "rb") as f:
-                sql_bytes = f.read()
-        else:
-            sql_bytes = backup_file.read_bytes()
+        if not backup_file.exists():
+            raise FileNotFoundError(f"Backup file not found: {backup_file}")
+        if backup_file.suffixes[-2:] != [".sql", ".gz"]:
+            raise ValueError(
+                "Restore only supports gzip-compressed SQL backups (.sql.gz)."
+            )
 
-        docker_swap_in_db(
-            sql_bytes=sql_bytes,
-            container_name=self.container_name,
-            db_user=self.db_user,
-            target_db_name=self.db_name,
-        )
+        with gzip.open(backup_file, "rb") as sql_stream:
+            docker_swap_in_db(
+                sql_stream=cast(IO[bytes], sql_stream),
+                container_name=self.container_name,
+                db_user=self.db_user,
+                target_db_name=self.db_name,
+            )

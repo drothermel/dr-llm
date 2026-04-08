@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import subprocess
+from typing import IO, cast
 
 import pytest
 
@@ -115,3 +117,56 @@ def test_call_docker_destroy_attempts_volume_cleanup_before_raising(
         (("volume", "rm", "demo-volume"), False),
     ]
 
+
+def test_docker_swap_in_db_drops_temp_db_when_stream_restore_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        docker_module,
+        "call_docker_psql_create_db",
+        lambda container_name, db_user, db_name: calls.append(("create", db_name)),
+    )
+
+    def fake_psql_input_stream(
+        container_name: str,
+        db_user: str,
+        db_name: str,
+        sql_stream: io.BytesIO,
+    ) -> None:
+        _ = (container_name, db_user)
+        assert sql_stream.read() == b"select 1;\n"
+        calls.append(("restore", db_name))
+        raise RuntimeError("restore failed")
+
+    monkeypatch.setattr(
+        docker_module,
+        "call_docker_psql_input_stream",
+        fake_psql_input_stream,
+    )
+    monkeypatch.setattr(
+        docker_module,
+        "call_docker_psql_swap_in_db",
+        lambda container_name, db_user, target_db_name, swap_in_db: calls.append(
+            ("swap", swap_in_db)
+        ),
+    )
+    monkeypatch.setattr(
+        docker_module,
+        "call_docker_psql_drop_db",
+        lambda container_name, db_user, db_name: calls.append(("drop", db_name)),
+    )
+
+    with pytest.raises(RuntimeError, match="restore failed"):
+        docker_module.docker_swap_in_db(
+            sql_stream=cast(IO[bytes], io.BytesIO(b"select 1;\n")),
+            container_name="demo",
+            db_user="postgres",
+            target_db_name="dr_llm",
+        )
+
+    assert len(calls) == 3
+    assert calls[0][0] == "create"
+    assert calls[1] == ("restore", calls[0][1])
+    assert calls[2] == ("drop", calls[0][1])

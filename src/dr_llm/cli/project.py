@@ -139,9 +139,7 @@ def project_backup(
 @project_app.command("restore")
 def project_restore(
     name: str = typer.Argument(..., help="Project name"),
-    backup_file: Path = typer.Argument(
-        ..., help="Path to backup file (.sql or .sql.gz)"
-    ),
+    backup_file: Path = typer.Argument(..., help="Path to backup file (.sql.gz)"),
 ) -> None:
     try:
         project_info = ProjectInfo(name=name)

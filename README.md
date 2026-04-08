@@ -205,7 +205,7 @@ dr-llm project list
 dr-llm project use NAME
 dr-llm project start|stop NAME
 dr-llm project backup NAME
-dr-llm project restore NAME BACKUP_PATH
+dr-llm project restore NAME BACKUP_PATH  # BACKUP_PATH must be .sql.gz
 dr-llm project destroy NAME --yes-really-delete-everything
 ```
 

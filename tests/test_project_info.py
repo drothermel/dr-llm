@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import gzip
-import subprocess
 from pathlib import Path
+from typing import IO
 
 import pytest
 
@@ -73,16 +73,23 @@ def test_backup_does_not_precheck_cached_running_status(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    def fake_pg_dump(**kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        _ = kwargs
-        return subprocess.CompletedProcess(
-            args=["docker", "exec"],
-            returncode=0,
-            stdout=b"select 1;\n",
-            stderr=b"",
-        )
+    def fake_pg_dump_stream(
+        *,
+        container_name: str,
+        db_user: str,
+        db_name: str,
+        output_stream: IO[bytes],
+    ) -> None:
+        assert container_name == "dr-llm-pg-demo"
+        assert db_user == "postgres"
+        assert db_name == "dr_llm"
+        output_stream.write(b"select 1;\n")
 
-    monkeypatch.setattr(project_info_module, "call_docker_pg_dump", fake_pg_dump)
+    monkeypatch.setattr(
+        project_info_module,
+        "call_docker_pg_dump_stream",
+        fake_pg_dump_stream,
+    )
 
     backup_file = ProjectInfo(name="demo", status=ContainerStatus.STOPPED).backup(tmp_path)
 
@@ -95,12 +102,26 @@ def test_restore_does_not_precheck_cached_running_status(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    backup_file = tmp_path / "demo.sql"
-    backup_file.write_bytes(b"select 1;\n")
+    backup_file = tmp_path / "demo.sql.gz"
+    with gzip.open(backup_file, "wb") as f:
+        f.write(b"select 1;\n")
     captured: dict[str, object] = {}
 
-    def fake_swap_in_db(**kwargs: object) -> None:
-        captured.update(kwargs)
+    def fake_swap_in_db(
+        *,
+        sql_stream: IO[bytes],
+        container_name: str,
+        db_user: str,
+        target_db_name: str,
+    ) -> None:
+        captured["sql_bytes"] = sql_stream.read()
+        captured.update(
+            {
+                "container_name": container_name,
+                "db_user": db_user,
+                "target_db_name": target_db_name,
+            }
+        )
 
     monkeypatch.setattr(project_info_module, "docker_swap_in_db", fake_swap_in_db)
 
@@ -114,7 +135,49 @@ def test_restore_does_not_precheck_cached_running_status(
 def test_restore_missing_file_raises_native_file_not_found(
     tmp_path: Path,
 ) -> None:
-    backup_file = tmp_path / "missing.sql"
+    backup_file = tmp_path / "missing.sql.gz"
 
     with pytest.raises(FileNotFoundError, match=str(backup_file)):
         ProjectInfo(name="demo").restore(backup_file)
+
+
+def test_restore_rejects_plain_sql_files(
+    tmp_path: Path,
+) -> None:
+    backup_file = tmp_path / "demo.sql"
+    backup_file.write_text("select 1;\n")
+
+    with pytest.raises(
+        ValueError,
+        match=r"Restore only supports gzip-compressed SQL backups \(.sql.gz\)\.",
+    ):
+        ProjectInfo(name="demo").restore(backup_file)
+
+
+def test_backup_removes_partial_file_when_streaming_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fake_pg_dump_stream(
+        *,
+        container_name: str,
+        db_user: str,
+        db_name: str,
+        output_stream: IO[bytes],
+    ) -> None:
+        assert container_name == "dr-llm-pg-demo"
+        assert db_user == "postgres"
+        assert db_name == "dr_llm"
+        output_stream.write(b"partial dump\n")
+        raise RuntimeError("pg_dump failed")
+
+    monkeypatch.setattr(
+        project_info_module,
+        "call_docker_pg_dump_stream",
+        fake_pg_dump_stream,
+    )
+
+    with pytest.raises(RuntimeError, match="pg_dump failed"):
+        ProjectInfo(name="demo").backup(tmp_path)
+
+    assert list((tmp_path / "demo").glob("*.sql.gz")) == []

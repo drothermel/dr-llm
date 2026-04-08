@@ -4,9 +4,10 @@ import json
 import os
 import re
 import subprocess
+from contextlib import suppress
 from enum import StrEnum
 from time import sleep
-from typing import ClassVar
+from typing import IO, ClassVar
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
@@ -130,6 +131,9 @@ class DockerPortAllocatedError(DockerCommandError):
     """Raised when Docker cannot bind the requested host port."""
 
 
+STREAM_CHUNK_SIZE = 1024 * 1024
+
+
 def _docker_error_detail(stderr: str) -> str:
     detail = stderr.strip()
     return detail or "unknown docker error"
@@ -223,6 +227,20 @@ def call_docker_bytes(
         stderr = result.stderr.decode(errors="replace").strip()
         raise _docker_error(args, stderr)
     return result
+
+
+def _copy_binary_stream(
+    source: IO[bytes],
+    dest: IO[bytes],
+) -> None:
+    while chunk := source.read(STREAM_CHUNK_SIZE):
+        dest.write(chunk)
+
+
+def _read_process_stderr(process: subprocess.Popen[bytes]) -> str:
+    if process.stderr is None:
+        return ""
+    return process.stderr.read().decode(errors="replace").strip()
 
 
 def get_docker_project_metadata(
@@ -338,13 +356,13 @@ def call_docker_psql(
     )
 
 
-def call_docker_psql_input(
+def call_docker_psql_input_stream(
     container_name: str,
     db_user: str,
     db_name: str,
-    sql_bytes: bytes,
-) -> subprocess.CompletedProcess[bytes]:
-    return call_docker_bytes(
+    sql_stream: IO[bytes],
+) -> None:
+    args = (
         "exec",
         "-i",
         container_name,
@@ -352,8 +370,32 @@ def call_docker_psql_input(
         "-U",
         db_user,
         db_name,
-        input=sql_bytes,
     )
+    try:
+        process = subprocess.Popen(
+            ["docker", *args],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Docker is not available. Install Docker or start the daemon."
+        ) from exc
+    assert process.stdin is not None
+    try:
+        _copy_binary_stream(sql_stream, process.stdin)
+    except Exception:
+        process.kill()
+        process.wait()
+        raise
+    finally:
+        with suppress(BrokenPipeError):
+            process.stdin.close()
+
+    stderr = _read_process_stderr(process)
+    if process.wait() != 0:
+        raise _docker_error(args, stderr)
 
 
 def call_docker_psql_create_db(
@@ -406,7 +448,7 @@ def call_docker_psql_swap_in_db(
 
 
 def docker_swap_in_db(
-    sql_bytes: bytes,
+    sql_stream: IO[bytes],
     container_name: str,
     db_user: str,
     target_db_name: str,
@@ -414,7 +456,7 @@ def docker_swap_in_db(
     swap_in_db = f"dr_llm_restore_{uuid4().hex[:8]}"
     call_docker_psql_create_db(container_name, db_user, swap_in_db)
     try:
-        call_docker_psql_input(container_name, db_user, swap_in_db, sql_bytes)
+        call_docker_psql_input_stream(container_name, db_user, swap_in_db, sql_stream)
         call_docker_psql_swap_in_db(
             container_name,
             db_user,
@@ -426,12 +468,13 @@ def docker_swap_in_db(
         raise
 
 
-def call_docker_pg_dump(
+def call_docker_pg_dump_stream(
     container_name: str,
     db_user: str,
     db_name: str,
-) -> subprocess.CompletedProcess[bytes]:
-    return call_docker_bytes(
+    output_stream: IO[bytes],
+) -> None:
+    args = (
         "exec",
         container_name,
         "pg_dump",
@@ -439,6 +482,29 @@ def call_docker_pg_dump(
         db_user,
         db_name,
     )
+    try:
+        process = subprocess.Popen(
+            ["docker", *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Docker is not available. Install Docker or start the daemon."
+        ) from exc
+    assert process.stdout is not None
+    try:
+        _copy_binary_stream(process.stdout, output_stream)
+    except Exception:
+        process.kill()
+        process.wait()
+        raise
+    finally:
+        process.stdout.close()
+
+    stderr = _read_process_stderr(process)
+    if process.wait() != 0:
+        raise _docker_error(args, stderr)
 
 
 def parse_docker_labels(raw: str) -> dict[str, str]:
