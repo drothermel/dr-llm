@@ -8,7 +8,10 @@ from typing import IO, cast
 
 import pytest
 
-import dr_llm.project.docker as docker_module
+import dr_llm.project.docker_inspect as docker_inspect
+import dr_llm.project.docker_lifecycle as docker_lifecycle
+import dr_llm.project.docker_psql as docker_psql
+import dr_llm.project.docker_runner as docker_runner
 from dr_llm.project.docker_project_metadata import (
     ContainerStatus,
     DockerProjectCreateMetadata,
@@ -59,7 +62,7 @@ def test_docker_error_maps_common_failures(
     expected_type: type[Exception],
     expected_message: str,
 ) -> None:
-    err = docker_module._docker_error(("ps",), stderr)
+    err = docker_runner._docker_error(("ps",), stderr)
 
     assert isinstance(err, expected_type)
     assert str(err) == expected_message
@@ -88,9 +91,9 @@ def test_call_docker_uses_text_mode(
             stderr="",
         )
 
-    monkeypatch.setattr(docker_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(docker_runner.subprocess, "run", fake_run)
 
-    result = docker_module.call_docker("ps")
+    result = docker_runner.call_docker("ps")
 
     assert result.stdout == "ok"
 
@@ -118,9 +121,9 @@ def test_call_docker_bytes_uses_binary_mode_and_forwards_input(
             stderr=b"",
         )
 
-    monkeypatch.setattr(docker_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(docker_runner.subprocess, "run", fake_run)
 
-    result = docker_module.call_docker_bytes(
+    result = docker_runner.call_docker_bytes(
         "exec",
         "demo",
         "psql",
@@ -156,11 +159,11 @@ def test_call_docker_bytes_decodes_stderr_before_mapping_error(
         observed["stderr"] = stderr
         return DockerCommandError("boom")
 
-    monkeypatch.setattr(docker_module.subprocess, "run", fake_run)
-    monkeypatch.setattr(docker_module, "_docker_error", fake_docker_error)
+    monkeypatch.setattr(docker_runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(docker_runner, "_docker_error", fake_docker_error)
 
     with pytest.raises(DockerCommandError, match="boom"):
-        docker_module.call_docker_bytes("exec", "demo", "psql")
+        docker_runner.call_docker_bytes("exec", "demo", "psql")
 
     assert observed == {
         "args": ("exec", "demo", "psql"),
@@ -171,7 +174,9 @@ def test_call_docker_bytes_decodes_stderr_before_mapping_error(
 def test_call_docker_start_is_idempotent_for_running_container(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def fake_call_docker(
+        *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         _ = check
         assert args == ("start", "demo")
         return subprocess.CompletedProcess(
@@ -181,15 +186,17 @@ def test_call_docker_start_is_idempotent_for_running_container(
             stderr="Error response from daemon: container demo is already running",
         )
 
-    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+    monkeypatch.setattr(docker_runner, "call_docker", fake_call_docker)
 
-    docker_module.call_docker_start("demo")
+    docker_lifecycle.call_docker_start("demo")
 
 
 def test_call_docker_stop_is_idempotent_for_stopped_container(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def fake_call_docker(
+        *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         _ = check
         assert args == ("stop", "demo")
         return subprocess.CompletedProcess(
@@ -199,9 +206,9 @@ def test_call_docker_stop_is_idempotent_for_stopped_container(
             stderr="Error response from daemon: container demo is not running",
         )
 
-    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+    monkeypatch.setattr(docker_runner, "call_docker", fake_call_docker)
 
-    docker_module.call_docker_stop("demo")
+    docker_lifecycle.call_docker_stop("demo")
 
 
 def test_wait_docker_ready_returns_immediately_on_success(
@@ -209,7 +216,9 @@ def test_wait_docker_ready_returns_immediately_on_success(
 ) -> None:
     sleep_calls: list[int] = []
 
-    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def fake_call_docker(
+        *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         _ = check
         assert args == (
             "exec",
@@ -227,10 +236,12 @@ def test_wait_docker_ready_returns_immediately_on_success(
             stderr="",
         )
 
-    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
-    monkeypatch.setattr(docker_module, "sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(docker_runner, "call_docker", fake_call_docker)
+    monkeypatch.setattr(
+        docker_lifecycle, "sleep", lambda seconds: sleep_calls.append(seconds)
+    )
 
-    status = docker_module.wait_docker_ready("demo", "postgres", "dr_llm")
+    status = docker_lifecycle.wait_docker_ready("demo", "postgres", "dr_llm")
 
     assert status == ContainerStatus.RUNNING
     assert sleep_calls == []
@@ -241,7 +252,9 @@ def test_wait_docker_ready_raises_missing_container_immediately(
 ) -> None:
     sleep_calls: list[int] = []
 
-    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def fake_call_docker(
+        *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         _ = check
         assert args == (
             "exec",
@@ -259,11 +272,13 @@ def test_wait_docker_ready_raises_missing_container_immediately(
             stderr="Error response from daemon: No such container: demo",
         )
 
-    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
-    monkeypatch.setattr(docker_module, "sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(docker_runner, "call_docker", fake_call_docker)
+    monkeypatch.setattr(
+        docker_lifecycle, "sleep", lambda seconds: sleep_calls.append(seconds)
+    )
 
     with pytest.raises(DockerContainerNotFoundError):
-        docker_module.wait_docker_ready("demo", "postgres", "dr_llm")
+        docker_lifecycle.wait_docker_ready("demo", "postgres", "dr_llm")
 
     assert sleep_calls == []
 
@@ -271,7 +286,9 @@ def test_wait_docker_ready_raises_missing_container_immediately(
 def test_get_docker_project_metadata_raises_docker_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def fake_call_docker(
+        *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         _ = check
         assert args == (
             "inspect",
@@ -286,16 +303,18 @@ def test_get_docker_project_metadata_raises_docker_unavailable(
             stderr="Cannot connect to the Docker daemon at unix:///var/run/docker.sock.",
         )
 
-    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+    monkeypatch.setattr(docker_runner, "call_docker", fake_call_docker)
 
     with pytest.raises(DockerUnavailableError):
-        docker_module.get_docker_project_metadata("demo")
+        docker_inspect.get_docker_project_metadata("demo")
 
 
 def test_get_docker_project_metadata_returns_none_for_missing_container(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def fake_call_docker(
+        *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         _ = check
         return subprocess.CompletedProcess(
             args=["docker", *args],
@@ -304,13 +323,13 @@ def test_get_docker_project_metadata_returns_none_for_missing_container(
             stderr="Error response from daemon: No such container: demo",
         )
 
-    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+    monkeypatch.setattr(docker_runner, "call_docker", fake_call_docker)
 
-    assert docker_module.get_docker_project_metadata("demo") is None
+    assert docker_inspect.get_docker_project_metadata("demo") is None
 
 
 def test_parse_docker_labels_parses_docker_ps_label_string() -> None:
-    labels = docker_module.parse_docker_labels(
+    labels = docker_inspect.parse_docker_labels(
         "dr-llm.project.created-at=2026-04-07T12:34:56+00:00,"
         "dr-llm.project.name=demo,dr-llm.project.port=5500"
     )
@@ -327,7 +346,9 @@ def test_get_docker_project_metadata_parses_datetime_created_at(
 ) -> None:
     created_at = datetime(2026, 4, 7, 12, 34, 56, tzinfo=UTC)
 
-    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def fake_call_docker(
+        *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         _ = check
         assert args == (
             "inspect",
@@ -345,9 +366,9 @@ def test_get_docker_project_metadata_parses_datetime_created_at(
             stderr="",
         )
 
-    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+    monkeypatch.setattr(docker_runner, "call_docker", fake_call_docker)
 
-    metadata = docker_module.get_docker_project_metadata("demo")
+    metadata = docker_inspect.get_docker_project_metadata("demo")
 
     assert metadata is not None
     assert metadata.name == "demo"
@@ -400,7 +421,7 @@ def test_temp_environ_sets_and_restores_missing_env_var(
 ) -> None:
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
 
-    with docker_module._temp_environ(POSTGRES_PASSWORD="secret"):
+    with docker_runner._temp_environ(POSTGRES_PASSWORD="secret"):
         assert os.environ["POSTGRES_PASSWORD"] == "secret"
 
     assert "POSTGRES_PASSWORD" not in os.environ
@@ -412,7 +433,7 @@ def test_temp_environ_restores_previous_env_var_after_exception(
     monkeypatch.setenv("POSTGRES_PASSWORD", "original")
 
     with pytest.raises(RuntimeError, match="boom"):
-        with docker_module._temp_environ(POSTGRES_PASSWORD="secret"):
+        with docker_runner._temp_environ(POSTGRES_PASSWORD="secret"):
             assert os.environ["POSTGRES_PASSWORD"] == "secret"
             raise RuntimeError("boom")
 
@@ -426,7 +447,9 @@ def test_create_project_container_uses_project_metadata_and_restores_env(
     created_at = datetime(2026, 4, 7, 12, 34, 56, tzinfo=UTC)
     monkeypatch.setenv("POSTGRES_PASSWORD", "outer")
 
-    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def fake_call_docker(
+        *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         observed["args"] = args
         observed["check"] = check
         observed["password"] = os.environ["POSTGRES_PASSWORD"]
@@ -437,9 +460,9 @@ def test_create_project_container_uses_project_metadata_and_restores_env(
             stderr="",
         )
 
-    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+    monkeypatch.setattr(docker_lifecycle, "call_docker", fake_call_docker)
 
-    docker_module.create_project_container(
+    docker_lifecycle.create_project_container(
         volume_name="demo-volume",
         container_name="demo-container",
         db_name="dr_llm",
@@ -488,7 +511,9 @@ def test_call_docker_destroy_attempts_volume_cleanup_before_raising(
 ) -> None:
     calls: list[tuple[tuple[str, ...], bool]] = []
 
-    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def fake_call_docker(
+        *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         calls.append((args, check))
         if args[:2] == ("rm", "-f"):
             return subprocess.CompletedProcess(
@@ -504,10 +529,10 @@ def test_call_docker_destroy_attempts_volume_cleanup_before_raising(
             stderr="",
         )
 
-    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+    monkeypatch.setattr(docker_lifecycle, "call_docker", fake_call_docker)
 
     with pytest.raises(DockerContainerNotFoundError):
-        docker_module.call_docker_destroy("demo", "demo-volume")
+        docker_lifecycle.call_docker_destroy("demo", "demo-volume")
 
     assert calls == [
         (("rm", "-f", "demo"), False),
@@ -534,7 +559,7 @@ def test_docker_swap_in_db_drops_temp_db_when_stream_restore_fails(
             stderr=b"",
         )
 
-    monkeypatch.setattr(docker_module, "_call_docker_psql_admin", fake_psql_admin)
+    monkeypatch.setattr(docker_psql, "_call_docker_psql_admin", fake_psql_admin)
 
     def fake_psql_input_stream(
         container_name: str,
@@ -548,13 +573,13 @@ def test_docker_swap_in_db_drops_temp_db_when_stream_restore_fails(
         raise RuntimeError("restore failed")
 
     monkeypatch.setattr(
-        docker_module,
+        docker_psql,
         "call_docker_psql_input_stream",
         fake_psql_input_stream,
     )
 
     with pytest.raises(RuntimeError, match="restore failed"):
-        docker_module.docker_swap_in_db(
+        docker_psql.docker_swap_in_db(
             sql_stream=cast(IO[bytes], io.BytesIO(b"select 1;\n")),
             container_name="demo",
             db_user="postgres",
@@ -596,14 +621,14 @@ def test_docker_swap_in_db_creates_restores_and_swaps_temp_db(
         assert sql_stream.read() == b"select 1;\n"
         calls.append(("restore", (db_name,)))
 
-    monkeypatch.setattr(docker_module, "_call_docker_psql_admin", fake_psql_admin)
+    monkeypatch.setattr(docker_psql, "_call_docker_psql_admin", fake_psql_admin)
     monkeypatch.setattr(
-        docker_module,
+        docker_psql,
         "call_docker_psql_input_stream",
         fake_psql_input_stream,
     )
 
-    docker_module.docker_swap_in_db(
+    docker_psql.docker_swap_in_db(
         sql_stream=cast(IO[bytes], io.BytesIO(b"select 1;\n")),
         container_name="demo",
         db_user="postgres",

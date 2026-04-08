@@ -38,7 +38,7 @@ def test_create_project_retries_when_docker_reports_port_collision(
     monkeypatch.setattr(
         project_service_module,
         "get_all_docker_project_metadata",
-        lambda: [],
+        list,
     )
 
     def fake_create(**kwargs: object) -> None:
@@ -48,9 +48,7 @@ def test_create_project_retries_when_docker_reports_port_collision(
         if project.port == 5500:
             raise DockerPortAllocatedError()
 
-    monkeypatch.setattr(
-        project_service_module, "create_project_container", fake_create
-    )
+    monkeypatch.setattr(project_service_module, "create_project_container", fake_create)
     monkeypatch.setattr(
         project_service_module, "_port_has_listener", lambda port: False
     )
@@ -75,7 +73,7 @@ def test_create_project_skips_ports_with_existing_listeners(
     monkeypatch.setattr(
         project_service_module,
         "get_all_docker_project_metadata",
-        lambda: [],
+        list,
     )
     monkeypatch.setattr(
         project_service_module, "_port_has_listener", lambda port: port == 5500
@@ -86,9 +84,7 @@ def test_create_project_skips_ports_with_existing_listeners(
         assert isinstance(project, DockerProjectCreateMetadata)
         attempted_ports.append(project.port)
 
-    monkeypatch.setattr(
-        project_service_module, "create_project_container", fake_create
-    )
+    monkeypatch.setattr(project_service_module, "create_project_container", fake_create)
     monkeypatch.setattr(
         project_service_module,
         "wait_docker_ready",
@@ -108,16 +104,14 @@ def test_create_project_translates_container_conflict(
     monkeypatch.setattr(
         project_service_module,
         "get_all_docker_project_metadata",
-        lambda: [],
+        list,
     )
 
     def fake_create(**kwargs: object) -> None:
         _ = kwargs
         raise DockerContainerConflictError()
 
-    monkeypatch.setattr(
-        project_service_module, "create_project_container", fake_create
-    )
+    monkeypatch.setattr(project_service_module, "create_project_container", fake_create)
     monkeypatch.setattr(
         project_service_module, "_port_has_listener", lambda port: False
     )
@@ -137,7 +131,7 @@ def test_create_project_cleans_up_container_when_ready_check_fails(
     monkeypatch.setattr(
         project_service_module,
         "get_all_docker_project_metadata",
-        lambda: [],
+        list,
     )
     monkeypatch.setattr(
         project_service_module, "_port_has_listener", lambda port: False

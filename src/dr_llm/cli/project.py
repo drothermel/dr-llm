@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 
 import typer
@@ -128,7 +127,7 @@ def project_backup(
 
 
 @project_app.command("restore")
-@handle_cli_errors(ProjectError, FileNotFoundError, subprocess.CalledProcessError)
+@handle_cli_errors(ProjectError, FileNotFoundError)
 def project_restore(
     name: str = typer.Argument(..., help="Project name"),
     backup_file: Path = typer.Argument(..., help="Path to backup file (.sql.gz)"),

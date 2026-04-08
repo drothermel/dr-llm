@@ -5,8 +5,8 @@ from typing import ClassVar
 
 from pydantic import BaseModel, computed_field
 
-from dr_llm.project.docker import _validate_pg_identifier
 from dr_llm.project.docker_project_metadata import ContainerStatus
+from dr_llm.project.docker_psql import _validate_pg_identifier
 
 
 class ProjectInfo(BaseModel):

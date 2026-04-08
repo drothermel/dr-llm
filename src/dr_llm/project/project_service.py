@@ -6,21 +6,25 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
-from dr_llm.project.docker import (
+from dr_llm.project.docker_inspect import (
+    get_all_docker_project_metadata,
+    get_docker_project_metadata,
+)
+from dr_llm.project.docker_lifecycle import (
     call_docker_destroy,
-    call_docker_pg_dump_stream,
     call_docker_start,
     call_docker_stop,
     create_project_container,
-    docker_swap_in_db,
-    get_all_docker_project_metadata,
-    get_docker_project_metadata,
     wait_docker_ready,
 )
 from dr_llm.project.docker_project_metadata import (
     ContainerStatus,
     DockerProjectCreateMetadata,
     DockerProjectMetadata,
+)
+from dr_llm.project.docker_psql import (
+    call_docker_pg_dump_stream,
+    docker_swap_in_db,
 )
 from dr_llm.project.errors import (
     DockerContainerConflictError,
