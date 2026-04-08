@@ -9,6 +9,7 @@ import pytest
 import dr_llm.project.project_info as project_info_module
 from dr_llm.project.docker_project_metadata import (
     ContainerStatus,
+    DockerProjectCreateMetadata,
 )
 from dr_llm.project.errors import ProjectAlreadyExistsError, ProjectNotFoundError
 from dr_llm.project.errors import (
@@ -31,13 +32,13 @@ def test_create_new_retries_when_docker_reports_port_collision(
     )
 
     def fake_create(**kwargs: object) -> None:
-        port = kwargs["port"]
-        assert isinstance(port, int)
-        attempted_ports.append(port)
-        if port == 5500:
+        project = kwargs["project"]
+        assert isinstance(project, DockerProjectCreateMetadata)
+        attempted_ports.append(project.port)
+        if project.port == 5500:
             raise DockerPortAllocatedError()
 
-    monkeypatch.setattr(project_info_module, "call_docker_create", fake_create)
+    monkeypatch.setattr(project_info_module, "create_project_container", fake_create)
     monkeypatch.setattr(
         project_info_module,
         "wait_docker_ready",
@@ -64,7 +65,7 @@ def test_create_new_translates_container_conflict(
         _ = kwargs
         raise DockerContainerConflictError()
 
-    monkeypatch.setattr(project_info_module, "call_docker_create", fake_create)
+    monkeypatch.setattr(project_info_module, "create_project_container", fake_create)
 
     with pytest.raises(
         ProjectAlreadyExistsError,

@@ -91,3 +91,24 @@ class DockerProjectMetadata(BaseModel):
         if value is None or value == "":
             return None
         return int(value)
+
+
+class DockerProjectCreateMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    label_prefix: str
+    name: str
+    port: int
+    created_at: str
+
+    def docker_run_args(self) -> list[str]:
+        return [
+            "-p",
+            f"{self.port}:5432",
+            "--label",
+            f"{DockerProjectMetadata.name_key(self.label_prefix)}={self.name}",
+            "--label",
+            f"{DockerProjectMetadata.port_key(self.label_prefix)}={self.port}",
+            "--label",
+            f"{DockerProjectMetadata.created_at_key(self.label_prefix)}={self.created_at}",
+        ]

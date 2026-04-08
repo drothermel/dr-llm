@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import io
+import os
 import subprocess
 from typing import IO, cast
 
 import pytest
 
 import dr_llm.project.docker as docker_module
-from dr_llm.project.docker_project_metadata import ContainerStatus
+from dr_llm.project.docker_project_metadata import (
+    ContainerStatus,
+    DockerProjectCreateMetadata,
+)
 from dr_llm.project.errors import DockerUnavailableError
 from dr_llm.project.errors import (
     DockerContainerConflictError,
@@ -200,6 +204,114 @@ def test_get_docker_project_metadata_returns_none_for_missing_container(
         docker_module.get_docker_project_metadata("demo", label_prefix="dr-llm.project")
         is None
     )
+
+
+def test_docker_project_create_metadata_builds_expected_run_args() -> None:
+    project = DockerProjectCreateMetadata(
+        label_prefix="dr-llm.project",
+        name="demo",
+        port=5500,
+        created_at="2026-04-07T12:34:56+00:00",
+    )
+
+    assert project.docker_run_args() == [
+        "-p",
+        "5500:5432",
+        "--label",
+        "dr-llm.project.name=demo",
+        "--label",
+        "dr-llm.project.port=5500",
+        "--label",
+        "dr-llm.project.created-at=2026-04-07T12:34:56+00:00",
+    ]
+
+
+def test_temp_environ_sets_and_restores_missing_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+
+    with docker_module._temp_environ(POSTGRES_PASSWORD="secret"):
+        assert os.environ["POSTGRES_PASSWORD"] == "secret"
+
+    assert "POSTGRES_PASSWORD" not in os.environ
+
+
+def test_temp_environ_restores_previous_env_var_after_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POSTGRES_PASSWORD", "original")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with docker_module._temp_environ(POSTGRES_PASSWORD="secret"):
+            assert os.environ["POSTGRES_PASSWORD"] == "secret"
+            raise RuntimeError("boom")
+
+    assert os.environ["POSTGRES_PASSWORD"] == "original"
+
+
+def test_create_project_container_uses_project_metadata_and_restores_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+    monkeypatch.setenv("POSTGRES_PASSWORD", "outer")
+
+    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        observed["args"] = args
+        observed["check"] = check
+        observed["password"] = os.environ["POSTGRES_PASSWORD"]
+        return subprocess.CompletedProcess(
+            args=["docker", *args],
+            returncode=0,
+            stdout="created",
+            stderr="",
+        )
+
+    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+
+    docker_module.create_project_container(
+        volume_name="demo-volume",
+        container_name="demo-container",
+        db_name="dr_llm",
+        db_user="postgres",
+        db_password="inner-secret",
+        docker_image="postgres:16",
+        project=DockerProjectCreateMetadata(
+            label_prefix="dr-llm.project",
+            name="demo",
+            port=5500,
+            created_at="2026-04-07T12:34:56+00:00",
+        ),
+    )
+
+    assert observed == {
+        "args": (
+            "run",
+            "-d",
+            "--name",
+            "demo-container",
+            "-v",
+            "demo-volume:/var/lib/postgresql/data",
+            "-e",
+            "POSTGRES_DB=dr_llm",
+            "-e",
+            "POSTGRES_USER=postgres",
+            "-e",
+            "POSTGRES_PASSWORD",
+            "-p",
+            "5500:5432",
+            "--label",
+            "dr-llm.project.name=demo",
+            "--label",
+            "dr-llm.project.port=5500",
+            "--label",
+            "dr-llm.project.created-at=2026-04-07T12:34:56+00:00",
+            "postgres:16",
+        ),
+        "check": True,
+        "password": "inner-secret",
+    }
+    assert os.environ["POSTGRES_PASSWORD"] == "outer"
 
 
 def test_call_docker_destroy_attempts_volume_cleanup_before_raising(

@@ -4,13 +4,15 @@ import json
 import os
 import re
 import subprocess
-from contextlib import suppress
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from time import sleep
 from typing import IO
 from uuid import uuid4
 
 from dr_llm.project.docker_project_metadata import (
     ContainerStatus,
+    DockerProjectCreateMetadata,
     DockerProjectMetadata,
 )
 from dr_llm.project.errors import (
@@ -159,6 +161,20 @@ def _read_process_stderr(process: subprocess.Popen[bytes]) -> str:
     return process.stderr.read().decode(errors="replace").strip()
 
 
+@contextmanager
+def _temp_environ(**updates: str) -> Generator[None, None, None]:
+    previous = {key: os.environ.get(key) for key in updates}
+    os.environ.update(updates)
+    try:
+        yield
+    finally:
+        for key, old_value in previous.items():
+            if old_value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = old_value
+
+
 def get_docker_project_metadata(
     container_name: str,
     *,
@@ -190,18 +206,15 @@ def get_docker_project_metadata(
     )
 
 
-def call_docker_create(
+def create_project_container(
     volume_name: str,
     container_name: str,
     db_name: str,
     db_user: str,
     db_password: str,
     docker_image: str,
-    label_prefix: str | None = None,
-    name: str | None = None,
-    port: int | None = None,
-    created_at: str | None = None,
-):
+    project: DockerProjectCreateMetadata,
+) -> None:
     docker_cmd = [
         "run",
         "-d",
@@ -216,29 +229,10 @@ def call_docker_create(
         "-e",
         "POSTGRES_PASSWORD",
     ]
-    if port is not None:
-        docker_cmd.extend(["-p", f"{port}:5432"])
-    if all(val is not None for val in [label_prefix, name, port, created_at]):
-        docker_cmd.extend(
-            [
-                "--label",
-                f"{label_prefix}.name={name}",
-                "--label",
-                f"{label_prefix}.port={port}",
-                "--label",
-                f"{label_prefix}.created-at={created_at}",
-            ]
-        )
+    docker_cmd.extend(project.docker_run_args())
     docker_cmd.append(docker_image)
-    prev = os.environ.get("POSTGRES_PASSWORD")
-    os.environ["POSTGRES_PASSWORD"] = db_password
-    try:
+    with _temp_environ(POSTGRES_PASSWORD=db_password):
         call_docker(*docker_cmd)
-    finally:
-        if prev is None:
-            os.environ.pop("POSTGRES_PASSWORD", None)
-        else:
-            os.environ["POSTGRES_PASSWORD"] = prev
 
 
 def call_docker_start(container_name: str) -> None:

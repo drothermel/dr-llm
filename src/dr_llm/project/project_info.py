@@ -8,11 +8,11 @@ from typing import IO, ClassVar, cast
 from pydantic import BaseModel, computed_field
 
 from dr_llm.project.docker import (
-    call_docker_create,
     call_docker_destroy,
     call_docker_pg_dump_stream,
     call_docker_start,
     call_docker_stop,
+    create_project_container,
     docker_swap_in_db,
     get_all_docker_project_metadata,
     get_docker_project_metadata,
@@ -20,6 +20,7 @@ from dr_llm.project.docker import (
 )
 from dr_llm.project.docker_project_metadata import (
     ContainerStatus,
+    DockerProjectCreateMetadata,
     DockerProjectMetadata,
 )
 from dr_llm.project.errors import (
@@ -141,23 +142,26 @@ class ProjectInfo(BaseModel):
         created_at = datetime.now(UTC).isoformat()
 
         while True:
+            port = _find_available_port(claimed_ports)
             project_info = cls(
                 name=name,
-                port=_find_available_port(claimed_ports),
+                port=port,
                 created_at=created_at,
             )
             try:
-                call_docker_create(
+                create_project_container(
                     volume_name=project_info.volume_name,
                     container_name=project_info.container_name,
                     db_name=project_info.db_name,
                     db_user=project_info.db_user,
                     db_password=project_info.db_password,
-                    label_prefix=project_info.label_prefix,
-                    name=project_info.name,
-                    port=project_info.port,
-                    created_at=project_info.created_at,
                     docker_image=project_info.docker_image,
+                    project=DockerProjectCreateMetadata(
+                        label_prefix=project_info.label_prefix,
+                        name=project_info.name,
+                        port=port,
+                        created_at=created_at,
+                    ),
                 )
             except DockerContainerConflictError as exc:
                 raise ProjectAlreadyExistsError(
