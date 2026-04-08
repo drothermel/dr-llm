@@ -14,6 +14,7 @@ from dr_llm.project.docker_project_metadata import (
 )
 from dr_llm.project.errors import DockerUnavailableError
 from dr_llm.project.errors import (
+    DockerCommandError,
     DockerContainerConflictError,
     DockerContainerNotFoundError,
     DockerContainerNotRunningError,
@@ -60,6 +61,109 @@ def test_docker_error_maps_common_failures(
 
     assert isinstance(err, expected_type)
     assert str(err) == expected_message
+
+
+def test_call_docker_uses_text_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(
+        args: list[str],
+        *,
+        input: bytes | None = None,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        assert args == ["docker", "ps"]
+        assert input is None
+        assert capture_output is True
+        assert text is True
+        assert check is False
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="ok",
+            stderr="",
+        )
+
+    monkeypatch.setattr(docker_module.subprocess, "run", fake_run)
+
+    result = docker_module.call_docker("ps")
+
+    assert result.stdout == "ok"
+
+
+def test_call_docker_bytes_uses_binary_mode_and_forwards_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(
+        args: list[str],
+        *,
+        input: bytes | None = None,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert args == ["docker", "exec", "demo", "psql"]
+        assert input == b"select 1;\n"
+        assert capture_output is True
+        assert text is False
+        assert check is False
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=b"ok",
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(docker_module.subprocess, "run", fake_run)
+
+    result = docker_module.call_docker_bytes(
+        "exec",
+        "demo",
+        "psql",
+        input=b"select 1;\n",
+    )
+
+    assert result.stdout == b"ok"
+
+
+def test_call_docker_bytes_decodes_stderr_before_mapping_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_run(
+        args: list[str],
+        *,
+        input: bytes | None = None,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[bytes]:
+        _ = (input, capture_output, text, check)
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout=b"",
+            stderr="bad-\u03b2".encode(),
+        )
+
+    def fake_docker_error(args: tuple[str, ...], stderr: str) -> DockerCommandError:
+        observed["args"] = args
+        observed["stderr"] = stderr
+        return DockerCommandError("boom")
+
+    monkeypatch.setattr(docker_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(docker_module, "_docker_error", fake_docker_error)
+
+    with pytest.raises(DockerCommandError, match="boom"):
+        docker_module.call_docker_bytes("exec", "demo", "psql")
+
+    assert observed == {
+        "args": ("exec", "demo", "psql"),
+        "stderr": "bad-\u03b2",
+    }
 
 
 def test_call_docker_start_is_idempotent_for_running_container(
@@ -349,13 +453,23 @@ def test_call_docker_destroy_attempts_volume_cleanup_before_raising(
 def test_docker_swap_in_db_drops_temp_db_when_stream_restore_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[tuple[str, str]] = []
+    calls: list[tuple[str, tuple[str, ...]]] = []
 
-    monkeypatch.setattr(
-        docker_module,
-        "call_docker_psql_create_db",
-        lambda container_name, db_user, db_name: calls.append(("create", db_name)),
-    )
+    def fake_psql_admin(
+        container_name: str,
+        db_user: str,
+        *sql_commands: str,
+    ) -> subprocess.CompletedProcess[bytes]:
+        _ = (container_name, db_user)
+        calls.append(("admin", sql_commands))
+        return subprocess.CompletedProcess(
+            args=["docker", "exec", container_name, "psql"],
+            returncode=0,
+            stdout=b"",
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(docker_module, "_call_docker_psql_admin", fake_psql_admin)
 
     def fake_psql_input_stream(
         container_name: str,
@@ -365,25 +479,13 @@ def test_docker_swap_in_db_drops_temp_db_when_stream_restore_fails(
     ) -> None:
         _ = (container_name, db_user)
         assert sql_stream.read() == b"select 1;\n"
-        calls.append(("restore", db_name))
+        calls.append(("restore", (db_name,)))
         raise RuntimeError("restore failed")
 
     monkeypatch.setattr(
         docker_module,
         "call_docker_psql_input_stream",
         fake_psql_input_stream,
-    )
-    monkeypatch.setattr(
-        docker_module,
-        "call_docker_psql_swap_in_db",
-        lambda container_name, db_user, target_db_name, swap_in_db: calls.append(
-            ("swap", swap_in_db)
-        ),
-    )
-    monkeypatch.setattr(
-        docker_module,
-        "call_docker_psql_drop_db",
-        lambda container_name, db_user, db_name: calls.append(("drop", db_name)),
     )
 
     with pytest.raises(RuntimeError, match="restore failed"):
@@ -395,6 +497,63 @@ def test_docker_swap_in_db_drops_temp_db_when_stream_restore_fails(
         )
 
     assert len(calls) == 3
-    assert calls[0][0] == "create"
-    assert calls[1] == ("restore", calls[0][1])
-    assert calls[2] == ("drop", calls[0][1])
+    assert calls[0] == ("admin", (f'CREATE DATABASE "{calls[1][1][0]}";',))
+    assert calls[1] == ("restore", (calls[1][1][0],))
+    assert calls[2] == ("admin", (f'DROP DATABASE IF EXISTS "{calls[1][1][0]}";',))
+
+
+def test_docker_swap_in_db_creates_restores_and_swaps_temp_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def fake_psql_admin(
+        container_name: str,
+        db_user: str,
+        *sql_commands: str,
+    ) -> subprocess.CompletedProcess[bytes]:
+        _ = (container_name, db_user)
+        calls.append(("admin", sql_commands))
+        return subprocess.CompletedProcess(
+            args=["docker", "exec", container_name, "psql"],
+            returncode=0,
+            stdout=b"",
+            stderr=b"",
+        )
+
+    def fake_psql_input_stream(
+        container_name: str,
+        db_user: str,
+        db_name: str,
+        sql_stream: io.BytesIO,
+    ) -> None:
+        _ = (container_name, db_user)
+        assert sql_stream.read() == b"select 1;\n"
+        calls.append(("restore", (db_name,)))
+
+    monkeypatch.setattr(docker_module, "_call_docker_psql_admin", fake_psql_admin)
+    monkeypatch.setattr(
+        docker_module,
+        "call_docker_psql_input_stream",
+        fake_psql_input_stream,
+    )
+
+    docker_module.docker_swap_in_db(
+        sql_stream=cast(IO[bytes], io.BytesIO(b"select 1;\n")),
+        container_name="demo",
+        db_user="postgres",
+        target_db_name="dr_llm",
+    )
+
+    swap_in_db = calls[1][1][0]
+    assert calls == [
+        ("admin", (f'CREATE DATABASE "{swap_in_db}";',)),
+        ("restore", (swap_in_db,)),
+        (
+            "admin",
+            (
+                'DROP DATABASE IF EXISTS "dr_llm";',
+                f'ALTER DATABASE "{swap_in_db}" RENAME TO "dr_llm";',
+            ),
+        ),
+    ]

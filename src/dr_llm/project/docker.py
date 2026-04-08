@@ -7,7 +7,7 @@ import subprocess
 from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from time import sleep
-from typing import IO
+from typing import IO, Literal, overload
 from uuid import uuid4
 
 from dr_llm.project.docker_project_metadata import (
@@ -112,19 +112,52 @@ def wait_docker_ready(
     )
 
 
-def call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+@overload
+def _call_docker_impl(
+    *args: str,
+    check: bool,
+    text: Literal[True],
+    input: None = None,
+) -> subprocess.CompletedProcess[str]: ...
+
+
+@overload
+def _call_docker_impl(
+    *args: str,
+    check: bool,
+    text: Literal[False],
+    input: bytes | None = None,
+) -> subprocess.CompletedProcess[bytes]: ...
+
+
+def _call_docker_impl(
+    *args: str,
+    check: bool,
+    text: bool,
+    input: bytes | None = None,
+) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
     try:
         result = subprocess.run(
             ["docker", *args],
+            input=input,
             capture_output=True,
-            text=True,
+            text=text,
             check=False,
         )
     except FileNotFoundError as exc:
         raise DockerUnavailableError() from exc
     if check and result.returncode != 0:
-        raise _docker_error(args, result.stderr.strip())
+        stderr = (
+            result.stderr.strip()
+            if text
+            else result.stderr.decode(errors="replace").strip()
+        )
+        raise _docker_error(args, stderr)
     return result
+
+
+def call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return _call_docker_impl(*args, check=check, text=True)
 
 
 def call_docker_bytes(
@@ -132,19 +165,7 @@ def call_docker_bytes(
     check: bool = True,
     input: bytes | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
-    try:
-        result = subprocess.run(
-            ["docker", *args],
-            input=input,
-            capture_output=True,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise DockerUnavailableError() from exc
-    if check and result.returncode != 0:
-        stderr = result.stderr.decode(errors="replace").strip()
-        raise _docker_error(args, stderr)
-    return result
+    return _call_docker_impl(*args, check=check, text=False, input=input)
 
 
 def _copy_binary_stream(
@@ -277,6 +298,22 @@ def call_docker_psql(
     )
 
 
+def _call_docker_psql_admin(
+    container_name: str,
+    db_user: str,
+    *sql_commands: str,
+) -> subprocess.CompletedProcess[bytes]:
+    psql_args: list[str] = []
+    for sql in sql_commands:
+        psql_args.extend(["-c", sql])
+    return call_docker_psql(
+        container_name,
+        db_user,
+        "postgres",
+        *psql_args,
+    )
+
+
 def call_docker_psql_input_stream(
     container_name: str,
     db_user: str,
@@ -317,55 +354,6 @@ def call_docker_psql_input_stream(
         raise _docker_error(args, stderr)
 
 
-def call_docker_psql_create_db(
-    container_name: str,
-    db_user: str,
-    db_name: str,
-) -> subprocess.CompletedProcess[bytes]:
-    _validate_pg_identifier(db_name, "database name")
-    return call_docker_psql(
-        container_name,
-        db_user,
-        "postgres",
-        "-c",
-        f'CREATE DATABASE "{db_name}";',
-    )
-
-
-def call_docker_psql_drop_db(
-    container_name: str,
-    db_user: str,
-    db_name: str,
-) -> subprocess.CompletedProcess[bytes]:
-    _validate_pg_identifier(db_name, "database name")
-    return call_docker_psql(
-        container_name,
-        db_user,
-        "postgres",
-        "-c",
-        f'DROP DATABASE IF EXISTS "{db_name}";',
-    )
-
-
-def call_docker_psql_swap_in_db(
-    container_name: str,
-    db_user: str,
-    target_db_name: str,
-    swap_in_db: str,
-) -> subprocess.CompletedProcess[bytes]:
-    _validate_pg_identifier(target_db_name, "database name")
-    _validate_pg_identifier(swap_in_db, "database name")
-    return call_docker_psql(
-        container_name,
-        db_user,
-        "postgres",
-        "-c",
-        f'DROP DATABASE IF EXISTS "{target_db_name}";',
-        "-c",
-        f'ALTER DATABASE "{swap_in_db}" RENAME TO "{target_db_name}";',
-    )
-
-
 def docker_swap_in_db(
     sql_stream: IO[bytes],
     container_name: str,
@@ -373,17 +361,27 @@ def docker_swap_in_db(
     target_db_name: str,
 ) -> None:
     swap_in_db = f"dr_llm_restore_{uuid4().hex[:8]}"
-    call_docker_psql_create_db(container_name, db_user, swap_in_db)
+    _validate_pg_identifier(swap_in_db, "database name")
+    _validate_pg_identifier(target_db_name, "database name")
+    _call_docker_psql_admin(
+        container_name,
+        db_user,
+        f'CREATE DATABASE "{swap_in_db}";',
+    )
     try:
         call_docker_psql_input_stream(container_name, db_user, swap_in_db, sql_stream)
-        call_docker_psql_swap_in_db(
+        _call_docker_psql_admin(
             container_name,
             db_user,
-            target_db_name,
-            swap_in_db,
+            f'DROP DATABASE IF EXISTS "{target_db_name}";',
+            f'ALTER DATABASE "{swap_in_db}" RENAME TO "{target_db_name}";',
         )
     except Exception:
-        call_docker_psql_drop_db(container_name, db_user, swap_in_db)
+        _call_docker_psql_admin(
+            container_name,
+            db_user,
+            f'DROP DATABASE IF EXISTS "{swap_in_db}";',
+        )
         raise
 
 
