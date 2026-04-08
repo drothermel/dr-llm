@@ -49,18 +49,15 @@ class FakeWorkerBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
         self._process_context_enabled = process_context_enabled
         self._events = events
 
-    def claim(self, *, worker_id: str, lease_seconds: int) -> list[str]:
+    def claim(self, *, worker_id: str, lease_seconds: int) -> str | None:
         del worker_id, lease_seconds
         with self._lock:
             if not self._queued:
-                return []
+                return None
             self._claims += 1
-            item = self._queued.pop(0)
-        return [item]
+            return self._queued.pop(0)
 
-    def complete(
-        self, *, item: str, result: dict[str, Any], worker_id: str
-    ) -> None:
+    def complete(self, *, item: str, result: dict[str, Any], worker_id: str) -> None:
         del worker_id
         assert result["item"] == item
         with self._lock:
@@ -110,7 +107,7 @@ class FakeWorkerBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
 
 
 class ExplodingClaimBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
-    def claim(self, *, worker_id: str, lease_seconds: int) -> list[str]:
+    def claim(self, *, worker_id: str, lease_seconds: int) -> str | None:
         del worker_id, lease_seconds
         raise RuntimeError("claim exploded")
 
@@ -387,4 +384,4 @@ def test_join_shuts_down_executor_on_non_timeout_exception() -> None:
     with pytest.raises(RuntimeError, match="claim exploded"):
         controller.join(timeout=5.0)
 
-    assert controller._joined is True
+    assert controller.final_snapshot is not None

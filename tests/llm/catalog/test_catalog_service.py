@@ -88,11 +88,6 @@ def test_sync_writes_snapshots_and_replaces_models(
         "dr_llm.llm.catalog.service.fetch_models_for_provider",
         fake_fetch,
     )
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_out_of_registry_provider_models",
-        lambda provider: ([], {"data": []}),
-    )
-
     results = service.sync_models_detailed(provider="dummy")
     assert len(results) == 1
     assert results[0].success
@@ -117,11 +112,6 @@ def test_sync_records_failure_on_fetch_error(
         "dr_llm.llm.catalog.service.fetch_models_for_provider",
         failing_fetch,
     )
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_out_of_registry_provider_models",
-        lambda provider: ([], {"data": []}),
-    )
-
     results = service.sync_models_detailed(provider="dummy")
     assert len(results) == 1
     assert not results[0].success
@@ -163,11 +153,6 @@ def test_sync_filters_blacklisted_models_before_replace(
         "dr_llm.llm.catalog.service.fetch_models_for_provider",
         fake_fetch,
     )
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_out_of_registry_provider_models",
-        lambda provider: ([], {"data": []}),
-    )
-
     results = service.sync_models_detailed(provider="anthropic")
     assert len(results) == 1
     assert results[0].success
@@ -217,11 +202,6 @@ def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata(
         "dr_llm.llm.catalog.service.fetch_models_for_provider",
         fake_fetch,
     )
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_out_of_registry_provider_models",
-        lambda provider: ([], {"data": []}),
-    )
-
     results = service.sync_models_detailed(provider="openrouter")
     assert len(results) == 1
     assert results[0].success

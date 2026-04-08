@@ -4,53 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
-
-# ---------------------------------------------------------------------------
-# Private parsing helpers
-# ---------------------------------------------------------------------------
-
-
-def _as_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _as_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _as_str(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    stripped = value.strip()
-    if not stripped:
-        return None
-    return stripped
-
-
-def _first_float(*values: object) -> float | None:
-    for value in values:
-        parsed = _as_float(value)
-        if parsed is not None:
-            return parsed
-    return None
-
-
-def _first_str(*values: object) -> str | None:
-    for value in values:
-        parsed = _as_str(value)
-        if parsed is not None:
-            return parsed
-    return None
+from dr_llm.llm.coercion import as_int, as_str, first_float, first_str
 
 
 # ---------------------------------------------------------------------------
@@ -138,19 +92,19 @@ class TokenUsage(BaseModel):
         """
         if not isinstance(usage_raw, dict):
             return 0
-        direct = _as_int(usage_raw.get("reasoning_tokens"))
+        direct = as_int(usage_raw.get("reasoning_tokens"))
         if direct is not None:
             return direct
 
         completion_details = usage_raw.get("completion_tokens_details")
         if isinstance(completion_details, dict):
-            value = _as_int(completion_details.get("reasoning_tokens"))
+            value = as_int(completion_details.get("reasoning_tokens"))
             if value is not None:
                 return value
 
         output_details = usage_raw.get("output_tokens_details")
         if isinstance(output_details, dict):
-            value = _as_int(output_details.get("reasoning_tokens"))
+            value = as_int(output_details.get("reasoning_tokens"))
             if value is not None:
                 return value
         return 0
@@ -189,23 +143,11 @@ class CostInfo(BaseModel):
         usage_raw = body_raw.get("usage")
         usage = usage_raw if isinstance(usage_raw, dict) else {}
 
-        total_cost = _first_float(
-            usage.get("total_cost"),
-            usage.get("cost"),
-            body_raw.get("total_cost"),
-            body_raw.get("cost"),
-        )
-        prompt_cost = _first_float(
-            usage.get("prompt_cost"), body_raw.get("prompt_cost")
-        )
-        completion_cost = _first_float(
-            usage.get("completion_cost"), body_raw.get("completion_cost")
-        )
-        reasoning_cost = _first_float(
-            usage.get("reasoning_cost"), body_raw.get("reasoning_cost")
-        )
-        currency = _first_str(usage.get("currency"), body_raw.get("currency"))
-        currency = currency or _DEFAULT_CURRENCY
+        total_cost = _find_float_value(usage, body_raw, "total_cost", "cost")
+        prompt_cost = _find_float_value(usage, body_raw, "prompt_cost")
+        completion_cost = _find_float_value(usage, body_raw, "completion_cost")
+        reasoning_cost = _find_float_value(usage, body_raw, "reasoning_cost")
+        currency = _find_string_value(usage, body_raw, "currency") or _DEFAULT_CURRENCY
 
         if (
             total_cost is None
@@ -215,13 +157,6 @@ class CostInfo(BaseModel):
         ):
             return None
 
-        raw: dict[str, Any] = {}
-        for key in _COST_KEYS:
-            if key in usage:
-                raw[f"usage.{key}"] = usage[key]
-            if key in body_raw:
-                raw[f"body.{key}"] = body_raw[key]
-
         is_usd = currency == _DEFAULT_CURRENCY
         return cls(
             total_cost_usd=total_cost if is_usd else None,
@@ -229,13 +164,73 @@ class CostInfo(BaseModel):
             completion_cost_usd=completion_cost if is_usd else None,
             reasoning_cost_usd=reasoning_cost if is_usd else None,
             currency=currency,
-            raw=raw,
+            raw=_collect_cost_provenance(usage, body_raw),
         )
+
+
+def _find_float_value(
+    usage: dict[str, Any],
+    body_raw: dict[str, Any],
+    *keys: str,
+) -> float | None:
+    """Look up the first float-coercible value across `usage` then `body_raw` for each key."""
+    candidates = [usage.get(key) for key in keys] + [body_raw.get(key) for key in keys]
+    return first_float(*candidates)
+
+
+def _find_string_value(
+    usage: dict[str, Any],
+    body_raw: dict[str, Any],
+    *keys: str,
+) -> str | None:
+    """Look up the first string-coercible value across `usage` then `body_raw` for each key."""
+    candidates = [usage.get(key) for key in keys] + [body_raw.get(key) for key in keys]
+    return first_str(*candidates)
+
+
+def _collect_cost_provenance(
+    usage: dict[str, Any],
+    body_raw: dict[str, Any],
+) -> dict[str, Any]:
+    raw: dict[str, Any] = {}
+    for key in _COST_KEYS:
+        if key in usage:
+            raw[f"usage.{key}"] = usage[key]
+        if key in body_raw:
+            raw[f"body.{key}"] = body_raw[key]
+    return raw
 
 
 # ---------------------------------------------------------------------------
 # Reasoning text/details parsing
 # ---------------------------------------------------------------------------
+
+
+def build_usage_and_reasoning(
+    *,
+    usage_dump: dict[str, Any] | None,
+    prompt_tokens: Any,
+    completion_tokens: Any,
+    total_tokens: Any,
+    reasoning_source: dict[str, Any] | None,
+) -> tuple[TokenUsage, str | None, list[dict[str, Any]] | None]:
+    """Build a ``TokenUsage`` plus parsed reasoning text/details from raw fields.
+
+    ``usage_dump`` is the raw usage dict (used to extract reasoning token counts
+    from nested ``*_tokens_details`` fields). The explicit token args supply the
+    final prompt/completion/total counts. ``reasoning_source`` is the dict to
+    scan for ``reasoning`` / ``reasoning_details`` (typically the message body or
+    raw response body).
+    """
+    reasoning_tokens = TokenUsage.extract_reasoning_tokens(usage_dump or {})
+    usage = TokenUsage.from_raw(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        reasoning_tokens=reasoning_tokens,
+    )
+    reasoning, reasoning_details = parse_reasoning(reasoning_source)
+    return usage, reasoning, reasoning_details
 
 
 def parse_reasoning(
@@ -244,7 +239,15 @@ def parse_reasoning(
     """Extract reasoning text and details from a raw message dict."""
     if not isinstance(message_raw, dict):
         return None, None
+    reasoning_text, reasoning_details = _extract_direct_reasoning(message_raw)
+    if reasoning_text is None:
+        reasoning_text = _extract_thinking_from_content(message_raw)
+    return reasoning_text, reasoning_details
 
+
+def _extract_direct_reasoning(
+    message_raw: dict[str, Any],
+) -> tuple[str | None, list[dict[str, Any]] | None]:
     reasoning_raw = message_raw.get("reasoning")
     if reasoning_raw is None:
         reasoning_raw = message_raw.get("reasoning_content")
@@ -258,20 +261,19 @@ def parse_reasoning(
         reasoning_details = [
             item for item in reasoning_details_raw if isinstance(item, dict)
         ]
-    if reasoning_text is None:
-        content_raw = message_raw.get("content")
-        if isinstance(content_raw, list):
-            thinking_items = [
-                item
-                for item in content_raw
-                if isinstance(item, dict) and item.get("type") == "thinking"
-            ]
-            if thinking_items:
-                reasoning_chunks = [
-                    val
-                    for item in thinking_items
-                    if (val := _as_str(item.get("thinking"))) is not None
-                ]
-                if reasoning_chunks:
-                    reasoning_text = "\n\n".join(reasoning_chunks)
     return reasoning_text, reasoning_details
+
+
+def _extract_thinking_from_content(message_raw: dict[str, Any]) -> str | None:
+    content_raw = message_raw.get("content")
+    if not isinstance(content_raw, list):
+        return None
+    thinking_chunks = [
+        val
+        for item in content_raw
+        if isinstance(item, dict) and item.get("type") == "thinking"
+        if (val := as_str(item.get("thinking"))) is not None
+    ]
+    if not thinking_chunks:
+        return None
+    return "\n\n".join(thinking_chunks)

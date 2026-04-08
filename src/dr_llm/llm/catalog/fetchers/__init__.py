@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 from dr_llm.llm.catalog.fetchers.anthropic import fetch_anthropic_models
 from dr_llm.llm.catalog.fetchers.google import fetch_google_models
-from dr_llm.llm.catalog.fetchers.kimi import KIMI_PROVIDER_NAME, fetch_kimi_models
+from dr_llm.llm.catalog.fetchers.kimi import fetch_kimi_models
 from dr_llm.llm.catalog.fetchers.openai_compat import fetch_openai_compat_models
 from dr_llm.llm.catalog.fetchers.static import (
     fetch_static_headless_models,
@@ -22,80 +22,37 @@ from dr_llm.llm.providers.base import Provider
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 
 
-CatalogFetcher = Callable[[Provider], tuple[list[ModelCatalogEntry], dict[str, Any]]]
+CatalogResult = tuple[list[ModelCatalogEntry], dict[str, Any]]
+CatalogFetcher = Callable[[Any], CatalogResult]
+
+# Order matters: KimiCodeProvider is a subclass of AnthropicProvider, so it
+# must be checked first. Fetchers are referenced by name so test monkeypatches
+# of the module-level symbols are honored.
+_PROVIDER_FETCHERS: tuple[tuple[type[Provider], str], ...] = (
+    (MiniMaxProvider, "fetch_static_minimax_models"),
+    (OpenAICompatProvider, "fetch_openai_compat_models"),
+    (KimiCodeProvider, "fetch_kimi_models"),
+    (AnthropicProvider, "fetch_anthropic_models"),
+    (GoogleProvider, "fetch_google_models"),
+    (CodexHeadlessProvider, "fetch_static_headless_models"),
+    (ClaudeHeadlessProvider, "fetch_static_headless_models"),
+)
 
 
-def _fetch_minimax_provider_models(
-    provider: Provider,
-) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    return fetch_static_minimax_models(cast(MiniMaxProvider, provider))
-
-
-def _fetch_openai_compat_provider_models(
-    provider: Provider,
-) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    return fetch_openai_compat_models(cast(OpenAICompatProvider, provider))
-
-
-def _fetch_kimi_provider_models(
-    provider: Provider,
-) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    kimi_provider = cast(KimiCodeProvider, provider)
-    return fetch_kimi_models(
-        api_key=kimi_provider.config.api_key,
-        provider_name=kimi_provider.name,
-    )
-
-
-def _fetch_anthropic_provider_models(
-    provider: Provider,
-) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    return fetch_anthropic_models(cast(AnthropicProvider, provider))
-
-
-def _fetch_google_provider_models(
-    provider: Provider,
-) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    return fetch_google_models(cast(GoogleProvider, provider))
-
-
-def _fetch_headless_provider_models(
-    provider: Provider,
-) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    return fetch_static_headless_models(
-        cast(CodexHeadlessProvider | ClaudeHeadlessProvider, provider)
-    )
-
-
-_PROVIDER_FETCHERS: dict[type[Provider], CatalogFetcher] = {
-    MiniMaxProvider: _fetch_minimax_provider_models,
-    OpenAICompatProvider: _fetch_openai_compat_provider_models,
-    KimiCodeProvider: _fetch_kimi_provider_models,
-    AnthropicProvider: _fetch_anthropic_provider_models,
-    GoogleProvider: _fetch_google_provider_models,
-    CodexHeadlessProvider: _fetch_headless_provider_models,
-    ClaudeHeadlessProvider: _fetch_headless_provider_models,
-}
-
-
-def fetch_models_for_provider(
-    provider: Provider,
-) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    for provider_type, fetcher in _PROVIDER_FETCHERS.items():
+def fetch_models_for_provider(provider: Provider) -> CatalogResult:
+    for provider_type, fetcher_name in _PROVIDER_FETCHERS:
         if isinstance(provider, provider_type):
+            fetcher: CatalogFetcher = globals()[fetcher_name]
             return fetcher(provider)
     return [], {"source": "unsupported_provider_type"}
 
 
-def fetch_out_of_registry_provider_models(
-    provider: str,
-) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    if provider == KIMI_PROVIDER_NAME:
-        return fetch_kimi_models()
-    return [], {"source": "unsupported_provider"}
-
-
 __all__ = [
+    "fetch_anthropic_models",
+    "fetch_google_models",
+    "fetch_kimi_models",
     "fetch_models_for_provider",
-    "fetch_out_of_registry_provider_models",
+    "fetch_openai_compat_models",
+    "fetch_static_headless_models",
+    "fetch_static_minimax_models",
 ]

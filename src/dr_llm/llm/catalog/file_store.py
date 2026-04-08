@@ -4,20 +4,24 @@ import json
 import logging
 import os
 import tempfile
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from pydantic import ValidationError
 
+from dr_llm.errors import PersistenceError
 from dr_llm.llm.catalog.model_blacklist import filter_blacklisted_entries
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
 from dr_llm.llm.providers.openrouter.policy import apply_openrouter_model_policies
 
+_DEFAULT_CACHE_DIR = Path.home() / ".dr_llm" / "catalog_cache"
+
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CACHE_DIR = Path.home() / ".dr_llm" / "catalog_cache"
+
+class CatalogCacheCorruptError(PersistenceError):
+    """Raised when a catalog cache file exists but cannot be parsed."""
 
 
 class FileCatalogStore:
@@ -58,14 +62,15 @@ class FileCatalogStore:
         return len(entries)
 
     def list_models(self, *, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
-        entries = self._load_all(provider_filter=query.provider)
-        entries = self._apply_filters(entries, query)
+        entries = self._filtered_entries(query)
         return entries[query.offset : query.offset + query.limit]
 
     def count_models(self, *, query: ModelCatalogQuery) -> int:
+        return len(self._filtered_entries(query))
+
+    def _filtered_entries(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
         entries = self._load_all(provider_filter=query.provider)
-        entries = self._apply_filters(entries, query)
-        return len(entries)
+        return self._apply_filters(entries, query)
 
     def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
         entries = self._load_provider(provider)
@@ -74,25 +79,23 @@ class FileCatalogStore:
                 return entry
         return None
 
-    def _load_from_paths(self, paths: Path | Sequence[Path]) -> list[ModelCatalogEntry]:
-        path_list = [paths] if isinstance(paths, Path) else list(paths)
-        entries: list[ModelCatalogEntry] = []
-        for path in path_list:
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                chunk = [ModelCatalogEntry(**item) for item in data]
-                entries.extend(
-                    apply_openrouter_model_policies(filter_blacklisted_entries(chunk))
-                )
-            except (OSError, json.JSONDecodeError, ValidationError) as exc:
-                logger.warning("Skipping corrupt catalog cache %s: %s", path, exc)
-        return entries
+    @staticmethod
+    def _load_one_path(path: Path) -> list[ModelCatalogEntry]:
+        """Load a single cache file. Raises ``CatalogCacheCorruptError`` on parse failure."""
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            chunk = [ModelCatalogEntry(**item) for item in data]
+        except (OSError, json.JSONDecodeError, ValidationError, TypeError) as exc:
+            raise CatalogCacheCorruptError(
+                f"corrupt catalog cache {path}: {exc}"
+            ) from exc
+        return apply_openrouter_model_policies(filter_blacklisted_entries(chunk))
 
     def _load_provider(self, provider: str) -> list[ModelCatalogEntry]:
         path = self._cache_dir / f"{provider}.json"
         if not path.exists():
             return []
-        return self._load_from_paths(path)
+        return self._load_one_path(path)
 
     def _load_all(
         self, *, provider_filter: str | None = None
@@ -101,7 +104,17 @@ class FileCatalogStore:
             return []
         if provider_filter is not None:
             return self._load_provider(provider_filter)
-        return self._load_from_paths(sorted(self._cache_dir.glob("*.json")))
+        entries: list[ModelCatalogEntry] = []
+        for path in sorted(self._cache_dir.glob("*.json")):
+            try:
+                entries.extend(self._load_one_path(path))
+            except CatalogCacheCorruptError as exc:
+                logger.warning(
+                    "Skipping unreadable catalog cache file %s: %s",
+                    path,
+                    exc,
+                )
+        return entries
 
     @staticmethod
     def _apply_filters(

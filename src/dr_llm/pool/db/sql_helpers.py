@@ -2,44 +2,31 @@
 
 from __future__ import annotations
 
-import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
 from psycopg import errors as pg_errors
-from sqlalchemy import and_
+from sqlalchemy import and_, select
+from sqlalchemy.dialects.postgresql import Insert as PgInsert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import RowMapping
-from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.schema import Table
 
-from dr_llm.pool.errors import PoolSchemaError
+from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
+from dr_llm.pool.errors import PoolSchemaError
 
 logger = logging.getLogger(__name__)
 
 
 def is_constraint_error(exc: BaseException) -> bool:
-    if isinstance(exc, IntegrityError):
-        orig = exc.orig
-        return isinstance(
-            orig, (pg_errors.UniqueViolation, pg_errors.IntegrityConstraintViolation)
-        )
-    if isinstance(exc, DBAPIError) and exc.orig is not None:
-        return is_constraint_error(exc.orig)
+    orig = exc.orig if isinstance(exc, DBAPIError) else exc
     return isinstance(
-        exc, (pg_errors.UniqueViolation, pg_errors.IntegrityConstraintViolation)
+        orig, (pg_errors.UniqueViolation, pg_errors.IntegrityConstraintViolation)
     )
-
-
-def parse_json_field(raw: Any) -> dict[str, Any]:
-    if isinstance(raw, dict):
-        return raw
-    try:
-        return json.loads(raw or "{}")
-    except json.JSONDecodeError as err:
-        raise ValueError(f"Invalid JSON in parse_json_field: {raw!r}") from err
 
 
 def validate_key_values(schema: PoolSchema, key_values: dict[str, Any]) -> None:
@@ -58,7 +45,6 @@ def key_filter_clause(
     table: Table,
     key_values: Mapping[str, Any],
 ) -> ColumnElement[bool]:
-    validate_key_values(schema, dict(key_values))
     return and_(*[table.c[kc.name] == key_values[kc.name] for kc in schema.key_columns])
 
 
@@ -78,12 +64,6 @@ def partial_key_filter_clause(
     if not conditions:
         return None
     return and_(*conditions)
-
-
-def resolve_group_column(schema: PoolSchema, table: Table, group_column: str) -> Any:
-    if group_column not in schema.key_column_names:
-        raise PoolSchemaError(f"group_column {group_column!r} not in schema")
-    return table.c[group_column]
 
 
 def key_values_from_row(
@@ -106,3 +86,103 @@ def validate_key_filter(schema: PoolSchema, key_filter: dict[str, Any]) -> None:
             unknown,
             schema.key_column_names,
         )
+
+
+def insert_keyed_samples(
+    runtime: DbRuntime,
+    table: Table,
+    pk_column: ColumnElement[Any],
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    ignore_conflicts: bool = True,
+) -> int:
+    """Insert ``rows`` into ``table`` and return the inserted row count.
+
+    Builds ``pg_insert(table).returning(pk_column)`` once and dispatches to
+    ``execute_insert_count``: a single row uses ``.values()`` for a tighter
+    statement, multiple rows fan out via executemany. Conflict tolerance is
+    delegated, so callers get the same race-safe behavior as
+    ``execute_insert_count``.
+    """
+    if not rows:
+        return 0
+    stmt = pg_insert(table).returning(pk_column)
+    if len(rows) == 1:
+        return execute_insert_count(
+            runtime,
+            stmt.values(**rows[0]),
+            ignore_conflicts=ignore_conflicts,
+        )
+    return execute_insert_count(
+        runtime,
+        stmt,
+        ignore_conflicts=ignore_conflicts,
+        parameters=list(rows),
+    )
+
+
+def execute_insert_count(
+    runtime: DbRuntime,
+    stmt: PgInsert[Any],
+    *,
+    ignore_conflicts: bool,
+    parameters: Sequence[Mapping[str, Any]] | None = None,
+) -> int:
+    """Execute INSERT (optionally ON CONFLICT DO NOTHING); return inserted row count.
+
+    The statement must include a RETURNING clause so the inserted rows can be
+    counted via ``.scalars()``. Pass ``parameters`` to use executemany semantics
+    (one row per mapping) when bulk-inserting from a list of dicts.
+
+    On a constraint violation with ``ignore_conflicts=True`` the helper returns
+    0 instead of raising — covers the rare race where another writer raced past
+    the ON CONFLICT guard.
+    """
+    if ignore_conflicts:
+        stmt = stmt.on_conflict_do_nothing()
+    with runtime.begin() as conn:
+        try:
+            result = (
+                conn.execute(stmt)
+                if parameters is None
+                else conn.execute(stmt, parameters)
+            )
+            return len(list(result.scalars()))
+        except Exception as exc:
+            if ignore_conflicts and is_constraint_error(exc):
+                return 0
+            raise
+
+
+def stream_select_rows(
+    runtime: DbRuntime,
+    schema: PoolSchema,
+    table: Table,
+    select_columns: Sequence[Any],
+    *,
+    base_predicates: Sequence[ColumnElement[bool]] = (),
+    order_by: Sequence[Any] = (),
+    key_filter: Mapping[str, Any] | None = None,
+    chunk_size: int = 1000,
+) -> Iterator[dict[str, Any]]:
+    """Stream rows from ``table`` in chunks via server-side cursoring.
+
+    Builds ``SELECT select_columns FROM table WHERE base_predicates AND
+    partial_key_filter ORDER BY order_by`` and yields each row as a dict.
+    Uses SQLAlchemy's ``yield_per`` so the driver fetches ``chunk_size`` rows
+    at a time. The underlying connection is held open for the lifetime of the
+    iterator — fully consume or close it promptly.
+    """
+    stmt = select(*select_columns)
+    if base_predicates:
+        stmt = stmt.where(*base_predicates)
+    key_clause = partial_key_filter_clause(schema, table, key_filter)
+    if key_clause is not None:
+        stmt = stmt.where(key_clause)
+    if order_by:
+        stmt = stmt.order_by(*order_by)
+
+    with runtime.connect() as conn:
+        result = conn.execution_options(yield_per=chunk_size).execute(stmt)
+        for row in result.mappings():
+            yield dict(row)

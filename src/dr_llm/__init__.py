@@ -5,7 +5,7 @@ from dr_llm.pool.models import (
     AcquireResult as PoolAcquireResult,
 )
 from dr_llm.pool.pool_service import PoolService
-from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.pool_store import PoolStore
 
 __all__ = [
     "ColumnType",

@@ -1,47 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime
-from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
-from pydantic import (
-    AliasChoices,
-    BaseModel,
-    ConfigDict,
-    Field,
-    field_validator,
-)
+from pydantic import Field
 
-from dr_llm.pool.db.schema import PoolSchema
-from dr_llm.pool.db.sql_helpers import key_values_from_row, parse_json_field
+from dr_llm.pool.keyed_sample_base import KeyedSampleBase
 from dr_llm.pool.pending.pending_status import PendingStatus
 
 
-class PendingSample(BaseModel):
-    """Sample in pending state awaiting validation/promotion.
-
-    Field declaration order matches DB column order. ``key_values`` is a
-    placeholder whose slot is replaced at serialization time with the
-    schema-defined key columns.
-    """
-
-    model_config = ConfigDict(frozen=True)
+class PendingSample(KeyedSampleBase):
+    """Sample in pending state awaiting validation/promotion."""
 
     pending_id: str = Field(default_factory=lambda: uuid4().hex)
-    key_values: dict[str, Any] = Field(default_factory=dict)
     sample_idx: int = 0
-    payload: dict[str, Any] = Field(
-        default_factory=dict,
-        validation_alias=AliasChoices("payload", "payload_json"),
-        serialization_alias="payload_json",
-    )
-    source_run_id: str | None = None
-    metadata: dict[str, Any] = Field(
-        default_factory=dict,
-        validation_alias=AliasChoices("metadata", "metadata_json"),
-        serialization_alias="metadata_json",
-    )
     priority: int = 0
     status: PendingStatus = PendingStatus.pending
     worker_id: str | None = None
@@ -49,34 +22,11 @@ class PendingSample(BaseModel):
     attempt_count: int = 0
     created_at: datetime | None = None
 
-    @field_validator("payload", "metadata", mode="before")
-    @classmethod
-    def _parse_json(cls, v: Any) -> Any:
-        return parse_json_field(v) if isinstance(v, str) else v
-
-    def to_db_insert_row(self, schema: PoolSchema) -> dict[str, Any]:
-        missing = [kc for kc in schema.key_column_names if kc not in self.key_values]
-        if missing:
-            raise ValueError(
-                "PendingSample.key_values must include all schema key columns "
-                f"{list(schema.key_column_names)!r}; missing: {missing!r}"
-            )
-        dumped = self.model_dump(
-            mode="json",
-            by_alias=True,
-            exclude={"worker_id", "lease_expires_at", "attempt_count", "created_at"},
-        )
-        row: dict[str, Any] = {}
-        for col_name, value in dumped.items():
-            if col_name == "key_values":
-                for kc in schema.key_column_names:
-                    row[kc] = self.key_values[kc]
-            else:
-                row[col_name] = value
-        return row
-
-    @classmethod
-    def from_db_row(cls, schema: PoolSchema, row: Mapping[str, Any]) -> PendingSample:
-        return cls.model_validate(
-            {**row, "key_values": key_values_from_row(schema, dict(row))}
-        )
+    def to_db_insert_row(self) -> dict[str, Any]:
+        return {
+            "pending_id": self.pending_id,
+            "sample_idx": self.sample_idx,
+            "priority": self.priority,
+            "status": self.status.value,
+            **self._base_insert_row(),
+        }

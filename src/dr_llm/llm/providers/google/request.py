@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import os
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError
-from dr_llm.llm.providers.api_config import APIProviderConfig
+from dr_llm.llm.providers.api_config import APIProviderConfig, resolve_api_key
 from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.messages import Message
@@ -73,22 +71,13 @@ class GoogleRequest(BaseModel):
             ),
             generationConfig=cls._generation_config(
                 request=request,
-                reasoning_payload=reasoning_mapping.to_payload(),
+                reasoning_payload=reasoning_mapping.payload,
             ),
             base_url=config.base_url,
             api_key_env=config.api_key_env,
-            api_key=cls._resolve_api_key(config=config),
+            api_key=resolve_api_key(config, label="Google"),
             warnings=reasoning_mapping.warnings,
         )
-
-    @staticmethod
-    def _resolve_api_key(*, config: APIProviderConfig) -> str:
-        key = config.api_key or os.getenv(config.api_key_env)
-        if not key:
-            raise ProviderSemanticError(
-                f"Missing Google API key. Set {config.api_key_env} or pass config.api_key"
-            )
-        return key
 
     @staticmethod
     def _to_google_contents(messages: list[Message]) -> list[_GoogleRequestContent]:

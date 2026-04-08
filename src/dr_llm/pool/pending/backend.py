@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import logging
 from contextlib import AbstractContextManager
-from typing import Any, ClassVar
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.logging import generation_log_context
+from dr_llm.logging.events import generation_log_context
 from dr_llm.pool.db.sql_helpers import validate_key_filter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
-from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.pool_store import PoolStore
 from dr_llm.workers import ErrorDecision, WorkerBackend
+
+logger = logging.getLogger(__name__)
 
 
 class PoolPendingBackendConfig(BaseModel):
@@ -33,27 +36,18 @@ class PoolPendingBackend(
 ):
     """Pool-specific backend for the generic worker runtime."""
 
-    CLAIM_LIMIT: ClassVar[int] = 1
-
     def __init__(self, store: PoolStore, *, config: PoolPendingBackendConfig) -> None:
         self._store = store
         self._config = config
-        self._store.init_schema()
         if config.key_filter is not None:
             validate_key_filter(self._store.schema, config.key_filter)
 
-    def claim(self, *, worker_id: str, lease_seconds: int) -> list[PendingSample]:
-        # Pool workers intentionally process exactly one item per loop to match
-        # the generic worker contract and keep execution easy to reason about.
-        claimed = self._store.pending.claim_pending(
+    def claim(self, *, worker_id: str, lease_seconds: int) -> PendingSample | None:
+        return self._store.pending.claim(
             worker_id=worker_id,
-            limit=self.CLAIM_LIMIT,
             lease_seconds=lease_seconds,
             key_filter=self._config.key_filter,
         )
-        if len(claimed) > self.CLAIM_LIMIT:
-            raise RuntimeError("PoolPendingBackend.claim returned more than one item")
-        return claimed
 
     def complete(
         self,
@@ -62,11 +56,9 @@ class PoolPendingBackend(
         result: dict[str, Any],
         worker_id: str,
     ) -> None:
-        del worker_id
-        if not isinstance(result, dict):
-            raise TypeError("process_fn must return a payload dict")
-        promoted = self._store.pending.promote_pending(
+        promoted = self._store.pending.promote(
             pending_id=item.pending_id,
+            worker_id=worker_id,
             payload=result,
         )
         if promoted is None:
@@ -82,17 +74,33 @@ class PoolPendingBackend(
         exc: Exception,
     ) -> ErrorDecision:
         if item.attempt_count <= self._config.max_retries:
-            self._store.pending.release_pending_lease(
+            released = self._store.pending.release_lease(
                 pending_id=item.pending_id,
                 worker_id=worker_id,
             )
+            if not released:
+                logger.warning(
+                    "release_lease no-op: pending_id=%s worker_id=%s "
+                    "(lease was stale — sample missing or re-leased)",
+                    item.pending_id,
+                    worker_id,
+                )
             return ErrorDecision.retry
 
-        self._store.pending.fail_pending(
+        message = str(exc).strip()
+        reason = f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+        failed = self._store.pending.fail(
             pending_id=item.pending_id,
             worker_id=worker_id,
-            reason=_format_error_reason(exc),
+            reason=reason,
         )
+        if not failed:
+            logger.warning(
+                "fail no-op: pending_id=%s worker_id=%s "
+                "(lease was stale — sample missing or re-leased)",
+                item.pending_id,
+                worker_id,
+            )
         return ErrorDecision.fail
 
     def snapshot(self) -> PoolPendingBackendState:
@@ -114,17 +122,9 @@ class PoolPendingBackend(
         item: PendingSample,
         worker_id: str,
     ) -> AbstractContextManager[Any]:
-        del item
         return generation_log_context(
             {
                 "pool_name": self._store.schema.name,
                 "worker_id": worker_id,
             }
         )
-
-
-def _format_error_reason(exc: Exception) -> str:
-    message = str(exc).strip()
-    if message:
-        return f"{type(exc).__name__}: {message}"
-    return type(exc).__name__

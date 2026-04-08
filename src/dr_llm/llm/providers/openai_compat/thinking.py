@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm.providers.reasoning_capability_types import ReasoningCapabilities
 from dr_llm.llm.providers.thinking_utils import matches_family
 
 OPENAI_THINKING_SUPPORTED_MODELS = [
@@ -80,3 +81,9 @@ def openai_supports_off_thinking(model: str) -> bool:
         normalized=normalized,
         families=OPENAI_OFF_THINKING_SUPPORTED_MODELS,
     )
+
+
+def reasoning_capabilities_for_openai(model: str) -> ReasoningCapabilities | None:
+    if openai_supports_configurable_thinking(model):
+        return ReasoningCapabilities(mode="openai_effort")
+    return None

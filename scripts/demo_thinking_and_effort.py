@@ -19,12 +19,10 @@ from collections import defaultdict
 import typer
 from pydantic import BaseModel, ValidationError
 
-from dr_llm.llm.catalog.fetchers.static import (
-    CLAUDE_CODE_MODELS,
-    KIMI_CODING_MODELS,
-    MINIMAX_TEXT_MODELS,
+from _demo_thinking_models import PROVIDER_MODELS
+from dr_llm.llm.providers.anthropic.thinking import (
+    ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
 )
-from dr_llm.llm.providers.anthropic.thinking import ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED
 from dr_llm.llm.providers.effort import EffortSpec, supported_effort_levels
 from dr_llm.llm.providers.headless.codex_thinking import (
     codex_supports_configurable_thinking,
@@ -35,7 +33,6 @@ from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.openrouter.policy import (
     OpenRouterReasoningRequestStyle,
-    openrouter_allowed_models,
     openrouter_model_policy,
 )
 from dr_llm.llm.providers.openai_compat.thinking import (
@@ -58,48 +55,9 @@ from dr_llm.llm.providers.registry import ProviderRegistry, build_default_regist
 app = typer.Typer()
 
 PROMPT = "Reply with exactly OK."
-OPENAI_MODELS = [
-    "gpt-5.4-mini-2026-03-17",
-    "gpt-5-mini-2025-08-07",
-    "gpt-4.1-mini-2025-04-14",
-    "gpt-4o-mini-2024-07-18",
-    "gpt-5.4-nano-2026-03-17",
-    "gpt-5-nano-2025-08-07",
-    "gpt-4.1-nano-2025-04-14",
-]
-CODEX_MODELS = [
-    "gpt-5.1-codex-mini",
-]
-CLAUDE_MODELS = [model_id for model_id, _display_name in CLAUDE_CODE_MODELS]
-KIMI_CODE_MODELS = [model_id for model_id, _display_name in KIMI_CODING_MODELS]
-MINIMAX_MODELS = [model_id for model_id, _display_name in MINIMAX_TEXT_MODELS]
 GOOGLE_FIXED_BUDGET = 1024
 KIMI_CODE_FIXED_BUDGET = 1024
 KIMI_CODE_MAX_TOKENS = 2048
-GOOGLE_MODELS = [
-    "gemini-3-flash-preview",
-    "gemini-2.5-flash",
-    "gemini-3.1-flash-lite-preview",
-    "gemini-2.5-flash-lite",
-    "gemma-3-1b-it",
-    "gemma-3-4b-it",
-    "gemma-3-12b-it",
-    "gemma-3-27b-it",
-    "gemma-3n-e4b-it",
-    "gemma-3n-e2b-it",
-    "gemma-4-26b-a4b-it",
-    "gemma-4-31b-it",
-]
-OPENROUTER_MODELS = list(openrouter_allowed_models())
-PROVIDER_MODELS = {
-    "claude-code": CLAUDE_MODELS,
-    "minimax": MINIMAX_MODELS,
-    "kimi-code": KIMI_CODE_MODELS,
-    "openrouter": OPENROUTER_MODELS,
-    "openai": OPENAI_MODELS,
-    "codex": CODEX_MODELS,
-    "google": GOOGLE_MODELS,
-}
 PHASES = ["models", "thinking", "effort"]
 
 
@@ -240,9 +198,7 @@ def reasoning_for_level(
             return AnthropicReasoning(thinking_level=ThinkingLevel.NA)
         if thinking_level == ThinkingLevel.NA:
             return None
-        raise ValueError(
-            f"unsupported claude-code thinking level: {thinking_level!r}"
-        )
+        raise ValueError(f"unsupported claude-code thinking level: {thinking_level!r}")
     if provider == "minimax":
         if thinking_level == ThinkingLevel.NA and explicit:
             return AnthropicReasoning(thinking_level=ThinkingLevel.NA)
@@ -284,7 +240,9 @@ def format_attempt(
     if provider == "openrouter":
         detail = f"{provider} | {model}"
         match reasoning_override:
-            case OpenRouterReasoning(effort=override_effort) if override_effort is not None:
+            case OpenRouterReasoning(effort=override_effort) if (
+                override_effort is not None
+            ):
                 detail += f" | reasoning=effort({override_effort})"
             case OpenRouterReasoning(enabled=enabled) if enabled is not None:
                 detail += f" | reasoning=enabled({str(enabled).lower()})"

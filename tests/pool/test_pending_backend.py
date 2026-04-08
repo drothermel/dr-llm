@@ -12,7 +12,7 @@ from dr_llm.pool.pending.backend import (
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.pool_store import PoolStore
 from dr_llm.workers import ErrorDecision
 
 
@@ -24,46 +24,51 @@ class _FakeSchema:
 
 class _FakePendingStore:
     def __init__(self) -> None:
-        self.claimed: list[PendingSample] = []
+        self.claimed: PendingSample | None = None
         self.last_claim_args: dict[str, Any] | None = None
         self.promote_result: PoolSample | None = PoolSample(key_values={"model": "m1"})
         self.promote_calls: list[dict[str, Any]] = []
         self.released: list[dict[str, str]] = []
         self.failed: list[dict[str, str]] = []
+        self.release_result: bool = True
+        self.fail_result: bool = True
         self.status_counts_value = PendingStatusCounts()
 
-    def claim_pending(
+    def claim(
         self,
         *,
         worker_id: str,
-        limit: int,
         lease_seconds: int,
         key_filter: dict[str, Any] | None = None,
-    ) -> list[PendingSample]:
+    ) -> PendingSample | None:
         self.last_claim_args = {
             "worker_id": worker_id,
-            "limit": limit,
             "lease_seconds": lease_seconds,
             "key_filter": key_filter,
         }
-        return list(self.claimed)
+        return self.claimed
 
-    def promote_pending(
+    def promote(
         self,
         *,
         pending_id: str,
+        worker_id: str,
         payload: dict[str, Any] | None = None,
     ) -> PoolSample | None:
-        self.promote_calls.append({"pending_id": pending_id, "payload": payload})
+        self.promote_calls.append(
+            {"pending_id": pending_id, "worker_id": worker_id, "payload": payload}
+        )
         return self.promote_result
 
-    def release_pending_lease(self, *, pending_id: str, worker_id: str) -> None:
+    def release_lease(self, *, pending_id: str, worker_id: str) -> bool:
         self.released.append({"pending_id": pending_id, "worker_id": worker_id})
+        return self.release_result
 
-    def fail_pending(self, *, pending_id: str, worker_id: str, reason: str) -> None:
+    def fail(self, *, pending_id: str, worker_id: str, reason: str) -> bool:
         self.failed.append(
             {"pending_id": pending_id, "worker_id": worker_id, "reason": reason}
         )
+        return self.fail_result
 
     def status_counts(
         self,
@@ -78,10 +83,6 @@ class _FakeStore:
     def __init__(self) -> None:
         self.schema = _FakeSchema(name="pool-test", key_column_names=["model"])
         self.pending = _FakePendingStore()
-        self.init_calls = 0
-
-    def init_schema(self) -> None:
-        self.init_calls += 1
 
 
 def _sample(*, attempt_count: int = 1) -> PendingSample:
@@ -93,9 +94,10 @@ def _sample(*, attempt_count: int = 1) -> PendingSample:
     )
 
 
-def test_backend_initializes_store_and_claims_one_item() -> None:
+def test_backend_claims_one_item() -> None:
     store = _FakeStore()
-    store.pending.claimed = [_sample()]
+    sample = _sample()
+    store.pending.claimed = sample
     backend = PoolPendingBackend(
         cast(PoolStore, store),
         config=PoolPendingBackendConfig(key_filter={"model": "m1"}),
@@ -103,26 +105,22 @@ def test_backend_initializes_store_and_claims_one_item() -> None:
 
     claimed = backend.claim(worker_id="worker-1", lease_seconds=30)
 
-    assert store.init_calls == 1
-    assert claimed == store.pending.claimed
+    assert claimed == sample
     assert store.pending.last_claim_args == {
         "worker_id": "worker-1",
-        "limit": 1,
         "lease_seconds": 30,
         "key_filter": {"model": "m1"},
     }
 
 
-def test_backend_claim_raises_if_store_returns_multiple_items() -> None:
+def test_backend_claim_returns_none_when_store_is_empty() -> None:
     store = _FakeStore()
-    store.pending.claimed = [_sample(), _sample(attempt_count=2)]
     backend = PoolPendingBackend(
         cast(PoolStore, store),
         config=PoolPendingBackendConfig(),
     )
 
-    with pytest.raises(RuntimeError, match="more than one item"):
-        backend.claim(worker_id="worker-1", lease_seconds=30)
+    assert backend.claim(worker_id="worker-1", lease_seconds=30) is None
 
 
 def test_backend_complete_promotes_pending_sample() -> None:
@@ -139,23 +137,12 @@ def test_backend_complete_promotes_pending_sample() -> None:
     )
 
     assert store.pending.promote_calls == [
-        {"pending_id": "pending-1", "payload": {"completion": "ok"}}
+        {
+            "pending_id": "pending-1",
+            "worker_id": "worker-1",
+            "payload": {"completion": "ok"},
+        }
     ]
-
-
-def test_backend_complete_rejects_non_dict_payload() -> None:
-    store = _FakeStore()
-    backend = PoolPendingBackend(
-        cast(PoolStore, store),
-        config=PoolPendingBackendConfig(),
-    )
-
-    with pytest.raises(TypeError, match="payload dict"):
-        backend.complete(
-            item=_sample(),
-            result=cast(dict[str, Any], ["not-a-dict"]),
-            worker_id="worker-1",
-        )
 
 
 def test_backend_complete_raises_when_promotion_fails() -> None:
@@ -215,6 +202,48 @@ def test_backend_fails_when_retries_are_exhausted() -> None:
             "reason": "RuntimeError: boom",
         }
     ]
+
+
+def test_backend_retry_warns_when_release_lease_is_stale(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = _FakeStore()
+    store.pending.release_result = False
+    backend = PoolPendingBackend(
+        cast(PoolStore, store),
+        config=PoolPendingBackendConfig(max_retries=1),
+    )
+
+    with caplog.at_level("WARNING", logger="dr_llm.pool.pending.backend"):
+        action = backend.handle_process_error(
+            item=_sample(attempt_count=1),
+            worker_id="worker-1",
+            exc=RuntimeError("temporary"),
+        )
+
+    assert action == ErrorDecision.retry
+    assert any("release_lease no-op" in r.message for r in caplog.records)
+
+
+def test_backend_fail_warns_when_lease_is_stale(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = _FakeStore()
+    store.pending.fail_result = False
+    backend = PoolPendingBackend(
+        cast(PoolStore, store),
+        config=PoolPendingBackendConfig(max_retries=1),
+    )
+
+    with caplog.at_level("WARNING", logger="dr_llm.pool.pending.backend"):
+        action = backend.handle_process_error(
+            item=_sample(attempt_count=2),
+            worker_id="worker-1",
+            exc=RuntimeError("boom"),
+        )
+
+    assert action == ErrorDecision.fail
+    assert any("fail no-op" in r.message for r in caplog.records)
 
 
 def test_backend_snapshot_exposes_pool_specific_state() -> None:

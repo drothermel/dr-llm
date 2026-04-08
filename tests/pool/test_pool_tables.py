@@ -41,7 +41,11 @@ def test_pool_tables_unique_index_includes_keys() -> None:
         index.name: [str(expr).split(".")[-1] for expr in index.expressions]
         for index in tables.samples.indexes
     }
-    assert sample_indexes["uq_pool_test_samples_cell"] == ["dim_a", "dim_b", "sample_idx"]
+    assert sample_indexes["uq_pool_test_samples_cell"] == [
+        "dim_a",
+        "dim_b",
+        "sample_idx",
+    ]
 
 
 def test_pool_tables_json_columns_are_jsonb() -> None:

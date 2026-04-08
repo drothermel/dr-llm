@@ -42,7 +42,7 @@ from dr_llm.pool.pending.backend import (
     PoolPendingBackendState,
 )
 from dr_llm.pool.pending.fill_pending import seed_pending
-from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.pool_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import create_project, destroy_project
 from dr_llm.workers import WorkerConfig, WorkerSnapshot, start_workers
@@ -102,10 +102,10 @@ def _run_demo(
     runtime = DbRuntime(DbConfig(dsn=dsn))
     registry = build_default_registry()
     store = PoolStore(schema, runtime)
+    store.ensure_schema()
     controller = None
 
     try:
-        store.init_schema()
         seed_result = seed_pending(
             store,
             key_grid={

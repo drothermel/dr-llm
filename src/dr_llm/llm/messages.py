@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -16,12 +16,3 @@ class Message(BaseModel):
 
     role: Literal["system", "user", "assistant"]
     content: str
-
-
-class CallError(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    error_type: str
-    message: str
-    retryable: bool = False
-    raw_json: dict[str, Any] | None = None

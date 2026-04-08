@@ -116,7 +116,7 @@ schema = PoolSchema(
 )
 runtime = DbRuntime(DbConfig(dsn=project.dsn))
 store = PoolStore(schema, runtime)
-store.init_schema()
+store.ensure_schema()
 
 # 3. Define configs and prompts
 llm_configs = {
@@ -219,7 +219,7 @@ Generation transcript logging (default on, used for LLM call debugging):
 | `DR_LLM_GENERATION_LOG_DIR` | `.dr_llm/generation_logs` |
 | `DR_LLM_GENERATION_LOG_ROTATE_BYTES` | `104857600` (100MB) |
 | `DR_LLM_GENERATION_LOG_BACKUPS` | `10` |
-| `DR_LLM_GENERATION_LOG_REDACT_SECRETS` | `true` |
+| `DR_LLM_GENERATION_LOG_REDACT_ENABLED` | `true` |
 
 Provider endpoint defaults:
 - GLM: `https://api.z.ai/api/coding/paas/v4`

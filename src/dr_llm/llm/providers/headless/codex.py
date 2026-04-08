@@ -145,17 +145,36 @@ class CodexHeadlessResponse(BaseModel):
                 stderr=self.stderr,
             )
 
-        for event in self.events:
-            if event.is_error():
-                logger.debug(
-                    "headless error event provider=%s event=%s",
-                    provider_name,
-                    event.model_dump(mode="json", exclude_none=True),
-                )
-                raise HeadlessExecutionError(
-                    f"{provider_name} command returned error event: {event.error_message()[:200]}"
-                )
+        self._raise_on_error_events(provider_name=provider_name)
+        text, usage, finish_reason = self._collect_text_and_usage_from_events()
+        body: dict[str, Any] = {
+            "text": text,
+            "finish_reason": finish_reason,
+            "usage": usage,
+        }
+        if self.passthrough_lines:
+            body["non_json_stdout_lines"] = self.passthrough_lines
+        return ParsedHeadlessOutput.from_body(
+            body=body,
+            raw_json=self._build_raw_json_from_events(),
+        )
 
+    def _raise_on_error_events(self, *, provider_name: str) -> None:
+        for event in self.events:
+            if not event.is_error():
+                continue
+            logger.debug(
+                "headless error event provider=%s event=%s",
+                provider_name,
+                event.model_dump(mode="json", exclude_none=True),
+            )
+            raise HeadlessExecutionError(
+                f"{provider_name} command returned error event: {event.error_message()[:200]}"
+            )
+
+    def _collect_text_and_usage_from_events(
+        self,
+    ) -> tuple[str, dict[str, int], str | None]:
         text_chunks: list[str] = []
         usage: dict[str, int] = {}
         finish_reason: str | None = None
@@ -167,15 +186,10 @@ class CodexHeadlessResponse(BaseModel):
             if event_usage is not None:
                 usage = event_usage
                 finish_reason = "stop"
+        return "\n".join(text_chunks).strip(), usage, finish_reason
 
-        body: dict[str, Any] = {
-            "text": "\n".join(text_chunks).strip(),
-            "finish_reason": finish_reason,
-            "usage": usage,
-        }
-        if self.passthrough_lines:
-            body["non_json_stdout_lines"] = self.passthrough_lines
-        raw_json = {
+    def _build_raw_json_from_events(self) -> dict[str, Any]:
+        return {
             "events": [
                 event.model_dump(mode="json", exclude_none=True)
                 for event in self.events
@@ -183,7 +197,6 @@ class CodexHeadlessResponse(BaseModel):
             "non_json_stdout_lines": self.passthrough_lines,
             "stderr": self.stderr,
         }
-        return ParsedHeadlessOutput.from_body(body=body, raw_json=raw_json)
 
 
 class CodexHeadlessProvider(BaseHeadlessProvider):

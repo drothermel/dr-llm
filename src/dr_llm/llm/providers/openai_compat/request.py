@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError
+from dr_llm.llm.providers.api_config import resolve_api_key
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
@@ -45,8 +44,8 @@ class OpenAICompatRequest(BaseModel):
             provider=request.provider,
             model=request.model,
         )
-        reasoning_effort = reasoning_mapping.to_reasoning_effort()
-        extra_body = reasoning_mapping.to_extra_body()
+        reasoning_effort = reasoning_mapping.reasoning_effort
+        extra_body = reasoning_mapping.extra_body
         return cls(
             provider=request.provider,
             model=request.model,
@@ -59,7 +58,7 @@ class OpenAICompatRequest(BaseModel):
             base_url=config.base_url,
             chat_path=config.chat_path,
             api_key_env=config.api_key_env,
-            api_key=cls._resolve_api_key(config=config, provider=request.provider),
+            api_key=resolve_api_key(config, label=request.provider),
             idempotency_key=cls._resolve_idempotency_key(request=request),
             warnings=reasoning_mapping.warnings,
         )
@@ -69,19 +68,6 @@ class OpenAICompatRequest(BaseModel):
         return [
             {"role": message.role, "content": message.content} for message in messages
         ]
-
-    @staticmethod
-    def _resolve_api_key(
-        *,
-        config: OpenAICompatConfig,
-        provider: str,
-    ) -> str:
-        key = config.api_key or os.getenv(config.api_key_env)
-        if not key:
-            raise ProviderSemanticError(
-                f"Missing API key for {provider}. Set {config.api_key_env} or pass config.api_key"
-            )
-        return key
 
     @staticmethod
     def _resolve_idempotency_key(*, request: LlmRequest) -> str:

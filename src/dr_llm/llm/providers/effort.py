@@ -1,63 +1,44 @@
 from __future__ import annotations
 
-from enum import StrEnum
+from collections.abc import Callable
 
-from dr_llm.llm.providers.anthropic.effort import ANTHROPIC_EFFORT_SUPPORTED_MODELS
-from dr_llm.llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
-
-_DIRECT_ANTHROPIC_EFFORT_MODELS = frozenset(ANTHROPIC_EFFORT_SUPPORTED_MODELS)
-_EFFORT_CAPABILITY_MODES = frozenset(
-    {
-        "anthropic_effort",
-        "anthropic_effort_and_budget",
-        "claude_cli_effort",
-        "kimi_code_effort_and_budget",
-        "minimax_effort",
-    }
+from dr_llm.llm.providers.anthropic.effort import (
+    supported_effort_levels_for_anthropic,
+)
+from dr_llm.llm.providers.effort_types import FULL_EFFORT, EffortSpec
+from dr_llm.llm.providers.headless.claude_capabilities import (
+    supported_effort_levels_for_claude_code,
+)
+from dr_llm.llm.providers.kimi_code_capabilities import (
+    supported_effort_levels_for_kimi_code,
+)
+from dr_llm.llm.providers.minimax_capabilities import (
+    supported_effort_levels_for_minimax,
 )
 
+__all__ = [
+    "FULL_EFFORT",
+    "EffortSpec",
+    "supported_effort_levels",
+    "validate_effort",
+]
 
-class EffortSpec(StrEnum):
-    NA = "na"
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    MAX = "max"
 
+EffortResolver = Callable[[str], tuple[EffortSpec, ...]]
 
-FULL_EFFORT = (
-    EffortSpec.LOW,
-    EffortSpec.MEDIUM,
-    EffortSpec.HIGH,
-    EffortSpec.MAX,
-)
+_EFFORT_RESOLVERS: dict[str, EffortResolver] = {
+    "anthropic": supported_effort_levels_for_anthropic,
+    "claude-code": supported_effort_levels_for_claude_code,
+    "kimi-code": supported_effort_levels_for_kimi_code,
+    "minimax": supported_effort_levels_for_minimax,
+}
 
 
 def supported_effort_levels(*, provider: str, model: str) -> tuple[EffortSpec, ...]:
-    capabilities = reasoning_capabilities_for_model(provider=provider, model=model)
-    if capabilities is None or capabilities.mode not in _EFFORT_CAPABILITY_MODES:
+    resolver = _EFFORT_RESOLVERS.get(provider)
+    if resolver is None:
         return ()
-
-    if provider == "anthropic":
-        if model not in _DIRECT_ANTHROPIC_EFFORT_MODELS:
-            return ()
-        levels = [EffortSpec.LOW, EffortSpec.MEDIUM, EffortSpec.HIGH]
-        if model.startswith("claude-opus-4-6"):
-            levels.append(EffortSpec.MAX)
-        return tuple(levels)
-
-    if provider == "claude-code":
-        if model not in _DIRECT_ANTHROPIC_EFFORT_MODELS:
-            return ()
-        return FULL_EFFORT
-
-    if provider == "minimax":
-        return FULL_EFFORT
-
-    if provider == "kimi-code":
-        return FULL_EFFORT
-
-    return ()
+    return resolver(model)
 
 
 def validate_effort(*, provider: str, model: str, effort: EffortSpec) -> None:

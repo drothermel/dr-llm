@@ -1,18 +1,20 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm.providers.anthropic.request import AnthropicRequest
+from dr_llm.llm.providers.response_validation import (
+    parse_http_response_body,
+    validate_http_response,
+)
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import LlmResponse
 from dr_llm.llm.messages import CallMode
 from dr_llm.llm.providers.reasoning import ReasoningWarning
-from dr_llm.llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
+from dr_llm.llm.providers.usage import CostInfo, build_usage_and_reasoning
 
 
 class _AnthropicUsage(BaseModel):
@@ -44,7 +46,7 @@ class AnthropicResponse(BaseModel):
     status_code: int
     response_text: str = Field(exclude=True)
     response_text_preview: str = Field(exclude=True)
-    raw_json: dict[str, Any] | None = Field(default=None, exclude=True, repr=False)
+    raw_json: Any | None = Field(default=None, exclude=True, repr=False)
     content: list[_AnthropicContentItem] = Field(default_factory=list)
     usage: _AnthropicUsage | None = None
     stop_reason: str | None = None
@@ -53,39 +55,19 @@ class AnthropicResponse(BaseModel):
 
     @classmethod
     def from_http_response(cls, response: httpx.Response) -> AnthropicResponse:
-        raw_json: dict[str, Any] | None = None
-        content: list[_AnthropicContentItem] = []
-        usage: _AnthropicUsage | None = None
-        stop_reason: str | None = None
-        json_error: str | None = None
-        response_shape_error: str | None = None
-        try:
-            body_raw = response.json()
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            json_error = str(exc)
-        else:
-            if not isinstance(body_raw, dict):
-                response_shape_error = "expected JSON object"
-            else:
-                raw_json = body_raw
-                try:
-                    parsed = _AnthropicResponseBody(**body_raw)
-                except ValidationError as exc:
-                    response_shape_error = str(exc)
-                else:
-                    content = parsed.content
-                    usage = parsed.usage
-                    stop_reason = parsed.stop_reason
+        raw_json, parsed, json_error, shape_error = parse_http_response_body(
+            response, _AnthropicResponseBody
+        )
         return cls(
             status_code=response.status_code,
             response_text=response.text,
             response_text_preview=response.text[:500],
             raw_json=raw_json,
-            content=content,
-            usage=usage,
-            stop_reason=stop_reason,
+            content=parsed.content if parsed else [],
+            usage=parsed.usage if parsed else None,
+            stop_reason=parsed.stop_reason if parsed else None,
             json_error=json_error,
-            response_shape_error=response_shape_error,
+            response_shape_error=shape_error,
         )
 
     def event_payload(self, request: AnthropicRequest) -> dict[str, Any]:
@@ -97,22 +79,13 @@ class AnthropicResponse(BaseModel):
         }
 
     def _validate(self) -> None:
-        if self.status_code >= 500 or self.status_code == 429:
-            raise ProviderTransportError(
-                f"anthropic transient error status={self.status_code} body={self.response_text_preview}"
-            )
-        if self.status_code >= 400:
-            raise ProviderSemanticError(
-                f"anthropic rejected request status={self.status_code} body={self.response_text_preview}"
-            )
-        if self.json_error is not None:
-            raise ProviderTransportError(
-                f"anthropic invalid JSON response: {self.json_error}"
-            )
-        if self.response_shape_error is not None:
-            raise ProviderSemanticError(
-                f"anthropic response shape invalid: {self.response_shape_error}"
-            )
+        validate_http_response(
+            provider_label="anthropic",
+            status_code=self.status_code,
+            response_text_preview=self.response_text_preview,
+            json_error=self.json_error,
+            response_shape_error=self.response_shape_error,
+        )
 
     def to_llm_response(
         self,
@@ -123,22 +96,24 @@ class AnthropicResponse(BaseModel):
     ) -> LlmResponse:
         self._validate()
         text_chunks = [item.text or "" for item in self.content if item.type == "text"]
-        usage_raw = (
-            self.usage.model_dump(mode="json", exclude_none=True) if self.usage else {}
+        raw_json = self.raw_json if isinstance(self.raw_json, dict) else {}
+        usage_dump = (
+            self.usage.model_dump(mode="json", exclude_none=True)
+            if self.usage
+            else None
         )
-        reasoning_tokens = TokenUsage.extract_reasoning_tokens(usage_raw)
-        usage = TokenUsage.from_raw(
-            prompt_tokens=self.usage.input_tokens if self.usage else None,
-            completion_tokens=self.usage.output_tokens if self.usage else None,
-            total_tokens=(
-                (self.usage.input_tokens or 0) + (self.usage.output_tokens or 0)
-                if self.usage
-                else None
-            ),
-            reasoning_tokens=reasoning_tokens,
+        prompt_tokens = self.usage.input_tokens if self.usage else None
+        completion_tokens = self.usage.output_tokens if self.usage else None
+        total_tokens = (
+            (prompt_tokens or 0) + (completion_tokens or 0) if self.usage else None
         )
-        raw_json = self.raw_json or {}
-        reasoning, reasoning_details = parse_reasoning(raw_json)
+        usage, reasoning, reasoning_details = build_usage_and_reasoning(
+            usage_dump=usage_dump,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            reasoning_source=raw_json,
+        )
         return LlmResponse(
             text="\n".join(chunk for chunk in text_chunks if chunk),
             finish_reason=self.stop_reason,

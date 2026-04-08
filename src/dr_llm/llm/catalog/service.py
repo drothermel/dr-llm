@@ -1,20 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import traceback
 from typing import Any, Protocol
 
+from dr_llm.errors import PersistenceError
 from dr_llm.llm.catalog.models import (
     ModelCatalogEntry,
     ModelCatalogQuery,
     ModelCatalogSyncResult,
 )
 from dr_llm.llm.catalog.model_blacklist import filter_blacklisted_entries
-from dr_llm.llm.catalog.fetchers import (
-    fetch_models_for_provider,
-    fetch_out_of_registry_provider_models,
-)
-from dr_llm.llm.catalog.fetchers.kimi import KIMI_PROVIDER_NAME
+from dr_llm.llm.catalog.fetchers import fetch_models_for_provider
 from dr_llm.llm.providers.openrouter.policy import apply_openrouter_model_policies
 from dr_llm.llm.providers.registry import ProviderRegistry
 
@@ -55,97 +53,104 @@ class ModelCatalogService:
         self._registry = registry
         self._repository = repository
 
-    def sync_models(self, *, provider: str | None = None) -> dict[str, int]:
-        results = self.sync_models_detailed(provider=provider)
-        return {result.provider: result.entry_count for result in results}
-
     def sync_models_detailed(
         self,
         *,
         provider: str | None = None,
     ) -> list[ModelCatalogSyncResult]:
         targets = self._resolve_targets(provider=provider)
-        results: list[ModelCatalogSyncResult] = []
-        for target in targets:
-            try:
-                entries, raw_payload = self._fetch_provider(target)
-                entries = filter_blacklisted_entries(entries)
-                entries = apply_openrouter_model_policies(entries)
-                snapshot_id: str | None = None
-                if self._repository is not None:
-                    snapshot_id = self._repository.record_model_catalog_snapshot(
-                        provider=target,
-                        status="success",
-                        raw_payload=raw_payload,
-                    )
-                    self._repository.replace_provider_models(
-                        provider=target,
-                        entries=entries,
-                    )
-                results.append(
-                    ModelCatalogSyncResult(
-                        provider=target,
-                        success=True,
-                        entry_count=len(entries),
-                        snapshot_id=snapshot_id,
-                        raw_payload=raw_payload,
-                    )
+        return asyncio.run(self._sync_targets_in_parallel(targets))
+
+    async def _sync_targets_in_parallel(
+        self, targets: list[str]
+    ) -> list[ModelCatalogSyncResult]:
+        return list(
+            await asyncio.gather(
+                *(
+                    asyncio.to_thread(self._sync_one_provider, target)
+                    for target in targets
                 )
-            except Exception as exc:  # noqa: BLE001
-                if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                    raise
-                logger.exception("Model catalog sync failed provider=%s", target)
-                detailed_error = f"{exc}\n{traceback.format_exc()}"
-                snapshot_id: str | None = None
-                if self._repository is not None:
-                    snapshot_id = self._repository.record_model_catalog_snapshot(
-                        provider=target,
-                        status="failed",
-                        raw_payload={},
-                        error_text=detailed_error,
-                    )
-                results.append(
-                    ModelCatalogSyncResult(
-                        provider=target,
-                        success=False,
-                        entry_count=0,
-                        snapshot_id=snapshot_id,
-                        error=detailed_error,
-                    )
-                )
-        return results
+            )
+        )
+
+    def _sync_one_provider(self, target: str) -> ModelCatalogSyncResult:
+        try:
+            entries, raw_payload = self._fetch_provider(target)
+        except Exception as exc:  # noqa: BLE001
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            return self._record_sync_failure(target, exc)
+        entries = apply_openrouter_model_policies(filter_blacklisted_entries(entries))
+        return self._record_sync_success(target, entries, raw_payload)
+
+    def _record_sync_success(
+        self,
+        target: str,
+        entries: list[ModelCatalogEntry],
+        raw_payload: dict[str, Any],
+    ) -> ModelCatalogSyncResult:
+        snapshot_id: str | None = None
+        if self._repository is not None:
+            snapshot_id = self._repository.record_model_catalog_snapshot(
+                provider=target,
+                status="success",
+                raw_payload=raw_payload,
+            )
+            self._repository.replace_provider_models(
+                provider=target,
+                entries=entries,
+            )
+        return ModelCatalogSyncResult(
+            provider=target,
+            success=True,
+            entry_count=len(entries),
+            snapshot_id=snapshot_id,
+            raw_payload=raw_payload,
+        )
+
+    def _record_sync_failure(
+        self, target: str, exc: BaseException
+    ) -> ModelCatalogSyncResult:
+        logger.exception("Model catalog sync failed provider=%s", target)
+        detailed_error = f"{exc}\n{traceback.format_exc()}"
+        snapshot_id: str | None = None
+        if self._repository is not None:
+            snapshot_id = self._repository.record_model_catalog_snapshot(
+                provider=target,
+                status="failed",
+                raw_payload={},
+                error_text=detailed_error,
+            )
+        return ModelCatalogSyncResult(
+            provider=target,
+            success=False,
+            entry_count=0,
+            snapshot_id=snapshot_id,
+            error=detailed_error,
+        )
 
     def list_models(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
-        if self._repository is None:
-            return []
-        return self._repository.list_models(query=query)
+        return self._require_repository().list_models(query=query)
 
     def count_models(self, query: ModelCatalogQuery) -> int:
-        if self._repository is None:
-            return 0
-        return self._repository.count_models(query=query)
+        return self._require_repository().count_models(query=query)
 
     def show_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
+        return self._require_repository().get_model(provider=provider, model=model)
+
+    def _require_repository(self) -> ModelCatalogRepository:
         if self._repository is None:
-            return None
-        return self._repository.get_model(provider=provider, model=model)
+            raise PersistenceError("ModelCatalogService.repository is not configured")
+        return self._repository
 
     def _resolve_targets(self, *, provider: str | None) -> list[str]:
         if provider is not None:
-            if provider == KIMI_PROVIDER_NAME:
-                return [KIMI_PROVIDER_NAME]
-            model_provider = self._registry.get(provider)
-            return [model_provider.name]
-        canonical: set[str] = set()
-        for name in self._registry.names():
-            canonical.add(self._registry.get(name).name)
-        canonical.add(KIMI_PROVIDER_NAME)
-        return sorted(canonical)
+            return [self._registry.get(provider).name]
+        return sorted(
+            {self._registry.get(name).name for name in self._registry.names()}
+        )
 
     def _fetch_provider(
         self, provider: str
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-        if provider == KIMI_PROVIDER_NAME:
-            return fetch_out_of_registry_provider_models(provider)
-        model_provider = self._registry.get(provider)
-        return fetch_models_for_provider(model_provider)
+        return fetch_models_for_provider(self._registry.get(provider))

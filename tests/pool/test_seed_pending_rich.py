@@ -4,9 +4,11 @@ from typing import Any, cast
 
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.reasoning import AnthropicReasoning, ThinkingLevel
+from dr_llm.pool.models import InsertResult
 from dr_llm.pool.pending.fill_pending import seed_pending
-from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.pool_store import PoolStore
 
 
 class _FakeSchema:
@@ -19,31 +21,33 @@ class _FakePendingStore:
         self.samples: list[dict[str, Any]] = []
         self._seen: set[tuple[tuple[str, Any], ...]] = set()
 
-    def insert_pending(self, sample: Any, *, ignore_conflicts: bool = True) -> bool:
-        key = tuple(sorted(sample.key_values.items())) + (
-            ("sample_idx", sample.sample_idx),
-        )
-        if ignore_conflicts and key in self._seen:
-            return False
-        self._seen.add(key)
-        self.samples.append(
-            {
-                "key_values": dict(sample.key_values),
-                "sample_idx": sample.sample_idx,
-                "payload": dict(sample.payload),
-                "priority": sample.priority,
-            }
-        )
-        return True
+    def insert_many(
+        self, samples: list[Any], *, ignore_conflicts: bool = True
+    ) -> InsertResult:
+        inserted = 0
+        skipped = 0
+        for sample in samples:
+            key = (*sorted(sample.key_values.items()), ("sample_idx", sample.sample_idx))
+            if ignore_conflicts and key in self._seen:
+                skipped += 1
+                continue
+            self._seen.add(key)
+            self.samples.append(
+                {
+                    "key_values": dict(sample.key_values),
+                    "sample_idx": sample.sample_idx,
+                    "payload": dict(sample.payload),
+                    "priority": sample.priority,
+                }
+            )
+            inserted += 1
+        return InsertResult(inserted=inserted, skipped=skipped)
 
 
 class _FakeStore:
     def __init__(self, key_column_names: list[str]) -> None:
         self.schema = _FakeSchema(key_column_names)
         self.pending = _FakePendingStore()
-
-    def init_schema(self) -> None:
-        pass
 
 
 def test_dict_grid_stores_ids_in_key_values_and_values_in_payload() -> None:
@@ -55,6 +59,7 @@ def test_dict_grid_stores_ids_in_key_values_and_values_in_payload() -> None:
         provider="anthropic",
         model="claude-sonnet-4-6-20250514",
         max_tokens=256,
+        effort=EffortSpec.MEDIUM,
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
     )
     messages_x = [Message(role="user", content="Hello")]

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from dr_llm.llm.catalog.file_store import FileCatalogStore
+from dr_llm.llm.catalog.file_store import CatalogCacheCorruptError, FileCatalogStore
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
 
 
@@ -169,6 +169,30 @@ def test_read_filters_blacklisted_models(store: FileCatalogStore) -> None:
         store.get_model(provider="anthropic", model="claude-3-haiku-20240307")
         is None
     )
+
+
+def test_load_all_skips_corrupt_cache_files_with_warning(
+    store: FileCatalogStore, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    store.replace_provider_models(
+        provider="openai",
+        entries=[_entry("openai", "gpt-4.1")],
+    )
+    bad = tmp_path / "anthropic.json"
+    bad.write_text("not valid json {{{", encoding="utf-8")
+
+    with caplog.at_level("WARNING", logger="dr_llm.llm.catalog.file_store"):
+        all_models = store.list_models(query=ModelCatalogQuery())
+    assert len(all_models) == 1
+    assert all_models[0].provider == "openai"
+    assert any("Skipping unreadable catalog cache file" in r.message for r in caplog.records)
+
+
+def test_load_single_provider_still_raises_on_corrupt_file(tmp_path: Path) -> None:
+    store = FileCatalogStore(cache_dir=tmp_path)
+    (tmp_path / "anthropic.json").write_text("not valid json", encoding="utf-8")
+    with pytest.raises(CatalogCacheCorruptError):
+        store.list_models(query=ModelCatalogQuery(provider="anthropic"))
 
 
 def test_read_filters_and_overrides_openrouter_models(store: FileCatalogStore) -> None:

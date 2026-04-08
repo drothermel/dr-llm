@@ -9,7 +9,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
-from dr_llm.logging import emit_generation_event
+from dr_llm.logging.sinks import emit_generation_event
 from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.headless.config import HeadlessProviderConfig
 from dr_llm.llm.request import LlmRequest
@@ -66,10 +66,10 @@ class HeadlessRequestPayload(BaseModel):
 class HeadlessUsagePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    total_tokens: int | None = None
-    reasoning_tokens: int | None = None
+    prompt_tokens: Any = None
+    completion_tokens: Any = None
+    total_tokens: Any = None
+    reasoning_tokens: int = 0
 
 
 class ParsedHeadlessOutput(BaseModel):
@@ -100,22 +100,16 @@ class ParsedHeadlessOutput(BaseModel):
         raw_usage: dict[str, Any] = (
             raw_usage_raw if isinstance(raw_usage_raw, dict) else {}
         )
-        reasoning_tokens = TokenUsage.extract_reasoning_tokens(raw_usage)
-        prompt_tokens = raw_usage.get("prompt_tokens")
-        completion_tokens = raw_usage.get("completion_tokens")
-        total_tokens = raw_usage.get("total_tokens")
         return cls(
             text=str(body.get("text") or ""),
             finish_reason=body.get("finish_reason")
             if isinstance(body.get("finish_reason"), str)
             else None,
             usage=HeadlessUsagePayload(
-                prompt_tokens=prompt_tokens if isinstance(prompt_tokens, int) else None,
-                completion_tokens=(
-                    completion_tokens if isinstance(completion_tokens, int) else None
-                ),
-                total_tokens=total_tokens if isinstance(total_tokens, int) else None,
-                reasoning_tokens=reasoning_tokens,
+                prompt_tokens=raw_usage.get("prompt_tokens"),
+                completion_tokens=raw_usage.get("completion_tokens"),
+                total_tokens=raw_usage.get("total_tokens"),
+                reasoning_tokens=TokenUsage.extract_reasoning_tokens(raw_usage),
             ),
             body=body,
             raw_json=raw_json or body,
@@ -263,13 +257,46 @@ class BaseHeadlessProvider(Provider):
         command = self.command_for_request(request, payload, reasoning_mapping)
         validate_headless_command(command)
         stdin_text = self.stdin_for_request(request, payload)
-        started = time.perf_counter()
-        logged_stdin = sanitize_io_for_logs(
-            stdin_text,
+        logged_stdin = self._sanitize_for_logs(stdin_text)
+
+        proc, latency_ms = self._run_subprocess(
+            command=command,
+            stdin_text=stdin_text,
+            request=request,
+            payload=payload,
+            logged_stdin=logged_stdin,
+        )
+        logged_stderr = self._log_subprocess_result(
+            command=command,
+            logged_stdin=logged_stdin,
+            proc=proc,
+        )
+        self._handle_subprocess_failure(proc=proc, logged_stderr=logged_stderr)
+        return self._build_response_from_output(
+            request=request,
+            proc=proc,
+            latency_ms=latency_ms,
+            reasoning_mapping=reasoning_mapping,
+        )
+
+    def _sanitize_for_logs(self, value: str) -> str:
+        return sanitize_io_for_logs(
+            value,
             log_full_io=self._config.log_full_io,
             redact_io=self._config.redact_io,
             max_logged_chars=self._config.max_logged_chars,
         )
+
+    def _run_subprocess(
+        self,
+        *,
+        command: list[str],
+        stdin_text: str,
+        request: LlmRequest,
+        payload: HeadlessRequestPayload,
+        logged_stdin: str,
+    ) -> tuple[subprocess.CompletedProcess[str], int]:
+        started = time.perf_counter()
         try:
             proc = subprocess.run(
                 command,
@@ -293,20 +320,18 @@ class BaseHeadlessProvider(Provider):
             raise HeadlessExecutionError(
                 f"{self.name} command timed out after {self._config.timeout_seconds}s"
             ) from exc
-
         latency_ms = int((time.perf_counter() - started) * 1000)
-        logged_stdout = sanitize_io_for_logs(
-            proc.stdout,
-            log_full_io=self._config.log_full_io,
-            redact_io=self._config.redact_io,
-            max_logged_chars=self._config.max_logged_chars,
-        )
-        logged_stderr = sanitize_io_for_logs(
-            proc.stderr,
-            log_full_io=self._config.log_full_io,
-            redact_io=self._config.redact_io,
-            max_logged_chars=self._config.max_logged_chars,
-        )
+        return proc, latency_ms
+
+    def _log_subprocess_result(
+        self,
+        *,
+        command: list[str],
+        logged_stdin: str,
+        proc: subprocess.CompletedProcess[str],
+    ) -> str:
+        logged_stdout = self._sanitize_for_logs(proc.stdout)
+        logged_stderr = self._sanitize_for_logs(proc.stderr)
         emit_generation_event(
             event_type="provider.raw_response",
             stage=f"{self.name}.subprocess_result",
@@ -318,10 +343,28 @@ class BaseHeadlessProvider(Provider):
                 "stderr": logged_stderr,
             },
         )
-        if proc.returncode != 0:
-            raise HeadlessExecutionError(
-                f"{self.name} command failed with exit code {proc.returncode}: {logged_stderr[:800]}"
-            )
+        return logged_stderr
+
+    def _handle_subprocess_failure(
+        self,
+        *,
+        proc: subprocess.CompletedProcess[str],
+        logged_stderr: str,
+    ) -> None:
+        if proc.returncode == 0:
+            return
+        raise HeadlessExecutionError(
+            f"{self.name} command failed with exit code {proc.returncode}: {logged_stderr[:800]}"
+        )
+
+    def _build_response_from_output(
+        self,
+        *,
+        request: LlmRequest,
+        proc: subprocess.CompletedProcess[str],
+        latency_ms: int,
+        reasoning_mapping: HeadlessReasoningResult,
+    ) -> LlmResponse:
         response = self.parse_stdout(
             request=request,
             stdout=proc.stdout,

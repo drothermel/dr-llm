@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError, ProviderTransportError
+from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.providers.google.request import GoogleRequest
+from dr_llm.llm.providers.response_validation import (
+    parse_http_response_body,
+    validate_http_response,
+)
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import LlmResponse
 from dr_llm.llm.messages import CallMode
 from dr_llm.llm.providers.reasoning import ReasoningWarning
-from dr_llm.llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
+from dr_llm.llm.providers.usage import CostInfo, build_usage_and_reasoning
 
 
 class _GooglePart(BaseModel):
@@ -57,7 +60,7 @@ class GoogleResponse(BaseModel):
     status_code: int
     response_text: str = Field(exclude=True)
     response_text_preview: str = Field(exclude=True)
-    raw_json: dict[str, Any] | None = Field(default=None, exclude=True, repr=False)
+    raw_json: Any | None = Field(default=None, exclude=True, repr=False)
     candidates: list[_GoogleCandidate] = Field(default_factory=list)
     usageMetadata: _GoogleUsageMetadata | None = None
     json_error: str | None = Field(default=None, exclude=True, repr=False)
@@ -65,36 +68,18 @@ class GoogleResponse(BaseModel):
 
     @classmethod
     def from_http_response(cls, response: httpx.Response) -> GoogleResponse:
-        raw_json: dict[str, Any] | None = None
-        candidates: list[_GoogleCandidate] = []
-        usage_metadata: _GoogleUsageMetadata | None = None
-        json_error: str | None = None
-        response_shape_error: str | None = None
-        try:
-            body_raw = response.json()
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            json_error = str(exc)
-        else:
-            if not isinstance(body_raw, dict):
-                response_shape_error = "expected JSON object"
-            else:
-                raw_json = body_raw
-                try:
-                    parsed = _GoogleResponseBody(**body_raw)
-                except ValidationError as exc:
-                    response_shape_error = str(exc)
-                else:
-                    candidates = parsed.candidates
-                    usage_metadata = parsed.usageMetadata
+        raw_json, parsed, json_error, shape_error = parse_http_response_body(
+            response, _GoogleResponseBody
+        )
         return cls(
             status_code=response.status_code,
             response_text=response.text,
             response_text_preview=response.text[:500],
             raw_json=raw_json,
-            candidates=candidates,
-            usageMetadata=usage_metadata,
+            candidates=parsed.candidates if parsed else [],
+            usageMetadata=parsed.usageMetadata if parsed else None,
             json_error=json_error,
-            response_shape_error=response_shape_error,
+            response_shape_error=shape_error,
         )
 
     def event_payload(self, request: GoogleRequest) -> dict[str, Any]:
@@ -106,22 +91,13 @@ class GoogleResponse(BaseModel):
         }
 
     def _validated_candidate(self) -> _GoogleCandidate:
-        if self.status_code >= 500 or self.status_code == 429:
-            raise ProviderTransportError(
-                f"google transient error status={self.status_code} body={self.response_text_preview}"
-            )
-        if self.status_code >= 400:
-            raise ProviderSemanticError(
-                f"google rejected request status={self.status_code} body={self.response_text_preview}"
-            )
-        if self.json_error is not None:
-            raise ProviderTransportError(
-                f"google invalid JSON response: {self.json_error}"
-            )
-        if self.response_shape_error is not None:
-            raise ProviderSemanticError(
-                f"google response shape invalid: {self.response_shape_error}"
-            )
+        validate_http_response(
+            provider_label="google",
+            status_code=self.status_code,
+            response_text_preview=self.response_text_preview,
+            json_error=self.json_error,
+            response_shape_error=self.response_shape_error,
+        )
         if not self.candidates:
             raise ProviderSemanticError("google response missing candidates")
         return self.candidates[0]
@@ -142,26 +118,29 @@ class GoogleResponse(BaseModel):
             for part in parts
             if part.thought
         ]
-        usage_raw = (
+        usage_dump = (
             self.usageMetadata.model_dump(mode="json", exclude_none=True)
             if self.usageMetadata
-            else {}
+            else None
         )
-        reasoning_tokens = TokenUsage.extract_reasoning_tokens(usage_raw)
-        usage = TokenUsage.from_raw(
-            prompt_tokens=(
-                self.usageMetadata.promptTokenCount if self.usageMetadata else None
-            ),
-            completion_tokens=(
-                self.usageMetadata.candidatesTokenCount if self.usageMetadata else None
-            ),
-            total_tokens=(
-                self.usageMetadata.totalTokenCount if self.usageMetadata else None
-            ),
-            reasoning_tokens=reasoning_tokens,
+        raw_json = self.raw_json if isinstance(self.raw_json, dict) else {}
+        usage, fallback_reasoning, fallback_reasoning_details = (
+            build_usage_and_reasoning(
+                usage_dump=usage_dump,
+                prompt_tokens=(
+                    self.usageMetadata.promptTokenCount if self.usageMetadata else None
+                ),
+                completion_tokens=(
+                    self.usageMetadata.candidatesTokenCount
+                    if self.usageMetadata
+                    else None
+                ),
+                total_tokens=(
+                    self.usageMetadata.totalTokenCount if self.usageMetadata else None
+                ),
+                reasoning_source=raw_json,
+            )
         )
-        raw_json = self.raw_json or {}
-        fallback_reasoning, fallback_reasoning_details = parse_reasoning(raw_json)
         reasoning = "\n".join(thought_chunks) if thought_chunks else fallback_reasoning
         reasoning_details = thought_details or fallback_reasoning_details
         return LlmResponse(

@@ -3,13 +3,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from enum import StrEnum
-from typing import Any, Protocol, TypeVar
+from typing import Any, Protocol
 
 from pydantic import BaseModel
-
-TWorkItem = TypeVar("TWorkItem")
-TResult = TypeVar("TResult")
-TBackendState = TypeVar("TBackendState", bound=BaseModel)
 
 
 class ErrorDecision(StrEnum):
@@ -17,14 +13,11 @@ class ErrorDecision(StrEnum):
     fail = "fail"
 
 
-ErrorAction = ErrorDecision
-
-
 type ProcessFn[TWorkItem, TResult] = Callable[[TWorkItem], TResult]
 
 
-class WorkerBackend(Protocol[TWorkItem, TResult, TBackendState]):
-    def claim(self, *, worker_id: str, lease_seconds: int) -> list[TWorkItem]: ...
+class WorkerBackend[TWorkItem, TResult, TBackendState: BaseModel](Protocol):
+    def claim(self, *, worker_id: str, lease_seconds: int) -> TWorkItem | None: ...
 
     def complete(self, *, item: TWorkItem, result: TResult, worker_id: str) -> None: ...
 

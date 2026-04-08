@@ -43,12 +43,12 @@ class ProviderRegistry:
         key = provider_name.strip().lower()
         with self._lock:
             provider = self._providers.get(key)
-            known = ", ".join(sorted(self._providers.keys()))
-        if provider is None:
-            raise KeyError(
-                f"Unknown provider {provider_name!r}. Known providers: {known}"
-            )
-        return provider
+            if provider is None:
+                known = ", ".join(sorted(self._providers.keys()))
+                raise KeyError(
+                    f"Unknown provider {provider_name!r}. Known providers: {known}"
+                )
+            return provider
 
     def names(self) -> set[str]:
         with self._lock:
@@ -83,36 +83,26 @@ class ProviderRegistry:
             provider.close()
 
 
+_OPENAI_COMPAT_PROVIDERS: tuple[tuple[str, str, str], ...] = (
+    ("openai", "https://api.openai.com/v1", "OPENAI_API_KEY"),
+    ("openrouter", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
+    ("glm", "https://api.z.ai/api/coding/paas/v4", "ZAI_API_KEY"),
+)
+
+
 def build_default_registry() -> ProviderRegistry:
     registry = ProviderRegistry()
-    registry.register(
-        OpenAICompatProvider(
-            config=OpenAICompatConfig(
-                name="openai",
-                base_url="https://api.openai.com/v1",
-                api_key_env="OPENAI_API_KEY",
-            ),
+    for name, base_url, api_key_env in _OPENAI_COMPAT_PROVIDERS:
+        registry.register(
+            OpenAICompatProvider(
+                config=OpenAICompatConfig(
+                    name=name,
+                    base_url=base_url,
+                    api_key_env=api_key_env,
+                ),
+            )
         )
-    )
-    registry.register(
-        OpenAICompatProvider(
-            config=OpenAICompatConfig(
-                name="openrouter",
-                base_url="https://openrouter.ai/api/v1",
-                api_key_env="OPENROUTER_API_KEY",
-            ),
-        )
-    )
     registry.register(MiniMaxProvider())
-    registry.register(
-        OpenAICompatProvider(
-            config=OpenAICompatConfig(
-                name="glm",
-                base_url="https://api.z.ai/api/coding/paas/v4",
-                api_key_env="ZAI_API_KEY",
-            ),
-        )
-    )
     registry.register(AnthropicProvider())
     registry.register(
         GoogleProvider(

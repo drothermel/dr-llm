@@ -5,8 +5,9 @@ from typing import Any, cast
 import pytest
 
 from dr_llm.pool.errors import PoolSchemaError
+from dr_llm.pool.models import InsertResult
 from dr_llm.pool.pending.fill_pending import seed_pending
-from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.pool_store import PoolStore
 
 
 class _FakeSchema:
@@ -19,29 +20,32 @@ class _FakePendingStore:
         self.samples: list[dict[str, Any]] = []
         self._seen: set[tuple[tuple[str, Any], ...]] = set()
 
-    def insert_pending(self, sample: Any, *, ignore_conflicts: bool = True) -> bool:
-        key = tuple(sorted(sample.key_values.items())) + (("sample_idx", sample.sample_idx),)
-        if ignore_conflicts and key in self._seen:
-            return False
-        self._seen.add(key)
-        self.samples.append(
-            {
-                "key_values": dict(sample.key_values),
-                "sample_idx": sample.sample_idx,
-                "priority": sample.priority,
-            }
-        )
-        return True
+    def insert_many(
+        self, samples: list[Any], *, ignore_conflicts: bool = True
+    ) -> InsertResult:
+        inserted = 0
+        skipped = 0
+        for sample in samples:
+            key = (*sorted(sample.key_values.items()), ("sample_idx", sample.sample_idx))
+            if ignore_conflicts and key in self._seen:
+                skipped += 1
+                continue
+            self._seen.add(key)
+            self.samples.append(
+                {
+                    "key_values": dict(sample.key_values),
+                    "sample_idx": sample.sample_idx,
+                    "priority": sample.priority,
+                }
+            )
+            inserted += 1
+        return InsertResult(inserted=inserted, skipped=skipped)
 
 
 class _FakeStore:
     def __init__(self, key_column_names: list[str]) -> None:
         self.schema = _FakeSchema(key_column_names)
         self.pending = _FakePendingStore()
-        self.init_calls = 0
-
-    def init_schema(self) -> None:
-        self.init_calls += 1
 
 
 def test_seed_pending_expands_cartesian_product() -> None:
@@ -58,7 +62,6 @@ def test_seed_pending_expands_cartesian_product() -> None:
         priority=7,
     )
 
-    assert store.init_calls == 1
     assert result.inserted == 8
     assert result.skipped == 0
     assert [(row["key_values"]["model"], row["key_values"]["prompt"], row["sample_idx"]) for row in store.pending.samples] == [

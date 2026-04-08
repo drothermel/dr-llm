@@ -8,10 +8,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from dr_llm.pool.errors import PoolSchemaError
+from dr_llm.pool.db.sql_helpers import validate_key_values
 from dr_llm.pool.models import InsertResult
 from dr_llm.pool.pending.pending_sample import PendingSample
-from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.pool_store import PoolStore
 
 
 type PendingGridValue = Iterable[Any] | dict[str, Any]
@@ -28,16 +28,11 @@ def seed_pending(
     if n < 0:
         raise ValueError("n must be non-negative")
 
-    store.init_schema()
-    _validate_key_grid_columns(store, key_grid)
+    validate_key_values(store.schema, dict(key_grid))
     if n == 0:
         return InsertResult()
 
-    parsed = _parse_key_grid(store.schema.key_column_names, key_grid)
-    if parsed is None:
-        return InsertResult()
-
-    grid_keys, rich_columns = parsed
+    grid_keys, rich_columns = _parse_key_grid(store.schema.key_column_names, key_grid)
     samples = _build_pending_samples(
         column_names=store.schema.key_column_names,
         grid_keys=grid_keys,
@@ -45,27 +40,13 @@ def seed_pending(
         n=n,
         priority=priority,
     )
-    return _insert_pending_samples(store, samples)
-
-
-def _validate_key_grid_columns(
-    store: PoolStore,
-    key_grid: Mapping[str, PendingGridValue],
-) -> None:
-    expected = set(store.schema.key_column_names)
-    provided = set(key_grid.keys())
-    missing = expected - provided
-    if missing:
-        raise PoolSchemaError(f"Missing key columns: {missing}. Expected: {expected}")
-    extra = provided - expected
-    if extra:
-        raise PoolSchemaError(f"Unexpected key columns: {extra}. Expected: {expected}")
+    return store.pending.insert_many(samples, ignore_conflicts=True)
 
 
 def _parse_key_grid(
     column_names: list[str],
     key_grid: Mapping[str, PendingGridValue],
-) -> tuple[list[list[Any]], dict[str, dict[str, Any]]] | None:
+) -> tuple[list[list[Any]], dict[str, dict[str, Any]]]:
     """Parse key_grid into grid keys plus optional rich payload columns."""
     grid_keys: list[list[Any]] = []
     rich_columns: dict[str, dict[str, Any]] = {}
@@ -73,20 +54,14 @@ def _parse_key_grid(
     for name in column_names:
         raw = key_grid[name]
         if isinstance(raw, dict):
-            keys = list(raw.keys())
-            if not keys:
-                return None
-            grid_keys.append(keys)
+            grid_keys.append(list(raw.keys()))
             rich_columns[name] = dict(raw)
             continue
 
         if isinstance(raw, (str, bytes)):
             raise TypeError(f"key_grid[{name!r}] must be an iterable of values")
 
-        values = list(raw)
-        if not values:
-            return None
-        grid_keys.append(values)
+        grid_keys.append(list(raw))
 
     return grid_keys, rich_columns
 
@@ -137,20 +112,3 @@ def serialize_payload_value(value: Any) -> Any:
             for item in value
         ]
     return value
-
-
-def _insert_pending_samples(
-    store: PoolStore,
-    samples: list[PendingSample],
-) -> InsertResult:
-    inserted = 0
-    skipped = 0
-
-    for sample in samples:
-        did_insert = store.pending.insert_pending(sample, ignore_conflicts=True)
-        if did_insert:
-            inserted += 1
-        else:
-            skipped += 1
-
-    return InsertResult(inserted=inserted, skipped=skipped, failed=0)

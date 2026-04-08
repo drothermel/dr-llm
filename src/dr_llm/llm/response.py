@@ -9,6 +9,15 @@ from dr_llm.llm.providers.reasoning import ReasoningWarning
 from dr_llm.llm.providers.usage import CostInfo, TokenUsage
 
 
+class CallError(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    error_type: str
+    message: str
+    retryable: bool = False
+    raw_json: dict[str, Any] | None = None
+
+
 class LlmResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from dr_llm.logging import generation_log_context
+from dr_llm.logging.events import generation_log_context
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import CallMode, Message
 from dr_llm.llm.providers.usage import TokenUsage
@@ -142,9 +142,10 @@ def test_failed_worker_call_emits_failure_event(
         ),
     )
 
-    with generation_log_context(
-        {"pool_name": "demo", "worker_id": "worker-1"}
-    ), pytest.raises(RuntimeError, match="API down"):
+    with (
+        generation_log_context({"pool_name": "demo", "worker_id": "worker-1"}),
+        pytest.raises(RuntimeError, match="API down"),
+    ):
         process_fn(sample)
 
     assert [event["event_type"] for event in events] == [

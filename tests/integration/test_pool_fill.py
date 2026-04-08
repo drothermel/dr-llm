@@ -22,7 +22,7 @@ from dr_llm.pool.pending.backend import (
 )
 from dr_llm.pool.pending.fill_pending import seed_pending
 from dr_llm.pool.pending.pending_sample import PendingSample
-from dr_llm.pool.sample_store import PoolStore
+from dr_llm.pool.pool_store import PoolStore
 from dr_llm.workers import WorkerConfig, WorkerController, start_workers
 
 
@@ -71,7 +71,7 @@ def fill_store() -> Generator[PoolStore, None, None]:
             )
         )
         store = PoolStore(_TEST_SCHEMA, runtime)
-        store.init_schema()
+        store.ensure_schema()
     except (psycopg.OperationalError, TransientPersistenceError) as exc:
         if runtime is not None:
             runtime.close()
@@ -176,7 +176,10 @@ def test_start_workers_promote_seeded_grid(fill_store: PoolStore) -> None:
     assert snapshot.backend_state.status_counts.promoted == 8
     for model in ["gpt-4.1-mini", "gpt-5-mini"]:
         for prompt in ["math", "history"]:
-            assert fill_store.cell_depth(key_values={"model": model, "prompt": prompt}) == 2
+            assert (
+                fill_store.cell_depth(key_values={"model": model, "prompt": prompt})
+                == 2
+            )
 
 
 @pytest.mark.integration
@@ -209,9 +212,12 @@ def test_start_workers_retry_then_fail(fill_store: PoolStore) -> None:
     assert snapshot.counts.process_errors == 2
     assert snapshot.backend_state is not None
     assert snapshot.backend_state.status_counts.failed == 1
-    assert fill_store.cell_depth(
-        key_values={"model": "retry-model", "prompt": "fail-prompt"}
-    ) == 0
+    assert (
+        fill_store.cell_depth(
+            key_values={"model": "retry-model", "prompt": "fail-prompt"}
+        )
+        == 0
+    )
 
 
 @pytest.mark.integration
@@ -249,9 +255,12 @@ def test_start_workers_retry_then_promote(fill_store: PoolStore) -> None:
     assert snapshot.counts.process_errors == 1
     assert snapshot.backend_state is not None
     assert snapshot.backend_state.status_counts.promoted == 1
-    assert fill_store.cell_depth(
-        key_values={"model": "retry-model", "prompt": "eventual-success"}
-    ) == 1
+    assert (
+        fill_store.cell_depth(
+            key_values={"model": "retry-model", "prompt": "eventual-success"}
+        )
+        == 1
+    )
 
 
 @pytest.mark.integration
@@ -303,7 +312,7 @@ def test_seed_pending_rich_grid_with_workers(fill_store: PoolStore) -> None:
         key_columns=[KeyColumn(name="llm_config"), KeyColumn(name="prompt")],
     )
     rich_store = PoolStore(fill_schema, fill_store._runtime)
-    rich_store.init_schema()
+    rich_store.ensure_schema()
 
     try:
         configs = {
