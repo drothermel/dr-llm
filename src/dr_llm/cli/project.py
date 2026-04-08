@@ -8,7 +8,16 @@ import typer
 
 from dr_llm.cli.common import handle_cli_errors
 from dr_llm.project.errors import ProjectError
-from dr_llm.project.project_info import ProjectInfo
+from dr_llm.project.project_service import (
+    backup_project,
+    create_project,
+    destroy_project,
+    get_project,
+    list_projects,
+    restore_project,
+    start_project,
+    stop_project,
+)
 
 project_app = typer.Typer(help="Manage isolated dr-llm project databases")
 
@@ -21,7 +30,7 @@ def project_create(
     ),
 ) -> None:
     """Create a new project with its own Postgres container and persistent volume."""
-    project_info = ProjectInfo.create_new(name)
+    project_info = create_project(name)
     typer.echo(
         json.dumps(project_info.model_dump(mode="json", exclude_none=True), indent=2)
     )
@@ -31,7 +40,7 @@ def project_create(
 @handle_cli_errors(ProjectError)
 def project_list() -> None:
     """List all dr-llm projects."""
-    projects = ProjectInfo.list_all()
+    projects = list_projects()
     if not projects:
         typer.echo("No projects found.")
         return
@@ -52,7 +61,7 @@ def project_list() -> None:
 def project_start(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
-    project_info = ProjectInfo.start(name)
+    project_info = start_project(name)
     typer.secho(
         f"Project '{name}' is running on port {project_info.port}",
         fg=typer.colors.GREEN,
@@ -64,7 +73,7 @@ def project_start(
 def project_stop(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
-    ProjectInfo.stop(name)
+    stop_project(name)
     typer.secho(f"Project '{name}' stopped. Data is preserved.", fg=typer.colors.GREEN)
 
 
@@ -74,7 +83,7 @@ def project_use(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
     """Print the export command to set DR_LLM_DATABASE_URL for a project."""
-    project_info = ProjectInfo.get_by_name(name)
+    project_info = get_project(name)
     if not project_info.running:
         typer.secho(
             f"Project '{name}' is {project_info.status} - start it first",
@@ -101,7 +110,7 @@ def project_destroy(
             abort=True,
         )
 
-    ProjectInfo.destroy(name)
+    destroy_project(name)
     typer.secho(
         f"Project '{name}' destroyed (container + volume removed).",
         fg=typer.colors.RED,
@@ -114,7 +123,7 @@ def project_backup(
     name: str = typer.Argument(..., help="Project name"),
     output_dir: Path | None = typer.Option(None, help="Custom backup directory."),
 ) -> None:
-    path = ProjectInfo.backup(name, output_dir)
+    path = backup_project(name, output_dir)
     typer.secho(f"Backup saved to {path}", fg=typer.colors.GREEN)
 
 
@@ -124,5 +133,5 @@ def project_restore(
     name: str = typer.Argument(..., help="Project name"),
     backup_file: Path = typer.Argument(..., help="Path to backup file (.sql.gz)"),
 ) -> None:
-    ProjectInfo.restore(name, backup_file)
+    restore_project(name, backup_file)
     typer.secho(f"Restored '{name}' from {backup_file}", fg=typer.colors.GREEN)

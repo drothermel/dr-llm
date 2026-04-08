@@ -39,6 +39,11 @@ from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.sample_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
+from dr_llm.project.project_service import (
+    create_project,
+    destroy_project,
+    maybe_get_project,
+)
 from dr_llm.llm.providers.registry import build_default_registry
 from dr_llm.llm.providers.config import ProviderAvailabilityStatus
 
@@ -141,10 +146,10 @@ def detect_providers(
 
 def create_demo_project(project_name: str) -> ProjectInfo:
     """Create a demo project, destroying any existing one first."""
-    existing = ProjectInfo.maybe_from_existing(project_name)
+    existing = maybe_get_project(project_name)
     if existing is not None:
-        ProjectInfo.destroy(project_name)
-    return ProjectInfo.create_new(project_name)
+        destroy_project(project_name)
+    return create_project(project_name)
 
 
 # --- Model Resolution ---
@@ -378,7 +383,7 @@ def main(
         if not demo_succeeded and project is not None:
             print(f"\n{BOLD}Cleaning up after failure...{RESET}")
             try:
-                ProjectInfo.destroy(project_name)
+                destroy_project(project_name)
             except Exception:
                 pass
 
