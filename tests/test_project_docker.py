@@ -42,6 +42,11 @@ from dr_llm.project.errors import (
             "Docker container not found.",
         ),
         (
+            "Error: No such object: demo",
+            DockerContainerNotFoundError,
+            "Docker container not found.",
+        ),
+        (
             "Error response from daemon: Container abc123 is not running",
             DockerContainerNotRunningError,
             "Docker container is not running.",
