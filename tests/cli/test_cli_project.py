@@ -18,15 +18,13 @@ def test_project_start_does_not_lookup_project_first(
     started: list[str] = []
 
     class FakeProjectInfo:
-        def __init__(self, name: str, **_: object) -> None:
-            self.name = name
-
         @classmethod
         def get_by_name(cls, name: str) -> FakeProjectInfo:
             raise AssertionError(f"unexpected lookup for {name}")
 
-        def start(self) -> None:
-            started.append(self.name)
+        @classmethod
+        def start(cls, name: str) -> None:
+            started.append(name)
 
     monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
 
@@ -43,15 +41,13 @@ def test_project_stop_does_not_lookup_project_first(
     stopped: list[str] = []
 
     class FakeProjectInfo:
-        def __init__(self, name: str, **_: object) -> None:
-            self.name = name
-
         @classmethod
         def get_by_name(cls, name: str) -> FakeProjectInfo:
             raise AssertionError(f"unexpected lookup for {name}")
 
-        def stop(self) -> None:
-            stopped.append(self.name)
+        @classmethod
+        def stop(cls, name: str) -> None:
+            stopped.append(name)
 
     monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
 
@@ -68,15 +64,13 @@ def test_project_destroy_does_not_lookup_project_first(
     destroyed: list[str] = []
 
     class FakeProjectInfo:
-        def __init__(self, name: str, **_: object) -> None:
-            self.name = name
-
         @classmethod
         def get_by_name(cls, name: str) -> FakeProjectInfo:
             raise AssertionError(f"unexpected lookup for {name}")
 
-        def destroy(self) -> None:
-            destroyed.append(self.name)
+        @classmethod
+        def destroy(cls, name: str) -> None:
+            destroyed.append(name)
 
     monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
 
@@ -101,16 +95,14 @@ def test_project_backup_does_not_lookup_project_first(
     backed_up: list[str] = []
 
     class FakeProjectInfo:
-        def __init__(self, name: str, **_: object) -> None:
-            self.name = name
-
         @classmethod
         def get_by_name(cls, name: str) -> FakeProjectInfo:
             raise AssertionError(f"unexpected lookup for {name}")
 
-        def backup(self, output_dir: Path | None = None) -> Path:
+        @classmethod
+        def backup(cls, name: str, output_dir: Path | None = None) -> Path:
             assert output_dir == tmp_path
-            backed_up.append(self.name)
+            backed_up.append(name)
             return backup_path
 
     monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
@@ -134,15 +126,13 @@ def test_project_restore_does_not_lookup_project_first(
     backup_file.write_bytes(b"")
 
     class FakeProjectInfo:
-        def __init__(self, name: str, **_: object) -> None:
-            self.name = name
-
         @classmethod
         def get_by_name(cls, name: str) -> FakeProjectInfo:
             raise AssertionError(f"unexpected lookup for {name}")
 
-        def restore(self, backup_path: Path) -> None:
-            restored.append((self.name, backup_path))
+        @classmethod
+        def restore(cls, name: str, backup_path: Path) -> None:
+            restored.append((name, backup_path))
 
     monkeypatch.setattr(project_cli, "ProjectInfo", FakeProjectInfo)
 

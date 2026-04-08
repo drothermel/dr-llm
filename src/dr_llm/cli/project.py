@@ -51,8 +51,7 @@ def project_list() -> None:
 def project_start(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
-    project_info = ProjectInfo(name=name)
-    project_info.start()
+    ProjectInfo.start(name)
     typer.secho(
         f"Project '{name}' is running.",
         fg=typer.colors.GREEN,
@@ -64,8 +63,7 @@ def project_start(
 def project_stop(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
-    project_info = ProjectInfo(name=name)
-    project_info.stop()
+    ProjectInfo.stop(name)
     typer.secho(f"Project '{name}' stopped. Data is preserved.", fg=typer.colors.GREEN)
 
 
@@ -102,8 +100,7 @@ def project_destroy(
             abort=True,
         )
 
-    project_info = ProjectInfo(name=name)
-    project_info.destroy()
+    ProjectInfo.destroy(name)
     typer.secho(
         f"Project '{name}' destroyed (container + volume removed).",
         fg=typer.colors.RED,
@@ -116,8 +113,7 @@ def project_backup(
     name: str = typer.Argument(..., help="Project name"),
     output_dir: Path | None = typer.Option(None, help="Custom backup directory."),
 ) -> None:
-    project_info = ProjectInfo(name=name)
-    path = project_info.backup(output_dir)
+    path = ProjectInfo.backup(name, output_dir)
     typer.secho(f"Backup saved to {path}", fg=typer.colors.GREEN)
 
 
@@ -127,6 +123,5 @@ def project_restore(
     name: str = typer.Argument(..., help="Project name"),
     backup_file: Path = typer.Argument(..., help="Path to backup file (.sql.gz)"),
 ) -> None:
-    project_info = ProjectInfo(name=name)
-    project_info.restore(backup_file)
+    ProjectInfo.restore(name, backup_file)
     typer.secho(f"Restored '{name}' from {backup_file}", fg=typer.colors.GREEN)

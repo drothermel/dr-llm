@@ -143,7 +143,7 @@ def create_demo_project(project_name: str) -> ProjectInfo:
     """Create a demo project, destroying any existing one first."""
     existing = ProjectInfo.maybe_from_existing(project_name)
     if existing is not None:
-        existing.destroy()
+        ProjectInfo.destroy(project_name)
     return ProjectInfo.create_new(project_name)
 
 
@@ -378,7 +378,7 @@ def main(
         if not demo_succeeded and project is not None:
             print(f"\n{BOLD}Cleaning up after failure...{RESET}")
             try:
-                project.destroy()
+                ProjectInfo.destroy(project_name)
             except Exception:
                 pass
 

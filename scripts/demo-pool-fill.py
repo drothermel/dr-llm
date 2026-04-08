@@ -228,7 +228,7 @@ def main(
     finally:
         if project is not None:
             print(f"Destroying temporary project '{project_name}'...")
-            project.destroy()
+            ProjectInfo.destroy(project_name)
 
 
 if __name__ == "__main__":

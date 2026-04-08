@@ -26,6 +26,7 @@ from dr_llm.project.docker_project_metadata import (
 from dr_llm.project.errors import (
     DockerContainerConflictError,
     DockerContainerNotFoundError,
+    DockerContainerNotRunningError,
     DockerPortAllocatedError,
     ProjectAlreadyExistsError,
     ProjectError,
@@ -180,51 +181,54 @@ class ProjectInfo(BaseModel):
             )
             return project_info
 
-    def start(self) -> None:
-        if self.status != ContainerStatus.RUNNING:
-            try:
-                call_docker_start(self.container_name)
-                self.status = wait_docker_ready(
-                    container_name=self.container_name,
-                    db_user=self.db_user,
-                    db_name=self.db_name,
-                )
-            except DockerContainerNotFoundError as exc:
-                raise ProjectNotFoundError(f"Project '{self.name}' not found") from exc
-
-    def stop(self) -> None:
-        if self.status != ContainerStatus.STOPPED:
-            try:
-                call_docker_stop(self.container_name)
-                self.status = ContainerStatus.STOPPED
-            except DockerContainerNotFoundError as exc:
-                raise ProjectNotFoundError(f"Project '{self.name}' not found") from exc
-
-    def destroy(self) -> None:
+    @classmethod
+    def start(cls, name: str) -> None:
         try:
-            call_docker_destroy(self.container_name, self.volume_name)
+            call_docker_start(cls.get_container_name(name))
+            wait_docker_ready(
+                container_name=cls.get_container_name(name),
+                db_user=cls.db_user,
+                db_name=cls.db_name,
+            )
         except DockerContainerNotFoundError as exc:
-            raise ProjectNotFoundError(f"Project '{self.name}' not found") from exc
+            raise ProjectNotFoundError(f"Project '{name}' not found") from exc
 
-    def backup(self, output_dir: Path | None = None) -> Path:
-        backup_dir = (output_dir or self.default_backup_dir) / self.name
+    @classmethod
+    def stop(cls, name: str) -> None:
+        try:
+            call_docker_stop(cls.get_container_name(name))
+        except DockerContainerNotFoundError as exc:
+            raise ProjectNotFoundError(f"Project '{name}' not found") from exc
+
+    @classmethod
+    def destroy(cls, name: str) -> None:
+        try:
+            call_docker_destroy(cls.get_container_name(name), cls.get_volume_name(name))
+        except DockerContainerNotFoundError as exc:
+            raise ProjectNotFoundError(f"Project '{name}' not found") from exc
+
+    @classmethod
+    def backup(cls, name: str, output_dir: Path | None = None) -> Path:
+        backup_dir = (output_dir or cls.default_backup_dir) / name
         backup_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-        backup_file = backup_dir / f"{self.name}_{timestamp}.sql.gz"
+        backup_file = backup_dir / f"{name}_{timestamp}.sql.gz"
 
         try:
             with gzip.open(backup_file, "wb") as backup_stream:
                 try:
                     call_docker_pg_dump_stream(
-                        container_name=self.container_name,
-                        db_user=self.db_user,
-                        db_name=self.db_name,
+                        container_name=cls.get_container_name(name),
+                        db_user=cls.db_user,
+                        db_name=cls.db_name,
                         output_stream=cast(IO[bytes], backup_stream),
                     )
                 except DockerContainerNotFoundError as exc:
-                    raise ProjectNotFoundError(
-                        f"Project '{self.name}' not found"
+                    raise ProjectNotFoundError(f"Project '{name}' not found") from exc
+                except DockerContainerNotRunningError as exc:
+                    raise ProjectError(
+                        f"Project '{name}' is not running. Start it first."
                     ) from exc
         except Exception:
             backup_file.unlink(missing_ok=True)
@@ -232,7 +236,8 @@ class ProjectInfo(BaseModel):
 
         return backup_file
 
-    def restore(self, backup_file: Path) -> None:
+    @classmethod
+    def restore(cls, name: str, backup_file: Path) -> None:
         if not backup_file.exists():
             raise FileNotFoundError(f"Backup file not found: {backup_file}")
         if backup_file.suffixes[-2:] != [".sql", ".gz"]:
@@ -244,9 +249,13 @@ class ProjectInfo(BaseModel):
             try:
                 docker_swap_in_db(
                     sql_stream=cast(IO[bytes], sql_stream),
-                    container_name=self.container_name,
-                    db_user=self.db_user,
-                    target_db_name=self.db_name,
+                    container_name=cls.get_container_name(name),
+                    db_user=cls.db_user,
+                    target_db_name=cls.db_name,
                 )
             except DockerContainerNotFoundError as exc:
-                raise ProjectNotFoundError(f"Project '{self.name}' not found") from exc
+                raise ProjectNotFoundError(f"Project '{name}' not found") from exc
+            except DockerContainerNotRunningError as exc:
+                raise ProjectError(
+                    f"Project '{name}' is not running. Start it first."
+                ) from exc
