@@ -56,9 +56,6 @@ class PoolStore:
 
     def init_schema(
         self,
-        *,
-        allow_destructive_cleanup: bool = False,
-        dedicated_schema: str | None = None,
     ) -> None:
         """Create pool tables if they don't exist."""
         if self._schema_initialized:
@@ -66,10 +63,6 @@ class PoolStore:
         with self._schema_lock:
             if self._schema_initialized:
                 return
-            self._runtime.cleanup_legacy_tables(
-                allow_destructive_cleanup=allow_destructive_cleanup,
-                dedicated_schema=dedicated_schema,
-            )
             with self._runtime.begin() as conn:
                 self._tables.metadata.create_all(
                     bind=conn,

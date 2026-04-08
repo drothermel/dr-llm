@@ -37,25 +37,10 @@ _POOL_TABLES = (
     _TEST_SCHEMA.samples_table,
 )
 
-_LEGACY_TABLES = (
-    "artifacts",
-    "llm_call_responses",
-    "llm_call_requests",
-    "llm_calls",
-    "run_parameters",
-    "runs",
-    "tool_call_dead_letters",
-    "tool_results",
-    "tool_calls",
-    "session_events",
-    "session_turns",
-    "sessions",
-)
-
 
 def _drop_tables(dsn: str) -> None:
     with psycopg.connect(dsn) as conn:
-        for tbl in _POOL_TABLES + _LEGACY_TABLES:
+        for tbl in _POOL_TABLES:
             conn.execute(
                 sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
                     sql.Identifier("public", tbl)
@@ -66,17 +51,6 @@ def _drop_tables(dsn: str) -> None:
 
 def _get_dsn() -> str | None:
     return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv("DR_LLM_DATABASE_URL")
-
-
-def _create_legacy_tables(dsn: str) -> None:
-    with psycopg.connect(dsn) as conn:
-        for table_name in _LEGACY_TABLES:
-            conn.execute(
-                sql.SQL("CREATE TABLE IF NOT EXISTS {} (id TEXT)").format(
-                    sql.Identifier(table_name)
-                )
-            )
-        conn.commit()
 
 
 @pytest.fixture(scope="module")
@@ -130,83 +104,6 @@ def _pending(dim_a: str = "a", dim_b: int = 1, **kwargs: Any) -> PendingSample:
 
 
 # --- Sample CRUD ---
-
-
-@pytest.mark.integration
-def test_store_init_does_not_drop_legacy_call_recorder_tables_by_default(
-    pool_store: PoolStore,  # noqa: ARG001
-) -> None:
-    dsn = _get_dsn()
-    assert dsn is not None
-    _create_legacy_tables(dsn)
-
-    fresh_runtime = DbRuntime(
-        DbConfig(
-            dsn=dsn,
-            min_pool_size=1,
-            max_pool_size=4,
-            application_name="pool_tests_cleanup",
-        )
-    )
-    fresh_store = PoolStore(_TEST_SCHEMA, fresh_runtime)
-    try:
-        fresh_store.init_schema()
-    finally:
-        fresh_runtime.close()
-
-    with psycopg.connect(dsn) as conn:
-        for table_name in _LEGACY_TABLES:
-            exists = conn.execute(
-                """
-                SELECT EXISTS (
-                    SELECT 1 FROM information_schema.tables
-                    WHERE table_schema = 'public' AND table_name = %s
-                )
-                """,
-                [table_name],
-            ).fetchone()
-            assert exists is not None
-            assert exists[0] is True
-
-
-@pytest.mark.integration
-def test_store_init_drops_legacy_call_recorder_tables_when_explicitly_enabled(
-    pool_store: PoolStore,  # noqa: ARG001
-) -> None:
-    dsn = _get_dsn()
-    assert dsn is not None
-    _create_legacy_tables(dsn)
-
-    fresh_runtime = DbRuntime(
-        DbConfig(
-            dsn=dsn,
-            min_pool_size=1,
-            max_pool_size=4,
-            application_name="pool_tests_cleanup_opt_in",
-        )
-    )
-    fresh_store = PoolStore(_TEST_SCHEMA, fresh_runtime)
-    try:
-        fresh_store.init_schema(
-            allow_destructive_cleanup=True,
-            dedicated_schema="public",
-        )
-    finally:
-        fresh_runtime.close()
-
-    with psycopg.connect(dsn) as conn:
-        for table_name in _LEGACY_TABLES:
-            exists = conn.execute(
-                """
-                SELECT EXISTS (
-                    SELECT 1 FROM information_schema.tables
-                    WHERE table_schema = 'public' AND table_name = %s
-                )
-                """,
-                [table_name],
-            ).fetchone()
-            assert exists is not None
-            assert exists[0] is False
 
 
 @pytest.mark.integration

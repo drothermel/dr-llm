@@ -14,22 +14,6 @@ from sqlalchemy.pool import QueuePool
 from dr_llm.errors import TransientPersistenceError
 
 
-_LEGACY_TABLES = (
-    "artifacts",
-    "llm_call_responses",
-    "llm_call_requests",
-    "llm_calls",
-    "run_parameters",
-    "runs",
-    "tool_call_dead_letters",
-    "tool_results",
-    "tool_calls",
-    "session_events",
-    "session_turns",
-    "sessions",
-)
-
-
 class DbConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -59,8 +43,6 @@ class DbRuntime:
             pool_pre_ping=True,
             connect_args={"application_name": self.config.application_name},
         )
-        self._legacy_cleanup_lock = threading.Lock()
-        self._legacy_cleanup_done = False
         self._engine_lock = threading.Lock()
         self._engine_opened = False
         if self.config.open_on_init:
@@ -93,17 +75,8 @@ class DbRuntime:
                 f"Failed to open connection pool after {retries} attempts: {last_exc}"
             ) from last_exc
 
-    def initialize(
-        self,
-        *,
-        allow_destructive_cleanup: bool = False,
-        dedicated_schema: str | None = None,
-    ) -> None:
+    def initialize(self) -> None:
         self.open_pool()
-        self.cleanup_legacy_tables(
-            allow_destructive_cleanup=allow_destructive_cleanup,
-            dedicated_schema=dedicated_schema,
-        )
 
     @contextmanager
     def connect(self) -> Generator[Connection, None, None]:
@@ -118,47 +91,6 @@ class DbRuntime:
         with self.engine.begin() as conn:
             self._configure_connection(conn)
             yield conn
-
-    def init_schema(
-        self,
-        *,
-        allow_destructive_cleanup: bool = False,
-        dedicated_schema: str | None = None,
-    ) -> None:
-        self.cleanup_legacy_tables(
-            allow_destructive_cleanup=allow_destructive_cleanup,
-            dedicated_schema=dedicated_schema,
-        )
-
-    def cleanup_legacy_tables(
-        self,
-        *,
-        allow_destructive_cleanup: bool = False,
-        dedicated_schema: str | None = None,
-    ) -> None:
-        if not allow_destructive_cleanup:
-            return
-        validated_schema = _validate_dedicated_schema(dedicated_schema)
-        if self._legacy_cleanup_done:
-            return
-        with self._legacy_cleanup_lock:
-            if self._legacy_cleanup_done:
-                return
-            with self.begin() as conn:
-                current_schema = conn.exec_driver_sql(
-                    "SELECT current_schema()"
-                ).scalar_one()
-                if current_schema != validated_schema:
-                    raise ValueError(
-                        "Destructive legacy cleanup requires the current schema to "
-                        f"match dedicated_schema={validated_schema!r}; "
-                        f"got {current_schema!r}"
-                    )
-                for table_name in _LEGACY_TABLES:
-                    conn.exec_driver_sql(
-                        f'DROP TABLE IF EXISTS "{validated_schema}"."{table_name}" CASCADE'
-                    )
-            self._legacy_cleanup_done = True
 
     def _configure_connection(self, conn: Connection) -> None:
         if self.config.statement_timeout_ms is None:
@@ -176,11 +108,3 @@ def _sqlalchemy_dsn(dsn: str) -> str:
     return url.set(drivername=f"{url.drivername}+psycopg").render_as_string(
         hide_password=False
     )
-
-
-def _validate_dedicated_schema(dedicated_schema: str | None) -> str:
-    if dedicated_schema is None or not dedicated_schema.strip():
-        raise ValueError(
-            "Destructive legacy cleanup requires a non-empty dedicated_schema"
-        )
-    return dedicated_schema.strip()
