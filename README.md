@@ -100,14 +100,14 @@ from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.llm_pool_adapter import make_llm_process_fn
 from dr_llm.pool.pending.backend import PoolPendingBackend, PoolPendingBackendConfig
 from dr_llm.pool.pending.fill_pending import seed_pending
-from dr_llm.project.project_info import ProjectInfo
+from dr_llm.project.project_service import create_project
 from dr_llm.llm import build_default_registry
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import Message
 from dr_llm.workers import WorkerConfig, start_workers
 
 # 1. Create a Docker-managed Postgres project
-project = ProjectInfo.create_new("my_eval")
+project = create_project("my_eval")
 
 # 2. Define pool schema — keys are IDs, not raw values
 schema = PoolSchema(
@@ -205,7 +205,7 @@ dr-llm project list
 dr-llm project use NAME
 dr-llm project start|stop NAME
 dr-llm project backup NAME
-dr-llm project restore NAME BACKUP_PATH
+dr-llm project restore NAME BACKUP_PATH  # BACKUP_PATH must be .sql.gz
 dr-llm project destroy NAME --yes-really-delete-everything
 ```
 

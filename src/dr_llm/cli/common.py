@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, ParamSpec, TypeVar
 
 import typer
 from pydantic import ValidationError
@@ -14,9 +16,29 @@ from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogSyncResult
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.config import ProviderAvailabilityStatus
 
+P = ParamSpec("P")
+R = TypeVar("R")
+
 
 def _emit(payload: Any) -> None:
     typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+
+
+def handle_cli_errors(
+    *handled_errors: type[Exception],
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(func)
+        def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+            try:
+                return func(*args, **kwargs)
+            except handled_errors as exc:
+                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=1) from exc
+
+        return wrapped
+
+    return decorator
 
 
 def _provider_requirements_text(status: ProviderAvailabilityStatus) -> str:

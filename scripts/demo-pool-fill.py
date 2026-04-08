@@ -6,7 +6,7 @@ Usage:
   uv run python scripts/demo-pool-fill.py --dsn postgresql://postgres:postgres@localhost:5433/dr_llm_test
 
 When no --dsn is provided, the script auto-creates a Docker-managed Postgres
-project via ProjectInfo, runs the demo, and destroys it on exit.
+project via project_service, runs the demo, and destroys it on exit.
 
 The demo:
   - Defines reasoning-valid LlmConfig instances for OpenAI and Google
@@ -44,6 +44,7 @@ from dr_llm.pool.pending.backend import (
 from dr_llm.pool.pending.fill_pending import seed_pending
 from dr_llm.pool.sample_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
+from dr_llm.project.project_service import create_project, destroy_project
 from dr_llm.workers import WorkerConfig, WorkerSnapshot, start_workers
 
 app = typer.Typer()
@@ -221,14 +222,14 @@ def main(
     project: ProjectInfo | None = None
     try:
         print(f"Creating temporary project '{project_name}'...")
-        project = ProjectInfo.create_new(project_name)
+        project = create_project(project_name)
         assert project.dsn is not None
         print(f"Postgres ready at {project.dsn}")
         _run_demo(project.dsn, pool_name, num_workers, samples_per_cell)
     finally:
         if project is not None:
             print(f"Destroying temporary project '{project_name}'...")
-            project.destroy()
+            destroy_project(project_name)
 
 
 if __name__ == "__main__":
