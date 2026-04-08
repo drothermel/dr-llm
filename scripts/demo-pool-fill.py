@@ -13,6 +13,8 @@ The demo:
   - Defines short prompts as Message lists
   - Seeds the (llm_config x prompt) cross product into the pending queue
     using ``seed_llm_grid``
+  - Shuffles the pending priorities so workers interleave across providers
+    instead of draining the queue in cross-product order
   - Starts background workers using ``make_llm_process_fn`` (real LLM calls)
   - Drains the queue with ``drain``, printing progress on visible state changes
 """
@@ -108,7 +110,12 @@ def _build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
 
 
 def _run_demo(
-    dsn: str, pool_name: str, num_workers: int, samples_per_cell: int
+    dsn: str,
+    pool_name: str,
+    num_workers: int,
+    samples_per_cell: int,
+    shuffle: bool,
+    shuffle_seed: int | None,
 ) -> None:
     schema = PoolSchema.from_axis_names(pool_name, ["llm_config", "prompt"])
     runtime = DbRuntime(DbConfig(dsn=dsn))
@@ -128,6 +135,11 @@ def _run_demo(
             f"Seeded {seed_result.inserted} pending rows"
             f" (skipped {seed_result.skipped} existing rows)"
         )
+
+        if shuffle:
+            shuffled = store.pending.shuffle_priorities(seed=shuffle_seed)
+            seed_note = f" (seed={shuffle_seed})" if shuffle_seed is not None else ""
+            print(f"Shuffled priorities for {shuffled} pending rows{seed_note}")
 
         controller = start_workers(
             PoolPendingBackend(
@@ -202,9 +214,33 @@ def main(
             help="Number of samples to queue for each (llm_config, prompt) cell."
         ),
     ] = 1,
+    shuffle: Annotated[
+        bool,
+        typer.Option(
+            "--shuffle/--no-shuffle",
+            help=(
+                "Shuffle pending priorities after seeding so workers "
+                "interleave across providers instead of draining the queue "
+                "in cross-product order."
+            ),
+        ),
+    ] = True,
+    shuffle_seed: Annotated[
+        int | None,
+        typer.Option(
+            help="Optional seed for reproducible shuffles. Ignored when --no-shuffle."
+        ),
+    ] = None,
 ) -> None:
     if dsn is not None:
-        _run_demo(dsn, pool_name, num_workers, samples_per_cell)
+        _run_demo(
+            dsn,
+            pool_name,
+            num_workers,
+            samples_per_cell,
+            shuffle,
+            shuffle_seed,
+        )
         return
 
     # Auto-manage a Docker Postgres project
@@ -220,7 +256,14 @@ def main(
         project = create_project(project_name)
         assert project.dsn is not None
         print(f"Postgres ready at {project.dsn}")
-        _run_demo(project.dsn, pool_name, num_workers, samples_per_cell)
+        _run_demo(
+            project.dsn,
+            pool_name,
+            num_workers,
+            samples_per_cell,
+            shuffle,
+            shuffle_seed,
+        )
     finally:
         if project is not None:
             print(f"Destroying temporary project '{project_name}'...")
