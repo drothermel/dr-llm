@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 from collections.abc import Iterator
 from typing import Any
 
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Table,
     Text,
     and_,
+    bindparam,
     exists,
     func,
     literal,
@@ -322,6 +324,81 @@ class PendingStore:
         with self._runtime.begin() as conn:
             result = conn.execute(stmt)
             return result.rowcount or 0
+
+    def shuffle_priorities(
+        self,
+        *,
+        seed: int | None = None,
+        key_filter: dict[str, Any] | None = None,
+        upper_bound: int = 1_000_000_000,
+    ) -> int:
+        """Assign each pending row a uniformly random priority.
+
+        Use to break up insertion-order claim patterns so workers
+        interleave across providers/cells instead of draining the front
+        of the queue in cross-product order. Only touches rows whose
+        ``status`` is ``pending`` — leased rows are currently being
+        worked on and aren't reorderable from this side.
+
+        Workers claim rows by ``ORDER BY priority DESC, created_at ASC``,
+        so overwriting the priority column with random values reorders
+        the queue immediately on the next ``claim`` call.
+
+        Reproducibility: when ``seed`` is provided, pending_ids are
+        listed in sorted order and each one is assigned a value drawn
+        from ``random.Random(seed)``. The same set of pending_ids plus
+        the same seed always produces the same priority mapping. We
+        deliberately do **not** use Postgres's ``setseed`` + ``random()``
+        because the planner is free to evaluate ``random()`` in any row
+        order across runs, which produces a *different* random-value
+        permutation across rows even when the seed is identical.
+
+        Args:
+            seed: When provided, the per-row assignment is reproducible.
+            key_filter: Optional partial-key filter; only pending rows
+                matching the filter are shuffled. None shuffles every
+                pending row in the pool.
+            upper_bound: Upper bound on the random priority range
+                (exclusive). Default of 1e9 gives essentially no ties
+                while staying well within int4 range.
+
+        Returns:
+            Number of pending rows that were updated.
+        """
+        if upper_bound < 1:
+            raise ValueError(f"upper_bound must be >= 1, got {upper_bound}")
+
+        predicates: list[Any] = [
+            self._pending.c.status == PendingStatus.pending,
+        ]
+        partial_filter = partial_key_filter_clause(
+            self._schema, self._pending, key_filter
+        )
+        if partial_filter is not None:
+            predicates.append(partial_filter)
+
+        select_pending_ids = (
+            select(self._pending.c.pending_id)
+            .where(*predicates)
+            .order_by(self._pending.c.pending_id.asc())
+        )
+        update_one = (
+            update(self._pending)
+            .where(self._pending.c.pending_id == bindparam("b_pending_id"))
+            .values(priority=bindparam("b_priority"))
+        )
+
+        rng = random.Random(seed)
+        with self._runtime.begin() as conn:
+            pending_ids = [row[0] for row in conn.execute(select_pending_ids)]
+            if not pending_ids:
+                return 0
+            assignments = [
+                {"b_pending_id": pid, "b_priority": rng.randrange(upper_bound)}
+                for pid in pending_ids
+            ]
+            conn.execute(update_one, assignments)
+        return len(pending_ids)
 
     def bulk_load(
         self, *, key_filter: dict[str, Any] | None = None

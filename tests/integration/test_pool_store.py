@@ -428,6 +428,86 @@ def test_bump_pending_priority(pool_store: PoolStore) -> None:
     assert updated == 1
 
 
+@pytest.mark.integration
+def test_shuffle_priorities_randomizes_pending_rows(
+    pool_store: PoolStore,
+) -> None:
+    samples = [
+        _pending(dim_a="shuf", dim_b=1, sample_idx=i, priority=0) for i in range(20)
+    ]
+    pool_store.pending.insert_many(samples)
+
+    updated = pool_store.pending.shuffle_priorities(
+        key_filter={"dim_a": "shuf"}
+    )
+    assert updated == 20
+
+    rows = pool_store.pending.bulk_load(key_filter={"dim_a": "shuf"})
+    priorities = [row.priority for row in rows]
+    # With a 1e9 upper bound and 20 rows, ties should be vanishingly rare.
+    assert len(set(priorities)) >= 18
+
+
+@pytest.mark.integration
+def test_shuffle_priorities_skips_leased_rows(pool_store: PoolStore) -> None:
+    samples = [
+        _pending(dim_a="shufleased", dim_b=1, sample_idx=i, priority=0)
+        for i in range(4)
+    ]
+    pool_store.pending.insert_many(samples)
+
+    leased = pool_store.pending.claim(
+        worker_id="w-shuffle",
+        lease_seconds=60,
+        key_filter={"dim_a": "shufleased"},
+    )
+    assert leased is not None
+
+    updated = pool_store.pending.shuffle_priorities(
+        key_filter={"dim_a": "shufleased"}
+    )
+    # 3 of 4 rows are still pending; the 1 leased row is skipped.
+    assert updated == 3
+
+    leased_row = next(
+        row
+        for row in pool_store.pending.bulk_load(
+            key_filter={"dim_a": "shufleased"}
+        )
+        if row.pending_id == leased.pending_id
+    )
+    assert leased_row.priority == 0
+
+
+@pytest.mark.integration
+def test_shuffle_priorities_is_reproducible_with_seed(
+    pool_store: PoolStore,
+) -> None:
+    samples = [
+        _pending(dim_a="shufseed", dim_b=1, sample_idx=i, priority=0)
+        for i in range(10)
+    ]
+    pool_store.pending.insert_many(samples)
+
+    pool_store.pending.shuffle_priorities(
+        seed=42, key_filter={"dim_a": "shufseed"}
+    )
+    first_pass = {
+        row.pending_id: row.priority
+        for row in pool_store.pending.bulk_load(key_filter={"dim_a": "shufseed"})
+    }
+
+    pool_store.pending.shuffle_priorities(
+        seed=42, key_filter={"dim_a": "shufseed"}
+    )
+    second_pass = {
+        row.pending_id: row.priority
+        for row in pool_store.pending.bulk_load(key_filter={"dim_a": "shufseed"})
+    }
+
+    assert first_pass == second_pass
+
+
 # --- Metadata ---
 
 
