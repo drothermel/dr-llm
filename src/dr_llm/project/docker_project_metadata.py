@@ -43,6 +43,14 @@ class DockerProjectMetadata(BaseModel):
     status: ContainerStatus = ContainerStatus.UNKNOWN
 
     @classmethod
+    def inspect_format(cls) -> str:
+        return (
+            "{{json .Config.Labels}}"
+            f"{cls.inspect_delimiter}"
+            "{{json .State.Status}}"
+        )
+
+    @classmethod
     def from_inspect_output(
         cls,
         raw: str,

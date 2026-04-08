@@ -12,6 +12,7 @@ import dr_llm.project.docker as docker_module
 from dr_llm.project.docker_project_metadata import (
     ContainerStatus,
     DockerProjectCreateMetadata,
+    DockerProjectMetadata,
 )
 from dr_llm.project.errors import DockerUnavailableError
 from dr_llm.project.errors import (
@@ -275,7 +276,7 @@ def test_get_docker_project_metadata_raises_docker_unavailable(
         assert args == (
             "inspect",
             "--format",
-            "{{json .Config.Labels}}||{{json .State.Status}}",
+            DockerProjectMetadata.inspect_format(),
             "demo",
         )
         return subprocess.CompletedProcess(
@@ -331,7 +332,7 @@ def test_get_docker_project_metadata_parses_datetime_created_at(
         assert args == (
             "inspect",
             "--format",
-            "{{json .Config.Labels}}||{{json .State.Status}}",
+            DockerProjectMetadata.inspect_format(),
             "demo",
         )
         return subprocess.CompletedProcess(

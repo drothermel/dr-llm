@@ -196,7 +196,7 @@ def get_docker_project_metadata(
     args = (
         "inspect",
         "--format",
-        "{{json .Config.Labels}}||{{json .State.Status}}",
+        DockerProjectMetadata.inspect_format(),
         container_name,
     )
     result = _run_or_error(*args, check_return=False)
