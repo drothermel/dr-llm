@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from enum import StrEnum
 from typing import ClassVar
 
@@ -33,7 +34,7 @@ class DockerProjectMetadata(BaseModel):
 
     name: str
     port: int | None = None
-    created_at: str | None = None
+    created_at: datetime | None = None
     status: ContainerStatus = ContainerStatus.UNKNOWN
 
     @classmethod
@@ -55,10 +56,10 @@ class DockerProjectMetadata(BaseModel):
         *,
         label_prefix: str,
     ) -> DockerProjectMetadata:
-        labels, status = cls._parse_inspect_output(raw)
+        labels_raw, status_raw = raw.split(cls.inspect_delimiter, 1)
         return cls.from_labels_status(
-            labels=labels,
-            status=status,
+            labels=json.loads(labels_raw),
+            status=json.loads(status_raw) if status_raw else None,
             label_prefix=label_prefix,
         )
 
@@ -73,24 +74,25 @@ class DockerProjectMetadata(BaseModel):
         return cls(
             name=labels[cls.name_key(label_prefix)],
             port=cls._parse_port(labels.get(cls.port_key(label_prefix))),
-            created_at=labels.get(cls.created_at_key(label_prefix)),
+            created_at=cls._parse_created_at(
+                labels.get(cls.created_at_key(label_prefix))
+            ),
             status=ContainerStatus.from_docker(status)
             if status
-            else ContainerStatus.default(),
+            else ContainerStatus.UNKNOWN,
         )
-
-    @classmethod
-    def _parse_inspect_output(cls, raw: str) -> tuple[dict[str, str], str | None]:
-        labels_raw, status_raw = raw.split(cls.inspect_delimiter, 1)
-        labels = json.loads(labels_raw)
-        status = json.loads(status_raw) if status_raw else None
-        return labels, status
 
     @staticmethod
     def _parse_port(value: str | None) -> int | None:
         if value is None or value == "":
             return None
         return int(value)
+
+    @staticmethod
+    def _parse_created_at(value: str | None) -> datetime | None:
+        if value is None or value == "":
+            return None
+        return datetime.fromisoformat(value)
 
 
 class DockerProjectCreateMetadata(BaseModel):
@@ -99,7 +101,7 @@ class DockerProjectCreateMetadata(BaseModel):
     label_prefix: str
     name: str
     port: int
-    created_at: str
+    created_at: datetime
 
     def docker_run_args(self) -> list[str]:
         return [
@@ -110,5 +112,5 @@ class DockerProjectCreateMetadata(BaseModel):
             "--label",
             f"{DockerProjectMetadata.port_key(self.label_prefix)}={self.port}",
             "--label",
-            f"{DockerProjectMetadata.created_at_key(self.label_prefix)}={self.created_at}",
+            f"{DockerProjectMetadata.created_at_key(self.label_prefix)}={self.created_at.isoformat()}",
         ]

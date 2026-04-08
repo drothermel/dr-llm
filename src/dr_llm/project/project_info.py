@@ -62,7 +62,7 @@ class ProjectInfo(BaseModel):
     name: str
     port: int | None = None
     status: ContainerStatus = ContainerStatus.UNKNOWN
-    created_at: str | None = None
+    created_at: datetime | None = None
 
     @computed_field
     @property
@@ -139,7 +139,7 @@ class ProjectInfo(BaseModel):
             for metadata in get_all_docker_project_metadata(cls.label_prefix)
             if metadata.port is not None
         }
-        created_at = datetime.now(UTC).isoformat()
+        created_at = datetime.now(UTC)
 
         while True:
             port = _find_available_port(claimed_ports)

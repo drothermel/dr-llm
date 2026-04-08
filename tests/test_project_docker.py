@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import os
 import subprocess
+from datetime import UTC, datetime
 from typing import IO, cast
 
 import pytest
@@ -310,12 +311,63 @@ def test_get_docker_project_metadata_returns_none_for_missing_container(
     )
 
 
+def test_parse_docker_labels_parses_docker_ps_label_string() -> None:
+    labels = docker_module.parse_docker_labels(
+        "dr-llm.project.created-at=2026-04-07T12:34:56+00:00,"
+        "dr-llm.project.name=demo,dr-llm.project.port=5500"
+    )
+
+    assert labels == {
+        "dr-llm.project.created-at": "2026-04-07T12:34:56+00:00",
+        "dr-llm.project.name": "demo",
+        "dr-llm.project.port": "5500",
+    }
+
+
+def test_get_docker_project_metadata_parses_datetime_created_at(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_at = datetime(2026, 4, 7, 12, 34, 56, tzinfo=UTC)
+
+    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        _ = check
+        assert args == (
+            "inspect",
+            "--format",
+            "{{json .Config.Labels}}||{{json .State.Status}}",
+            "demo",
+        )
+        return subprocess.CompletedProcess(
+            args=["docker", *args],
+            returncode=0,
+            stdout=(
+                '{"dr-llm.project.name":"demo","dr-llm.project.port":"5500",'
+                f'"dr-llm.project.created-at":"{created_at.isoformat()}"}}||"running"'
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+
+    metadata = docker_module.get_docker_project_metadata(
+        "demo",
+        label_prefix="dr-llm.project",
+    )
+
+    assert metadata is not None
+    assert metadata.name == "demo"
+    assert metadata.port == 5500
+    assert metadata.created_at == created_at
+    assert metadata.status == ContainerStatus.RUNNING
+
+
 def test_docker_project_create_metadata_builds_expected_run_args() -> None:
+    created_at = datetime(2026, 4, 7, 12, 34, 56, tzinfo=UTC)
     project = DockerProjectCreateMetadata(
         label_prefix="dr-llm.project",
         name="demo",
         port=5500,
-        created_at="2026-04-07T12:34:56+00:00",
+        created_at=created_at,
     )
 
     assert project.docker_run_args() == [
@@ -326,7 +378,7 @@ def test_docker_project_create_metadata_builds_expected_run_args() -> None:
         "--label",
         "dr-llm.project.port=5500",
         "--label",
-        "dr-llm.project.created-at=2026-04-07T12:34:56+00:00",
+        f"dr-llm.project.created-at={created_at.isoformat()}",
     ]
 
 
@@ -358,6 +410,7 @@ def test_create_project_container_uses_project_metadata_and_restores_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     observed: dict[str, object] = {}
+    created_at = datetime(2026, 4, 7, 12, 34, 56, tzinfo=UTC)
     monkeypatch.setenv("POSTGRES_PASSWORD", "outer")
 
     def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -384,7 +437,7 @@ def test_create_project_container_uses_project_metadata_and_restores_env(
             label_prefix="dr-llm.project",
             name="demo",
             port=5500,
-            created_at="2026-04-07T12:34:56+00:00",
+            created_at=created_at,
         ),
     )
 
@@ -409,7 +462,7 @@ def test_create_project_container_uses_project_metadata_and_restores_env(
             "--label",
             "dr-llm.project.port=5500",
             "--label",
-            "dr-llm.project.created-at=2026-04-07T12:34:56+00:00",
+            f"dr-llm.project.created-at={created_at.isoformat()}",
             "postgres:16",
         ),
         "check": True,

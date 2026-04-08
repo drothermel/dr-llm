@@ -29,7 +29,6 @@ _VALID_PG_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 def _validate_pg_identifier(name: str, label: str = "identifier") -> str:
-    """Validate a string is safe for use as a PostgreSQL identifier."""
     if not _VALID_PG_IDENTIFIER.match(name):
         raise ValueError(
             f"Invalid PostgreSQL {label}: {name!r} "
@@ -423,13 +422,8 @@ def call_docker_pg_dump_stream(
 
 
 def parse_docker_labels(raw: str) -> dict[str, str]:
-    raw = raw.strip()
-    if raw.startswith("{"):
-        return json.loads(raw)
-    if raw.startswith('"'):
-        raw = json.loads(raw)
     labels: dict[str, str] = {}
-    for pair in raw.split(","):
+    for pair in raw.strip().split(","):
         k, _, v = pair.partition("=")
         labels[k.strip()] = v.strip()
     return labels
