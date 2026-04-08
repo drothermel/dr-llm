@@ -149,9 +149,7 @@ def test_drain_returns_idle_snapshot_and_skips_sleep_at_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     sleep_calls: list[float] = []
-    monkeypatch.setattr(
-        progress_module.time, "sleep", lambda s: sleep_calls.append(s)
-    )
+    monkeypatch.setattr(progress_module.time, "sleep", sleep_calls.append)
 
     snapshots = [
         _snapshot(

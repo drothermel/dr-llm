@@ -76,10 +76,12 @@ def wait_dsn_ready(
     last_error: psycopg.OperationalError | None = None
     while True:
         try:
-            with psycopg.connect(dsn, connect_timeout=connect_timeout_s) as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT 1")
-                    cur.fetchone()
+            with (
+                psycopg.connect(dsn, connect_timeout=connect_timeout_s) as conn,
+                conn.cursor() as cur,
+            ):
+                cur.execute("SELECT 1")
+                cur.fetchone()
             return
         except psycopg.OperationalError as exc:
             last_error = exc
