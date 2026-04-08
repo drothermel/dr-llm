@@ -182,7 +182,6 @@ def wait_docker_ready(
             check=False,
         )
         if result.returncode == 0:
-            sleep(1)
             return ContainerStatus.RUNNING
         sleep(1)
     raise RuntimeError(

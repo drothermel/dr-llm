@@ -86,6 +86,38 @@ def test_call_docker_stop_is_idempotent_for_stopped_container(
     docker_module.call_docker_stop("demo")
 
 
+def test_wait_docker_ready_returns_immediately_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleep_calls: list[int] = []
+
+    def fake_call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        _ = check
+        assert args == (
+            "exec",
+            "demo",
+            "pg_isready",
+            "-U",
+            "postgres",
+            "-d",
+            "dr_llm",
+        )
+        return subprocess.CompletedProcess(
+            args=["docker", *args],
+            returncode=0,
+            stdout="accepting connections",
+            stderr="",
+        )
+
+    monkeypatch.setattr(docker_module, "call_docker", fake_call_docker)
+    monkeypatch.setattr(docker_module, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    status = docker_module.wait_docker_ready("demo", "postgres", "dr_llm")
+
+    assert status == docker_module.ContainerStatus.RUNNING
+    assert sleep_calls == []
+
+
 def test_call_docker_destroy_attempts_volume_cleanup_before_raising(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
