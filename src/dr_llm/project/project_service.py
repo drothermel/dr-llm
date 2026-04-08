@@ -25,6 +25,7 @@ from dr_llm.project.docker_project_metadata import (
 from dr_llm.project.docker_psql import (
     call_docker_pg_dump_stream,
     docker_swap_in_db,
+    validate_pg_identifier,
 )
 from dr_llm.project.errors import (
     DockerContainerConflictError,
@@ -41,6 +42,8 @@ DOCKER_IMAGE = "postgres:16"
 DEFAULT_BACKUP_DIR = Path.home() / ".dr-llm" / "backups"
 BASE_PORT = 5500
 PORT_PROBE_TIMEOUT_SECONDS = 0.05
+
+validate_pg_identifier(ProjectInfo.db_name, "database name")
 
 
 def _port_has_listener(port: int) -> bool:
@@ -77,8 +80,7 @@ def _project_from_metadata(metadata: DockerProjectMetadata) -> ProjectInfo:
 
 
 def maybe_get_project(name: str) -> ProjectInfo | None:
-    handle = ProjectInfo(name=name)
-    metadata = get_docker_project_metadata(handle.container_name)
+    metadata = get_docker_project_metadata(ProjectInfo.container_name_for(name))
     if metadata is None:
         return None
     return _project_from_metadata(metadata)
@@ -97,8 +99,8 @@ def list_projects() -> list[ProjectInfo]:
 
 def create_project(name: str) -> ProjectInfo:
     project = _allocate_port_and_create_container(name)
-    project.status = _wait_ready_or_destroy(project)
-    return project
+    status = _wait_ready_or_destroy(project)
+    return project.model_copy(update={"status": status})
 
 
 def _allocate_port_and_create_container(name: str) -> ProjectInfo:
@@ -162,11 +164,11 @@ def _destroy_noting_cleanup_failure(
 
 
 def start_project(name: str) -> ProjectInfo:
-    handle = ProjectInfo(name=name)
+    container_name = ProjectInfo.container_name_for(name)
     try:
-        call_docker_start(handle.container_name)
+        call_docker_start(container_name)
         wait_docker_ready(
-            container_name=handle.container_name,
+            container_name=container_name,
             db_user=ProjectInfo.db_user,
             db_name=ProjectInfo.db_name,
         )
@@ -176,23 +178,23 @@ def start_project(name: str) -> ProjectInfo:
 
 
 def stop_project(name: str) -> None:
-    handle = ProjectInfo(name=name)
     try:
-        call_docker_stop(handle.container_name)
+        call_docker_stop(ProjectInfo.container_name_for(name))
     except DockerContainerNotFoundError as exc:
         raise ProjectNotFoundError(f"Project '{name}' not found") from exc
 
 
 def destroy_project(name: str) -> None:
-    handle = ProjectInfo(name=name)
     try:
-        call_docker_destroy(handle.container_name, handle.volume_name)
+        call_docker_destroy(
+            ProjectInfo.container_name_for(name),
+            ProjectInfo.volume_name_for(name),
+        )
     except DockerContainerNotFoundError as exc:
         raise ProjectNotFoundError(f"Project '{name}' not found") from exc
 
 
 def backup_project(name: str, output_dir: Path | None = None) -> Path:
-    handle = ProjectInfo(name=name)
     backup_dir = (output_dir or DEFAULT_BACKUP_DIR) / name
     backup_dir.mkdir(parents=True, exist_ok=True)
 
@@ -203,10 +205,10 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
         with gzip.open(backup_file, "wb") as backup_stream:
             try:
                 call_docker_pg_dump_stream(
-                    container_name=handle.container_name,
+                    container_name=ProjectInfo.container_name_for(name),
                     db_user=ProjectInfo.db_user,
                     db_name=ProjectInfo.db_name,
-                    output_stream=backup_stream,  # type: ignore[arg-type]
+                    output_stream=backup_stream,
                 )
             except DockerContainerNotFoundError as exc:
                 raise ProjectNotFoundError(f"Project '{name}' not found") from exc
@@ -223,14 +225,15 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
 
 def restore_project(name: str, backup_file: Path) -> None:
     if backup_file.suffixes[-2:] != [".sql", ".gz"]:
-        raise ValueError("Restore only supports gzip-compressed SQL backups (.sql.gz).")
+        raise ProjectError(
+            "Restore only supports gzip-compressed SQL backups (.sql.gz)."
+        )
 
-    handle = ProjectInfo(name=name)
     with gzip.open(backup_file, "rb") as sql_stream:
         try:
             docker_swap_in_db(
-                sql_stream=sql_stream,  # type: ignore[arg-type]
-                container_name=handle.container_name,
+                sql_stream=sql_stream,
+                container_name=ProjectInfo.container_name_for(name),
                 db_user=ProjectInfo.db_user,
                 target_db_name=ProjectInfo.db_name,
             )

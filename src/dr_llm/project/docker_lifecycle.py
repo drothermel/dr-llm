@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from time import sleep
 
 from dr_llm.project.docker_project_metadata import (
@@ -7,10 +8,9 @@ from dr_llm.project.docker_project_metadata import (
     DockerProjectCreateMetadata,
 )
 from dr_llm.project.docker_runner import (
-    _docker_error,
-    _run_or_error,
-    _temp_environ,
     call_docker,
+    docker_error,
+    run_or_error,
 )
 from dr_llm.project.errors import (
     DockerCommandError,
@@ -35,10 +35,10 @@ def wait_docker_ready(
         db_name,
     )
     for _ in range(timeout_seconds):
-        result = _run_or_error(*args, check_return=False)
+        result = run_or_error(*args, check_return=False)
         if result.returncode == 0:
             return ContainerStatus.RUNNING
-        error = _docker_error(args, result.stderr.strip())
+        error = docker_error(args, result.stderr.strip())
         if isinstance(error, (DockerContainerNotFoundError, DockerUnavailableError)):
             raise error
         sleep(1)
@@ -72,32 +72,31 @@ def create_project_container(
     ]
     docker_cmd.extend(project.docker_run_args())
     docker_cmd.append(docker_image)
-    with _temp_environ(POSTGRES_PASSWORD=db_password):
-        call_docker(*docker_cmd)
+    call_docker(*docker_cmd, env=os.environ | {"POSTGRES_PASSWORD": db_password})
 
 
 def call_docker_start(container_name: str) -> None:
     args = ("start", container_name)
-    result = _run_or_error(*args, check_return=False)
+    result = run_or_error(*args, check_return=False)
     if result.returncode == 0 or "already running" in result.stderr.lower():
         return
-    raise _docker_error(args, result.stderr.strip())
+    raise docker_error(args, result.stderr.strip())
 
 
 def call_docker_stop(container_name: str) -> None:
     args = ("stop", container_name)
-    result = _run_or_error(*args, check_return=False)
+    result = run_or_error(*args, check_return=False)
     if result.returncode == 0 or "is not running" in result.stderr.lower():
         return
-    raise _docker_error(args, result.stderr.strip())
+    raise docker_error(args, result.stderr.strip())
 
 
 def call_docker_destroy(container_name: str, volume_name: str) -> None:
     remove_container = call_docker("rm", "-f", container_name, check=False)
     remove_volume = call_docker("volume", "rm", volume_name, check=False)
     if remove_container.returncode != 0:
-        raise _docker_error(
+        raise docker_error(
             ("rm", "-f", container_name), remove_container.stderr.strip()
         )
     if remove_volume.returncode != 0:
-        raise _docker_error(("volume", "rm", volume_name), remove_volume.stderr.strip())
+        raise docker_error(("volume", "rm", volume_name), remove_volume.stderr.strip())

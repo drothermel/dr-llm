@@ -4,7 +4,7 @@ import io
 import os
 import subprocess
 from datetime import UTC, datetime
-from typing import IO, cast
+from typing import cast
 
 import pytest
 
@@ -62,7 +62,7 @@ def test_docker_error_maps_common_failures(
     expected_type: type[Exception],
     expected_message: str,
 ) -> None:
-    err = docker_runner._docker_error(("ps",), stderr)
+    err = docker_runner.docker_error(("ps",), stderr)
 
     assert isinstance(err, expected_type)
     assert str(err) == expected_message
@@ -78,12 +78,14 @@ def test_call_docker_uses_text_mode(
         capture_output: bool,
         text: bool,
         check: bool,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         assert args == ["docker", "ps"]
         assert input is None
         assert capture_output is True
         assert text is True
         assert check is False
+        assert env is None
         return subprocess.CompletedProcess(
             args=args,
             returncode=0,
@@ -108,12 +110,14 @@ def test_call_docker_bytes_uses_binary_mode_and_forwards_input(
         capture_output: bool,
         text: bool,
         check: bool,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         assert args == ["docker", "exec", "demo", "psql"]
         assert input == b"select 1;\n"
         assert capture_output is True
         assert text is False
         assert check is False
+        assert env is None
         return subprocess.CompletedProcess(
             args=args,
             returncode=0,
@@ -145,8 +149,9 @@ def test_call_docker_bytes_decodes_stderr_before_mapping_error(
         capture_output: bool,
         text: bool,
         check: bool,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
-        _ = (input, capture_output, text, check)
+        _ = (input, capture_output, text, check, env)
         return subprocess.CompletedProcess(
             args=args,
             returncode=1,
@@ -160,7 +165,7 @@ def test_call_docker_bytes_decodes_stderr_before_mapping_error(
         return DockerCommandError("boom")
 
     monkeypatch.setattr(docker_runner.subprocess, "run", fake_run)
-    monkeypatch.setattr(docker_runner, "_docker_error", fake_docker_error)
+    monkeypatch.setattr(docker_runner, "docker_error", fake_docker_error)
 
     with pytest.raises(DockerCommandError, match="boom"):
         docker_runner.call_docker_bytes("exec", "demo", "psql")
@@ -371,7 +376,7 @@ def test_get_all_docker_project_metadata_inspects_each_listed_container(
         return subprocess.CompletedProcess(
             args=["docker", *args],
             returncode=0,
-            stdout=f'{labels}||"running"',
+            stdout=f'[{labels},"running"]',
             stderr="",
         )
 
@@ -431,8 +436,8 @@ def test_get_docker_project_metadata_parses_datetime_created_at(
             args=["docker", *args],
             returncode=0,
             stdout=(
-                '{"dr-llm.project.name":"demo","dr-llm.project.port":"5500",'
-                f'"dr-llm.project.created-at":"{created_at.isoformat()}"}}||"running"'
+                '[{"dr-llm.project.name":"demo","dr-llm.project.port":"5500",'
+                f'"dr-llm.project.created-at":"{created_at.isoformat()}"}},"running"]'
             ),
             stderr="",
         )
@@ -487,43 +492,22 @@ def test_docker_project_metadata_round_trips_create_labels() -> None:
     assert metadata.status == ContainerStatus.RUNNING
 
 
-def test_temp_environ_sets_and_restores_missing_env_var(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
-
-    with docker_runner._temp_environ(POSTGRES_PASSWORD="secret"):
-        assert os.environ["POSTGRES_PASSWORD"] == "secret"
-
-    assert "POSTGRES_PASSWORD" not in os.environ
-
-
-def test_temp_environ_restores_previous_env_var_after_exception(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("POSTGRES_PASSWORD", "original")
-
-    with pytest.raises(RuntimeError, match="boom"):
-        with docker_runner._temp_environ(POSTGRES_PASSWORD="secret"):
-            assert os.environ["POSTGRES_PASSWORD"] == "secret"
-            raise RuntimeError("boom")
-
-    assert os.environ["POSTGRES_PASSWORD"] == "original"
-
-
-def test_create_project_container_uses_project_metadata_and_restores_env(
+def test_create_project_container_passes_password_via_subprocess_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     observed: dict[str, object] = {}
     created_at = datetime(2026, 4, 7, 12, 34, 56, tzinfo=UTC)
     monkeypatch.setenv("POSTGRES_PASSWORD", "outer")
+    monkeypatch.setenv("UNRELATED_VAR", "from-parent")
 
     def fake_call_docker(
-        *args: str, check: bool = True
+        *args: str,
+        check: bool = True,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         observed["args"] = args
         observed["check"] = check
-        observed["password"] = os.environ["POSTGRES_PASSWORD"]
+        observed["env"] = env
         return subprocess.CompletedProcess(
             args=["docker", *args],
             returncode=0,
@@ -547,34 +531,64 @@ def test_create_project_container_uses_project_metadata_and_restores_env(
         ),
     )
 
-    assert observed == {
-        "args": (
-            "run",
-            "-d",
-            "--name",
-            "demo-container",
-            "-v",
-            "demo-volume:/var/lib/postgresql/data",
-            "-e",
-            "POSTGRES_DB=dr_llm",
-            "-e",
-            "POSTGRES_USER=postgres",
-            "-e",
-            "POSTGRES_PASSWORD",
-            "-p",
-            "5500:5432",
-            "--label",
-            "dr-llm.project.name=demo",
-            "--label",
-            "dr-llm.project.port=5500",
-            "--label",
-            f"dr-llm.project.created-at={created_at.isoformat()}",
-            "postgres:16",
-        ),
-        "check": True,
-        "password": "inner-secret",
-    }
+    assert observed["args"] == (
+        "run",
+        "-d",
+        "--name",
+        "demo-container",
+        "-v",
+        "demo-volume:/var/lib/postgresql/data",
+        "-e",
+        "POSTGRES_DB=dr_llm",
+        "-e",
+        "POSTGRES_USER=postgres",
+        "-e",
+        "POSTGRES_PASSWORD",
+        "-p",
+        "5500:5432",
+        "--label",
+        "dr-llm.project.name=demo",
+        "--label",
+        "dr-llm.project.port=5500",
+        "--label",
+        f"dr-llm.project.created-at={created_at.isoformat()}",
+        "postgres:16",
+    )
+    assert observed["check"] is True
+    env = cast(dict[str, str], observed["env"])
+    assert env["POSTGRES_PASSWORD"] == "inner-secret"
+    assert env["UNRELATED_VAR"] == "from-parent"
     assert os.environ["POSTGRES_PASSWORD"] == "outer"
+
+
+def test_call_docker_forwards_env_to_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_run(
+        args: list[str],
+        *,
+        input: bytes | None = None,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        observed["args"] = args
+        observed["env"] = env
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="ok",
+            stderr="",
+        )
+
+    monkeypatch.setattr(docker_runner.subprocess, "run", fake_run)
+
+    docker_runner.call_docker("ps", env={"FOO": "bar"})
+
+    assert observed == {"args": ["docker", "ps"], "env": {"FOO": "bar"}}
 
 
 def test_call_docker_destroy_attempts_volume_cleanup_before_raising(
@@ -651,7 +665,7 @@ def test_docker_swap_in_db_drops_temp_db_when_stream_restore_fails(
 
     with pytest.raises(RuntimeError, match="restore failed"):
         docker_psql.docker_swap_in_db(
-            sql_stream=cast(IO[bytes], io.BytesIO(b"select 1;\n")),
+            sql_stream=io.BytesIO(b"select 1;\n"),
             container_name="demo",
             db_user="postgres",
             target_db_name="dr_llm",
@@ -700,7 +714,7 @@ def test_docker_swap_in_db_creates_restores_and_swaps_temp_db(
     )
 
     docker_psql.docker_swap_in_db(
-        sql_stream=cast(IO[bytes], io.BytesIO(b"select 1;\n")),
+        sql_stream=io.BytesIO(b"select 1;\n"),
         container_name="demo",
         db_user="postgres",
         target_db_name="dr_llm",

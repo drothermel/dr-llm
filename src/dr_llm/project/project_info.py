@@ -6,11 +6,10 @@ from typing import ClassVar
 from pydantic import BaseModel, computed_field
 
 from dr_llm.project.docker_project_metadata import ContainerStatus
-from dr_llm.project.docker_psql import _validate_pg_identifier
 
 
 class ProjectInfo(BaseModel):
-    db_name: ClassVar[str] = _validate_pg_identifier("dr_llm", "database name")
+    db_name: ClassVar[str] = "dr_llm"
     db_user: ClassVar[str] = "postgres"
     db_password: ClassVar[str] = "postgres"
     container_prefix: ClassVar[str] = "dr-llm-pg-"
@@ -20,6 +19,14 @@ class ProjectInfo(BaseModel):
     port: int | None = None
     status: ContainerStatus = ContainerStatus.UNKNOWN
     created_at: datetime | None = None
+
+    @staticmethod
+    def container_name_for(name: str) -> str:
+        return f"{ProjectInfo.container_prefix}{name}"
+
+    @staticmethod
+    def volume_name_for(name: str) -> str:
+        return f"{ProjectInfo.volume_prefix}{name}"
 
     @computed_field
     @property
@@ -34,12 +41,12 @@ class ProjectInfo(BaseModel):
     @computed_field
     @property
     def volume_name(self) -> str:
-        return f"{self.volume_prefix}{self.name}"
+        return self.volume_name_for(self.name)
 
     @computed_field
     @property
     def container_name(self) -> str:
-        return f"{self.container_prefix}{self.name}"
+        return self.container_name_for(self.name)
 
     @computed_field
     @property

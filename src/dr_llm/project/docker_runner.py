@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import os
+import gzip
 import subprocess
-from collections.abc import Generator
-from contextlib import contextmanager
 from typing import IO, Literal, overload
 
 from dr_llm.project.errors import (
@@ -18,13 +16,10 @@ from dr_llm.project.errors import (
 
 STREAM_CHUNK_SIZE = 1024 * 1024
 
-
-def _docker_error_detail(stderr: str) -> str:
-    detail = stderr.strip()
-    return detail or "unknown docker error"
+BinaryStream = IO[bytes] | gzip.GzipFile
 
 
-def _docker_error(args: tuple[str, ...], stderr: str) -> ProjectError:
+def docker_error(args: tuple[str, ...], stderr: str) -> ProjectError:
     lowered = stderr.lower()
     if (
         "cannot connect to the docker daemon" in lowered
@@ -43,7 +38,7 @@ def _docker_error(args: tuple[str, ...], stderr: str) -> ProjectError:
     ):
         return DockerPortAllocatedError()
     command = " ".join(["docker", *args])
-    detail = _docker_error_detail(stderr)
+    detail = stderr.strip() or "unknown docker error"
     return DockerCommandError(f"Docker command failed: {command}\n{detail}")
 
 
@@ -53,6 +48,7 @@ def _call_docker_impl(
     check: bool,
     text: Literal[True],
     input: None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]: ...
 
 
@@ -62,6 +58,7 @@ def _call_docker_impl(
     check: bool,
     text: Literal[False],
     input: bytes | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[bytes]: ...
 
 
@@ -70,6 +67,7 @@ def _call_docker_impl(
     check: bool,
     text: bool,
     input: bytes | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
     try:
         result = subprocess.run(
@@ -78,6 +76,7 @@ def _call_docker_impl(
             capture_output=True,
             text=text,
             check=False,
+            env=env,
         )
     except FileNotFoundError as exc:
         raise DockerUnavailableError() from exc
@@ -87,12 +86,16 @@ def _call_docker_impl(
             if text
             else result.stderr.decode(errors="replace").strip()
         )
-        raise _docker_error(args, stderr)
+        raise docker_error(args, stderr)
     return result
 
 
-def call_docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return _call_docker_impl(*args, check=check, text=True)
+def call_docker(
+    *args: str,
+    check: bool = True,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return _call_docker_impl(*args, check=check, text=True, env=env)
 
 
 def call_docker_bytes(
@@ -103,39 +106,25 @@ def call_docker_bytes(
     return _call_docker_impl(*args, check=check, text=False, input=input)
 
 
-def _run_or_error(
+def run_or_error(
     *args: str,
     check_return: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     result = call_docker(*args, check=False)
     if check_return and result.returncode != 0:
-        raise _docker_error(args, result.stderr.strip())
+        raise docker_error(args, result.stderr.strip())
     return result
 
 
-def _copy_binary_stream(
-    source: IO[bytes],
-    dest: IO[bytes],
+def copy_binary_stream(
+    source: BinaryStream,
+    dest: BinaryStream,
 ) -> None:
     while chunk := source.read(STREAM_CHUNK_SIZE):
         dest.write(chunk)
 
 
-def _read_process_stderr(process: subprocess.Popen[bytes]) -> str:
+def read_process_stderr(process: subprocess.Popen[bytes]) -> str:
     if process.stderr is None:
         return ""
     return process.stderr.read().decode(errors="replace").strip()
-
-
-@contextmanager
-def _temp_environ(**updates: str) -> Generator[None, None, None]:
-    previous = {key: os.environ.get(key) for key in updates}
-    os.environ.update(updates)
-    try:
-        yield
-    finally:
-        for key, old_value in previous.items():
-            if old_value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = old_value

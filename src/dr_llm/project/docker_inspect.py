@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dr_llm.project.docker_project_metadata import DockerProjectMetadata
-from dr_llm.project.docker_runner import _docker_error, _run_or_error
+from dr_llm.project.docker_runner import docker_error, run_or_error
 from dr_llm.project.errors import DockerContainerNotFoundError
 
 
@@ -14,9 +14,9 @@ def get_docker_project_metadata(
         DockerProjectMetadata.inspect_format(),
         container_name,
     )
-    result = _run_or_error(*args, check_return=False)
+    result = run_or_error(*args, check_return=False)
     if result.returncode != 0:
-        error = _docker_error(args, result.stderr.strip())
+        error = docker_error(args, result.stderr.strip())
         if isinstance(error, DockerContainerNotFoundError):
             return None
         raise error
@@ -32,7 +32,7 @@ def _list_project_container_names() -> list[str]:
         "--format",
         "{{.Names}}",
     )
-    return [line for line in _run_or_error(*args).stdout.splitlines() if line]
+    return [line for line in run_or_error(*args).stdout.splitlines() if line]
 
 
 def get_all_docker_project_metadata() -> list[DockerProjectMetadata]:

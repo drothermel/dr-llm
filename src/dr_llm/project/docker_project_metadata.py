@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from enum import StrEnum
-from typing import ClassVar, Self
+from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict
 
@@ -25,14 +25,6 @@ class ContainerStatus(StrEnum):
         return cls.UNKNOWN
 
 
-class DockerProjectLabelFields(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    name: str
-    port: int | None
-    created_at: datetime | None
-
-
 class DockerProjectLabelMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -49,16 +41,16 @@ class DockerProjectLabelMetadata(BaseModel):
     created_at: datetime | None = None
 
     @classmethod
-    def _label_fields(cls, labels: dict[str, str]) -> DockerProjectLabelFields:
-        return DockerProjectLabelFields(
-            name=labels[cls.name_label_key],
-            port=cls._parse_port(labels.get(cls.port_label_key)),
-            created_at=cls._parse_created_at(labels.get(cls.created_at_label_key)),
-        )
+    def _label_kwargs(cls, labels: dict[str, str]) -> dict[str, Any]:
+        return {
+            "name": labels[cls.name_label_key],
+            "port": labels.get(cls.port_label_key),
+            "created_at": labels.get(cls.created_at_label_key),
+        }
 
     @classmethod
     def from_labels(cls, labels: dict[str, str]) -> Self:
-        return cls(**cls._label_fields(labels).model_dump())
+        return cls(**cls._label_kwargs(labels))
 
     def to_labels(self) -> dict[str, str]:
         labels = {self.name_label_key: self.name}
@@ -68,42 +60,18 @@ class DockerProjectLabelMetadata(BaseModel):
             labels[self.created_at_label_key] = self.created_at.isoformat()
         return labels
 
-    @staticmethod
-    def _parse_port(value: str | None) -> int | None:
-        if value is None or value == "":
-            return None
-        return int(value)
-
-    @staticmethod
-    def _parse_created_at(value: str | None) -> datetime | None:
-        if value is None or value == "":
-            return None
-        return datetime.fromisoformat(value)
-
 
 class DockerProjectMetadata(DockerProjectLabelMetadata):
-    inspect_delimiter: ClassVar[str] = "||"
-
     status: ContainerStatus = ContainerStatus.UNKNOWN
 
     @classmethod
     def inspect_format(cls) -> str:
-        return (
-            "{{json .Config.Labels}}"
-            f"{cls.inspect_delimiter}"
-            "{{json .State.Status}}"
-        )
+        return "[{{json .Config.Labels}},{{json .State.Status}}]"
 
     @classmethod
-    def from_inspect_output(
-        cls,
-        raw: str,
-    ) -> DockerProjectMetadata:
-        labels_raw, status_raw = raw.split(cls.inspect_delimiter, 1)
-        return cls.from_labels_status(
-            labels=json.loads(labels_raw),
-            status=json.loads(status_raw) if status_raw else None,
-        )
+    def from_inspect_output(cls, raw: str) -> DockerProjectMetadata:
+        labels, status = json.loads(raw)
+        return cls.from_labels_status(labels=labels, status=status)
 
     @classmethod
     def from_labels_status(
@@ -113,7 +81,7 @@ class DockerProjectMetadata(DockerProjectLabelMetadata):
         status: str | None,
     ) -> DockerProjectMetadata:
         return cls(
-            **cls._label_fields(labels).model_dump(),
+            **cls._label_kwargs(labels),
             status=ContainerStatus.from_docker(status)
             if status
             else ContainerStatus.UNKNOWN,

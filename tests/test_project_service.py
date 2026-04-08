@@ -412,7 +412,7 @@ def test_restore_project_rejects_plain_sql_files(
     backup_file.write_text("select 1;\n")
 
     with pytest.raises(
-        ValueError,
+        ProjectError,
         match=r"Restore only supports gzip-compressed SQL backups \(.sql.gz\)\.",
     ):
         restore_project("demo", backup_file)

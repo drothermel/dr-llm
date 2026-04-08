@@ -3,21 +3,22 @@ from __future__ import annotations
 import re
 import subprocess
 from contextlib import suppress
-from typing import IO
+from typing import IO, cast
 from uuid import uuid4
 
 from dr_llm.project.docker_runner import (
-    _copy_binary_stream,
-    _docker_error,
-    _read_process_stderr,
+    BinaryStream,
     call_docker_bytes,
+    copy_binary_stream,
+    docker_error,
+    read_process_stderr,
 )
 from dr_llm.project.errors import DockerUnavailableError
 
 _VALID_PG_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
-def _validate_pg_identifier(name: str, label: str = "identifier") -> str:
+def validate_pg_identifier(name: str, label: str = "identifier") -> str:
     if not _VALID_PG_IDENTIFIER.match(name):
         raise ValueError(
             f"Invalid PostgreSQL {label}: {name!r} "
@@ -63,7 +64,7 @@ def call_docker_psql_input_stream(
     container_name: str,
     db_user: str,
     db_name: str,
-    sql_stream: IO[bytes],
+    sql_stream: BinaryStream,
 ) -> None:
     args = (
         "exec",
@@ -83,27 +84,27 @@ def call_docker_psql_input_stream(
         )
     except FileNotFoundError as exc:
         raise DockerUnavailableError() from exc
-    assert process.stdin is not None
+    stdin = cast(IO[bytes], process.stdin)
     try:
-        _copy_binary_stream(sql_stream, process.stdin)
+        copy_binary_stream(sql_stream, stdin)
     except Exception:
         process.kill()
         process.wait()
         raise
     finally:
         with suppress(BrokenPipeError):
-            process.stdin.close()
+            stdin.close()
 
-    stderr = _read_process_stderr(process)
+    stderr = read_process_stderr(process)
     if process.wait() != 0:
-        raise _docker_error(args, stderr)
+        raise docker_error(args, stderr)
 
 
 def call_docker_pg_dump_stream(
     container_name: str,
     db_user: str,
     db_name: str,
-    output_stream: IO[bytes],
+    output_stream: BinaryStream,
 ) -> None:
     args = (
         "exec",
@@ -121,29 +122,29 @@ def call_docker_pg_dump_stream(
         )
     except FileNotFoundError as exc:
         raise DockerUnavailableError() from exc
-    assert process.stdout is not None
+    stdout = cast(IO[bytes], process.stdout)
     try:
-        _copy_binary_stream(process.stdout, output_stream)
+        copy_binary_stream(stdout, output_stream)
     except Exception:
         process.kill()
         process.wait()
         raise
     finally:
-        process.stdout.close()
+        stdout.close()
 
-    stderr = _read_process_stderr(process)
+    stderr = read_process_stderr(process)
     if process.wait() != 0:
-        raise _docker_error(args, stderr)
+        raise docker_error(args, stderr)
 
 
 def docker_swap_in_db(
-    sql_stream: IO[bytes],
+    sql_stream: BinaryStream,
     container_name: str,
     db_user: str,
     target_db_name: str,
 ) -> None:
     swap_in_db = f"dr_llm_restore_{uuid4().hex[:8]}"
-    _validate_pg_identifier(swap_in_db, "database name")
+    validate_pg_identifier(swap_in_db, "database name")
     _call_docker_psql_admin(
         container_name,
         db_user,
@@ -157,10 +158,31 @@ def docker_swap_in_db(
             f'DROP DATABASE IF EXISTS "{target_db_name}";',
             f'ALTER DATABASE "{swap_in_db}" RENAME TO "{target_db_name}";',
         )
-    except Exception:
+    except Exception as exc:
+        _drop_swap_db_noting_cleanup_failure(
+            container_name,
+            db_user,
+            swap_in_db,
+            original_exc=exc,
+        )
+        raise
+
+
+def _drop_swap_db_noting_cleanup_failure(
+    container_name: str,
+    db_user: str,
+    swap_in_db: str,
+    *,
+    original_exc: BaseException,
+) -> None:
+    try:
         _call_docker_psql_admin(
             container_name,
             db_user,
             f'DROP DATABASE IF EXISTS "{swap_in_db}";',
         )
-        raise
+    except Exception as cleanup_exc:
+        original_exc.add_note(
+            f"Cleanup of temporary restore database {swap_in_db!r} also failed: "
+            f"{cleanup_exc}"
+        )
