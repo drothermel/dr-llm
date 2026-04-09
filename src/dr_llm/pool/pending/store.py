@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import random
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from pydantic_core import to_jsonable_python
@@ -401,28 +401,46 @@ class PendingStore:
         return len(pending_ids)
 
     def bulk_load(
-        self, *, key_filter: dict[str, Any] | None = None
+        self,
+        *,
+        key_filter: dict[str, Any] | None = None,
+        status: PendingStatus | Iterable[PendingStatus] | None = None,
     ) -> list[PendingSample]:
-        """Load in-flight pending samples, optionally filtered by partial key match.
+        """Load pending samples, optionally filtered by partial key match.
 
         Materializes the full result set; for very large queues prefer
         ``iter_pending`` to stream in chunks.
         """
-        return list(self.iter_pending(key_filter=key_filter))
+        return list(self.iter_pending(key_filter=key_filter, status=status))
 
     def iter_pending(
         self,
         *,
         key_filter: dict[str, Any] | None = None,
+        status: PendingStatus | Iterable[PendingStatus] | None = None,
         chunk_size: int = 1000,
     ) -> Iterator[PendingSample]:
-        """Stream in-flight pending samples in chunks via server-side cursoring."""
+        """Stream pending samples in chunks via server-side cursoring.
+
+        ``status`` accepts a single ``PendingStatus`` or any iterable of them.
+        When ``None`` (the default) only in-flight statuses (``pending`` and
+        ``leased``) are returned, matching the historical worker-facing
+        behavior; pass an explicit set to inspect terminal states like
+        ``promoted`` or ``failed``.
+        """
+        if status is None:
+            statuses: frozenset[PendingStatus] = IN_FLIGHT_STATUSES
+        elif isinstance(status, PendingStatus):
+            statuses = frozenset({status})
+        else:
+            statuses = frozenset(status)
+
         rows = stream_select_rows(
             self._runtime,
             self._schema,
             self._pending,
             self._tables.pending_select_columns(),
-            base_predicates=[self._pending.c.status.in_(IN_FLIGHT_STATUSES)],
+            base_predicates=[self._pending.c.status.in_(statuses)],
             order_by=[
                 self._pending.c.priority.desc(),
                 self._pending.c.created_at.asc(),

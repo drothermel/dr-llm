@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 from sqlalchemy import func, select
@@ -13,7 +14,12 @@ from dr_llm.pool.db.tables import PoolTables
 
 
 class MetadataStore:
-    """Key-value metadata store scoped to a pool."""
+    """Key-value metadata store scoped to a pool.
+
+    Keys starting with an underscore are reserved for ``dr_llm`` internal
+    use (e.g. ``_schema``, populated by :meth:`PoolStore.ensure_schema`).
+    Consumer-owned keys should use a prefix without a leading underscore.
+    """
 
     def __init__(
         self,
@@ -51,3 +57,26 @@ class MetadataStore:
         )
         with self._runtime.connect() as conn:
             return conn.execute(stmt).scalar_one_or_none()
+
+    def iter_prefix(self, prefix: str) -> Iterator[tuple[str, dict[str, Any]]]:
+        """Yield ``(key, value)`` pairs for metadata keys starting with ``prefix``.
+
+        Uses an index range scan against the ``(pool_name, key)`` primary
+        key, so the cost is proportional to the matched subset rather than
+        the full metadata table. Pass ``""`` to iterate every key in the
+        pool. Results are ordered by key for stable iteration.
+        """
+        stmt = (
+            select(
+                self._tables.metadata_table.c.key,
+                self._tables.metadata_table.c.value_json,
+            )
+            .where(
+                self._tables.metadata_table.c.pool_name == self._schema.name,
+                self._tables.metadata_table.c.key.like(f"{prefix}%"),
+            )
+            .order_by(self._tables.metadata_table.c.key)
+        )
+        with self._runtime.connect() as conn:
+            for row in conn.execute(stmt).mappings():
+                yield row["key"], row["value_json"]

@@ -193,6 +193,40 @@ runtime.close()
 
 See `scripts/demo-pool-fill.py` for a complete runnable example.
 
+### Reading an existing pool
+
+Once a pool has been seeded and filled, `PoolReader` gives consumers a
+typed read-only handle for inspection without re-wiring `DbRuntime` /
+`PoolSchema` / `PoolStore` by hand. The reader composes a private
+`PoolStore` and exposes only its read-side methods.
+
+```python
+from dr_llm import PoolReader
+
+with PoolReader.open("my_eval", "my_eval") as reader:
+    progress = reader.progress()
+    print(
+        f"{progress.samples_total} promoted, "
+        f"{progress.in_flight} in-flight, "
+        f"{progress.pending_counts.failed} failed"
+    )
+
+    # Typed PoolSample iterator/list with optional key + status filters
+    for sample in reader.samples_list(key_filter={"llm_config": "gpt-4.1-mini"}):
+        print(sample.sample_id, sample.payload)
+
+    # Scan consumer-owned axis metadata by key prefix
+    templates = reader.metadata_prefix("prompt_template/")
+```
+
+`PoolReader.open(project, pool)` resolves the project DSN, constructs a
+`DbRuntime`, and reads the pool's `PoolSchema` from the metadata table
+where `PoolStore.ensure_schema()` persists it under the reserved key
+`_schema`. Pools created before this feature shipped raise
+`PoolSchemaNotPersistedError` on `open()`; use
+`PoolReader.from_runtime(runtime, schema=...)` to inspect them with an
+explicit schema, or re-run `ensure_schema()` once to backfill the row.
+
 ## CLI Reference
 
 ```bash
