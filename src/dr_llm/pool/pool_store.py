@@ -27,6 +27,11 @@ from dr_llm.pool.models import AcquireQuery, AcquireResult, CoverageRow, InsertR
 from dr_llm.pool.pending.store import PendingStore
 from dr_llm.pool.pool_sample import PoolSample, SampleStatus
 
+SCHEMA_METADATA_KEY = "_schema"
+"""Reserved metadata key under which ``ensure_schema`` persists the pool's
+``PoolSchema`` so consumers can reconstruct it via :class:`PoolReader`.
+"""
+
 
 class PoolStore:
     """Pool storage operations parameterized by schema.
@@ -48,8 +53,14 @@ class PoolStore:
         These tables remain runtime-owned because their physical names derive
         from PoolSchema. Alembic intentionally excludes them until the pool
         schema design moves away from per-pool table sets. Safe to call
-        multiple times, but each call issues several pg_catalog round-trips,
-        so prefer calling exactly once at startup.
+        multiple times, but each call issues several pg_catalog round-trips
+        plus one metadata upsert, so prefer calling exactly once at startup.
+
+        After creating tables, the pool's ``PoolSchema`` is serialized into
+        the metadata table under :data:`SCHEMA_METADATA_KEY` so that
+        :class:`PoolReader` can later reconstruct it from the database alone.
+        The upsert runs in a separate transaction (it must, because the
+        metadata store opens its own connection) and is idempotent.
         """
         with self._runtime.begin() as conn:
             self._tables.sa_metadata.create_all(
@@ -58,6 +69,7 @@ class PoolStore:
                 checkfirst=True,
             )
             self._tables.ensure_indexes(conn)
+        self.metadata.upsert(SCHEMA_METADATA_KEY, self.schema.model_dump(mode="json"))
 
     def insert_sample(
         self, sample: PoolSample, *, ignore_conflicts: bool = True
@@ -306,6 +318,12 @@ class PoolStore:
             )
         )
 
+    def sample_count(self) -> int:
+        """Return the total number of rows in the pool's samples table."""
+        stmt = select(func.count()).select_from(self._tables.samples)
+        with self._runtime.connect() as conn:
+            return int(conn.execute(stmt).scalar_one())
+
     def coverage(self) -> list[CoverageRow]:
         """Return sample counts grouped by all key dimensions."""
         stmt = select(
@@ -332,19 +350,23 @@ class PoolStore:
             return int(conn.execute(stmt).scalar_one())
 
     def bulk_load(
-        self, *, key_filter: dict[str, Any] | None = None
+        self,
+        *,
+        key_filter: dict[str, Any] | None = None,
+        status: SampleStatus | Iterable[SampleStatus] | None = None,
     ) -> list[PoolSample]:
         """Load all samples, optionally filtered by partial key match.
 
         Materializes the full result set in memory; for pools with 100k+ rows
         prefer ``iter_samples`` to stream in chunks.
         """
-        return list(self.iter_samples(key_filter=key_filter))
+        return list(self.iter_samples(key_filter=key_filter, status=status))
 
     def iter_samples(
         self,
         *,
         key_filter: dict[str, Any] | None = None,
+        status: SampleStatus | Iterable[SampleStatus] | None = None,
         chunk_size: int = 1000,
     ) -> Iterator[PoolSample]:
         """Stream samples in chunks via server-side cursoring.
@@ -354,12 +376,21 @@ class PoolStore:
         for pools far larger than memory. The underlying connection is held
         open for the lifetime of the iterator — fully consume or close it
         promptly.
+
+        ``status`` accepts a single ``SampleStatus`` or any iterable of them;
+        when ``None`` (the default) samples in any status are returned.
         """
+        base_predicates: list[ColumnElement[bool]] = []
+        if status is not None:
+            statuses = _normalize_status_filter(status)
+            base_predicates.append(self._tables.samples.c.status.in_(statuses))
+
         rows = stream_select_rows(
             self._runtime,
             self.schema,
             self._tables.samples,
             self._tables.sample_select_columns(),
+            base_predicates=base_predicates,
             order_by=[self._tables.samples.c.sample_idx.asc()],
             key_filter=key_filter,
             chunk_size=chunk_size,
@@ -368,3 +399,12 @@ class PoolStore:
             yield PoolSample.from_db_row(self.schema, row)
 
     _AUTO_IDX_INSERT_RETRIES = 3
+
+
+def _normalize_status_filter(
+    status: SampleStatus | Iterable[SampleStatus],
+) -> frozenset[SampleStatus]:
+    """Accept a single SampleStatus or any iterable; return a frozenset."""
+    if isinstance(status, SampleStatus):
+        return frozenset({status})
+    return frozenset(status)
