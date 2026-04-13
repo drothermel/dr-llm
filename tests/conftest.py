@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.request import LlmRequest, parse_llm_request
 from dr_llm.llm.response import LlmResponse
 from dr_llm.llm.messages import CallMode, Message
 from dr_llm.llm.providers.base import Provider
@@ -41,12 +41,12 @@ class FakeProvider(Provider):
 
 def make_request(**overrides: Any) -> LlmRequest:
     defaults: dict[str, Any] = {
-        "provider": "fake",
-        "model": "fake-model",
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
         "messages": [Message(role="user", content="hello")],
     }
     defaults.update(overrides)
-    return LlmRequest(**defaults)
+    return parse_llm_request(defaults)
 
 
 def make_response(**overrides: Any) -> LlmResponse:

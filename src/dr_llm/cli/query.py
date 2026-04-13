@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.reasoning import parse_reasoning_spec
 from dr_llm.llm.providers.registry import build_default_registry
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.request import parse_llm_request
 from dr_llm.logging.events import generation_log_context
 from dr_llm.logging.sinks import emit_generation_event
 
@@ -29,9 +29,18 @@ def query(
     messages_file: Path | None = typer.Option(
         None, help="Path to JSON messages payload."
     ),
-    temperature: float | None = typer.Option(None),
-    top_p: float | None = typer.Option(None),
-    max_tokens: int | None = typer.Option(None),
+    temperature: float | None = typer.Option(
+        None,
+        help="Sampling temperature (unsupported for headless providers and kimi-code).",
+    ),
+    top_p: float | None = typer.Option(
+        None,
+        help="Nucleus sampling parameter (unsupported for headless providers and kimi-code).",
+    ),
+    max_tokens: int | None = typer.Option(
+        None,
+        help="Maximum output tokens (unsupported for headless providers; required for anthropic and kimi-code).",
+    ),
     effort: EffortSpec = typer.Option(EffortSpec.NA),
     reasoning_json: str | None = typer.Option(
         None,
@@ -56,18 +65,23 @@ def query(
         raise typer.BadParameter(str(exc)) from exc
     messages_payload = common._load_messages(messages_file, message or [])
 
+    request_payload: dict[str, object] = {
+        "provider": provider,
+        "model": model,
+        "messages": messages_payload,
+        "effort": effort,
+        "reasoning": reasoning,
+        "metadata": metadata,
+    }
+    if temperature is not None:
+        request_payload["temperature"] = temperature
+    if top_p is not None:
+        request_payload["top_p"] = top_p
+    if max_tokens is not None:
+        request_payload["max_tokens"] = max_tokens
+
     try:
-        request = LlmRequest(
-            provider=provider,
-            model=model,
-            messages=messages_payload,
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=max_tokens,
-            effort=effort,
-            reasoning=reasoning,
-            metadata=metadata,
-        )
+        request = parse_llm_request(request_payload)
     except ValidationError as exc:
         raise typer.BadParameter(str(exc)) from exc
 

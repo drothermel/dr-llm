@@ -21,6 +21,7 @@ from dr_llm.llm.providers.reasoning import (
     OpenRouterReasoning,
     ThinkingLevel,
 )
+from dr_llm.llm.request import KimiCodeLlmRequest
 
 
 def test_provider_model_sweeps_match_expected_snapshot() -> None:
@@ -164,6 +165,23 @@ def test_kimi_code_uses_explicit_reasoning_and_required_effort() -> None:
     assert budget_reasoning.budget_tokens == script.KIMI_CODE_FIXED_BUDGET
 
 
+def test_make_request_builds_kimi_code_request_shape() -> None:
+    request = script.make_request(
+        provider="kimi-code",
+        model="kimi-for-coding",
+        thinking_level=ThinkingLevel.ADAPTIVE,
+        effort=EffortSpec.HIGH,
+    )
+
+    assert isinstance(request, KimiCodeLlmRequest)
+    assert request.provider == "kimi-code"
+    assert request.max_tokens == script.KIMI_CODE_MAX_TOKENS
+    assert request.effort == EffortSpec.HIGH
+    assert request.reasoning == AnthropicReasoning(
+        thinking_level=ThinkingLevel.ADAPTIVE
+    )
+
+
 def test_minimax_requires_explicit_na_reasoning_and_effort() -> None:
     minimax_levels = script.supported_thinking_levels("minimax", "MiniMax-M2.7")
     assert minimax_levels == [ThinkingLevel.NA]
@@ -210,6 +228,7 @@ def test_openai_and_codex_use_explicit_thinking_levels_only() -> None:
         ThinkingLevel.LOW,
         ThinkingLevel.MEDIUM,
         ThinkingLevel.HIGH,
+        ThinkingLevel.XHIGH,
     ]
     assert (
         script.default_thinking_for_model("codex", "gpt-5.1-codex-mini")

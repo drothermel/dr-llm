@@ -6,8 +6,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from dr_llm.logging.events import generation_log_context
-from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.config import HeadlessLlmConfig
+from dr_llm.llm.config import ApiLlmConfig as LlmConfig
 from dr_llm.llm.messages import CallMode, Message
+from dr_llm.llm.providers.reasoning import CodexReasoning, ThinkingLevel
 from dr_llm.llm.providers.usage import TokenUsage
 from dr_llm.llm.response import LlmResponse
 from dr_llm.pool import llm_pool_adapter
@@ -32,6 +34,17 @@ def _make_response() -> LlmResponse:
         provider="openai",
         model="gpt-4.1-mini",
         mode=CallMode.api,
+    )
+
+
+def _make_headless_response() -> LlmResponse:
+    return LlmResponse(
+        text="hello from codex",
+        finish_reason="stop",
+        usage=TokenUsage(prompt_tokens=4, completion_tokens=2, total_tokens=6),
+        provider="codex",
+        model="gpt-5.4-mini",
+        mode=CallMode.headless,
     )
 
 
@@ -282,6 +295,55 @@ def test_seed_llm_grid_round_trips_with_make_llm_process_fn() -> None:
     assert call_args.model == "gpt-4.1-mini"
     assert call_args.temperature == 0.5
     assert call_args.messages[0].content == "round trip"
+
+
+def test_seed_llm_grid_round_trips_headless_config() -> None:
+    """Headless LLM configs should seed and deserialize into headless requests."""
+    schema = PoolSchema.from_axis_names("rt_headless", ["llm_config", "prompt"])
+    store, captured = _make_seed_store(schema)
+
+    cfg = HeadlessLlmConfig(
+        provider="codex",
+        model="gpt-5.4-mini",
+        reasoning=CodexReasoning(thinking_level=ThinkingLevel.XHIGH),
+    )
+    msgs = [Message(role="user", content="headless round trip")]
+
+    def _build_request(cell: GridCell) -> tuple[list[Message], HeadlessLlmConfig]:
+        assert cell.values["llm_config"] == cfg
+        assert cell.values["prompt"] == msgs
+        return msgs, cfg
+
+    result = llm_pool_adapter.seed_llm_grid(
+        store,
+        axes=[
+            Axis(
+                name="llm_config",
+                members=[AxisMember[HeadlessLlmConfig](id="cfg1", value=cfg)],
+            ),
+            Axis(
+                name="prompt",
+                members=[AxisMember[list[Message]](id="p1", value=msgs)],
+            ),
+        ],
+        build_request=_build_request,
+        n=1,
+    )
+
+    assert result.inserted == 1
+    seeded = captured[0]
+
+    registry = _make_registry(_make_headless_response())
+    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    response = process_fn(seeded)
+
+    assert response["text"] == "hello from codex"
+    call_args = registry.get.return_value.generate.call_args[0][0]
+    assert call_args.provider == "codex"
+    assert call_args.model == "gpt-5.4-mini"
+    assert call_args.messages[0].content == "headless round trip"
+    assert call_args.reasoning == CodexReasoning(thinking_level=ThinkingLevel.XHIGH)
+    assert not hasattr(call_args, "temperature")
 
 
 def test_seed_llm_grid_honors_custom_payload_keys() -> None:

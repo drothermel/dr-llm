@@ -18,20 +18,19 @@ from dr_llm.llm.providers.headless.base import (
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
-from dr_llm.llm.providers.headless.config import HeadlessProviderConfig
+from dr_llm.llm.providers.headless.config import CodexHeadlessProviderConfig
 from dr_llm.llm.providers.headless.reasoning import CodexHeadlessReasoningConfig
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.request import HeadlessLlmRequest
 
 
 CODEX_DEFAULT_COMMAND = [
     "codex",
     "exec",
     "--json",
+    "--ephemeral",
     "--skip-git-repo-check",
     "--sandbox",
     "read-only",
-    "-c",
-    "include_plan_tool=false",
     "-c",
     "project_doc_max_bytes=0",
     "-c",
@@ -202,7 +201,7 @@ class CodexHeadlessResponse(BaseModel):
 class CodexHeadlessProvider(BaseHeadlessProvider):
     def __init__(self, command: list[str] | None = None) -> None:
         super().__init__(
-            config=HeadlessProviderConfig(
+            config=CodexHeadlessProviderConfig(
                 name="codex",
                 command=command or CODEX_DEFAULT_COMMAND,
             ),
@@ -231,7 +230,7 @@ class CodexHeadlessProvider(BaseHeadlessProvider):
 
     def command_for_request(
         self,
-        request: LlmRequest,
+        request: HeadlessLlmRequest,
         payload: HeadlessRequestPayload,
         reasoning_mapping: HeadlessReasoningResult,
     ) -> list[str]:
@@ -250,12 +249,12 @@ class CodexHeadlessProvider(BaseHeadlessProvider):
         )
         return command
 
-    def reasoning_mapping(self, request: LlmRequest) -> HeadlessReasoningResult:
+    def reasoning_mapping(self, request: HeadlessLlmRequest) -> HeadlessReasoningResult:
         return CodexHeadlessReasoningConfig.from_base(request.reasoning)
 
     def stdin_for_request(
         self,
-        request: LlmRequest,
+        request: HeadlessLlmRequest,
         payload: HeadlessRequestPayload,
     ) -> str:
         del payload
@@ -265,7 +264,7 @@ class CodexHeadlessProvider(BaseHeadlessProvider):
     def parse_stdout(
         self,
         *,
-        request: LlmRequest,
+        request: HeadlessLlmRequest,
         stdout: str,
         stderr: str,
     ) -> ParsedHeadlessOutput:

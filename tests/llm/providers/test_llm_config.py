@@ -4,8 +4,12 @@ import pytest
 from pydantic import ValidationError
 
 from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.config import LlmConfig
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.config import HeadlessLlmConfig, KimiCodeLlmConfig, parse_llm_config
+from dr_llm.llm.request import (
+    HeadlessLlmRequest,
+    KimiCodeLlmRequest,
+    parse_llm_request,
+)
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import (
     AnthropicReasoning,
@@ -19,13 +23,21 @@ from dr_llm.llm.providers.reasoning import (
 )
 
 
+def LlmConfig(**kwargs: object):
+    return parse_llm_config(kwargs)
+
+
+def LlmRequest(**kwargs: object):
+    return parse_llm_request(kwargs)
+
+
 def test_basic_construction() -> None:
     config = LlmConfig(provider="openai", model="gpt-4.1-mini")
 
     assert config.provider == "openai"
     assert config.model == "gpt-4.1-mini"
-    assert config.temperature is None
-    assert config.top_p is None
+    assert config.temperature == 1.0
+    assert config.top_p == 0.95
     assert config.max_tokens is None
     assert config.effort == EffortSpec.NA
     assert config.reasoning is None
@@ -58,7 +70,91 @@ def test_frozen() -> None:
 
 def test_extra_fields_forbidden() -> None:
     with pytest.raises(ValidationError):
-        LlmConfig(provider="openai", model="gpt-4.1-mini", extra_field="nope")  # type: ignore[call-arg]
+        LlmConfig(provider="openai", model="gpt-4.1-mini", extra_field="nope")
+
+
+def test_headless_config_rejects_sampling_fields() -> None:
+    with pytest.raises(ValidationError, match="temperature"):
+        HeadlessLlmConfig(
+            provider="codex",
+            model="gpt-5.4-mini",
+            temperature=0.2,  # type: ignore[call-arg]
+        )
+
+    with pytest.raises(ValidationError, match="top_p"):
+        parse_llm_config(
+            {
+                "provider": "claude-code",
+                "model": "claude-sonnet-4-6",
+                "top_p": 0.5,
+            }
+        )
+
+
+def test_headless_request_rejects_sampling_and_max_tokens() -> None:
+    with pytest.raises(ValidationError, match="max_tokens"):
+        parse_llm_request(
+            {
+                "provider": "codex",
+                "model": "gpt-5.4-mini",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 32,
+            }
+        )
+
+    with pytest.raises(ValidationError, match="temperature"):
+        HeadlessLlmRequest(
+            provider="claude-code",
+            model="claude-sonnet-4-6",
+            messages=[Message(role="user", content="hi")],
+            temperature=0.2,  # type: ignore[call-arg]
+        )
+
+
+def test_kimi_code_config_rejects_sampling_fields() -> None:
+    with pytest.raises(ValidationError, match="temperature"):
+        KimiCodeLlmConfig(
+            provider="kimi-code",
+            model="kimi-for-coding",
+            max_tokens=256,
+            effort=EffortSpec.HIGH,
+            temperature=0.2,  # type: ignore[call-arg]
+        )
+
+    with pytest.raises(ValidationError, match="top_p"):
+        parse_llm_config(
+            {
+                "provider": "kimi-code",
+                "model": "kimi-for-coding",
+                "max_tokens": 256,
+                "effort": "high",
+                "top_p": 0.5,
+            }
+        )
+
+
+def test_kimi_code_request_rejects_sampling_fields() -> None:
+    with pytest.raises(ValidationError, match="temperature"):
+        KimiCodeLlmRequest(
+            provider="kimi-code",
+            model="kimi-for-coding",
+            messages=[Message(role="user", content="hi")],
+            max_tokens=256,
+            effort=EffortSpec.HIGH,
+            temperature=0.2,  # type: ignore[call-arg]
+        )
+
+    with pytest.raises(ValidationError, match="top_p"):
+        parse_llm_request(
+            {
+                "provider": "kimi-code",
+                "model": "kimi-for-coding",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 256,
+                "effort": "high",
+                "top_p": 0.5,
+            }
+        )
 
 
 def test_to_request() -> None:
@@ -80,7 +176,7 @@ def test_to_request() -> None:
     assert request.messages == messages
     assert request.temperature == 0.5
     assert request.max_tokens == 100
-    assert request.top_p is None
+    assert request.top_p == 0.95
     assert request.effort == EffortSpec.NA
     assert request.reasoning is None
     assert request.metadata == {}
@@ -113,6 +209,28 @@ def test_to_request_with_effort() -> None:
     request = config.to_request(messages)
 
     assert request.effort == EffortSpec.MEDIUM
+
+
+def test_kimi_code_to_request_omits_sampling_fields() -> None:
+    config = LlmConfig(
+        provider="kimi-code",
+        model="kimi-for-coding",
+        max_tokens=256,
+        effort=EffortSpec.HIGH,
+    )
+    messages = [Message(role="user", content="Think about this")]
+
+    request = config.to_request(messages)
+
+    assert request.provider == "kimi-code"
+    assert request.model == "kimi-for-coding"
+    assert request.messages == messages
+    assert request.max_tokens == 256
+    assert request.effort == EffortSpec.HIGH
+    assert request.reasoning is None
+    assert request.metadata == {}
+    assert "temperature" not in request.model_dump()
+    assert "top_p" not in request.model_dump()
 
 
 def test_rejects_non_na_effort_for_unsupported_provider() -> None:
@@ -526,6 +644,11 @@ def test_codex_accepts_provider_shaped_reasoning() -> None:
         provider="codex",
         model="gpt-5.4",
         reasoning=CodexReasoning(thinking_level=ThinkingLevel.OFF),
+    )
+    LlmConfig(
+        provider="codex",
+        model="gpt-5.1-codex-mini",
+        reasoning=CodexReasoning(thinking_level=ThinkingLevel.XHIGH),
     )
 
 

@@ -6,7 +6,7 @@ from dr_llm.llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.llm.providers.anthropic.request import AnthropicRequest
 from dr_llm.llm.providers.anthropic.response import AnthropicResponse
 from dr_llm.llm.providers.api_provider import ApiProvider
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.request import ApiBackedLlmRequest
 
 
 class AnthropicProvider(ApiProvider):
@@ -23,7 +23,7 @@ class AnthropicProvider(ApiProvider):
     def config(self) -> AnthropicConfig:
         return self._config
 
-    def _build_request(self, request: LlmRequest) -> AnthropicRequest:
+    def _build_request(self, request: ApiBackedLlmRequest) -> AnthropicRequest:
         return AnthropicRequest.from_llm_request(request, self._config)
 
     def _parse_response(self, response: httpx.Response) -> AnthropicResponse:

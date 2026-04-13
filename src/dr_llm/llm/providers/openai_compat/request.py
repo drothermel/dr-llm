@@ -5,14 +5,15 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.providers.api_config import resolve_api_key
-from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
 from dr_llm.llm.providers.openai_compat.reasoning import OpenAICompatReasoningConfig
 from dr_llm.llm.providers.openai_compat.thinking import (
     openai_uses_max_completion_tokens,
 )
+from dr_llm.llm.request import ApiBackedLlmRequest, ApiLlmRequest
 
 if TYPE_CHECKING:
     from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
@@ -39,9 +40,13 @@ class OpenAICompatRequest(BaseModel):
     @classmethod
     def from_llm_request(
         cls,
-        request: LlmRequest,
+        request: ApiBackedLlmRequest,
         config: OpenAICompatConfig,
     ) -> OpenAICompatRequest:
+        if not isinstance(request, ApiLlmRequest):
+            raise ProviderSemanticError(
+                f"{config.name} requires a sampling-capable API request shape"
+            )
         reasoning_mapping = OpenAICompatReasoningConfig.from_base(
             request.reasoning,
             provider=request.provider,
@@ -73,7 +78,7 @@ class OpenAICompatRequest(BaseModel):
         ]
 
     @staticmethod
-    def _resolve_idempotency_key(*, request: LlmRequest) -> str:
+    def _resolve_idempotency_key(*, request: ApiLlmRequest) -> str:
         raw_idempotency_key = request.metadata.get("idempotency_key")
         if isinstance(raw_idempotency_key, str) and raw_idempotency_key:
             return raw_idempotency_key

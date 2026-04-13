@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, cast
 
 import httpx
 import pytest
 
-from dr_llm.errors import ProviderTransportError
+from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
 from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.llm.providers.openai_compat.request import OpenAICompatRequest
@@ -17,6 +19,7 @@ from dr_llm.llm.providers.reasoning import (
     OpenRouterReasoning,
     ThinkingLevel,
 )
+from dr_llm.llm.request import ApiLlmRequest, KimiCodeLlmRequest
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 
@@ -50,6 +53,10 @@ _REASONING_RESPONSE_JSON: dict[str, Any] = {
 }
 
 
+def _make_api_request(overrides: Mapping[str, Any] | None = None) -> ApiLlmRequest:
+    return cast(ApiLlmRequest, make_request(**(overrides or {})))
+
+
 # ---------------------------------------------------------------------------
 # Adapter-level tests
 # ---------------------------------------------------------------------------
@@ -59,10 +66,12 @@ def test_forwards_reasoning_and_parses_cost() -> None:
     captured, client = make_http_client(_REASONING_RESPONSE_JSON)
 
     with OpenAICompatProvider(config=_CONFIG, client=client) as adapter:
-        request = make_request(
-            provider="openrouter",
-            model="openai/gpt-oss-20b",
-            reasoning=OpenRouterReasoning(effort="high"),
+        request = _make_api_request(
+            {
+                "provider": "openrouter",
+                "model": "openai/gpt-oss-20b",
+                "reasoning": OpenRouterReasoning(effort="high"),
+            }
         )
         result = adapter.generate(request)
 
@@ -82,7 +91,9 @@ def test_invalid_json_raises_transport_error() -> None:
 
     with pytest.raises(ProviderTransportError, match="invalid JSON response"):
         adapter.generate(
-            make_request(provider="openrouter", model="deepseek/deepseek-chat")
+            _make_api_request(
+                {"provider": "openrouter", "model": "deepseek/deepseek-chat"}
+            )
         )
 
 
@@ -111,11 +122,13 @@ def test_close_closes_adapter_owned_client() -> None:
 
 
 def test_request_builds_endpoint_and_headers() -> None:
-    request = make_request(
-        provider="openrouter",
-        model="deepseek/deepseek-chat",
-        messages=[Message(role="user", content="hi")],
-        metadata={"idempotency_key": "fixed-key"},
+    request = _make_api_request(
+        {
+            "provider": "openrouter",
+            "model": "deepseek/deepseek-chat",
+            "messages": [Message(role="user", content="hi")],
+            "metadata": {"idempotency_key": "fixed-key"},
+        }
     )
     provider_request = OpenAICompatRequest.from_llm_request(request, _CONFIG)
 
@@ -127,13 +140,17 @@ def test_request_builds_endpoint_and_headers() -> None:
 
 
 def test_request_generates_idempotency_key_when_missing() -> None:
-    request = make_request(provider="openrouter", model="deepseek/deepseek-chat")
+    request = _make_api_request(
+        {"provider": "openrouter", "model": "deepseek/deepseek-chat"}
+    )
     provider_request = OpenAICompatRequest.from_llm_request(request, _CONFIG)
     assert provider_request.idempotency_key
 
 
 def test_request_omits_reasoning_when_not_configured() -> None:
-    request = make_request(provider="openrouter", model="deepseek/deepseek-chat")
+    request = _make_api_request(
+        {"provider": "openrouter", "model": "deepseek/deepseek-chat"}
+    )
     provider_request = OpenAICompatRequest.from_llm_request(request, _CONFIG)
     assert provider_request.reasoning_effort is None
     assert "reasoning" not in provider_request.json_payload()
@@ -145,10 +162,12 @@ def test_glm_request_serializes_native_thinking_payload() -> None:
         base_url="https://api.z.ai/api/coding/paas/v4",
         api_key="x",
     )
-    request = make_request(
-        provider="glm",
-        model="glm-4.5",
-        reasoning=GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+    request = _make_api_request(
+        {
+            "provider": "glm",
+            "model": "glm-4.5",
+            "reasoning": GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+        }
     )
     provider_request = OpenAICompatRequest.from_llm_request(request, glm_config)
     assert provider_request.reasoning_effort is None
@@ -161,11 +180,13 @@ def test_openai_gpt5_swaps_max_tokens_for_max_completion_tokens() -> None:
         base_url="https://api.openai.com/v1",
         api_key="x",
     )
-    request = make_request(
-        provider="openai",
-        model="gpt-5-mini",
-        max_tokens=64,
-        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
+    request = _make_api_request(
+        {
+            "provider": "openai",
+            "model": "gpt-5-mini",
+            "max_tokens": 64,
+            "reasoning": OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
+        }
     )
     provider_request = OpenAICompatRequest.from_llm_request(request, openai_config)
     payload = provider_request.json_payload()
@@ -179,10 +200,12 @@ def test_openai_legacy_model_keeps_max_tokens() -> None:
         base_url="https://api.openai.com/v1",
         api_key="x",
     )
-    request = make_request(
-        provider="openai",
-        model="gpt-4.1-mini",
-        max_tokens=64,
+    request = _make_api_request(
+        {
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "max_tokens": 64,
+        }
     )
     provider_request = OpenAICompatRequest.from_llm_request(request, openai_config)
     payload = provider_request.json_payload()
@@ -216,7 +239,9 @@ def test_response_parses_reasoning_and_cost() -> None:
     http_response = httpx.Response(status_code=200, json=_REASONING_RESPONSE_JSON)
     provider_response = OpenAICompatResponse.from_http_response(http_response)
 
-    request = make_request(provider="openrouter", model="deepseek/deepseek-chat")
+    request = _make_api_request(
+        {"provider": "openrouter", "model": "deepseek/deepseek-chat"}
+    )
     result = provider_response.to_llm_response(request, latency_ms=42, warnings=[])
 
     assert result.text == "final answer"
@@ -226,3 +251,18 @@ def test_response_parses_reasoning_and_cost() -> None:
     assert result.cost is not None
     assert result.cost.total_cost_usd == 0.003
     assert result.latency_ms == 42
+
+
+def test_rejects_kimi_code_request_shape() -> None:
+    request = KimiCodeLlmRequest(
+        provider="kimi-code",
+        model="kimi-for-coding",
+        messages=[Message(role="user", content="hi")],
+        max_tokens=256,
+        effort=EffortSpec.HIGH,
+    )
+
+    with pytest.raises(
+        ProviderSemanticError, match="sampling-capable API request shape"
+    ):
+        OpenAICompatRequest.from_llm_request(request, _CONFIG)

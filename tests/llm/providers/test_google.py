@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, cast
 
 import httpx
 import pytest
 
-from dr_llm.errors import ProviderTransportError
+from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm.providers.api_config import APIProviderConfig
+from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.google.provider import GoogleProvider
 from dr_llm.llm.providers.google.request import GoogleRequest
 from dr_llm.llm.messages import Message
@@ -15,6 +17,7 @@ from dr_llm.llm.providers.reasoning import (
     ReasoningBudget,
     ThinkingLevel,
 )
+from dr_llm.llm.request import ApiLlmRequest, KimiCodeLlmRequest
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 
@@ -53,13 +56,19 @@ _THOUGHT_RESPONSE = {
 }
 
 
+def _make_api_request(overrides: Mapping[str, Any] | None = None) -> ApiLlmRequest:
+    return cast(ApiLlmRequest, make_request(**(overrides or {})))
+
+
 def test_rejects_unsupported_message_role() -> None:
     """model_construct can bypass validation; unsupported roles must not be dropped silently."""
     tool_msg = Message.model_construct(role="tool", content="secret tool output")
-    request = make_request(
-        provider="google",
-        model="gemini-test",
-        messages=[tool_msg],
+    request = _make_api_request(
+        {
+            "provider": "google",
+            "model": "gemini-test",
+            "messages": [tool_msg],
+        }
     )
     with pytest.raises(ValueError, match=r"Unsupported Message\.role.*'tool'") as exc:
         GoogleRequest.from_llm_request(request, _GOOGLE_CONFIG)
@@ -72,14 +81,16 @@ def test_payload_serializes_messages() -> None:
     captured, client = make_http_client(_MOCK_RESPONSE)
     adapter = GoogleProvider(config=_GOOGLE_CONFIG, client=client)
 
-    request = make_request(
-        provider="google",
-        model="gemini-test",
-        messages=[
-            Message(role="system", content="Be concise."),
-            Message(role="user", content="find item"),
-            Message(role="assistant", content="previous answer"),
-        ],
+    request = _make_api_request(
+        {
+            "provider": "google",
+            "model": "gemini-test",
+            "messages": [
+                Message(role="system", content="Be concise."),
+                Message(role="user", content="find item"),
+                Message(role="assistant", content="previous answer"),
+            ],
+        }
     )
     response = adapter.generate(request)
 
@@ -99,10 +110,12 @@ def test_payload_serializes_budget_reasoning_under_thinking_config() -> None:
     captured, client = make_http_client(_MOCK_RESPONSE)
     adapter = GoogleProvider(config=_GOOGLE_CONFIG, client=client)
 
-    request = make_request(
-        provider="google",
-        model="gemini-2.5-flash",
-        reasoning=ReasoningBudget(tokens=512),
+    request = _make_api_request(
+        {
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "reasoning": ReasoningBudget(tokens=512),
+        }
     )
     adapter.generate(request)
 
@@ -114,24 +127,28 @@ def test_payload_serializes_google_budget_controls() -> None:
     captured, client = make_http_client(_MOCK_RESPONSE)
     adapter = GoogleProvider(config=_GOOGLE_CONFIG, client=client)
 
-    request = make_request(
-        provider="google",
-        model="gemini-2.5-flash",
-        reasoning=GoogleReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+    request = _make_api_request(
+        {
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "reasoning": GoogleReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+        }
     )
     adapter.generate(request)
 
     payload = cast(dict[str, Any], captured["payload"])
     assert payload["generationConfig"]["thinkingConfig"] == {"thinkingBudget": -1}
 
-    request = make_request(
-        provider="google",
-        model="gemini-2.5-flash",
-        reasoning=GoogleReasoning(
-            thinking_level=ThinkingLevel.BUDGET,
-            budget_tokens=1024,
-            include_thoughts=True,
-        ),
+    request = _make_api_request(
+        {
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "reasoning": GoogleReasoning(
+                thinking_level=ThinkingLevel.BUDGET,
+                budget_tokens=1024,
+                include_thoughts=True,
+            ),
+        }
     )
     adapter.generate(request)
 
@@ -149,10 +166,12 @@ def test_invalid_json_raises_transport_error() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     adapter = GoogleProvider(config=_GOOGLE_CONFIG, client=client)
 
-    request = make_request(
-        provider="google",
-        model="gemini-test",
-        messages=[Message(role="user", content="hi")],
+    request = _make_api_request(
+        {
+            "provider": "google",
+            "model": "gemini-test",
+            "messages": [Message(role="user", content="hi")],
+        }
     )
     with pytest.raises(ProviderTransportError, match="invalid JSON response"):
         adapter.generate(request)
@@ -174,3 +193,18 @@ def test_response_filters_thought_parts_out_of_visible_text() -> None:
     assert response.reasoning_details == [
         {"text": "private chain of thought", "thought": True}
     ]
+
+
+def test_rejects_kimi_code_request_shape() -> None:
+    request = KimiCodeLlmRequest(
+        provider="kimi-code",
+        model="kimi-for-coding",
+        messages=[Message(role="user", content="hi")],
+        max_tokens=256,
+        effort=EffortSpec.HIGH,
+    )
+
+    with pytest.raises(
+        ProviderSemanticError, match="sampling-capable API request shape"
+    ):
+        GoogleRequest.from_llm_request(request, _GOOGLE_CONFIG)

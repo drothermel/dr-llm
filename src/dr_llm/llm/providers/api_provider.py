@@ -18,11 +18,11 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from dr_llm.errors import ProviderTransportError
+from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm.providers.api_config import APIProviderConfig
 from dr_llm.llm.providers.base import Provider
 from dr_llm.llm.providers.reasoning import ReasoningWarning
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.request import ApiBackedLlmRequest, LlmRequest
 from dr_llm.llm.response import LlmResponse
 from dr_llm.logging.sinks import emit_generation_event
 
@@ -83,8 +83,8 @@ class ApiProvider(Provider):
         self.close()
 
     @abstractmethod
-    def _build_request(self, request: LlmRequest) -> ApiProviderRequest:
-        """Translate an ``LlmRequest`` into the provider-specific request shape."""
+    def _build_request(self, request: ApiBackedLlmRequest) -> ApiProviderRequest:
+        """Translate an ``ApiBackedLlmRequest`` into an ``ApiProviderRequest``."""
 
     @abstractmethod
     def _parse_response(self, response: httpx.Response) -> ApiProviderResponse:
@@ -104,6 +104,10 @@ class ApiProvider(Provider):
         )
 
     def generate(self, request: LlmRequest) -> LlmResponse:
+        if not isinstance(request, ApiBackedLlmRequest):
+            raise ProviderSemanticError(
+                f"{self.name} only accepts API-backed request shapes"
+            )
         provider_request = self._build_request(request)
         started = time.perf_counter()
         try:

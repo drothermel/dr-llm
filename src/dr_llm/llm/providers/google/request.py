@@ -4,11 +4,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.providers.api_config import APIProviderConfig, resolve_api_key
 from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig
-from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
+from dr_llm.llm.request import ApiBackedLlmRequest, ApiLlmRequest
 
 
 class _GoogleGenerationConfig(BaseModel):
@@ -53,9 +54,13 @@ class GoogleRequest(BaseModel):
     @classmethod
     def from_llm_request(
         cls,
-        request: LlmRequest,
+        request: ApiBackedLlmRequest,
         config: APIProviderConfig,
     ) -> GoogleRequest:
+        if not isinstance(request, ApiLlmRequest):
+            raise ProviderSemanticError(
+                "google requires a sampling-capable API request shape"
+            )
         reasoning_mapping = GoogleReasoningConfig.from_base(request.reasoning)
         system = "\n".join(
             message.content for message in request.messages if message.role == "system"
@@ -114,7 +119,7 @@ class GoogleRequest(BaseModel):
     @staticmethod
     def _generation_config(
         *,
-        request: LlmRequest,
+        request: ApiLlmRequest,
         reasoning_payload: dict[str, Any],
     ) -> _GoogleGenerationConfig | None:
         thinking_config = (
