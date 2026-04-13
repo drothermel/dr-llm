@@ -573,6 +573,11 @@ def test_codex_accepts_provider_shaped_reasoning() -> None:
         model="gpt-5.4",
         reasoning=CodexReasoning(thinking_level=ThinkingLevel.OFF),
     )
+    LlmConfig(
+        provider="codex",
+        model="gpt-5.1-codex-mini",
+        reasoning=CodexReasoning(thinking_level=ThinkingLevel.XHIGH),
+    )
 
 
 def test_codex_rejects_unsupported_model_specific_thinking_levels() -> None:

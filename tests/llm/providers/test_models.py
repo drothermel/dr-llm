@@ -47,6 +47,7 @@ def test_thinking_level_values() -> None:
     assert ThinkingLevel.LOW == "low"
     assert ThinkingLevel.MEDIUM == "medium"
     assert ThinkingLevel.HIGH == "high"
+    assert ThinkingLevel.XHIGH == "xhigh"
 
 
 def test_google_reasoning_budget_requires_budget_tokens() -> None:
@@ -87,6 +88,7 @@ def test_glm_reasoning_rejects_na_and_other_levels() -> None:
         ThinkingLevel.LOW,
         ThinkingLevel.MEDIUM,
         ThinkingLevel.HIGH,
+        ThinkingLevel.XHIGH,
         ThinkingLevel.BUDGET,
     ):
         with pytest.raises(ValidationError):

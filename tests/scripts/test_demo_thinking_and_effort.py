@@ -210,6 +210,7 @@ def test_openai_and_codex_use_explicit_thinking_levels_only() -> None:
         ThinkingLevel.LOW,
         ThinkingLevel.MEDIUM,
         ThinkingLevel.HIGH,
+        ThinkingLevel.XHIGH,
     ]
     assert (
         script.default_thinking_for_model("codex", "gpt-5.1-codex-mini")

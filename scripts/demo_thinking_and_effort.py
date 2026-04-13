@@ -102,11 +102,14 @@ def _supported_openai_thinking_levels(model: str) -> list[ThinkingLevel]:
 
 
 def _supported_codex_thinking_levels(model: str) -> list[ThinkingLevel]:
-    return _supported_openai_style_thinking_levels(
+    levels = _supported_openai_style_thinking_levels(
         supports_configurable=codex_supports_configurable_thinking(model),
         supports_off=codex_supports_off_thinking(model),
         supports_minimal=codex_supports_minimal_thinking(model),
     )
+    if codex_supports_configurable_thinking(model):
+        levels.append(ThinkingLevel.XHIGH)
+    return levels
 
 
 def _supported_claude_code_thinking_levels(model: str) -> list[ThinkingLevel]:

@@ -136,6 +136,7 @@ def test_kimi_code_validation_rejects_unsupported_anthropic_levels() -> None:
         ThinkingLevel.LOW,
         ThinkingLevel.MEDIUM,
         ThinkingLevel.HIGH,
+        ThinkingLevel.XHIGH,
     ):
         with pytest.raises(
             ValueError,
@@ -224,6 +225,9 @@ def test_codex_headless_serializes_reasoning_levels() -> None:
     assert CodexHeadlessReasoningConfig.from_base(
         CodexReasoning(thinking_level=ThinkingLevel.HIGH)
     ).cli_args == ["-c", 'model_reasoning_effort="high"']
+    assert CodexHeadlessReasoningConfig.from_base(
+        CodexReasoning(thinking_level=ThinkingLevel.XHIGH)
+    ).cli_args == ["-c", 'model_reasoning_effort="xhigh"']
 
 
 def test_codex_headless_rejects_non_codex_reasoning() -> None:

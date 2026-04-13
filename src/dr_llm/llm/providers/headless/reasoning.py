@@ -41,6 +41,7 @@ def validate_reasoning_for_codex(
             thinking_level=spec.thinking_level,
             supports_off=codex_supports_off_thinking(model),
             supports_minimal=codex_supports_minimal_thinking(model),
+            supports_xhigh=True,
         )
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
@@ -144,6 +145,7 @@ class CodexHeadlessReasoningConfig(BaseProviderReasoningConfig):
                 | ThinkingLevel.LOW
                 | ThinkingLevel.MEDIUM
                 | ThinkingLevel.HIGH
+                | ThinkingLevel.XHIGH
             ):
                 thinking_level = config.thinking_level
                 return cls(

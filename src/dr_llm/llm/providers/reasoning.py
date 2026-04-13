@@ -76,6 +76,7 @@ class ThinkingLevel(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+    XHIGH = "xhigh"
 
 
 class ReasoningBudget(BaseModel):
@@ -241,15 +242,17 @@ def validate_discrete_thinking_level(
     thinking_level: ThinkingLevel,
     supports_off: bool,
     supports_minimal: bool,
+    supports_xhigh: bool = False,
 ) -> None:
-    """Validate a discrete (OFF/MINIMAL/LOW/MEDIUM/HIGH) thinking level.
+    """Validate a discrete (OFF/MINIMAL/LOW/MEDIUM/HIGH/XHIGH) thinking level.
 
     Used by every provider whose API exposes thinking as a fixed set of
     tiers rather than a numeric token budget — currently OpenAI (Responses
     API), Codex (CLI), and OpenRouter when the upstream model uses the
     OpenAI-style ``reasoning.effort`` shape. ``OFF`` and ``MINIMAL`` are
-    optional per-model; ``LOW``/``MEDIUM``/``HIGH`` are always accepted
-    when this validator is reached.
+    optional per-model; ``XHIGH`` is opt-in per provider/model family;
+    ``LOW``/``MEDIUM``/``HIGH`` are always accepted when this validator is
+    reached.
     """
     if thinking_level == ThinkingLevel.NA:
         raise ValueError(
@@ -273,6 +276,12 @@ def validate_discrete_thinking_level(
         ThinkingLevel.HIGH,
     }:
         return
+    if thinking_level == ThinkingLevel.XHIGH:
+        if supports_xhigh:
+            return
+        raise ValueError(
+            f"thinking_level='xhigh' is not supported for provider={provider!r} model={model!r}"
+        )
     raise ValueError(
         f"thinking_level {thinking_level!r} is not supported for provider={provider!r} model={model!r}"
     )

@@ -41,3 +41,7 @@ class ClaudeHeadlessProviderConfig(HeadlessProviderConfig):
                 [*self.required_env_vars, self.api_key_env],
             )
         return self
+
+
+class CodexHeadlessProviderConfig(HeadlessProviderConfig):
+    timeout_seconds: float = 600.0
