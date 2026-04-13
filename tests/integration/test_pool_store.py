@@ -641,6 +641,91 @@ def test_clear_pending_supports_filtered_subset(pool_store: PoolStore) -> None:
 
 
 @pytest.mark.integration
+def test_clear_pending_without_filter_deletes_all_pending_rows(
+    pool_store: PoolStore,
+) -> None:
+    before_counts = pool_store.pending.status_counts()
+
+    pending_a = _pending(dim_a="clear_unfiltered_pending_a", dim_b=1, sample_idx=0)
+    pending_b = _pending(dim_a="clear_unfiltered_pending_b", dim_b=1, sample_idx=0)
+    leased_row = _pending(dim_a="clear_unfiltered_leased", dim_b=1, sample_idx=0)
+    failed_row = _pending(dim_a="clear_unfiltered_failed", dim_b=1, sample_idx=0)
+    promoted_row = _pending(dim_a="clear_unfiltered_promoted", dim_b=1, sample_idx=0)
+    pool_store.pending.insert_many(
+        [pending_a, pending_b, leased_row, failed_row, promoted_row]
+    )
+
+    leased = pool_store.pending.claim(
+        worker_id="w-clear-unfiltered-leased",
+        lease_seconds=60,
+        key_filter=_eq_filter(dim_a="clear_unfiltered_leased", dim_b=1),
+    )
+    assert leased is not None
+
+    failed = pool_store.pending.claim(
+        worker_id="w-clear-unfiltered-failed",
+        lease_seconds=60,
+        key_filter=_eq_filter(dim_a="clear_unfiltered_failed", dim_b=1),
+    )
+    assert failed is not None
+    assert pool_store.pending.fail(
+        pending_id=failed.pending_id,
+        worker_id="w-clear-unfiltered-failed",
+        reason="expected-failure",
+    )
+
+    promoted = pool_store.pending.claim(
+        worker_id="w-clear-unfiltered-promoted",
+        lease_seconds=60,
+        key_filter=_eq_filter(dim_a="clear_unfiltered_promoted", dim_b=1),
+    )
+    assert promoted is not None
+    assert (
+        pool_store.pending.promote(
+            pending_id=promoted.pending_id,
+            worker_id="w-clear-unfiltered-promoted",
+        )
+        is not None
+    )
+
+    cleared = pool_store.pending.clear_pending()
+    after_counts = pool_store.pending.status_counts()
+
+    assert cleared == before_counts.pending + 2
+    assert after_counts.pending == 0
+    assert after_counts.leased == before_counts.leased + 1
+    assert after_counts.failed == before_counts.failed + 1
+    assert after_counts.promoted == before_counts.promoted + 1
+    assert len(
+        pool_store.pending.bulk_load(
+            key_filter=_eq_filter(dim_a="clear_unfiltered_leased"),
+            status=PendingStatus.leased,
+        )
+    ) == 1
+    assert len(
+        pool_store.pending.bulk_load(
+            key_filter=_eq_filter(dim_a="clear_unfiltered_failed"),
+            status=PendingStatus.failed,
+        )
+    ) == 1
+    assert len(
+        pool_store.pending.bulk_load(
+            key_filter=_eq_filter(dim_a="clear_unfiltered_promoted"),
+            status=PendingStatus.promoted,
+        )
+    ) == 1
+    assert pool_store.pending.bulk_load(
+        key_filter=_in_filter(
+            dim_a=[
+                "clear_unfiltered_pending_a",
+                "clear_unfiltered_pending_b",
+            ]
+        ),
+        status=PendingStatus.pending,
+    ) == []
+
+
+@pytest.mark.integration
 def test_clear_pending_returns_zero_when_no_matching_pending_rows(
     pool_store: PoolStore,
 ) -> None:
