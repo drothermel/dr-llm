@@ -65,10 +65,7 @@ def partial_key_filter_clause(
     conditions = [
         _pool_key_clause_to_sql(table, key, clause)
         for key, clause in key_filter.root.items()
-        if key in schema.key_column_names
     ]
-    if not conditions:
-        return None
     return and_(*conditions)
 
 
@@ -79,18 +76,12 @@ def key_values_from_row(
 
 
 def validate_key_filter(schema: PoolSchema, key_filter: PoolKeyFilter) -> None:
-    """Warn on unknown keys in a partial key filter.
-
-    Unlike validate_key_values (which requires an exact key match and raises
-    PoolSchemaError), this is intentionally permissive: key_filter is a partial
-    subset, so unknown keys are logged as warnings rather than errors.
-    """
+    """Reject unknown keys in a partial key filter."""
     unknown = set(key_filter.root.keys()) - set(schema.key_column_names)
     if unknown:
-        logger.warning(
-            "key_filter contains unknown columns %s (valid: %s)",
-            unknown,
-            schema.key_column_names,
+        raise PoolSchemaError(
+            "key_filter contains unknown columns "
+            f"{unknown} (valid: {schema.key_column_names})"
         )
 
 

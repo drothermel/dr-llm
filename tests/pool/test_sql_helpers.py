@@ -59,7 +59,7 @@ def test_partial_key_filter_clause_supports_eq_and_in() -> None:
         table,
         PoolKeyFilter(
             {
-                "dim_a": PoolKeyInClause(values=["alpha", "beta"]),
+                "dim_a": PoolKeyInClause(values=("alpha", "beta")),
                 "dim_b": PoolKeyEqClause(value=3),
             }
         ),
@@ -78,18 +78,16 @@ def test_partial_key_filter_clause_supports_eq_and_in() -> None:
 
 def test_pool_key_filter_rejects_empty_in_values() -> None:
     with pytest.raises(ValueError, match="at least 1 item"):
-        PoolKeyFilter({"dim_a": PoolKeyInClause(values=[])})
+        PoolKeyFilter({"dim_a": PoolKeyInClause(values=())})
 
 
-def test_validate_key_filter_warns_on_unknown_keys(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_validate_key_filter_rejects_unknown_keys() -> None:
     schema = PoolSchema(
         name="helpertest",
         key_columns=[KeyColumn(name="dim_a")],
     )
 
-    with caplog.at_level("WARNING", logger="dr_llm.pool.db.sql_helpers"):
+    with pytest.raises(PoolSchemaError, match="unknown columns"):
         validate_key_filter(
             schema,
             PoolKeyFilter(
@@ -99,5 +97,3 @@ def test_validate_key_filter_warns_on_unknown_keys(
                 }
             ),
         )
-
-    assert any("unknown columns" in record.message for record in caplog.records)

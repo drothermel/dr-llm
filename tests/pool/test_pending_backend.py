@@ -100,7 +100,7 @@ def _sample(*, attempt_count: int = 1) -> PendingSample:
     )
 
 
-def _eq_filter(**key_values: Any) -> PoolKeyFilter:
+def _eq_filter(**key_values: object) -> PoolKeyFilter:
     return PoolKeyFilter.eq(**key_values)
 
 

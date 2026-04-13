@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
@@ -16,7 +17,7 @@ class PoolKeyInClause(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     op: Literal["in"] = "in"
-    values: list[Any] = Field(min_length=1)
+    values: tuple[Any, ...] = Field(min_length=1)
 
 
 type PoolKeyClause = Annotated[
@@ -28,13 +29,16 @@ class PoolKeyFilter(RootModel[dict[str, PoolKeyClause]]):
     model_config = ConfigDict(frozen=True)
 
     @classmethod
-    def eq(cls, **key_values: Any) -> PoolKeyFilter:
+    def eq(cls, **key_values: object) -> PoolKeyFilter:
         return cls(
             {key: PoolKeyEqClause(value=value) for key, value in key_values.items()}
         )
 
     @classmethod
-    def in_(cls, **key_values: list[Any]) -> PoolKeyFilter:
+    def in_(cls, **key_values: Sequence[object]) -> PoolKeyFilter:
         return cls(
-            {key: PoolKeyInClause(values=values) for key, values in key_values.items()}
+            {
+                key: PoolKeyInClause(values=tuple(values))
+                for key, values in key_values.items()
+            }
         )
