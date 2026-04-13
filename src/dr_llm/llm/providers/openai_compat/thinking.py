@@ -62,6 +62,19 @@ OPENAI_GPT5_SAMPLING_SUPPORTED_MODELS = [
     "gpt-5.4-nano",
 ]
 
+OPENAI_TEMP_TOPP_UNSUPPORTED_MSG = (
+    "OpenAI custom temperature/top_p controls are only supported for "
+    "gpt-5.2 and gpt-5.4 families with "
+    "OpenAIReasoning(thinking_level='off'); "
+    "model={model!r} does not support them"
+)
+
+OPENAI_TEMP_TOPP_REASONING_REQUIRED_MSG = (
+    "OpenAI custom temperature/top_p controls require "
+    "OpenAIReasoning(thinking_level='off') "
+    "for model={model!r}"
+)
+
 
 def normalize_openai_reasoning_model(model: str) -> str:
     if model.startswith("openai/"):
@@ -126,18 +139,9 @@ def validate_openai_sampling_controls(
     if not openai_is_gpt5_family(model):
         return
     if not openai_supports_sampling_with_reasoning_off(model):
-        raise ValueError(
-            "OpenAI custom temperature/top_p controls are only supported for "
-            "gpt-5.2 and gpt-5.4 families with "
-            "OpenAIReasoning(thinking_level='off'); "
-            f"model={model!r} does not support them"
-        )
+        raise ValueError(OPENAI_TEMP_TOPP_UNSUPPORTED_MSG.format(model=model))
     if reasoning != OpenAIReasoning(thinking_level=ThinkingLevel.OFF):
-        raise ValueError(
-            "OpenAI custom temperature/top_p controls require "
-            "OpenAIReasoning(thinking_level='off') "
-            f"for model={model!r}"
-        )
+        raise ValueError(OPENAI_TEMP_TOPP_REASONING_REQUIRED_MSG.format(model=model))
 
 
 def reasoning_capabilities_for_openai(model: str) -> ReasoningCapabilities | None:
