@@ -70,6 +70,10 @@ Some providers use static model lists for `models sync` (no `/models` endpoint).
 
 ## Python API
 
+`ApiLlmRequest` / `ApiLlmConfig` are the concrete request/config shapes for API-backed providers. `HeadlessLlmRequest` / `HeadlessLlmConfig` are the concrete shapes for CLI-backed providers. `LlmRequest` and `LlmConfig` remain available as unions, and `parse_llm_request(...)` / `parse_llm_config(...)` validate raw payloads into the correct concrete model by `provider`.
+
+For API-backed providers, omitted sampling controls default to `temperature=1.0` and `top_p=0.95`. Headless providers reject those fields entirely.
+
 ### Calling a provider
 
 ```python
@@ -249,10 +253,12 @@ dr-llm models show --provider NAME --model NAME
 # Query
 dr-llm query --provider NAME --model NAME --message TEXT
 dr-llm query --provider openai --model gpt-5-mini --reasoning-json '{"kind":"openai","thinking_level":"high"}' --message TEXT
+dr-llm query --provider codex --model gpt-5.1-codex-mini --reasoning-json '{"kind":"codex","thinking_level":"xhigh"}' --message TEXT
 dr-llm query --provider google --model gemini-2.5-flash --reasoning-json '{"kind":"google","thinking_level":"budget","budget_tokens":512}' --message TEXT
 dr-llm query --provider openrouter --model openai/gpt-oss-20b --reasoning-json '{"kind":"openrouter","effort":"high"}' --message TEXT
 
 # Sampling / token controls
+# API-backed providers default omitted sampling controls to temperature=1.0 and top_p=0.95.
 # --temperature, --top-p, and --max-tokens are rejected for headless providers (codex, claude-code)
 # --temperature and --top-p are also rejected for kimi-code; --max-tokens is required there
 
@@ -337,6 +343,7 @@ and Kimi Code. Use `--provider` to limit the run to one provider.
 
 Reasoning configs are validated before dispatch. For example, OpenAI GPT-5
 family models use configs like `{"kind":"openai","thinking_level":"high"}`,
+Codex reasoning-capable models also accept `{"kind":"codex","thinking_level":"xhigh"}`,
 Google 2.5 models accept budget configs like
 `{"kind":"google","thinking_level":"budget","budget_tokens":512}`, `minimax`
 requires `{"kind":"anthropic","thinking_level":"na"}` together with an explicit
