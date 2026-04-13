@@ -41,8 +41,8 @@ class FakeProvider(Provider):
 
 def make_request(**overrides: Any) -> LlmRequest:
     defaults: dict[str, Any] = {
-        "provider": "fake",
-        "model": "fake-model",
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
         "messages": [Message(role="user", content="hello")],
     }
     defaults.update(overrides)

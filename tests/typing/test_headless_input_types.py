@@ -3,7 +3,12 @@ from __future__ import annotations
 from dr_llm.llm.config import ApiLlmConfig, HeadlessLlmConfig, KimiCodeLlmConfig
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.providers.reasoning import AnthropicReasoning, ThinkingLevel
+from dr_llm.llm.providers.reasoning import (
+    AnthropicReasoning,
+    CodexReasoning,
+    GoogleReasoning,
+    ThinkingLevel,
+)
 from dr_llm.llm.request import ApiLlmRequest, HeadlessLlmRequest, KimiCodeLlmRequest
 
 
@@ -17,11 +22,12 @@ def build_api_shapes() -> tuple[ApiLlmConfig, ApiLlmRequest]:
     )
     request = ApiLlmRequest(
         provider="google",
-        model="gemini-2.5-flash",
+        model="gemini-3-flash-preview",
         messages=[Message(role="user", content="hello")],
         temperature=0.7,
         top_p=0.8,
         max_tokens=256,
+        reasoning=GoogleReasoning(thinking_level=ThinkingLevel.HIGH),
     )
     return config, request
 
@@ -30,12 +36,14 @@ def build_headless_shapes() -> tuple[HeadlessLlmConfig, HeadlessLlmRequest]:
     config = HeadlessLlmConfig(
         provider="claude-code",
         model="claude-sonnet-4-6",
+        effort=EffortSpec.HIGH,
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
     )
     request = HeadlessLlmRequest(
         provider="codex",
         model="gpt-5.4-mini",
         messages=[Message(role="user", content="hello")],
+        reasoning=CodexReasoning(thinking_level=ThinkingLevel.LOW),
     )
     return config, request
 
@@ -57,3 +65,16 @@ def build_kimi_shapes() -> tuple[KimiCodeLlmConfig, KimiCodeLlmRequest]:
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
     )
     return config, request
+
+
+def test_build_shapes_exist() -> None:
+    api_config, api_request = build_api_shapes()
+    headless_config, headless_request = build_headless_shapes()
+    kimi_config, kimi_request = build_kimi_shapes()
+
+    assert api_config.provider == "openai"
+    assert api_request.provider == "google"
+    assert headless_config.provider == "claude-code"
+    assert headless_request.provider == "codex"
+    assert kimi_config.provider == "kimi-code"
+    assert kimi_request.provider == "kimi-code"

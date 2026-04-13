@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, TypeAlias
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
@@ -104,7 +104,7 @@ class HeadlessLlmConfig(BaseModel):
         )
 
 
-LlmConfig: TypeAlias = ApiLlmConfig | KimiCodeLlmConfig | HeadlessLlmConfig
+type LlmConfig = ApiLlmConfig | KimiCodeLlmConfig | HeadlessLlmConfig
 LlmConfigSpec = Annotated[LlmConfig, Field(discriminator="provider")]
 LLM_CONFIG_ADAPTER = TypeAdapter(LlmConfigSpec)
 

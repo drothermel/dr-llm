@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Any, Annotated, Literal
+from typing import Any, Annotated, Literal, Never
 
 from pydantic import (
     BaseModel,
@@ -235,6 +235,17 @@ def parse_reasoning_spec(payload: object) -> ReasoningSpec:
 # ---------------------------------------------------------------------------
 
 
+def raise_unsupported_thinking_level(
+    *,
+    provider: str,
+    model: str,
+    thinking_level: ThinkingLevel,
+) -> Never:
+    raise ValueError(
+        f"thinking_level {thinking_level!r} is not supported for provider={provider!r} model={model!r}"
+    )
+
+
 def validate_discrete_thinking_level(
     *,
     provider: str,
@@ -279,11 +290,15 @@ def validate_discrete_thinking_level(
     if thinking_level == ThinkingLevel.XHIGH:
         if supports_xhigh:
             return
-        raise ValueError(
-            f"thinking_level='xhigh' is not supported for provider={provider!r} model={model!r}"
+        raise_unsupported_thinking_level(
+            provider=provider,
+            model=model,
+            thinking_level=ThinkingLevel.XHIGH,
         )
-    raise ValueError(
-        f"thinking_level {thinking_level!r} is not supported for provider={provider!r} model={model!r}"
+    raise_unsupported_thinking_level(
+        provider=provider,
+        model=model,
+        thinking_level=thinking_level,
     )
 
 

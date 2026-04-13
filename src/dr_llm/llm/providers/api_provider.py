@@ -84,7 +84,7 @@ class ApiProvider(Provider):
 
     @abstractmethod
     def _build_request(self, request: ApiBackedLlmRequest) -> ApiProviderRequest:
-        """Translate an ``LlmRequest`` into the provider-specific request shape."""
+        """Translate an ``ApiBackedLlmRequest`` into an ``ApiProviderRequest``."""
 
     @abstractmethod
     def _parse_response(self, response: httpx.Response) -> ApiProviderResponse:

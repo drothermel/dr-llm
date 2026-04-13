@@ -121,7 +121,7 @@ def test_payload_omits_thinking_for_off() -> None:
     captured, client = make_http_client(_MOCK_RESPONSE)
     adapter = AnthropicProvider(config=_make_config(), client=client)
 
-    request = make_request(
+    request = _make_api_request(
         provider="anthropic",
         model="claude-sonnet-4-6",
         max_tokens=256,

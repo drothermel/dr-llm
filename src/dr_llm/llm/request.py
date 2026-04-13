@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, TypeAlias
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
@@ -28,7 +28,7 @@ SAMPLING_API_PROVIDER_NAMES = (
 )
 HEADLESS_PROVIDER_NAMES = ("codex", "claude-code")
 
-ApiProviderName: TypeAlias = Literal[
+type ApiProviderName = Literal[
     "openai",
     "openrouter",
     "glm",
@@ -36,9 +36,9 @@ ApiProviderName: TypeAlias = Literal[
     "anthropic",
     "minimax",
 ]
-KimiCodeProviderName: TypeAlias = Literal["kimi-code"]
-ApiBackedProviderName: TypeAlias = ApiProviderName | KimiCodeProviderName
-HeadlessProviderName: TypeAlias = Literal["codex", "claude-code"]
+type KimiCodeProviderName = Literal["kimi-code"]
+type ApiBackedProviderName = ApiProviderName | KimiCodeProviderName
+type HeadlessProviderName = Literal["codex", "claude-code"]
 
 
 def validate_max_tokens(*, provider: str, max_tokens: int | None) -> None:
@@ -114,7 +114,7 @@ class HeadlessLlmRequest(BaseModel):
         return self
 
 
-LlmRequest: TypeAlias = ApiLlmRequest | KimiCodeLlmRequest | HeadlessLlmRequest
+type LlmRequest = ApiLlmRequest | KimiCodeLlmRequest | HeadlessLlmRequest
 LlmRequestSpec = Annotated[LlmRequest, Field(discriminator="provider")]
 LLM_REQUEST_ADAPTER = TypeAdapter(LlmRequestSpec)
 

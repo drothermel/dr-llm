@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.providers.api_config import resolve_api_key
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
@@ -42,28 +43,31 @@ class OpenAICompatRequest(BaseModel):
         request: ApiBackedLlmRequest,
         config: OpenAICompatConfig,
     ) -> OpenAICompatRequest:
-        sampling_request = cast(ApiLlmRequest, request)
+        if not isinstance(request, ApiLlmRequest):
+            raise ProviderSemanticError(
+                f"{config.name} requires a sampling-capable API request shape"
+            )
         reasoning_mapping = OpenAICompatReasoningConfig.from_base(
-            sampling_request.reasoning,
-            provider=sampling_request.provider,
-            model=sampling_request.model,
+            request.reasoning,
+            provider=request.provider,
+            model=request.model,
         )
         reasoning_effort = reasoning_mapping.reasoning_effort
         extra_body = reasoning_mapping.extra_body
         return cls(
-            provider=sampling_request.provider,
-            model=sampling_request.model,
-            messages=cls._to_openai_messages(sampling_request.messages),
-            temperature=sampling_request.temperature,
-            top_p=sampling_request.top_p,
-            max_tokens=sampling_request.max_tokens,
+            provider=request.provider,
+            model=request.model,
+            messages=cls._to_openai_messages(request.messages),
+            temperature=request.temperature,
+            top_p=request.top_p,
+            max_tokens=request.max_tokens,
             reasoning_effort=reasoning_effort,
             extra_body=extra_body,
             base_url=config.base_url,
             chat_path=config.chat_path,
             api_key_env=config.api_key_env,
-            api_key=resolve_api_key(config, label=sampling_request.provider),
-            idempotency_key=cls._resolve_idempotency_key(request=sampling_request),
+            api_key=resolve_api_key(config, label=request.provider),
+            idempotency_key=cls._resolve_idempotency_key(request=request),
             warnings=reasoning_mapping.warnings,
         )
 
