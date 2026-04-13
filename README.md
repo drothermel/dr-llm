@@ -64,7 +64,7 @@ and OpenRouter listings are filtered through the local reasoning-policy allowlis
 | `claude-code` | Claude Code CLI (headless) | `claude` executable |
 | `kimi-code` | Kimi Code API (Anthropic-compatible) | `KIMI_API_KEY` |
 
-Headless providers shell out to CLI tools. `minimax` and `kimi-code` are direct Anthropic-compatible `/messages` API providers.
+Headless providers shell out to CLI tools. `minimax` and `kimi-code` are direct Anthropic-compatible `/messages` API providers. Headless input shapes do not expose `temperature`, `top_p`, or `max_tokens`.
 
 Some providers use static model lists for `models sync` (no `/models` endpoint). The CLI notes when a list may be out of date and links to docs.
 
@@ -73,15 +73,14 @@ Some providers use static model lists for `models sync` (no `/models` endpoint).
 ### Calling a provider
 
 ```python
-from dr_llm.llm import build_default_registry
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm import ApiLlmRequest, build_default_registry
 from dr_llm.llm.messages import Message
 
 registry = build_default_registry()
 adapter = registry.get("openai")
 
 response = adapter.generate(
-    LlmRequest(
+    ApiLlmRequest(
         provider="openai",
         model="gpt-4.1",
         messages=[Message(role="user", content="hello")],
@@ -103,7 +102,7 @@ is used to auto-manage a Postgres project.
 ```python
 from dr_llm import DbConfig, PoolSchema, PoolStore
 from dr_llm.llm import build_default_registry
-from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.config import ApiLlmConfig, LlmConfig
 from dr_llm.llm.messages import Message
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.llm_pool_adapter import make_llm_process_fn, seed_llm_grid
@@ -128,11 +127,19 @@ llm_config_axis = Axis[LlmConfig](
     members=[
         AxisMember(
             id="gpt-4.1-mini",
-            value=LlmConfig(provider="openai", model="gpt-4.1-mini", max_tokens=64),
+            value=ApiLlmConfig(
+                provider="openai",
+                model="gpt-4.1-mini",
+                max_tokens=64,
+            ),
         ),
         AxisMember(
             id="gemini-flash",
-            value=LlmConfig(provider="google", model="gemini-2.5-flash", max_tokens=64),
+            value=ApiLlmConfig(
+                provider="google",
+                model="gemini-2.5-flash",
+                max_tokens=64,
+            ),
         ),
     ],
 )
@@ -244,6 +251,9 @@ dr-llm query --provider NAME --model NAME --message TEXT
 dr-llm query --provider openai --model gpt-5-mini --reasoning-json '{"kind":"openai","thinking_level":"high"}' --message TEXT
 dr-llm query --provider google --model gemini-2.5-flash --reasoning-json '{"kind":"google","thinking_level":"budget","budget_tokens":512}' --message TEXT
 dr-llm query --provider openrouter --model openai/gpt-oss-20b --reasoning-json '{"kind":"openrouter","effort":"high"}' --message TEXT
+
+# Sampling / token controls
+# --temperature, --top-p, and --max-tokens are rejected for headless providers (codex, claude-code)
 
 # Projects (Docker-managed Postgres)
 dr-llm project create NAME

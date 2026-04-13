@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from dr_llm.logging.events import generation_log_context
-from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.config import ApiLlmConfig as LlmConfig
 from dr_llm.llm.messages import CallMode, Message
 from dr_llm.llm.providers.usage import TokenUsage
 from dr_llm.llm.response import LlmResponse

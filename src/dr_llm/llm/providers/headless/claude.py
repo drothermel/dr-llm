@@ -18,7 +18,7 @@ from dr_llm.llm.providers.headless.base import (
 )
 from dr_llm.llm.providers.headless.config import ClaudeHeadlessProviderConfig
 from dr_llm.llm.providers.headless.reasoning import ClaudeHeadlessReasoningConfig
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.request import HeadlessLlmRequest
 
 
 CLAUDE_DEFAULT_COMMAND = [
@@ -149,7 +149,7 @@ class ClaudeHeadlessProvider(BaseHeadlessProvider):
 
     def subprocess_env(
         self,
-        request: LlmRequest,
+        request: HeadlessLlmRequest,
         payload: HeadlessRequestPayload,
     ) -> dict[str, str]:
         del request, payload
@@ -163,7 +163,7 @@ class ClaudeHeadlessProvider(BaseHeadlessProvider):
 
     def command_for_request(
         self,
-        request: LlmRequest,
+        request: HeadlessLlmRequest,
         payload: HeadlessRequestPayload,
         reasoning_mapping: HeadlessReasoningResult,
     ) -> list[str]:
@@ -182,12 +182,12 @@ class ClaudeHeadlessProvider(BaseHeadlessProvider):
             command.extend(reasoning_mapping.cli_args)
         return command
 
-    def reasoning_mapping(self, request: LlmRequest) -> HeadlessReasoningResult:
+    def reasoning_mapping(self, request: HeadlessLlmRequest) -> HeadlessReasoningResult:
         return ClaudeHeadlessReasoningConfig.from_base(request.reasoning)
 
     def stdin_for_request(
         self,
-        request: LlmRequest,
+        request: HeadlessLlmRequest,
         payload: HeadlessRequestPayload,
     ) -> str:
         del payload
@@ -197,7 +197,7 @@ class ClaudeHeadlessProvider(BaseHeadlessProvider):
     def parse_stdout(
         self,
         *,
-        request: LlmRequest,
+        request: HeadlessLlmRequest,
         stdout: str,
         stderr: str,
     ) -> ParsedHeadlessOutput:

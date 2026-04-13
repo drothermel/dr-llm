@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.llm.providers.api_config import APIProviderConfig, resolve_api_key
 from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.request import ApiLlmRequest
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
 
@@ -53,7 +53,7 @@ class GoogleRequest(BaseModel):
     @classmethod
     def from_llm_request(
         cls,
-        request: LlmRequest,
+        request: ApiLlmRequest,
         config: APIProviderConfig,
     ) -> GoogleRequest:
         reasoning_mapping = GoogleReasoningConfig.from_base(request.reasoning)
@@ -114,7 +114,7 @@ class GoogleRequest(BaseModel):
     @staticmethod
     def _generation_config(
         *,
-        request: LlmRequest,
+        request: ApiLlmRequest,
         reasoning_payload: dict[str, Any],
     ) -> _GoogleGenerationConfig | None:
         thinking_config = (

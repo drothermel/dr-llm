@@ -6,7 +6,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.llm.providers.api_config import resolve_api_key
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.request import ApiLlmRequest
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
 from dr_llm.llm.providers.openai_compat.reasoning import OpenAICompatReasoningConfig
@@ -39,7 +39,7 @@ class OpenAICompatRequest(BaseModel):
     @classmethod
     def from_llm_request(
         cls,
-        request: LlmRequest,
+        request: ApiLlmRequest,
         config: OpenAICompatConfig,
     ) -> OpenAICompatRequest:
         reasoning_mapping = OpenAICompatReasoningConfig.from_base(
@@ -73,7 +73,7 @@ class OpenAICompatRequest(BaseModel):
         ]
 
     @staticmethod
-    def _resolve_idempotency_key(*, request: LlmRequest) -> str:
+    def _resolve_idempotency_key(*, request: ApiLlmRequest) -> str:
         raw_idempotency_key = request.metadata.get("idempotency_key")
         if isinstance(raw_idempotency_key, str) and raw_idempotency_key:
             return raw_idempotency_key

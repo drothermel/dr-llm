@@ -15,6 +15,7 @@ from dr_llm.llm.providers.reasoning import (
     ReasoningBudget,
     ThinkingLevel,
 )
+from dr_llm.llm.request import ApiLlmRequest
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 
@@ -53,10 +54,14 @@ _THOUGHT_RESPONSE = {
 }
 
 
+def _make_api_request(**overrides: Any) -> ApiLlmRequest:
+    return cast(ApiLlmRequest, make_request(**overrides))
+
+
 def test_rejects_unsupported_message_role() -> None:
     """model_construct can bypass validation; unsupported roles must not be dropped silently."""
     tool_msg = Message.model_construct(role="tool", content="secret tool output")
-    request = make_request(
+    request = _make_api_request(
         provider="google",
         model="gemini-test",
         messages=[tool_msg],
@@ -72,7 +77,7 @@ def test_payload_serializes_messages() -> None:
     captured, client = make_http_client(_MOCK_RESPONSE)
     adapter = GoogleProvider(config=_GOOGLE_CONFIG, client=client)
 
-    request = make_request(
+    request = _make_api_request(
         provider="google",
         model="gemini-test",
         messages=[
@@ -99,7 +104,7 @@ def test_payload_serializes_budget_reasoning_under_thinking_config() -> None:
     captured, client = make_http_client(_MOCK_RESPONSE)
     adapter = GoogleProvider(config=_GOOGLE_CONFIG, client=client)
 
-    request = make_request(
+    request = _make_api_request(
         provider="google",
         model="gemini-2.5-flash",
         reasoning=ReasoningBudget(tokens=512),
@@ -114,7 +119,7 @@ def test_payload_serializes_google_budget_controls() -> None:
     captured, client = make_http_client(_MOCK_RESPONSE)
     adapter = GoogleProvider(config=_GOOGLE_CONFIG, client=client)
 
-    request = make_request(
+    request = _make_api_request(
         provider="google",
         model="gemini-2.5-flash",
         reasoning=GoogleReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
@@ -124,7 +129,7 @@ def test_payload_serializes_google_budget_controls() -> None:
     payload = cast(dict[str, Any], captured["payload"])
     assert payload["generationConfig"]["thinkingConfig"] == {"thinkingBudget": -1}
 
-    request = make_request(
+    request = _make_api_request(
         provider="google",
         model="gemini-2.5-flash",
         reasoning=GoogleReasoning(
@@ -149,7 +154,7 @@ def test_invalid_json_raises_transport_error() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     adapter = GoogleProvider(config=_GOOGLE_CONFIG, client=client)
 
-    request = make_request(
+    request = _make_api_request(
         provider="google",
         model="gemini-test",
         messages=[Message(role="user", content="hi")],

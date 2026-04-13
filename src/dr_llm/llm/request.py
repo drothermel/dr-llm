@@ -1,13 +1,35 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
-from dr_llm.llm.providers.effort import EffortSpec, validate_effort
 from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.effort import EffortSpec, validate_effort
 from dr_llm.llm.providers.reasoning import ReasoningSpec
 from dr_llm.llm.providers.reasoning_validation import validate_reasoning
+
+API_PROVIDER_NAMES = (
+    "openai",
+    "openrouter",
+    "glm",
+    "google",
+    "anthropic",
+    "minimax",
+    "kimi-code",
+)
+HEADLESS_PROVIDER_NAMES = ("codex", "claude-code")
+
+ApiProviderName: TypeAlias = Literal[
+    "openai",
+    "openrouter",
+    "glm",
+    "google",
+    "anthropic",
+    "minimax",
+    "kimi-code",
+]
+HeadlessProviderName: TypeAlias = Literal["codex", "claude-code"]
 
 
 def validate_max_tokens(*, provider: str, max_tokens: int | None) -> None:
@@ -28,10 +50,10 @@ def validate_llm_constraints(
     validate_reasoning(provider=provider, model=model, reasoning=reasoning)
 
 
-class LlmRequest(BaseModel):
+class ApiLlmRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    provider: str
+    provider: ApiProviderName
     model: str
     messages: list[Message]
     temperature: float | None = 1.0
@@ -42,7 +64,7 @@ class LlmRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _validate_request_constraints(self) -> LlmRequest:
+    def _validate_request_constraints(self) -> ApiLlmRequest:
         validate_llm_constraints(
             provider=self.provider,
             model=self.model,
@@ -51,3 +73,34 @@ class LlmRequest(BaseModel):
             reasoning=self.reasoning,
         )
         return self
+
+
+class HeadlessLlmRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: HeadlessProviderName
+    model: str
+    messages: list[Message]
+    effort: EffortSpec = EffortSpec.NA
+    reasoning: ReasoningSpec | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_request_constraints(self) -> HeadlessLlmRequest:
+        validate_llm_constraints(
+            provider=self.provider,
+            model=self.model,
+            max_tokens=None,
+            effort=self.effort,
+            reasoning=self.reasoning,
+        )
+        return self
+
+
+LlmRequest: TypeAlias = ApiLlmRequest | HeadlessLlmRequest
+LlmRequestSpec = Annotated[LlmRequest, Field(discriminator="provider")]
+LLM_REQUEST_ADAPTER = TypeAdapter(LlmRequestSpec)
+
+
+def parse_llm_request(payload: object) -> LlmRequest:
+    return LLM_REQUEST_ADAPTER.validate_python(payload)

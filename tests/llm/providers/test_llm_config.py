@@ -4,8 +4,8 @@ import pytest
 from pydantic import ValidationError
 
 from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.config import LlmConfig
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.config import HeadlessLlmConfig, parse_llm_config
+from dr_llm.llm.request import HeadlessLlmRequest, parse_llm_request
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import (
     AnthropicReasoning,
@@ -17,6 +17,14 @@ from dr_llm.llm.providers.reasoning import (
     ReasoningBudget,
     ThinkingLevel,
 )
+
+
+def LlmConfig(**kwargs: object):
+    return parse_llm_config(kwargs)
+
+
+def LlmRequest(**kwargs: object):
+    return parse_llm_request(kwargs)
 
 
 def test_basic_construction() -> None:
@@ -58,7 +66,45 @@ def test_frozen() -> None:
 
 def test_extra_fields_forbidden() -> None:
     with pytest.raises(ValidationError):
-        LlmConfig(provider="openai", model="gpt-4.1-mini", extra_field="nope")  # type: ignore[call-arg]
+        LlmConfig(provider="openai", model="gpt-4.1-mini", extra_field="nope")
+
+
+def test_headless_config_rejects_sampling_fields() -> None:
+    with pytest.raises(ValidationError, match="temperature"):
+        HeadlessLlmConfig(
+            provider="codex",
+            model="gpt-5.4-mini",
+            temperature=0.2,  # type: ignore[call-arg]
+        )
+
+    with pytest.raises(ValidationError, match="top_p"):
+        parse_llm_config(
+            {
+                "provider": "claude-code",
+                "model": "claude-sonnet-4-6",
+                "top_p": 0.5,
+            }
+        )
+
+
+def test_headless_request_rejects_sampling_and_max_tokens() -> None:
+    with pytest.raises(ValidationError, match="max_tokens"):
+        parse_llm_request(
+            {
+                "provider": "codex",
+                "model": "gpt-5.4-mini",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 32,
+            }
+        )
+
+    with pytest.raises(ValidationError, match="temperature"):
+        HeadlessLlmRequest(
+            provider="claude-code",
+            model="claude-sonnet-4-6",
+            messages=[Message(role="user", content="hi")],
+            temperature=0.2,  # type: ignore[call-arg]
+        )
 
 
 def test_to_request() -> None:

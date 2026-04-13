@@ -15,11 +15,19 @@ Usage:
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import cast
 
 import typer
 from pydantic import BaseModel, ValidationError
 
 from _demo_thinking_models import PROVIDER_MODELS
+from dr_llm.llm.request import (
+    ApiLlmRequest,
+    ApiProviderName,
+    HeadlessLlmRequest,
+    HeadlessProviderName,
+    LlmRequest,
+)
 from dr_llm.llm.providers.anthropic.thinking import (
     ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
 )
@@ -29,7 +37,6 @@ from dr_llm.llm.providers.headless.codex_thinking import (
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
 )
-from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.openrouter.policy import (
     OpenRouterReasoningRequestStyle,
@@ -309,18 +316,26 @@ def make_request(
     reasoning_override: ReasoningSpec | None = None,
 ) -> LlmRequest:
     max_tokens = KIMI_CODE_MAX_TOKENS if provider == "kimi-code" else None
-    return LlmRequest(
-        provider=provider,
+    reasoning = reasoning_override or reasoning_for_level(
+        provider,
+        thinking_level,
+        explicit=explicit_reasoning,
+    )
+    if provider in {"codex", "claude-code"}:
+        return HeadlessLlmRequest(
+            provider=cast(HeadlessProviderName, provider),
+            model=model,
+            messages=[Message(role="user", content=PROMPT)],
+            effort=effort,
+            reasoning=reasoning,
+        )
+    return ApiLlmRequest(
+        provider=cast(ApiProviderName, provider),
         model=model,
         messages=[Message(role="user", content=PROMPT)],
         max_tokens=max_tokens,
         effort=effort,
-        reasoning=reasoning_override
-        or reasoning_for_level(
-            provider,
-            thinking_level,
-            explicit=explicit_reasoning,
-        ),
+        reasoning=reasoning,
     )
 
 

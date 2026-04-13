@@ -1,17 +1,25 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from typing import Annotated, TypeAlias
 
-from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.request import LlmRequest, validate_llm_constraints
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+
 from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.reasoning import ReasoningSpec
+from dr_llm.llm.request import (
+    ApiLlmRequest,
+    ApiProviderName,
+    HeadlessLlmRequest,
+    HeadlessProviderName,
+    validate_llm_constraints,
+)
 
 
-class LlmConfig(BaseModel):
+class ApiLlmConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    provider: str
+    provider: ApiProviderName
     model: str
     temperature: float | None = 1.0
     top_p: float | None = 0.95
@@ -20,7 +28,7 @@ class LlmConfig(BaseModel):
     reasoning: ReasoningSpec | None = None
 
     @model_validator(mode="after")
-    def _validate_generation_params(self) -> LlmConfig:
+    def _validate_generation_params(self) -> ApiLlmConfig:
         validate_llm_constraints(
             provider=self.provider,
             model=self.model,
@@ -30,8 +38,8 @@ class LlmConfig(BaseModel):
         )
         return self
 
-    def to_request(self, messages: list[Message]) -> LlmRequest:
-        return LlmRequest(
+    def to_request(self, messages: list[Message]) -> ApiLlmRequest:
+        return ApiLlmRequest(
             provider=self.provider,
             model=self.model,
             messages=messages,
@@ -41,3 +49,41 @@ class LlmConfig(BaseModel):
             effort=self.effort,
             reasoning=self.reasoning,
         )
+
+
+class HeadlessLlmConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: HeadlessProviderName
+    model: str
+    effort: EffortSpec = EffortSpec.NA
+    reasoning: ReasoningSpec | None = None
+
+    @model_validator(mode="after")
+    def _validate_generation_params(self) -> HeadlessLlmConfig:
+        validate_llm_constraints(
+            provider=self.provider,
+            model=self.model,
+            max_tokens=None,
+            effort=self.effort,
+            reasoning=self.reasoning,
+        )
+        return self
+
+    def to_request(self, messages: list[Message]) -> HeadlessLlmRequest:
+        return HeadlessLlmRequest(
+            provider=self.provider,
+            model=self.model,
+            messages=messages,
+            effort=self.effort,
+            reasoning=self.reasoning,
+        )
+
+
+LlmConfig: TypeAlias = ApiLlmConfig | HeadlessLlmConfig
+LlmConfigSpec = Annotated[LlmConfig, Field(discriminator="provider")]
+LLM_CONFIG_ADAPTER = TypeAdapter(LlmConfigSpec)
+
+
+def parse_llm_config(payload: object) -> LlmConfig:
+    return LLM_CONFIG_ADAPTER.validate_python(payload)

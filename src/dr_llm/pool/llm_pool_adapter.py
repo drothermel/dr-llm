@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
-from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.config import LlmConfig, parse_llm_config
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.registry import ProviderRegistry
 from dr_llm.logging.events import generation_log_context, get_generation_log_context
@@ -50,7 +50,7 @@ def make_llm_process_fn(
         raw_config = _require_payload_field(sample, llm_config_key)
         raw_messages = _require_payload_field(sample, prompt_key)
 
-        config = LlmConfig(**raw_config)
+        config = parse_llm_config(raw_config)
         messages = [Message(**message) for message in raw_messages]
         request = config.to_request(messages)
 

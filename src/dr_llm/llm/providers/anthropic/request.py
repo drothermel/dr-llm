@@ -13,7 +13,7 @@ from dr_llm.llm.providers.anthropic.reasoning import (
 )
 from dr_llm.llm.providers.api_config import resolve_api_key
 from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.request import ApiLlmRequest
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
 
@@ -48,7 +48,7 @@ class AnthropicRequest(BaseModel):
     @classmethod
     def from_llm_request(
         cls,
-        request: LlmRequest,
+        request: ApiLlmRequest,
         config: AnthropicConfig,
     ) -> AnthropicRequest:
         if request.max_tokens is None and request.provider != "minimax":
