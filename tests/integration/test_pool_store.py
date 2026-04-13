@@ -521,6 +521,153 @@ def test_requeue_failed_supports_filtered_subset(pool_store: PoolStore) -> None:
 
 
 @pytest.mark.integration
+def test_clear_pending_deletes_only_pending_rows(pool_store: PoolStore) -> None:
+    pending_only = _pending(dim_a="clear_all_pending", dim_b=1, sample_idx=0)
+    leased_row = _pending(dim_a="clear_all_leased", dim_b=1, sample_idx=0)
+    failed_row = _pending(dim_a="clear_all_failed", dim_b=1, sample_idx=0)
+    promoted_row = _pending(dim_a="clear_all_promoted", dim_b=1, sample_idx=0)
+    pool_store.pending.insert_many(
+        [pending_only, leased_row, failed_row, promoted_row]
+    )
+
+    leased = pool_store.pending.claim(
+        worker_id="w-clear-leased",
+        lease_seconds=60,
+        key_filter=_eq_filter(dim_a="clear_all_leased", dim_b=1),
+    )
+    assert leased is not None
+
+    failed = pool_store.pending.claim(
+        worker_id="w-clear-failed",
+        lease_seconds=60,
+        key_filter=_eq_filter(dim_a="clear_all_failed", dim_b=1),
+    )
+    assert failed is not None
+    assert pool_store.pending.fail(
+        pending_id=failed.pending_id,
+        worker_id="w-clear-failed",
+        reason="expected-failure",
+    )
+
+    promoted = pool_store.pending.claim(
+        worker_id="w-clear-promoted",
+        lease_seconds=60,
+        key_filter=_eq_filter(dim_a="clear_all_promoted", dim_b=1),
+    )
+    assert promoted is not None
+    assert (
+        pool_store.pending.promote(
+            pending_id=promoted.pending_id, worker_id="w-clear-promoted"
+        )
+        is not None
+    )
+
+    cleared = pool_store.pending.clear_pending(
+        key_filter=_in_filter(
+            dim_a=[
+                "clear_all_pending",
+                "clear_all_leased",
+                "clear_all_failed",
+                "clear_all_promoted",
+            ]
+        )
+    )
+
+    assert cleared == 1
+    assert pool_store.pending.bulk_load(
+        key_filter=_eq_filter(dim_a="clear_all_pending"),
+        status=PendingStatus.pending,
+    ) == []
+    assert len(
+        pool_store.pending.bulk_load(
+            key_filter=_eq_filter(dim_a="clear_all_leased"),
+            status=PendingStatus.leased,
+        )
+    ) == 1
+    assert len(
+        pool_store.pending.bulk_load(
+            key_filter=_eq_filter(dim_a="clear_all_failed"),
+            status=PendingStatus.failed,
+        )
+    ) == 1
+    assert len(
+        pool_store.pending.bulk_load(
+            key_filter=_eq_filter(dim_a="clear_all_promoted"),
+            status=PendingStatus.promoted,
+        )
+    ) == 1
+
+
+@pytest.mark.integration
+def test_clear_pending_supports_filtered_subset(pool_store: PoolStore) -> None:
+    pending_a = _pending(dim_a="clear_in_a", dim_b=1, sample_idx=0)
+    pending_b = _pending(dim_a="clear_in_b", dim_b=1, sample_idx=0)
+    pending_c = _pending(dim_a="clear_in_c", dim_b=1, sample_idx=0)
+    pool_store.pending.insert_many([pending_a, pending_b, pending_c])
+
+    failed = pool_store.pending.claim(
+        worker_id="w-clear-in-b",
+        lease_seconds=60,
+        key_filter=_eq_filter(dim_a="clear_in_b", dim_b=1),
+    )
+    assert failed is not None
+    assert pool_store.pending.fail(
+        pending_id=failed.pending_id,
+        worker_id="w-clear-in-b",
+        reason="stay-failed",
+    )
+
+    cleared = pool_store.pending.clear_pending(
+        key_filter=_in_filter(dim_a=["clear_in_a", "clear_in_b"])
+    )
+
+    assert cleared == 1
+    assert pool_store.pending.bulk_load(
+        key_filter=_eq_filter(dim_a="clear_in_a"),
+        status=PendingStatus.pending,
+    ) == []
+    assert len(
+        pool_store.pending.bulk_load(
+            key_filter=_eq_filter(dim_a="clear_in_b"),
+            status=PendingStatus.failed,
+        )
+    ) == 1
+    assert len(
+        pool_store.pending.bulk_load(
+            key_filter=_eq_filter(dim_a="clear_in_c"),
+            status=PendingStatus.pending,
+        )
+    ) == 1
+
+
+@pytest.mark.integration
+def test_clear_pending_returns_zero_when_no_matching_pending_rows(
+    pool_store: PoolStore,
+) -> None:
+    pending = _pending(dim_a="clear_none_pending", dim_b=1, sample_idx=0)
+    pool_store.pending.insert(pending)
+
+    leased = pool_store.pending.claim(
+        worker_id="w-clear-none",
+        lease_seconds=60,
+        key_filter=_eq_filter(dim_a="clear_none_pending", dim_b=1),
+    )
+    assert leased is not None
+
+    cleared = pool_store.pending.clear_pending(
+        key_filter=_eq_filter(dim_a="clear_none_pending")
+    )
+
+    assert cleared == 0
+    assert len(
+        pool_store.pending.bulk_load(
+            key_filter=_eq_filter(dim_a="clear_none_pending"),
+            status=PendingStatus.leased,
+        )
+    ) == 1
+
+
+@pytest.mark.integration
 def test_bump_pending_priority(pool_store: PoolStore) -> None:
     p = _pending(dim_a="bump", dim_b=1, sample_idx=0, priority=5)
     pool_store.pending.insert(p)
