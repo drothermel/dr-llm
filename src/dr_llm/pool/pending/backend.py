@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.logging.events import generation_log_context
+from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.db.sql_helpers import validate_key_filter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
@@ -65,6 +66,12 @@ class PoolPendingBackend(
             raise RuntimeError(
                 f"Failed to promote leased pending sample {item.pending_id}"
             )
+        stats = CallStats.from_response(
+            sample_id=promoted.sample_id,
+            response=result,
+            attempt_count=item.attempt_count,
+        )
+        self._store.insert_call_stats(stats)
 
     def handle_process_error(
         self,

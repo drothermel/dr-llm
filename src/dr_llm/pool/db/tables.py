@@ -38,6 +38,7 @@ class PoolTables:
         self.claims = self._build_claims_table()
         self.pending = self._build_pending_table()
         self.metadata_table = self._build_metadata_table()
+        self.call_stats = self._build_call_stats_table()
         self.samples_key_columns = [
             self.samples.c[name] for name in schema.key_column_names
         ]
@@ -50,6 +51,7 @@ class PoolTables:
             self.claims,
             self.pending,
             self.metadata_table,
+            self.call_stats,
         ]
 
     def sample_select_columns(self) -> list[Any]:
@@ -221,6 +223,27 @@ class PoolTables:
                 server_default=text("now()"),
             ),
             PrimaryKeyConstraint("pool_name", "key"),
+        )
+
+    def _build_call_stats_table(self) -> Table:
+        return Table(
+            self.schema.call_stats_table,
+            self.sa_metadata,
+            Column("sample_id", Text, primary_key=True),
+            Column("latency_ms", Integer, nullable=False),
+            Column("total_cost_usd", Double),
+            Column("prompt_tokens", Integer, nullable=False),
+            Column("completion_tokens", Integer, nullable=False),
+            Column("reasoning_tokens", Integer),
+            Column("total_tokens", Integer, nullable=False),
+            Column("attempt_count", Integer, nullable=False, server_default=text("1")),
+            Column("finish_reason", Text),
+            Column(
+                "created_at",
+                TIMESTAMP(timezone=True),
+                nullable=False,
+                server_default=text("now()"),
+            ),
         )
 
     def _key_columns(self) -> list[Column[Any]]:
