@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     and_,
     bindparam,
+    delete,
     exists,
     func,
     literal,
@@ -491,6 +492,20 @@ class PendingStore:
                 metadata_json=metadata_json,
             )
         )
+        with self._runtime.begin() as conn:
+            result = conn.execute(stmt)
+        return result.rowcount or 0
+
+    def clear_pending(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+        """Delete pending rows matching ``key_filter``."""
+        predicates: list[Any] = [self._pending.c.status == PendingStatus.pending]
+        partial_filter = partial_key_filter_clause(
+            self._schema, self._pending, key_filter
+        )
+        if partial_filter is not None:
+            predicates.append(partial_filter)
+
+        stmt = delete(self._pending).where(*predicates)
         with self._runtime.begin() as conn:
             result = conn.execute(stmt)
         return result.rowcount or 0
