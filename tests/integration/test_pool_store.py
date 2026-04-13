@@ -13,6 +13,7 @@ import pytest
 from psycopg import sql
 
 from dr_llm.errors import TransientPersistenceError
+from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
@@ -33,6 +34,7 @@ _TEST_SCHEMA = PoolSchema(
 )
 
 _POOL_TABLES = (
+    _TEST_SCHEMA.call_stats_table,
     _TEST_SCHEMA.metadata_table,
     _TEST_SCHEMA.claims_table,
     _TEST_SCHEMA.pending_table,
@@ -676,3 +678,134 @@ def test_service_generator_error_wraps_as_topup_error(pool_store: PoolStore) -> 
     )
     with pytest.raises(PoolTopupError, match="Top-up generation failed"):
         service.acquire_or_generate(q, generator_fn=failing_generator)
+
+
+# --- Call stats ---
+
+
+@pytest.mark.integration
+def test_call_stats_table_created(pool_store: PoolStore) -> None:
+    dsn = _get_dsn()
+    assert dsn is not None
+    with psycopg.connect(dsn) as conn:
+        row = conn.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name = %s
+            )
+            """,
+            [_TEST_SCHEMA.call_stats_table],
+        ).fetchone()
+    assert row is not None
+    assert row[0] is True
+
+
+@pytest.mark.integration
+def test_insert_call_stats(pool_store: PoolStore) -> None:
+    s = _sample(dim_a="cs_insert", dim_b=1, sample_idx=0)
+    pool_store.insert_sample(s)
+
+    samples = pool_store.bulk_load(key_filter={"dim_a": "cs_insert", "dim_b": 1})
+    assert len(samples) == 1
+    sample_id = samples[0].sample_id
+
+    stats = CallStats(
+        sample_id=sample_id,
+        latency_ms=1500,
+        total_cost_usd=0.01,
+        prompt_tokens=200,
+        completion_tokens=100,
+        reasoning_tokens=30,
+        total_tokens=300,
+        attempt_count=2,
+        finish_reason="stop",
+    )
+    pool_store.insert_call_stats(stats)
+
+    dsn = _get_dsn()
+    assert dsn is not None
+    with psycopg.connect(dsn) as conn:
+        row = conn.execute(
+            sql.SQL(
+                "SELECT latency_ms, total_cost_usd, prompt_tokens, completion_tokens, "
+                "reasoning_tokens, total_tokens, attempt_count, finish_reason "
+                "FROM {} WHERE sample_id = %s"
+            ).format(sql.Identifier("public", _TEST_SCHEMA.call_stats_table)),
+            [sample_id],
+        ).fetchone()
+    assert row is not None
+    assert row[0] == 1500
+    assert row[1] == pytest.approx(0.01)
+    assert row[2] == 200
+    assert row[3] == 100
+    assert row[4] == 30
+    assert row[5] == 300
+    assert row[6] == 2
+    assert row[7] == "stop"
+
+
+@pytest.mark.integration
+def test_call_stats_full_flow(pool_store: PoolStore) -> None:
+    """Seed → claim → promote → verify call_stats row via backend.complete()."""
+    p = _pending(
+        dim_a="cs_flow",
+        dim_b=1,
+        sample_idx=0,
+        payload={"partial": True},
+    )
+    pool_store.pending.insert(p)
+
+    claimed = pool_store.pending.claim(
+        worker_id="w1",
+        lease_seconds=60,
+        key_filter={"dim_a": "cs_flow", "dim_b": 1},
+    )
+    assert claimed is not None
+
+    response_payload = {
+        "text": "generated text",
+        "latency_ms": 800,
+        "usage": {
+            "prompt_tokens": 50,
+            "completion_tokens": 25,
+            "total_tokens": 75,
+            "reasoning_tokens": 0,
+        },
+        "cost": {"total_cost_usd": 0.003},
+        "finish_reason": "stop",
+    }
+
+    promoted = pool_store.pending.promote(
+        pending_id=claimed.pending_id,
+        worker_id="w1",
+        payload=response_payload,
+    )
+    assert promoted is not None
+
+    stats = CallStats.from_response(
+        sample_id=promoted.sample_id,
+        response=response_payload,
+        attempt_count=claimed.attempt_count,
+    )
+    pool_store.insert_call_stats(stats)
+
+    dsn = _get_dsn()
+    assert dsn is not None
+    with psycopg.connect(dsn) as conn:
+        row = conn.execute(
+            sql.SQL(
+                "SELECT latency_ms, prompt_tokens, attempt_count, finish_reason, "
+                "reasoning_tokens, total_cost_usd "
+                "FROM {} WHERE sample_id = %s"
+            ).format(sql.Identifier("public", _TEST_SCHEMA.call_stats_table)),
+            [promoted.sample_id],
+        ).fetchone()
+    assert row is not None
+    assert row[0] == 800
+    assert row[1] == 50
+    assert row[2] == 1
+    assert row[3] == "stop"
+    assert row[4] is None  # reasoning_tokens=0 not stored
+    assert row[5] == pytest.approx(0.003)

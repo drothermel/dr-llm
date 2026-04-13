@@ -5,6 +5,7 @@ from typing import Any, cast
 import pytest
 
 from dr_llm.logging.events import get_generation_log_context
+from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.pending.backend import (
     PoolPendingBackend,
     PoolPendingBackendConfig,
@@ -83,6 +84,10 @@ class _FakeStore:
     def __init__(self) -> None:
         self.schema = _FakeSchema(name="pool-test", key_column_names=["model"])
         self.pending = _FakePendingStore()
+        self.call_stats_inserts: list[CallStats] = []
+
+    def insert_call_stats(self, stats: CallStats) -> None:
+        self.call_stats_inserts.append(stats)
 
 
 def _sample(*, attempt_count: int = 1) -> PendingSample:
@@ -130,9 +135,15 @@ def test_backend_complete_promotes_pending_sample() -> None:
         config=PoolPendingBackendConfig(),
     )
 
+    result = {
+        "text": "ok",
+        "latency_ms": 500,
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        "finish_reason": "stop",
+    }
     backend.complete(
         item=_sample(),
-        result={"completion": "ok"},
+        result=result,
         worker_id="worker-1",
     )
 
@@ -140,9 +151,15 @@ def test_backend_complete_promotes_pending_sample() -> None:
         {
             "pending_id": "pending-1",
             "worker_id": "worker-1",
-            "payload": {"completion": "ok"},
+            "payload": result,
         }
     ]
+    assert len(store.call_stats_inserts) == 1
+    stats = store.call_stats_inserts[0]
+    assert stats.latency_ms == 500
+    assert stats.prompt_tokens == 10
+    assert stats.attempt_count == 1
+    assert stats.finish_reason == "stop"
 
 
 def test_backend_complete_raises_when_promotion_fails() -> None:

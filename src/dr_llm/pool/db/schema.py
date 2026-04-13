@@ -101,6 +101,11 @@ class PoolSchema(BaseModel):
     def metadata_table(self) -> str:
         return f"pool_{self.name}_metadata"
 
+    @computed_field
+    @property
+    def call_stats_table(self) -> str:
+        return f"pool_{self.name}_call_stats"
+
     @property
     def key_column_names(self) -> list[str]:
         return [kc.name for kc in self.key_columns]

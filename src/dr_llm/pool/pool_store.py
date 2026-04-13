@@ -21,6 +21,7 @@ from dr_llm.pool.db.sql_helpers import (
     stream_select_rows,
     validate_key_values,
 )
+from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.db.tables import PoolTables
 from dr_llm.pool.metadata_store import MetadataStore
 from dr_llm.pool.models import AcquireQuery, AcquireResult, CoverageRow, InsertResult
@@ -70,6 +71,22 @@ class PoolStore:
             )
             self._tables.ensure_indexes(conn)
         self.metadata.upsert(SCHEMA_METADATA_KEY, self.schema.model_dump(mode="json"))
+
+    def insert_call_stats(self, stats: CallStats) -> None:
+        """Insert a call-stats row for a promoted sample."""
+        row = {
+            "sample_id": stats.sample_id,
+            "latency_ms": stats.latency_ms,
+            "total_cost_usd": stats.total_cost_usd,
+            "prompt_tokens": stats.prompt_tokens,
+            "completion_tokens": stats.completion_tokens,
+            "reasoning_tokens": stats.reasoning_tokens,
+            "total_tokens": stats.total_tokens,
+            "attempt_count": stats.attempt_count,
+            "finish_reason": stats.finish_reason,
+        }
+        with self._runtime.begin() as conn:
+            conn.execute(pg_insert(self._tables.call_stats).values(**row))
 
     def insert_sample(
         self, sample: PoolSample, *, ignore_conflicts: bool = True
