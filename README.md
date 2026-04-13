@@ -238,6 +238,28 @@ where `PoolStore.ensure_schema()` persists it under the reserved key
 `PoolReader.from_runtime(runtime, schema=...)` to inspect them with an
 explicit schema, or re-run `ensure_schema()` once to backfill the row.
 
+### Migrating existing pools to `call_stats`
+
+New pools get `pool_{name}_call_stats` automatically when `store.ensure_schema()`
+runs. Existing pools created before this change need a one-time migration.
+
+```bash
+# inspect what the migration would do
+uv run python scripts/migrate-call-stats.py --dry-run
+
+# create missing call_stats tables for all pools
+uv run python scripts/migrate-call-stats.py
+
+# create + backfill historical stats for one pool
+uv run python scripts/migrate-call-stats.py --pool my_eval --backfill
+```
+
+Use `--backfill` when historical `pool_{name}_samples.payload_json` rows already
+contain response metrics like `latency_ms`, `usage`, `cost`, and
+`finish_reason`, and you want those copied into `call_stats`. If you only need
+the new table for future promotions, run the script without `--backfill`. Pass
+`--dsn` to target a database other than `DR_LLM_DATABASE_URL`.
+
 ## CLI Reference
 
 ```bash
