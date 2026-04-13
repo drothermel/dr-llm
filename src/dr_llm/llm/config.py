@@ -13,8 +13,8 @@ class LlmConfig(BaseModel):
 
     provider: str
     model: str
-    temperature: float | None = None
-    top_p: float | None = None
+    temperature: float | None = 1.0
+    top_p: float | None = 0.95
     max_tokens: int | None = None
     effort: EffortSpec = EffortSpec.NA
     reasoning: ReasoningSpec | None = None

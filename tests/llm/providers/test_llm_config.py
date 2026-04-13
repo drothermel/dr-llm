@@ -24,8 +24,8 @@ def test_basic_construction() -> None:
 
     assert config.provider == "openai"
     assert config.model == "gpt-4.1-mini"
-    assert config.temperature is None
-    assert config.top_p is None
+    assert config.temperature == 1.0
+    assert config.top_p == 0.95
     assert config.max_tokens is None
     assert config.effort == EffortSpec.NA
     assert config.reasoning is None
@@ -80,7 +80,7 @@ def test_to_request() -> None:
     assert request.messages == messages
     assert request.temperature == 0.5
     assert request.max_tokens == 100
-    assert request.top_p is None
+    assert request.top_p == 0.95
     assert request.effort == EffortSpec.NA
     assert request.reasoning is None
     assert request.metadata == {}
