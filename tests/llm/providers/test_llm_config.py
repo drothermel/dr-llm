@@ -36,8 +36,8 @@ def test_basic_construction() -> None:
 
     assert config.provider == "openai"
     assert config.model == "gpt-4.1-mini"
-    assert config.temperature == 1.0
-    assert config.top_p == 0.95
+    assert config.temperature is None
+    assert config.top_p is None
     assert config.max_tokens is None
     assert config.effort == EffortSpec.NA
     assert config.reasoning is None
@@ -176,7 +176,7 @@ def test_to_request() -> None:
     assert request.messages == messages
     assert request.temperature == 0.5
     assert request.max_tokens == 100
-    assert request.top_p == 0.95
+    assert request.top_p is None
     assert request.effort == EffortSpec.NA
     assert request.reasoning is None
     assert request.metadata == {}
@@ -539,6 +539,52 @@ def test_openai_gpt5_family_accepts_provider_shaped_reasoning() -> None:
         model="openai/gpt-oss-20b",
         reasoning=OpenRouterReasoning(effort="medium"),
     )
+
+
+def test_openai_rejects_sampling_for_older_gpt5_models() -> None:
+    with pytest.raises(ValidationError, match="does not support"):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5-mini",
+            temperature=0.2,
+            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL),
+        )
+
+
+def test_openai_rejects_sampling_for_gpt5_when_reasoning_is_not_explicitly_off() -> None:
+    with pytest.raises(
+        ValidationError,
+        match=r"require OpenAIReasoning\(thinking_level='off'\)",
+    ):
+        LlmConfig(
+            provider="openai",
+            model="gpt-5.4",
+            temperature=0.2,
+            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
+        )
+
+
+def test_openai_accepts_sampling_for_gpt52_and_gpt54_when_reasoning_is_off() -> None:
+    config = LlmConfig(
+        provider="openai",
+        model="gpt-5.4",
+        temperature=0.2,
+        top_p=0.8,
+        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
+    )
+    assert config.temperature == 0.2
+    assert config.top_p == 0.8
+
+    request = LlmRequest(
+        provider="openai",
+        model="gpt-5.2",
+        messages=[{"role": "user", "content": "hi"}],
+        temperature=0.3,
+        top_p=0.7,
+        reasoning={"kind": "openai", "thinking_level": "off"},
+    )
+    assert request.temperature == 0.3
+    assert request.top_p == 0.7
 
 
 def test_openrouter_requires_allowlisted_models() -> None:

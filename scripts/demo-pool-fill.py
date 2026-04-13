@@ -27,7 +27,7 @@ from uuid import uuid4
 
 import typer
 
-from dr_llm.llm.config import ApiLlmConfig, LlmConfig
+from dr_llm.llm.config import ApiLlmConfig, LlmConfig, OpenAILlmConfig
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import (
     GoogleReasoning,
@@ -52,7 +52,7 @@ from dr_llm.workers import WorkerConfig, start_workers
 app = typer.Typer()
 
 LLM_CONFIGS: dict[str, LlmConfig] = {
-    "gpt-5-mini-low": ApiLlmConfig(
+    "gpt-5-mini-low": OpenAILlmConfig(
         provider="openai",
         model="gpt-5-mini",
         max_tokens=64,

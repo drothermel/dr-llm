@@ -6,6 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.effort import EffortSpec, validate_effort
+from dr_llm.llm.providers.openai_compat.thinking import (
+    validate_openai_sampling_controls,
+)
 from dr_llm.llm.providers.reasoning import ReasoningSpec
 from dr_llm.llm.providers.reasoning_validation import validate_reasoning
 
@@ -19,7 +22,6 @@ API_PROVIDER_NAMES = (
     "kimi-code",
 )
 SAMPLING_API_PROVIDER_NAMES = (
-    "openai",
     "openrouter",
     "glm",
     "google",
@@ -29,15 +31,15 @@ SAMPLING_API_PROVIDER_NAMES = (
 HEADLESS_PROVIDER_NAMES = ("codex", "claude-code")
 
 type ApiProviderName = Literal[
-    "openai",
     "openrouter",
     "glm",
     "google",
     "anthropic",
     "minimax",
 ]
+type OpenAIProviderName = Literal["openai"]
 type KimiCodeProviderName = Literal["kimi-code"]
-type ApiBackedProviderName = ApiProviderName | KimiCodeProviderName
+type ApiBackedProviderName = OpenAIProviderName | ApiProviderName | KimiCodeProviderName
 type HeadlessProviderName = Literal["codex", "claude-code"]
 
 
@@ -88,6 +90,22 @@ class ApiLlmRequest(ApiBackedLlmRequest):
     top_p: float | None = 0.95
 
 
+class OpenAILlmRequest(ApiBackedLlmRequest):
+    provider: OpenAIProviderName
+    temperature: float | None = None
+    top_p: float | None = None
+
+    @model_validator(mode="after")
+    def _validate_openai_sampling_controls(self) -> OpenAILlmRequest:
+        validate_openai_sampling_controls(
+            model=self.model,
+            reasoning=self.reasoning,
+            temperature=self.temperature,
+            top_p=self.top_p,
+        )
+        return self
+
+
 class KimiCodeLlmRequest(ApiBackedLlmRequest):
     provider: KimiCodeProviderName
 
@@ -114,7 +132,9 @@ class HeadlessLlmRequest(BaseModel):
         return self
 
 
-type LlmRequest = ApiLlmRequest | KimiCodeLlmRequest | HeadlessLlmRequest
+type LlmRequest = (
+    OpenAILlmRequest | ApiLlmRequest | KimiCodeLlmRequest | HeadlessLlmRequest
+)
 LlmRequestSpec = Annotated[LlmRequest, Field(discriminator="provider")]
 LLM_REQUEST_ADAPTER = TypeAdapter(LlmRequestSpec)
 

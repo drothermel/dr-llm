@@ -15,14 +15,19 @@ from dr_llm.llm.request import (
     HeadlessProviderName,
     KimiCodeLlmRequest,
     KimiCodeProviderName,
+    OpenAILlmRequest,
+    OpenAIProviderName,
     validate_llm_constraints,
+)
+from dr_llm.llm.providers.openai_compat.thinking import (
+    validate_openai_sampling_controls,
 )
 
 
 class ApiBackedLlmConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    provider: ApiProviderName | KimiCodeProviderName
+    provider: OpenAIProviderName | ApiProviderName | KimiCodeProviderName
     model: str
     max_tokens: int | None = None
     effort: EffortSpec = EffortSpec.NA
@@ -50,6 +55,34 @@ class ApiLlmConfig(ApiBackedLlmConfig):
 
     def to_request(self, messages: list[Message]) -> ApiLlmRequest:
         return ApiLlmRequest(
+            provider=self.provider,
+            model=self.model,
+            messages=messages,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            max_tokens=self.max_tokens,
+            effort=self.effort,
+            reasoning=self.reasoning,
+        )
+
+
+class OpenAILlmConfig(ApiBackedLlmConfig):
+    provider: OpenAIProviderName
+    temperature: float | None = None
+    top_p: float | None = None
+
+    @model_validator(mode="after")
+    def _validate_openai_sampling_controls(self) -> OpenAILlmConfig:
+        validate_openai_sampling_controls(
+            model=self.model,
+            reasoning=self.reasoning,
+            temperature=self.temperature,
+            top_p=self.top_p,
+        )
+        return self
+
+    def to_request(self, messages: list[Message]) -> OpenAILlmRequest:
+        return OpenAILlmRequest(
             provider=self.provider,
             model=self.model,
             messages=messages,
@@ -104,7 +137,7 @@ class HeadlessLlmConfig(BaseModel):
         )
 
 
-type LlmConfig = ApiLlmConfig | KimiCodeLlmConfig | HeadlessLlmConfig
+type LlmConfig = OpenAILlmConfig | ApiLlmConfig | KimiCodeLlmConfig | HeadlessLlmConfig
 LlmConfigSpec = Annotated[LlmConfig, Field(discriminator="provider")]
 LLM_CONFIG_ADAPTER = TypeAdapter(LlmConfigSpec)
 

@@ -7,7 +7,7 @@ import pytest
 
 from dr_llm.logging.events import generation_log_context
 from dr_llm.llm.config import HeadlessLlmConfig
-from dr_llm.llm.config import ApiLlmConfig as LlmConfig
+from dr_llm.llm.config import OpenAILlmConfig as LlmConfig
 from dr_llm.llm.messages import CallMode, Message
 from dr_llm.llm.providers.reasoning import CodexReasoning, ThinkingLevel
 from dr_llm.llm.providers.usage import TokenUsage

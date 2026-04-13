@@ -13,7 +13,7 @@ from dr_llm.llm.providers.openai_compat.reasoning import OpenAICompatReasoningCo
 from dr_llm.llm.providers.openai_compat.thinking import (
     openai_uses_max_completion_tokens,
 )
-from dr_llm.llm.request import ApiBackedLlmRequest, ApiLlmRequest
+from dr_llm.llm.request import ApiBackedLlmRequest, ApiLlmRequest, OpenAILlmRequest
 
 if TYPE_CHECKING:
     from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
@@ -43,7 +43,7 @@ class OpenAICompatRequest(BaseModel):
         request: ApiBackedLlmRequest,
         config: OpenAICompatConfig,
     ) -> OpenAICompatRequest:
-        if not isinstance(request, ApiLlmRequest):
+        if not isinstance(request, (ApiLlmRequest, OpenAILlmRequest)):
             raise ProviderSemanticError(
                 f"{config.name} requires a sampling-capable API request shape"
             )
@@ -78,7 +78,7 @@ class OpenAICompatRequest(BaseModel):
         ]
 
     @staticmethod
-    def _resolve_idempotency_key(*, request: ApiLlmRequest) -> str:
+    def _resolve_idempotency_key(*, request: ApiLlmRequest | OpenAILlmRequest) -> str:
         raw_idempotency_key = request.metadata.get("idempotency_key")
         if isinstance(raw_idempotency_key, str) and raw_idempotency_key:
             return raw_idempotency_key

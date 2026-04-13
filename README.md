@@ -70,21 +70,21 @@ Some providers use static model lists for `models sync` (no `/models` endpoint).
 
 ## Python API
 
-`ApiLlmRequest` / `ApiLlmConfig` are the concrete request/config shapes for sampling-capable API providers. `KimiCodeLlmRequest` / `KimiCodeLlmConfig` are the concrete shapes for `kimi-code`. `HeadlessLlmRequest` / `HeadlessLlmConfig` are the concrete shapes for CLI-backed providers. `LlmRequest` and `LlmConfig` remain available as unions, and `parse_llm_request(...)` / `parse_llm_config(...)` validate raw payloads into the correct concrete model by `provider`.
+`OpenAILlmRequest` / `OpenAILlmConfig` are the concrete request/config shapes for `provider="openai"`. `ApiLlmRequest` / `ApiLlmConfig` are the concrete shapes for the remaining sampling-capable API providers. `KimiCodeLlmRequest` / `KimiCodeLlmConfig` are the concrete shapes for `kimi-code`. `HeadlessLlmRequest` / `HeadlessLlmConfig` are the concrete shapes for CLI-backed providers. `LlmRequest` and `LlmConfig` remain available as unions, and `parse_llm_request(...)` / `parse_llm_config(...)` validate raw payloads into the correct concrete model by `provider`.
 
-For sampling-capable API providers, omitted sampling controls default to `temperature=1.0` and `top_p=0.95`. `kimi-code` and headless providers reject those fields entirely.
+For generic sampling-capable API providers, omitted sampling controls default to `temperature=1.0` and `top_p=0.95`. OpenAI omits those fields unless you set them explicitly. `kimi-code` and headless providers reject those fields entirely.
 
 ### Calling a provider
 
 ```python
-from dr_llm.llm import ApiLlmRequest, build_default_registry
+from dr_llm.llm import OpenAILlmRequest, build_default_registry
 from dr_llm.llm.messages import Message
 
 registry = build_default_registry()
 adapter = registry.get("openai")
 
 response = adapter.generate(
-    ApiLlmRequest(
+    OpenAILlmRequest(
         provider="openai",
         model="gpt-4.1",
         messages=[Message(role="user", content="hello")],
@@ -106,7 +106,7 @@ is used to auto-manage a Postgres project.
 ```python
 from dr_llm import DbConfig, PoolSchema, PoolStore
 from dr_llm.llm import build_default_registry
-from dr_llm.llm.config import ApiLlmConfig, LlmConfig
+from dr_llm.llm.config import ApiLlmConfig, LlmConfig, OpenAILlmConfig
 from dr_llm.llm.messages import Message
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.llm_pool_adapter import make_llm_process_fn, seed_llm_grid
@@ -131,7 +131,7 @@ llm_config_axis = Axis[LlmConfig](
     members=[
         AxisMember(
             id="gpt-4.1-mini",
-            value=ApiLlmConfig(
+            value=OpenAILlmConfig(
                 provider="openai",
                 model="gpt-4.1-mini",
                 max_tokens=64,
@@ -280,7 +280,9 @@ dr-llm query --provider google --model gemini-2.5-flash --reasoning-json '{"kind
 dr-llm query --provider openrouter --model openai/gpt-oss-20b --reasoning-json '{"kind":"openrouter","effort":"high"}' --message TEXT
 
 # Sampling / token controls
-# API-backed providers default omitted sampling controls to temperature=1.0 and top_p=0.95.
+# Generic sampling API providers default omitted sampling controls to temperature=1.0 and top_p=0.95.
+# OpenAI omits temperature/top_p unless you set them explicitly.
+# OpenAI GPT-5 custom temperature/top_p controls are only supported on gpt-5.2/gpt-5.4 with reasoning off.
 # --temperature, --top-p, and --max-tokens are rejected for headless providers (codex, claude-code)
 # --temperature and --top-p are also rejected for kimi-code; --max-tokens is required there
 
