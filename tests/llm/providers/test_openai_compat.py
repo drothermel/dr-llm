@@ -19,7 +19,7 @@ from dr_llm.llm.providers.reasoning import (
     OpenRouterReasoning,
     ThinkingLevel,
 )
-from dr_llm.llm.request import ApiLlmRequest, KimiCodeLlmRequest
+from dr_llm.llm.request import ApiLlmRequest, KimiCodeLlmRequest, OpenAILlmRequest
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 
@@ -53,8 +53,10 @@ _REASONING_RESPONSE_JSON: dict[str, Any] = {
 }
 
 
-def _make_api_request(overrides: Mapping[str, Any] | None = None) -> ApiLlmRequest:
-    return cast(ApiLlmRequest, make_request(**(overrides or {})))
+def _make_api_request(
+    overrides: Mapping[str, Any] | None = None,
+) -> ApiLlmRequest | OpenAILlmRequest:
+    return cast(ApiLlmRequest | OpenAILlmRequest, make_request(**(overrides or {})))
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +213,47 @@ def test_openai_legacy_model_keeps_max_tokens() -> None:
     payload = provider_request.json_payload()
     assert payload["max_tokens"] == 64
     assert "max_completion_tokens" not in payload
+
+
+def test_openai_request_omits_sampling_fields_when_not_configured() -> None:
+    openai_config = OpenAICompatConfig(
+        name="openai",
+        base_url="https://api.openai.com/v1",
+        api_key="x",
+    )
+    request = _make_api_request(
+        {
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+        }
+    )
+    provider_request = OpenAICompatRequest.from_llm_request(request, openai_config)
+    payload = provider_request.json_payload()
+
+    assert "temperature" not in payload
+    assert "top_p" not in payload
+
+
+def test_openai_request_serializes_explicit_sampling_fields() -> None:
+    openai_config = OpenAICompatConfig(
+        name="openai",
+        base_url="https://api.openai.com/v1",
+        api_key="x",
+    )
+    request = _make_api_request(
+        {
+            "provider": "openai",
+            "model": "gpt-5.4",
+            "temperature": 0.3,
+            "top_p": 0.8,
+            "reasoning": OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
+        }
+    )
+    provider_request = OpenAICompatRequest.from_llm_request(request, openai_config)
+    payload = provider_request.json_payload()
+
+    assert payload["temperature"] == 0.3
+    assert payload["top_p"] == 0.8
 
 
 def test_request_rejects_extra_body_key_collisions() -> None:

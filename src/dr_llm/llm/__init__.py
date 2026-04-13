@@ -3,6 +3,7 @@ from dr_llm.llm.config import (
     HeadlessLlmConfig,
     KimiCodeLlmConfig,
     LlmConfig,
+    OpenAILlmConfig,
     parse_llm_config,
 )
 from dr_llm.llm.messages import CallMode, Message
@@ -13,6 +14,7 @@ from dr_llm.llm.request import (
     HeadlessLlmRequest,
     KimiCodeLlmRequest,
     LlmRequest,
+    OpenAILlmRequest,
     parse_llm_request,
 )
 from dr_llm.llm.response import LlmResponse
@@ -30,6 +32,8 @@ __all__ = [
     "LlmRequest",
     "LlmResponse",
     "Message",
+    "OpenAILlmConfig",
+    "OpenAILlmRequest",
     "ProviderRegistry",
     "TokenUsage",
     "build_default_registry",
