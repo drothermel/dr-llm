@@ -79,6 +79,24 @@ def _drop_tables_if_possible(dsn: str, schema: PoolSchema) -> None:
         pass
 
 
+def _drop_table_names(dsn: str, table_names: tuple[str, ...]) -> None:
+    with psycopg.connect(dsn) as conn:
+        for table_name in table_names:
+            conn.execute(
+                sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
+                    sql.Identifier("public", table_name)
+                )
+            )
+        conn.commit()
+
+
+def _drop_table_names_if_possible(dsn: str, table_names: tuple[str, ...]) -> None:
+    try:
+        _drop_table_names(dsn, table_names)
+    except psycopg.OperationalError:
+        pass
+
+
 def _table_exists(dsn: str, table_name: str) -> bool:
     with psycopg.connect(dsn) as conn:
         row = conn.execute(
@@ -122,6 +140,28 @@ def _make_runtime(dsn: str, schema: PoolSchema) -> DbRuntime:
     )
 
 
+def _create_legacy_samples_table_without_key_columns(dsn: str, pool_name: str) -> str:
+    samples_table = f"pool_{pool_name}_samples"
+    with psycopg.connect(dsn) as conn:
+        conn.execute(
+            sql.SQL(
+                """
+                CREATE TABLE {} (
+                    sample_id text PRIMARY KEY,
+                    sample_idx integer NOT NULL,
+                    payload_json jsonb NOT NULL DEFAULT '{{}}'::jsonb,
+                    source_run_id text,
+                    metadata_json jsonb NOT NULL DEFAULT '{{}}'::jsonb,
+                    status text NOT NULL DEFAULT 'active',
+                    created_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            ).format(sql.Identifier("public", samples_table))
+        )
+        conn.commit()
+    return samples_table
+
+
 @pytest.mark.integration
 def test_migrate_call_stats_dry_run_does_not_create_table() -> None:
     dsn = _get_dsn()
@@ -151,6 +191,37 @@ def test_migrate_call_stats_dry_run_does_not_create_table() -> None:
         _drop_tables_if_possible(dsn, schema)
         if runtime is not None:
             runtime.close()
+
+
+@pytest.mark.integration
+def test_migrate_call_stats_creates_table_when_no_key_columns_are_inferred() -> None:
+    dsn = _get_dsn()
+    if not dsn:
+        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run migration integration tests")
+
+    pool_name = f"mcsk_{uuid4().hex[:8]}"
+    table_names = (
+        f"pool_{pool_name}_call_stats",
+        f"pool_{pool_name}_samples",
+    )
+    try:
+        _drop_table_names(dsn, table_names)
+        _create_legacy_samples_table_without_key_columns(dsn, pool_name)
+
+        result = _RUNNER.invoke(
+            _APP,
+            ["--dsn", dsn, "--pool", pool_name],
+        )
+
+        assert result.exit_code == 0
+        assert f"Processing pool: {pool_name}" in result.output
+        assert f"{pool_name}: no key columns inferred" in result.output
+        assert f"[ok] table pool_{pool_name}_call_stats ensured" in result.output
+        assert _table_exists(dsn, f"pool_{pool_name}_call_stats") is True
+    except (psycopg.OperationalError, TransientPersistenceError) as exc:
+        pytest.skip(f"Postgres unavailable for migration integration tests: {exc}")
+    finally:
+        _drop_table_names_if_possible(dsn, table_names)
 
 
 @pytest.mark.integration

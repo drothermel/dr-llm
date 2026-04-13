@@ -29,8 +29,10 @@ class CallStats(BaseModel):
         attempt_count: int,
     ) -> CallStats:
         """Extract call stats from a ``response.model_dump()`` dict."""
-        usage = response.get("usage", {})
-        cost = response.get("cost") or {}
+        raw_usage = response.get("usage")
+        usage = raw_usage if isinstance(raw_usage, dict) else {}
+        raw_cost = response.get("cost")
+        cost = raw_cost if isinstance(raw_cost, dict) else {}
         raw_reasoning = usage.get("reasoning_tokens", 0)
         return cls(
             sample_id=sample_id,

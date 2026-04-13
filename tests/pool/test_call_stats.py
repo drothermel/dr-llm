@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from dr_llm.pool.call_stats import CallStats
 
 
@@ -70,6 +72,27 @@ def test_from_response_reasoning_tokens_nonzero_preserved() -> None:
 
 def test_from_response_missing_usage() -> None:
     response = {"text": "hi", "latency_ms": 500, "provider": "test", "model": "m"}
+    stats = CallStats.from_response(
+        sample_id="s1", response=response, attempt_count=1
+    )
+    assert stats.prompt_tokens == 0
+    assert stats.completion_tokens == 0
+    assert stats.total_tokens == 0
+    assert stats.reasoning_tokens is None
+    assert stats.total_cost_usd is None
+    assert stats.finish_reason is None
+    assert stats.latency_ms == 500
+
+
+@pytest.mark.parametrize("usage_value", [None, "bad"])
+def test_from_response_malformed_usage(usage_value: object) -> None:
+    response = {
+        "text": "hi",
+        "usage": usage_value,
+        "latency_ms": 500,
+        "provider": "test",
+        "model": "m",
+    }
     stats = CallStats.from_response(
         sample_id="s1", response=response, attempt_count=1
     )

@@ -86,7 +86,11 @@ class PoolStore:
             "finish_reason": stats.finish_reason,
         }
         with self._runtime.begin() as conn:
-            conn.execute(pg_insert(self._tables.call_stats).values(**row))
+            conn.execute(
+                pg_insert(self._tables.call_stats)
+                .values(**row)
+                .on_conflict_do_nothing()
+            )
 
     def insert_sample(
         self, sample: PoolSample, *, ignore_conflicts: bool = True

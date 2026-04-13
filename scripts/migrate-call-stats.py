@@ -18,11 +18,10 @@ from os import getenv
 from typing import Annotated
 
 import typer
-from sqlalchemy import text as sa_text
+from sqlalchemy import Column, Double, Integer, MetaData, Table, Text, text as sa_text
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import KeyColumn, PoolSchema
-from dr_llm.pool.db.tables import PoolTables
 
 app = typer.Typer(add_completion=False)
 
@@ -39,6 +38,57 @@ _FIXED_SAMPLE_COLUMNS = frozenset(
 )
 
 _POOL_TABLE_RE = re.compile(r"^pool_(.+)_samples$")
+_VALID_IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _validate_identifier(kind: str, value: str) -> str:
+    if not _VALID_IDENTIFIER_RE.match(value):
+        raise ValueError(
+            f"{kind} must be lowercase alphanumeric with underscores, "
+            f"starting with a letter; got {value!r}"
+        )
+    return value
+
+
+def _samples_table_name(pool_name: str) -> str:
+    return f"pool_{pool_name}_samples"
+
+
+def _pending_table_name(pool_name: str) -> str:
+    return f"pool_{pool_name}_pending"
+
+
+def _call_stats_table_name(pool_name: str) -> str:
+    return f"pool_{pool_name}_call_stats"
+
+
+def _build_call_stats_table(pool_name: str) -> Table:
+    metadata = MetaData()
+    return Table(
+        _call_stats_table_name(pool_name),
+        metadata,
+        Column("sample_id", Text, primary_key=True),
+        Column("latency_ms", Integer, nullable=False),
+        Column("total_cost_usd", Double),
+        Column("prompt_tokens", Integer, nullable=False),
+        Column("completion_tokens", Integer, nullable=False),
+        Column("reasoning_tokens", Integer),
+        Column("total_tokens", Integer, nullable=False),
+        Column("attempt_count", Integer, nullable=False, server_default=sa_text("1")),
+        Column("finish_reason", Text),
+        Column(
+            "created_at",
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa_text("now()"),
+        ),
+    )
+
+
+def _ensure_call_stats_table(runtime: DbRuntime, pool_name: str) -> None:
+    table = _build_call_stats_table(pool_name)
+    with runtime.begin() as conn:
+        table.metadata.create_all(bind=conn, tables=[table], checkfirst=True)
 
 
 def _discover_pools(runtime: DbRuntime) -> list[str]:
@@ -62,7 +112,7 @@ def _discover_pools(runtime: DbRuntime) -> list[str]:
 
 def _discover_key_columns(runtime: DbRuntime, pool_name: str) -> list[str]:
     """Infer key column names from the samples table structure."""
-    samples_table = f"pool_{pool_name}_samples"
+    samples_table = _samples_table_name(pool_name)
     with runtime.connect() as conn:
         rows = conn.execute(
             sa_text(
@@ -81,41 +131,75 @@ def _backfill_pool(
     runtime: DbRuntime, pool_name: str, key_columns: list[str]
 ) -> int:
     """Backfill call_stats from existing sample payloads + pending attempt_count."""
-    samples_table = f"pool_{pool_name}_samples"
-    pending_table = f"pool_{pool_name}_pending"
-    call_stats_table = f"pool_{pool_name}_call_stats"
-
-    key_join_clauses = " AND ".join(
-        f"p.{col} = s.{col}" for col in key_columns
-    )
-    pending_join = (
-        f"LEFT JOIN {pending_table} p "
-        f"ON p.status = 'promoted' "
-        f"AND p.sample_idx = s.sample_idx "
-        f"AND {key_join_clauses}"
-    )
-
-    sql = f"""
-        INSERT INTO {call_stats_table}
-            (sample_id, latency_ms, total_cost_usd, prompt_tokens,
-             completion_tokens, reasoning_tokens, total_tokens,
-             attempt_count, finish_reason)
-        SELECT
-            s.sample_id,
-            COALESCE((s.payload_json->>'latency_ms')::integer, 0),
-            (s.payload_json->'cost'->>'total_cost_usd')::double precision,
-            COALESCE((s.payload_json->'usage'->>'prompt_tokens')::integer, 0),
-            COALESCE((s.payload_json->'usage'->>'completion_tokens')::integer, 0),
-            NULLIF((s.payload_json->'usage'->>'reasoning_tokens')::integer, 0),
-            COALESCE((s.payload_json->'usage'->>'total_tokens')::integer, 0),
-            COALESCE(p.attempt_count, 1),
-            s.payload_json->>'finish_reason'
-        FROM {samples_table} s
-        {pending_join}
-        ON CONFLICT (sample_id) DO NOTHING
-    """  # noqa: S608
-
     with runtime.begin() as conn:
+        preparer = conn.dialect.identifier_preparer
+
+        samples_table = _samples_table_name(pool_name)
+        pending_table = _pending_table_name(pool_name)
+        call_stats_table = _call_stats_table_name(pool_name)
+
+        quoted_sample_id = preparer.quote_identifier("sample_id")
+        quoted_sample_idx = preparer.quote_identifier("sample_idx")
+        quoted_payload_json = preparer.quote_identifier("payload_json")
+        quoted_attempt_count = preparer.quote_identifier("attempt_count")
+        quoted_samples_table = (
+            f'{preparer.quote_identifier("public")}.'
+            f"{preparer.quote_identifier(samples_table)}"
+        )
+        quoted_pending_table = (
+            f'{preparer.quote_identifier("public")}.'
+            f"{preparer.quote_identifier(pending_table)}"
+        )
+        quoted_call_stats_table = (
+            f'{preparer.quote_identifier("public")}.'
+            f"{preparer.quote_identifier(call_stats_table)}"
+        )
+        key_join_clauses = [
+            (
+                f"p.{preparer.quote_identifier(column)} = "
+                f"s.{preparer.quote_identifier(column)}"
+            )
+            for column in key_columns
+        ]
+        pending_join_conditions = [
+            "p.status = 'promoted'",
+            f"p.{quoted_sample_idx} = s.{quoted_sample_idx}",
+            *key_join_clauses,
+        ]
+        pending_join = (
+            f"LEFT JOIN {quoted_pending_table} p "
+            f"ON {' AND '.join(pending_join_conditions)}"
+        )
+        insert_columns = ", ".join(
+            preparer.quote_identifier(column)
+            for column in [
+                "sample_id",
+                "latency_ms",
+                "total_cost_usd",
+                "prompt_tokens",
+                "completion_tokens",
+                "reasoning_tokens",
+                "total_tokens",
+                "attempt_count",
+                "finish_reason",
+            ]
+        )
+        sql = f"""
+            INSERT INTO {quoted_call_stats_table} ({insert_columns})
+            SELECT
+                s.{quoted_sample_id},
+                COALESCE((s.{quoted_payload_json}->>'latency_ms')::integer, 0),
+                (s.{quoted_payload_json}->'cost'->>'total_cost_usd')::double precision,
+                COALESCE((s.{quoted_payload_json}->'usage'->>'prompt_tokens')::integer, 0),
+                COALESCE((s.{quoted_payload_json}->'usage'->>'completion_tokens')::integer, 0),
+                NULLIF((s.{quoted_payload_json}->'usage'->>'reasoning_tokens')::integer, 0),
+                COALESCE((s.{quoted_payload_json}->'usage'->>'total_tokens')::integer, 0),
+                COALESCE(p.{quoted_attempt_count}, 1),
+                s.{quoted_payload_json}->>'finish_reason'
+            FROM {quoted_samples_table} s
+            {pending_join}
+            ON CONFLICT ({quoted_sample_id}) DO NOTHING
+        """  # noqa: S608
         result = conn.execute(sa_text(sql))
         return result.rowcount
 
@@ -127,32 +211,24 @@ def _process_pool(
     backfill: bool,
     dry_run: bool,
 ) -> None:
-    key_columns = _discover_key_columns(runtime, pool_name)
+    _validate_identifier("Pool name", pool_name)
+    key_columns = [
+        _validate_identifier("Key column", column)
+        for column in _discover_key_columns(runtime, pool_name)
+    ]
     if not key_columns:
-        typer.echo(f"  [skip] {pool_name}: no key columns found, skipping")
-        return
-
-    typer.echo(f"  {pool_name}: key_columns={key_columns}")
+        typer.echo(f"  {pool_name}: no key columns inferred")
+    else:
+        typer.echo(f"  {pool_name}: key_columns={key_columns}")
 
     if dry_run:
-        typer.echo(f"  [dry-run] would create table pool_{pool_name}_call_stats")
+        typer.echo(f"  [dry-run] would create table {_call_stats_table_name(pool_name)}")
         if backfill:
-            typer.echo(f"  [dry-run] would backfill from pool_{pool_name}_samples")
+            typer.echo(f"  [dry-run] would backfill from {_samples_table_name(pool_name)}")
         return
 
-    schema = PoolSchema(
-        name=pool_name,
-        key_columns=[KeyColumn(name=col) for col in key_columns],
-    )
-    tables = PoolTables(schema)
-
-    with runtime.begin() as conn:
-        tables.sa_metadata.create_all(
-            bind=conn,
-            tables=[tables.call_stats],
-            checkfirst=True,
-        )
-    typer.echo(f"  [ok] table pool_{pool_name}_call_stats ensured")
+    _ensure_call_stats_table(runtime, pool_name)
+    typer.echo(f"  [ok] table {_call_stats_table_name(pool_name)} ensured")
 
     if backfill:
         count = _backfill_pool(runtime, pool_name, key_columns)
@@ -183,22 +259,22 @@ def main(
         "DR_LLM_DATABASE_URL", "postgresql://localhost/dr_llm"
     )
     runtime = DbRuntime(DbConfig(dsn=resolved_dsn))
+    try:
+        if pool:
+            pool_names = [pool]
+            typer.echo(f"Processing pool: {pool}")
+        else:
+            pool_names = _discover_pools(runtime)
+            typer.echo(f"Discovered {len(pool_names)} pool(s): {pool_names}")
 
-    if pool:
-        pool_names = [pool]
-        typer.echo(f"Processing pool: {pool}")
-    else:
-        pool_names = _discover_pools(runtime)
-        typer.echo(f"Discovered {len(pool_names)} pool(s): {pool_names}")
+        if not pool_names:
+            typer.echo("No pools found.")
+            raise typer.Exit()
 
-    if not pool_names:
-        typer.echo("No pools found.")
-        raise typer.Exit()
-
-    for name in pool_names:
-        _process_pool(runtime, name, backfill=backfill, dry_run=dry_run)
-
-    runtime.close()
+        for name in pool_names:
+            _process_pool(runtime, name, backfill=backfill, dry_run=dry_run)
+    finally:
+        runtime.close()
     typer.echo("Done.")
 
 

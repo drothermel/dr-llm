@@ -684,7 +684,8 @@ def test_service_generator_error_wraps_as_topup_error(pool_store: PoolStore) -> 
 
 
 @pytest.mark.integration
-def test_call_stats_table_created(pool_store: PoolStore) -> None:
+@pytest.mark.usefixtures("pool_store")
+def test_call_stats_table_created() -> None:
     dsn = _get_dsn()
     assert dsn is not None
     with psycopg.connect(dsn) as conn:
@@ -723,6 +724,7 @@ def test_insert_call_stats(pool_store: PoolStore) -> None:
         finish_reason="stop",
     )
     pool_store.insert_call_stats(stats)
+    pool_store.insert_call_stats(stats)
 
     dsn = _get_dsn()
     assert dsn is not None
@@ -730,7 +732,7 @@ def test_insert_call_stats(pool_store: PoolStore) -> None:
         row = conn.execute(
             sql.SQL(
                 "SELECT latency_ms, total_cost_usd, prompt_tokens, completion_tokens, "
-                "reasoning_tokens, total_tokens, attempt_count, finish_reason "
+                "reasoning_tokens, total_tokens, attempt_count, finish_reason, COUNT(*) OVER () "
                 "FROM {} WHERE sample_id = %s"
             ).format(sql.Identifier("public", _TEST_SCHEMA.call_stats_table)),
             [sample_id],
@@ -744,11 +746,12 @@ def test_insert_call_stats(pool_store: PoolStore) -> None:
     assert row[5] == 300
     assert row[6] == 2
     assert row[7] == "stop"
+    assert row[8] == 1
 
 
 @pytest.mark.integration
 def test_call_stats_full_flow(pool_store: PoolStore) -> None:
-    """Seed → claim → promote → verify call_stats row via backend.complete()."""
+    """Seed → claim → promote → insert_call_stats → verify the stored row."""
     p = _pending(
         dim_a="cs_flow",
         dim_b=1,
