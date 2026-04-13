@@ -104,10 +104,49 @@ def test_claude_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     assert command[command.index("--model") + 1] == "claude-sonnet-4-6"
     assert "--system-prompt" in command
     assert command[command.index("--system-prompt") + 1] == ""
+    assert "--tools" in command
+    assert command[command.index("--tools") + 1] == ""
     assert captured["input"] == "user: hello"
     assert response.text == "OK"
     assert response.cost is not None
     assert response.cost.total_cost_usd == 0.01
+
+
+def test_claude_uses_cli_default_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        command = cast(list[str], args[0])
+        captured["command"] = command
+        captured["timeout"] = kwargs.get("timeout")
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": "OK",
+                    "usage": {"input_tokens": 1, "output_tokens": 2},
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    adapter = ClaudeHeadlessProvider()
+    request = make_request(
+        provider="claude-code",
+        model="claude-sonnet-4-6",
+        effort=EffortSpec.MEDIUM,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+    )
+
+    adapter.generate(request)
+
+    assert captured["timeout"] == 600.0
 
 
 def test_claude_command_includes_effort(monkeypatch: pytest.MonkeyPatch) -> None:

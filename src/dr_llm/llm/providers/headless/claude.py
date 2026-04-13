@@ -30,6 +30,8 @@ CLAUDE_DEFAULT_COMMAND = [
     "text",
     "--system-prompt",
     "",
+    "--tools",
+    "",
     "--disable-slash-commands",
     "--no-session-persistence",
     "--setting-sources",

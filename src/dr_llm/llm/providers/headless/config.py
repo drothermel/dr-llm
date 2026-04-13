@@ -30,6 +30,7 @@ class HeadlessProviderConfig(ProviderConfig):
 
 class ClaudeHeadlessProviderConfig(HeadlessProviderConfig):
     api_key_env: str | None = None
+    timeout_seconds: float = 600.0
 
     @model_validator(mode="after")
     def _compute_claude_env_requirements(self) -> Self:
