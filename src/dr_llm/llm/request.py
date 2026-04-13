@@ -18,6 +18,14 @@ API_PROVIDER_NAMES = (
     "minimax",
     "kimi-code",
 )
+SAMPLING_API_PROVIDER_NAMES = (
+    "openai",
+    "openrouter",
+    "glm",
+    "google",
+    "anthropic",
+    "minimax",
+)
 HEADLESS_PROVIDER_NAMES = ("codex", "claude-code")
 
 ApiProviderName: TypeAlias = Literal[
@@ -27,8 +35,9 @@ ApiProviderName: TypeAlias = Literal[
     "google",
     "anthropic",
     "minimax",
-    "kimi-code",
 ]
+KimiCodeProviderName: TypeAlias = Literal["kimi-code"]
+ApiBackedProviderName: TypeAlias = ApiProviderName | KimiCodeProviderName
 HeadlessProviderName: TypeAlias = Literal["codex", "claude-code"]
 
 
@@ -50,21 +59,19 @@ def validate_llm_constraints(
     validate_reasoning(provider=provider, model=model, reasoning=reasoning)
 
 
-class ApiLlmRequest(BaseModel):
+class ApiBackedLlmRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    provider: ApiProviderName
+    provider: ApiBackedProviderName
     model: str
     messages: list[Message]
-    temperature: float | None = 1.0
-    top_p: float | None = 0.95
     max_tokens: int | None = None
     effort: EffortSpec = EffortSpec.NA
     reasoning: ReasoningSpec | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _validate_request_constraints(self) -> ApiLlmRequest:
+    def _validate_request_constraints(self) -> ApiBackedLlmRequest:
         validate_llm_constraints(
             provider=self.provider,
             model=self.model,
@@ -73,6 +80,16 @@ class ApiLlmRequest(BaseModel):
             reasoning=self.reasoning,
         )
         return self
+
+
+class ApiLlmRequest(ApiBackedLlmRequest):
+    provider: ApiProviderName
+    temperature: float | None = 1.0
+    top_p: float | None = 0.95
+
+
+class KimiCodeLlmRequest(ApiBackedLlmRequest):
+    provider: KimiCodeProviderName
 
 
 class HeadlessLlmRequest(BaseModel):
@@ -97,7 +114,7 @@ class HeadlessLlmRequest(BaseModel):
         return self
 
 
-LlmRequest: TypeAlias = ApiLlmRequest | HeadlessLlmRequest
+LlmRequest: TypeAlias = ApiLlmRequest | KimiCodeLlmRequest | HeadlessLlmRequest
 LlmRequestSpec = Annotated[LlmRequest, Field(discriminator="provider")]
 LLM_REQUEST_ADAPTER = TypeAdapter(LlmRequestSpec)
 

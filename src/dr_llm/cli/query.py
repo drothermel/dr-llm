@@ -30,13 +30,16 @@ def query(
         None, help="Path to JSON messages payload."
     ),
     temperature: float | None = typer.Option(
-        None, help="Sampling temperature (API providers only)."
+        None,
+        help="Sampling temperature (unsupported for headless providers and kimi-code).",
     ),
     top_p: float | None = typer.Option(
-        None, help="Nucleus sampling parameter (API providers only)."
+        None,
+        help="Nucleus sampling parameter (unsupported for headless providers and kimi-code).",
     ),
     max_tokens: int | None = typer.Option(
-        None, help="Maximum output tokens (unsupported for headless providers)."
+        None,
+        help="Maximum output tokens (unsupported for headless providers; required for anthropic and kimi-code).",
     ),
     effort: EffortSpec = typer.Option(EffortSpec.NA),
     reasoning_json: str | None = typer.Option(

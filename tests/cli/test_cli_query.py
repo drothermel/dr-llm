@@ -110,6 +110,56 @@ def test_query_rejects_max_tokens_for_headless_provider() -> None:
     assert "extra inputs are not permitted" in result.output.lower()
 
 
+def test_query_rejects_temperature_for_kimi_code() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "query",
+            "--provider",
+            "kimi-code",
+            "--model",
+            "kimi-for-coding",
+            "--message",
+            "hi",
+            "--max-tokens",
+            "32",
+            "--effort",
+            "high",
+            "--temperature",
+            "0.5",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "temperature" in result.output
+    assert "extra inputs are not permitted" in result.output.lower()
+
+
+def test_query_accepts_max_tokens_for_kimi_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(query_cli, "build_default_registry", _FakeRegistry)
+
+    result = runner.invoke(
+        app,
+        [
+            "query",
+            "--provider",
+            "kimi-code",
+            "--model",
+            "kimi-for-coding",
+            "--message",
+            "hi",
+            "--max-tokens",
+            "32",
+            "--effort",
+            "high",
+        ],
+    )
+
+    assert result.exit_code == 0
+
+
 def test_run_command_is_removed() -> None:
     result = runner.invoke(app, ["run", "start"])
 

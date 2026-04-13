@@ -1,6 +1,7 @@
 from dr_llm.llm.config import (
     ApiLlmConfig,
     HeadlessLlmConfig,
+    KimiCodeLlmConfig,
     LlmConfig,
     parse_llm_config,
 )
@@ -10,6 +11,7 @@ from dr_llm.llm.providers.usage import CostInfo, TokenUsage
 from dr_llm.llm.request import (
     ApiLlmRequest,
     HeadlessLlmRequest,
+    KimiCodeLlmRequest,
     LlmRequest,
     parse_llm_request,
 )
@@ -22,6 +24,8 @@ __all__ = [
     "CostInfo",
     "HeadlessLlmConfig",
     "HeadlessLlmRequest",
+    "KimiCodeLlmConfig",
+    "KimiCodeLlmRequest",
     "LlmConfig",
     "LlmRequest",
     "LlmResponse",

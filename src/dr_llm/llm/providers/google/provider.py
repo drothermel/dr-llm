@@ -6,7 +6,7 @@ from dr_llm.llm.providers.api_config import APIProviderConfig
 from dr_llm.llm.providers.api_provider import ApiProvider
 from dr_llm.llm.providers.google.request import GoogleRequest
 from dr_llm.llm.providers.google.response import GoogleResponse
-from dr_llm.llm.request import ApiLlmRequest
+from dr_llm.llm.request import ApiBackedLlmRequest
 
 
 DEFAULT_GOOGLE_CONFIG = APIProviderConfig(
@@ -24,7 +24,7 @@ class GoogleProvider(ApiProvider):
     ) -> None:
         super().__init__(config=config or DEFAULT_GOOGLE_CONFIG, client=client)
 
-    def _build_request(self, request: ApiLlmRequest) -> GoogleRequest:
+    def _build_request(self, request: ApiBackedLlmRequest) -> GoogleRequest:
         return GoogleRequest.from_llm_request(request, self._config)
 
     def _parse_response(self, response: httpx.Response) -> GoogleResponse:

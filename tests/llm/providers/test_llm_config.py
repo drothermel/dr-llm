@@ -4,8 +4,12 @@ import pytest
 from pydantic import ValidationError
 
 from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.config import HeadlessLlmConfig, parse_llm_config
-from dr_llm.llm.request import HeadlessLlmRequest, parse_llm_request
+from dr_llm.llm.config import HeadlessLlmConfig, KimiCodeLlmConfig, parse_llm_config
+from dr_llm.llm.request import (
+    HeadlessLlmRequest,
+    KimiCodeLlmRequest,
+    parse_llm_request,
+)
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import (
     AnthropicReasoning,
@@ -107,6 +111,52 @@ def test_headless_request_rejects_sampling_and_max_tokens() -> None:
         )
 
 
+def test_kimi_code_config_rejects_sampling_fields() -> None:
+    with pytest.raises(ValidationError, match="temperature"):
+        KimiCodeLlmConfig(
+            provider="kimi-code",
+            model="kimi-for-coding",
+            max_tokens=256,
+            effort=EffortSpec.HIGH,
+            temperature=0.2,  # type: ignore[call-arg]
+        )
+
+    with pytest.raises(ValidationError, match="top_p"):
+        parse_llm_config(
+            {
+                "provider": "kimi-code",
+                "model": "kimi-for-coding",
+                "max_tokens": 256,
+                "effort": "high",
+                "top_p": 0.5,
+            }
+        )
+
+
+def test_kimi_code_request_rejects_sampling_fields() -> None:
+    with pytest.raises(ValidationError, match="temperature"):
+        KimiCodeLlmRequest(
+            provider="kimi-code",
+            model="kimi-for-coding",
+            messages=[Message(role="user", content="hi")],
+            max_tokens=256,
+            effort=EffortSpec.HIGH,
+            temperature=0.2,  # type: ignore[call-arg]
+        )
+
+    with pytest.raises(ValidationError, match="top_p"):
+        parse_llm_request(
+            {
+                "provider": "kimi-code",
+                "model": "kimi-for-coding",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 256,
+                "effort": "high",
+                "top_p": 0.5,
+            }
+        )
+
+
 def test_to_request() -> None:
     config = LlmConfig(
         provider="openai",
@@ -159,6 +209,28 @@ def test_to_request_with_effort() -> None:
     request = config.to_request(messages)
 
     assert request.effort == EffortSpec.MEDIUM
+
+
+def test_kimi_code_to_request_omits_sampling_fields() -> None:
+    config = LlmConfig(
+        provider="kimi-code",
+        model="kimi-for-coding",
+        max_tokens=256,
+        effort=EffortSpec.HIGH,
+    )
+    messages = [Message(role="user", content="Think about this")]
+
+    request = config.to_request(messages)
+
+    assert request.provider == "kimi-code"
+    assert request.model == "kimi-for-coding"
+    assert request.messages == messages
+    assert request.max_tokens == 256
+    assert request.effort == EffortSpec.HIGH
+    assert request.reasoning is None
+    assert request.metadata == {}
+    assert "temperature" not in request.model_dump()
+    assert "top_p" not in request.model_dump()
 
 
 def test_rejects_non_na_effort_for_unsupported_provider() -> None:

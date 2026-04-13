@@ -6,7 +6,7 @@ from dr_llm.llm.providers.api_provider import ApiProvider
 from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.llm.providers.openai_compat.request import OpenAICompatRequest
 from dr_llm.llm.providers.openai_compat.response import OpenAICompatResponse
-from dr_llm.llm.request import ApiLlmRequest
+from dr_llm.llm.request import ApiBackedLlmRequest
 
 
 class OpenAICompatProvider(ApiProvider):
@@ -24,7 +24,7 @@ class OpenAICompatProvider(ApiProvider):
     def config(self) -> OpenAICompatConfig:
         return self._config
 
-    def _build_request(self, request: ApiLlmRequest) -> OpenAICompatRequest:
+    def _build_request(self, request: ApiBackedLlmRequest) -> OpenAICompatRequest:
         return OpenAICompatRequest.from_llm_request(request, self._config)
 
     def _parse_response(self, response: httpx.Response) -> OpenAICompatResponse:

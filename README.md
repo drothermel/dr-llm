@@ -64,7 +64,7 @@ and OpenRouter listings are filtered through the local reasoning-policy allowlis
 | `claude-code` | Claude Code CLI (headless) | `claude` executable |
 | `kimi-code` | Kimi Code API (Anthropic-compatible) | `KIMI_API_KEY` |
 
-Headless providers shell out to CLI tools. `minimax` and `kimi-code` are direct Anthropic-compatible `/messages` API providers. Headless input shapes do not expose `temperature`, `top_p`, or `max_tokens`.
+Headless providers shell out to CLI tools. `minimax` and `kimi-code` are direct Anthropic-compatible `/messages` API providers. Headless input shapes do not expose `temperature`, `top_p`, or `max_tokens`. `kimi-code` rejects `temperature` and `top_p`, but still requires `max_tokens`.
 
 Some providers use static model lists for `models sync` (no `/models` endpoint). The CLI notes when a list may be out of date and links to docs.
 
@@ -254,6 +254,7 @@ dr-llm query --provider openrouter --model openai/gpt-oss-20b --reasoning-json '
 
 # Sampling / token controls
 # --temperature, --top-p, and --max-tokens are rejected for headless providers (codex, claude-code)
+# --temperature and --top-p are also rejected for kimi-code; --max-tokens is required there
 
 # Projects (Docker-managed Postgres)
 dr-llm project create NAME

@@ -13,9 +13,9 @@ from dr_llm.llm.providers.anthropic.reasoning import (
 )
 from dr_llm.llm.providers.api_config import resolve_api_key
 from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.request import ApiLlmRequest
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
+from dr_llm.llm.request import ApiBackedLlmRequest
 
 
 class _AnthropicRequestTextBlock(BaseModel):
@@ -48,7 +48,7 @@ class AnthropicRequest(BaseModel):
     @classmethod
     def from_llm_request(
         cls,
-        request: ApiLlmRequest,
+        request: ApiBackedLlmRequest,
         config: AnthropicConfig,
     ) -> AnthropicRequest:
         if request.max_tokens is None and request.provider != "minimax":
@@ -71,8 +71,8 @@ class AnthropicRequest(BaseModel):
             messages=cls._to_anthropic_messages(request.messages),
             max_tokens=request.max_tokens,
             system=system or None,
-            temperature=request.temperature,
-            top_p=request.top_p,
+            temperature=getattr(request, "temperature", None),
+            top_p=getattr(request, "top_p", None),
             thinking=reasoning_mapping.thinking or None,
             output_config=output_config,
             base_url=config.base_url,

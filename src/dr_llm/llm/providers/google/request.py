@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.llm.providers.api_config import APIProviderConfig, resolve_api_key
 from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig
-from dr_llm.llm.request import ApiLlmRequest
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
+from dr_llm.llm.request import ApiBackedLlmRequest, ApiLlmRequest
 
 
 class _GoogleGenerationConfig(BaseModel):
@@ -53,24 +53,27 @@ class GoogleRequest(BaseModel):
     @classmethod
     def from_llm_request(
         cls,
-        request: ApiLlmRequest,
+        request: ApiBackedLlmRequest,
         config: APIProviderConfig,
     ) -> GoogleRequest:
-        reasoning_mapping = GoogleReasoningConfig.from_base(request.reasoning)
+        sampling_request = cast(ApiLlmRequest, request)
+        reasoning_mapping = GoogleReasoningConfig.from_base(sampling_request.reasoning)
         system = "\n".join(
-            message.content for message in request.messages if message.role == "system"
+            message.content
+            for message in sampling_request.messages
+            if message.role == "system"
         )
         return cls(
-            provider=request.provider,
-            model=request.model,
-            contents=cls._to_google_contents(request.messages),
+            provider=sampling_request.provider,
+            model=sampling_request.model,
+            contents=cls._to_google_contents(sampling_request.messages),
             systemInstruction=(
                 _GoogleSystemInstruction(parts=[_GoogleRequestPart(text=system)])
                 if system
                 else None
             ),
             generationConfig=cls._generation_config(
-                request=request,
+                request=sampling_request,
                 reasoning_payload=reasoning_mapping.payload,
             ),
             base_url=config.base_url,

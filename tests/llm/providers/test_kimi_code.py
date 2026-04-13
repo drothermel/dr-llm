@@ -45,6 +45,8 @@ def test_kimi_code_serializes_effort_and_adaptive_thinking() -> None:
     assert captured["url"] == KIMI_CODE_BASE_URL
     assert captured["payload"]["output_config"] == {"effort": "high"}
     assert captured["payload"]["thinking"] == {"type": "adaptive"}
+    assert "temperature" not in captured["payload"]
+    assert "top_p" not in captured["payload"]
 
 
 def test_kimi_code_serializes_budget_thinking() -> None:

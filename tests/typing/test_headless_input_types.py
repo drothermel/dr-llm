@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dr_llm.llm.config import ApiLlmConfig, HeadlessLlmConfig
+from dr_llm.llm.config import ApiLlmConfig, HeadlessLlmConfig, KimiCodeLlmConfig
 from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.reasoning import AnthropicReasoning, ThinkingLevel
-from dr_llm.llm.request import ApiLlmRequest, HeadlessLlmRequest
+from dr_llm.llm.request import ApiLlmRequest, HeadlessLlmRequest, KimiCodeLlmRequest
 
 
 def build_api_shapes() -> tuple[ApiLlmConfig, ApiLlmRequest]:
@@ -35,5 +36,24 @@ def build_headless_shapes() -> tuple[HeadlessLlmConfig, HeadlessLlmRequest]:
         provider="codex",
         model="gpt-5.4-mini",
         messages=[Message(role="user", content="hello")],
+    )
+    return config, request
+
+
+def build_kimi_shapes() -> tuple[KimiCodeLlmConfig, KimiCodeLlmRequest]:
+    config = KimiCodeLlmConfig(
+        provider="kimi-code",
+        model="kimi-for-coding",
+        max_tokens=256,
+        effort=EffortSpec.HIGH,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+    )
+    request = KimiCodeLlmRequest(
+        provider="kimi-code",
+        model="kimi-for-coding",
+        messages=[Message(role="user", content="hello")],
+        max_tokens=256,
+        effort=EffortSpec.HIGH,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
     )
     return config, request

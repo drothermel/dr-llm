@@ -12,7 +12,7 @@ from dr_llm.llm.providers.anthropic.request import AnthropicRequest
 from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import AnthropicReasoning, ThinkingLevel
-from dr_llm.llm.request import ApiLlmRequest
+from dr_llm.llm.request import ApiLlmRequest, KimiCodeLlmRequest
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 
@@ -29,8 +29,8 @@ def _make_config() -> AnthropicConfig:
     )
 
 
-def _make_api_request(**overrides: Any) -> ApiLlmRequest:
-    return cast(ApiLlmRequest, make_request(**overrides))
+def _make_api_request(**overrides: Any) -> ApiLlmRequest | KimiCodeLlmRequest:
+    return cast(ApiLlmRequest | KimiCodeLlmRequest, make_request(**overrides))
 
 
 def test_payload_serializes_messages() -> None:
