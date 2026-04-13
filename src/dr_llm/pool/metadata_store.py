@@ -73,7 +73,7 @@ class MetadataStore:
             )
             .where(
                 self._tables.metadata_table.c.pool_name == self._schema.name,
-                self._tables.metadata_table.c.key.like(f"{prefix}%"),
+                self._tables.metadata_table.c.key.startswith(prefix, autoescape=True),
             )
             .order_by(self._tables.metadata_table.c.key)
         )

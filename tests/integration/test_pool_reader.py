@@ -22,7 +22,7 @@ from dr_llm.pool.pool_store import SCHEMA_METADATA_KEY, PoolStore
 from dr_llm.pool.reader import PoolReader
 
 _READER_SCHEMA = PoolSchema(
-    name="itest_reader",
+    name=f"itest_reader_{uuid4().hex[:8]}",
     key_columns=[
         KeyColumn(name="dim_a"),
         KeyColumn(name="dim_b", type=ColumnType.integer),
@@ -37,8 +37,11 @@ _READER_TABLES = (
 )
 
 
-def _get_dsn() -> str | None:
-    return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv("DR_LLM_DATABASE_URL")
+def _get_dsn() -> str:
+    dsn = os.getenv("DR_LLM_TEST_DATABASE_URL")
+    if dsn is None:
+        raise RuntimeError("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+    return dsn
 
 
 def _drop_pool_tables(dsn: str, schema: PoolSchema) -> None:
@@ -61,8 +64,6 @@ def _drop_pool_tables(dsn: str, schema: PoolSchema) -> None:
 def reader_runtime() -> Generator[DbRuntime, None, None]:
     """Module-scoped DbRuntime for reader integration tests."""
     dsn = _get_dsn()
-    if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
 
     runtime: DbRuntime | None = None
     try:
@@ -265,6 +266,24 @@ def test_metadata_prefix_scans_subset(reader_runtime: DbRuntime) -> None:
 
 
 @pytest.mark.integration
+def test_metadata_prefix_treats_like_wildcards_literally(
+    reader_runtime: DbRuntime,
+) -> None:
+    store = PoolStore(_READER_SCHEMA, reader_runtime)
+    literal_prefix = f"wild_%_case_{uuid4().hex[:8]}/"
+    literal_key = f"{literal_prefix}match"
+    wildcard_match_only = f"wildXabcYcase_{uuid4().hex[:8]}/decoy"
+
+    store.metadata.upsert(literal_key, {"kind": "literal"})
+    store.metadata.upsert(wildcard_match_only, {"kind": "decoy"})
+
+    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
+    matches = reader.metadata_prefix(literal_prefix)
+
+    assert matches == {literal_key: {"kind": "literal"}}
+
+
+@pytest.mark.integration
 def test_metadata_prefix_can_load_internal_schema_key(
     reader_runtime: DbRuntime,
 ) -> None:
@@ -273,7 +292,7 @@ def test_metadata_prefix_can_load_internal_schema_key(
     underscore_keys = reader.metadata_prefix("_")
     assert SCHEMA_METADATA_KEY in underscore_keys
     # Round-trip: the persisted dump should validate back into a PoolSchema.
-    reconstructed = PoolSchema.model_validate(underscore_keys[SCHEMA_METADATA_KEY])
+    reconstructed = PoolSchema(**underscore_keys[SCHEMA_METADATA_KEY])
     assert reconstructed == _READER_SCHEMA
 
 
@@ -283,7 +302,7 @@ def test_ensure_schema_persists_schema_metadata(reader_runtime: DbRuntime) -> No
     store = PoolStore(_READER_SCHEMA, reader_runtime)
     persisted = store.metadata.get(SCHEMA_METADATA_KEY)
     assert persisted is not None
-    reconstructed = PoolSchema.model_validate(persisted)
+    reconstructed = PoolSchema(**persisted)
     assert reconstructed == _READER_SCHEMA
 
 
@@ -302,8 +321,6 @@ def test_load_schema_from_db_round_trip() -> None:
     """A reader constructed without an explicit schema should reconstruct
     the original PoolSchema from the metadata table."""
     dsn = _get_dsn()
-    if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
     schema = _isolated_pool_schema()
     runtime = DbRuntime(
         DbConfig(
@@ -329,8 +346,6 @@ def test_load_schema_from_db_round_trip() -> None:
 @pytest.mark.integration
 def test_load_schema_from_db_raises_when_pool_missing() -> None:
     dsn = _get_dsn()
-    if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
     runtime = DbRuntime(
         DbConfig(
             dsn=dsn,
@@ -352,8 +367,6 @@ def test_load_schema_from_db_raises_when_pool_missing() -> None:
 def test_load_schema_from_db_raises_when_schema_row_missing() -> None:
     """Migration path: pool exists but _schema row is gone (pre-feature pool)."""
     dsn = _get_dsn()
-    if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
     schema = _isolated_pool_schema()
     runtime = DbRuntime(
         DbConfig(
@@ -398,8 +411,6 @@ def test_load_schema_from_db_raises_when_schema_row_missing() -> None:
 def test_close_disposes_owned_runtime_only() -> None:
     """from_runtime borrows; close() must NOT dispose a borrowed runtime."""
     dsn = _get_dsn()
-    if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
     schema = _isolated_pool_schema()
     runtime = DbRuntime(
         DbConfig(
@@ -428,8 +439,6 @@ def test_close_disposes_owned_runtime_only() -> None:
 @pytest.mark.integration
 def test_context_manager_calls_close() -> None:
     dsn = _get_dsn()
-    if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
     schema = _isolated_pool_schema()
     runtime = DbRuntime(
         DbConfig(

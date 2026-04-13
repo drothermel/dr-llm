@@ -109,7 +109,7 @@ def _load_schema_from_db(runtime: DbRuntime, pool_name: str) -> PoolSchema:
             f"PoolReader.from_runtime(runtime, schema=...) with the schema "
             f"explicitly, or re-run PoolStore.ensure_schema() to backfill it."
         )
-    return PoolSchema.model_validate(value)
+    return PoolSchema(**value)
 
 
 class PoolReader:
