@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 from psycopg import errors as pg_errors
@@ -18,6 +18,11 @@ from sqlalchemy.sql.schema import Table
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.errors import PoolSchemaError
+from dr_llm.pool.key_filter import (
+    PoolKeyEqClause,
+    PoolKeyFilter,
+    PoolKeyInClause,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +48,7 @@ def validate_key_values(schema: PoolSchema, key_values: dict[str, Any]) -> None:
 def key_filter_clause(
     schema: PoolSchema,
     table: Table,
-    key_values: Mapping[str, Any],
+    key_values: dict[str, Any],
 ) -> ColumnElement[bool]:
     validate_key_values(schema, dict(key_values))
     return and_(*[table.c[kc.name] == key_values[kc.name] for kc in schema.key_columns])
@@ -52,48 +57,49 @@ def key_filter_clause(
 def partial_key_filter_clause(
     schema: PoolSchema,
     table: Table,
-    key_filter: Mapping[str, Any] | None,
+    key_filter: PoolKeyFilter | None,
 ) -> ColumnElement[bool] | None:
     if not key_filter:
         return None
-    validate_key_filter(schema, dict(key_filter))
+    validate_key_filter(schema, key_filter)
     conditions = [
-        table.c[key] == value
-        for key, value in key_filter.items()
-        if key in schema.key_column_names
+        _pool_key_clause_to_sql(table, key, clause)
+        for key, clause in key_filter.root.items()
     ]
-    if not conditions:
-        return None
     return and_(*conditions)
 
 
 def key_values_from_row(
-    schema: PoolSchema, row: Mapping[str, Any] | RowMapping
+    schema: PoolSchema, row: dict[str, Any] | RowMapping
 ) -> dict[str, Any]:
     return {name: row[name] for name in schema.key_column_names}
 
 
-def validate_key_filter(schema: PoolSchema, key_filter: dict[str, Any]) -> None:
-    """Warn on unknown keys in a partial key filter.
-
-    Unlike validate_key_values (which requires an exact key match and raises
-    PoolSchemaError), this is intentionally permissive: key_filter is a partial
-    subset, so unknown keys are logged as warnings rather than errors.
-    """
-    unknown = set(key_filter.keys()) - set(schema.key_column_names)
+def validate_key_filter(schema: PoolSchema, key_filter: PoolKeyFilter) -> None:
+    """Reject unknown keys in a partial key filter."""
+    unknown = set(key_filter.root.keys()) - set(schema.key_column_names)
     if unknown:
-        logger.warning(
-            "key_filter contains unknown columns %s (valid: %s)",
-            unknown,
-            schema.key_column_names,
+        raise PoolSchemaError(
+            "key_filter contains unknown columns "
+            f"{unknown} (valid: {schema.key_column_names})"
         )
+
+
+def _pool_key_clause_to_sql(
+    table: Table,
+    key: str,
+    clause: PoolKeyEqClause | PoolKeyInClause,
+) -> ColumnElement[bool]:
+    if isinstance(clause, PoolKeyEqClause):
+        return table.c[key] == clause.value
+    return table.c[key].in_(clause.values)
 
 
 def insert_keyed_samples(
     runtime: DbRuntime,
     table: Table,
     pk_column: ColumnElement[Any],
-    rows: Sequence[Mapping[str, Any]],
+    rows: Sequence[dict[str, Any]],
     *,
     ignore_conflicts: bool = True,
 ) -> int:
@@ -127,7 +133,7 @@ def execute_insert_count(
     stmt: PgInsert[Any],
     *,
     ignore_conflicts: bool,
-    parameters: Sequence[Mapping[str, Any]] | None = None,
+    parameters: Sequence[dict[str, Any]] | None = None,
 ) -> int:
     """Execute INSERT (optionally ON CONFLICT DO NOTHING); return inserted row count.
 
@@ -166,7 +172,7 @@ def stream_select_rows(
     *,
     base_predicates: Sequence[ColumnElement[bool]] = (),
     order_by: Sequence[Any] = (),
-    key_filter: Mapping[str, Any] | None = None,
+    key_filter: PoolKeyFilter | None = None,
     chunk_size: int = 1000,
 ) -> Iterator[dict[str, Any]]:
     """Stream rows from ``table`` in chunks via server-side cursoring.

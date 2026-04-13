@@ -17,6 +17,7 @@ from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
+from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.models import AcquireQuery
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
@@ -40,6 +41,14 @@ _POOL_TABLES = (
     _TEST_SCHEMA.pending_table,
     _TEST_SCHEMA.samples_table,
 )
+
+
+def _eq_filter(**key_values: object) -> PoolKeyFilter:
+    return PoolKeyFilter.eq(**key_values)
+
+
+def _in_filter(**key_values: list[object]) -> PoolKeyFilter:
+    return PoolKeyFilter.in_(**key_values)
 
 
 def _drop_tables(dsn: str) -> None:
@@ -152,7 +161,7 @@ def test_insert_auto_idx_concurrent(pool_store: PoolStore) -> None:
         inserted = list(executor.map(insert_one, range(8)))
 
     assert all(inserted)
-    rows = pool_store.bulk_load(key_filter={"dim_a": dim_a, "dim_b": 11})
+    rows = pool_store.bulk_load(key_filter=_eq_filter(dim_a=dim_a, dim_b=11))
     assert sorted(row.sample_idx for row in rows) == list(range(8))
 
 
@@ -364,7 +373,7 @@ def test_pending_claim_and_promote(pool_store: PoolStore) -> None:
     claimed = pool_store.pending.claim(
         worker_id="w1",
         lease_seconds=60,
-        key_filter={"dim_a": "promote", "dim_b": 1},
+        key_filter=_eq_filter(dim_a="promote", dim_b=1),
     )
     assert claimed is not None
     assert claimed.status == PendingStatus.leased
@@ -393,7 +402,7 @@ def test_pending_claim_rejects_non_positive_lease(pool_store: PoolStore) -> None
         pool_store.pending.claim(
             worker_id="w1",
             lease_seconds=0,
-            key_filter={"dim_a": "noop", "dim_b": 1},
+            key_filter=_eq_filter(dim_a="noop", dim_b=1),
         )
 
 
@@ -405,7 +414,7 @@ def test_pending_fail(pool_store: PoolStore) -> None:
     claimed = pool_store.pending.claim(
         worker_id="w1",
         lease_seconds=60,
-        key_filter={"dim_a": "fail", "dim_b": 1},
+        key_filter=_eq_filter(dim_a="fail", dim_b=1),
     )
     assert claimed is not None
     pool_store.pending.fail(
@@ -417,6 +426,98 @@ def test_pending_fail(pool_store: PoolStore) -> None:
         pool_store.pending.count_in_flight(key_values={"dim_a": "fail", "dim_b": 1})
         == 0
     )
+
+
+@pytest.mark.integration
+def test_pending_claim_supports_in_filter(pool_store: PoolStore) -> None:
+    pool_store.pending.insert(_pending(dim_a="claim_in_a", dim_b=1, sample_idx=0))
+    pool_store.pending.insert(_pending(dim_a="claim_in_b", dim_b=1, sample_idx=0))
+    pool_store.pending.insert(_pending(dim_a="claim_in_c", dim_b=1, sample_idx=0))
+
+    claimed = pool_store.pending.claim(
+        worker_id="w-in",
+        lease_seconds=60,
+        key_filter=_in_filter(dim_a=["claim_in_a", "claim_in_b"]),
+    )
+
+    assert claimed is not None
+    assert claimed.key_values["dim_a"] in {"claim_in_a", "claim_in_b"}
+
+
+@pytest.mark.integration
+def test_pending_status_counts_support_in_filter(pool_store: PoolStore) -> None:
+    pool_store.pending.insert(_pending(dim_a="counts_in_a", dim_b=1, sample_idx=0))
+    pool_store.pending.insert(_pending(dim_a="counts_in_b", dim_b=1, sample_idx=0))
+    pool_store.pending.insert(_pending(dim_a="counts_in_c", dim_b=1, sample_idx=0))
+
+    counts = pool_store.pending.status_counts(
+        key_filter=_in_filter(dim_a=["counts_in_a", "counts_in_b"])
+    )
+
+    assert counts.pending == 2
+    assert counts.leased == 0
+    assert counts.promoted == 0
+    assert counts.failed == 0
+
+
+@pytest.mark.integration
+def test_requeue_failed_supports_filtered_subset(pool_store: PoolStore) -> None:
+    failed_a = _pending(
+        dim_a="requeue_in_a",
+        dim_b=1,
+        sample_idx=0,
+        metadata={"seed": "a"},
+    )
+    failed_b = _pending(
+        dim_a="requeue_in_b",
+        dim_b=1,
+        sample_idx=0,
+        metadata={"seed": "b"},
+    )
+    failed_c = _pending(
+        dim_a="requeue_in_c",
+        dim_b=1,
+        sample_idx=0,
+        metadata={"seed": "c"},
+    )
+    pool_store.pending.insert_many([failed_a, failed_b, failed_c])
+
+    for worker_id, dim_a in [
+        ("w-rq-a", "requeue_in_a"),
+        ("w-rq-b", "requeue_in_b"),
+        ("w-rq-c", "requeue_in_c"),
+    ]:
+        claimed = pool_store.pending.claim(
+            worker_id=worker_id,
+            lease_seconds=60,
+            key_filter=_eq_filter(dim_a=dim_a, dim_b=1),
+        )
+        assert claimed is not None
+        pool_store.pending.fail(
+            pending_id=claimed.pending_id,
+            worker_id=worker_id,
+            reason=f"failed-{dim_a}",
+        )
+
+    updated = pool_store.pending.requeue_failed(
+        key_filter=_in_filter(dim_a=["requeue_in_a", "requeue_in_b"])
+    )
+
+    assert updated == 2
+    pending_rows = pool_store.pending.bulk_load(
+        key_filter=_in_filter(dim_a=["requeue_in_a", "requeue_in_b"]),
+        status=PendingStatus.pending,
+    )
+    assert len(pending_rows) == 2
+    assert all(row.attempt_count == 0 for row in pending_rows)
+    assert all("fail_reason" not in row.metadata for row in pending_rows)
+
+    failed_rows = pool_store.pending.bulk_load(
+        key_filter=_eq_filter(dim_a="requeue_in_c"),
+        status=PendingStatus.failed,
+    )
+    assert len(failed_rows) == 1
+    assert failed_rows[0].metadata["fail_reason"] == "failed-requeue_in_c"
 
 
 @pytest.mark.integration
@@ -440,11 +541,11 @@ def test_shuffle_priorities_randomizes_pending_rows(
     pool_store.pending.insert_many(samples)
 
     updated = pool_store.pending.shuffle_priorities(
-        key_filter={"dim_a": "shuf"}
+        key_filter=_eq_filter(dim_a="shuf")
     )
     assert updated == 20
 
-    rows = pool_store.pending.bulk_load(key_filter={"dim_a": "shuf"})
+    rows = pool_store.pending.bulk_load(key_filter=_eq_filter(dim_a="shuf"))
     priorities = [row.priority for row in rows]
     # With a 1e9 upper bound and 20 rows, ties should be vanishingly rare.
     assert len(set(priorities)) >= 18
@@ -461,12 +562,12 @@ def test_shuffle_priorities_skips_leased_rows(pool_store: PoolStore) -> None:
     leased = pool_store.pending.claim(
         worker_id="w-shuffle",
         lease_seconds=60,
-        key_filter={"dim_a": "shufleased"},
+        key_filter=_eq_filter(dim_a="shufleased"),
     )
     assert leased is not None
 
     updated = pool_store.pending.shuffle_priorities(
-        key_filter={"dim_a": "shufleased"}
+        key_filter=_eq_filter(dim_a="shufleased")
     )
     # 3 of 4 rows are still pending; the 1 leased row is skipped.
     assert updated == 3
@@ -474,7 +575,7 @@ def test_shuffle_priorities_skips_leased_rows(pool_store: PoolStore) -> None:
     leased_row = next(
         row
         for row in pool_store.pending.bulk_load(
-            key_filter={"dim_a": "shufleased"}
+            key_filter=_eq_filter(dim_a="shufleased")
         )
         if row.pending_id == leased.pending_id
     )
@@ -492,19 +593,23 @@ def test_shuffle_priorities_is_reproducible_with_seed(
     pool_store.pending.insert_many(samples)
 
     pool_store.pending.shuffle_priorities(
-        seed=42, key_filter={"dim_a": "shufseed"}
+        seed=42, key_filter=_eq_filter(dim_a="shufseed")
     )
     first_pass = {
         row.pending_id: row.priority
-        for row in pool_store.pending.bulk_load(key_filter={"dim_a": "shufseed"})
+        for row in pool_store.pending.bulk_load(
+            key_filter=_eq_filter(dim_a="shufseed")
+        )
     }
 
     pool_store.pending.shuffle_priorities(
-        seed=42, key_filter={"dim_a": "shufseed"}
+        seed=42, key_filter=_eq_filter(dim_a="shufseed")
     )
     second_pass = {
         row.pending_id: row.priority
-        for row in pool_store.pending.bulk_load(key_filter={"dim_a": "shufseed"})
+        for row in pool_store.pending.bulk_load(
+            key_filter=_eq_filter(dim_a="shufseed")
+        )
     }
 
     assert first_pass == second_pass
@@ -568,7 +673,7 @@ def test_bulk_load_with_filter(pool_store: PoolStore) -> None:
             )
         )
 
-    filtered = pool_store.bulk_load(key_filter={"dim_a": "bload", "dim_b": 99})
+    filtered = pool_store.bulk_load(key_filter=_eq_filter(dim_a="bload", dim_b=99))
     assert len(filtered) == 3
     assert all(s.key_values["dim_a"] == "bload" for s in filtered)
     assert filtered[0].payload == {"loaded": 0}
@@ -590,7 +695,9 @@ def test_bulk_load_pending(pool_store: PoolStore) -> None:
     )
     pool_store.pending.insert(_pending(dim_a="blp", dim_b=70, sample_idx=1))
 
-    results = pool_store.pending.bulk_load(key_filter={"dim_a": "blp", "dim_b": 70})
+    results = pool_store.pending.bulk_load(
+        key_filter=_eq_filter(dim_a="blp", dim_b=70)
+    )
     assert len(results) == 2
     assert all(isinstance(r, PendingSample) for r in results)
     assert all(r.key_values["dim_a"] == "blp" for r in results)
@@ -604,7 +711,7 @@ def test_bulk_load_pending_with_filter(pool_store: PoolStore) -> None:
     pool_store.pending.insert(_pending(dim_a="blpf_a", dim_b=71, sample_idx=0))
     pool_store.pending.insert(_pending(dim_a="blpf_b", dim_b=71, sample_idx=0))
 
-    filtered = pool_store.pending.bulk_load(key_filter={"dim_a": "blpf_a"})
+    filtered = pool_store.pending.bulk_load(key_filter=_eq_filter(dim_a="blpf_a"))
     assert len(filtered) == 1
     assert filtered[0].key_values["dim_a"] == "blpf_a"
 
@@ -616,7 +723,7 @@ def test_bulk_load_pending_excludes_promoted(pool_store: PoolStore) -> None:
     claimed = pool_store.pending.claim(
         worker_id="w1",
         lease_seconds=300,
-        key_filter={"dim_a": "blpe", "dim_b": 72},
+        key_filter=_eq_filter(dim_a="blpe", dim_b=72),
     )
     assert claimed is not None
     pool_store.pending.promote(pending_id=claimed.pending_id, worker_id="w1")
@@ -624,7 +731,9 @@ def test_bulk_load_pending_excludes_promoted(pool_store: PoolStore) -> None:
     # Insert another that stays pending
     pool_store.pending.insert(_pending(dim_a="blpe", dim_b=72, sample_idx=1))
 
-    results = pool_store.pending.bulk_load(key_filter={"dim_a": "blpe", "dim_b": 72})
+    results = pool_store.pending.bulk_load(
+        key_filter=_eq_filter(dim_a="blpe", dim_b=72)
+    )
     assert len(results) == 1
     assert results[0].sample_idx == 1
 
@@ -708,7 +817,9 @@ def test_insert_call_stats(pool_store: PoolStore) -> None:
     s = _sample(dim_a="cs_insert", dim_b=1, sample_idx=0)
     pool_store.insert_sample(s)
 
-    samples = pool_store.bulk_load(key_filter={"dim_a": "cs_insert", "dim_b": 1})
+    samples = pool_store.bulk_load(
+        key_filter=_eq_filter(dim_a="cs_insert", dim_b=1)
+    )
     assert len(samples) == 1
     sample_id = samples[0].sample_id
 
@@ -763,7 +874,7 @@ def test_call_stats_full_flow(pool_store: PoolStore) -> None:
     claimed = pool_store.pending.claim(
         worker_id="w1",
         lease_seconds=60,
-        key_filter={"dim_a": "cs_flow", "dim_b": 1},
+        key_filter=_eq_filter(dim_a="cs_flow", dim_b=1),
     )
     assert claimed is not None
 

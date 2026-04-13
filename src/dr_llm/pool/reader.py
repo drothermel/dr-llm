@@ -10,7 +10,7 @@ its read-side methods.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 import psycopg
@@ -22,6 +22,7 @@ from sqlalchemy.exc import ProgrammingError
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
+from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample, SampleStatus
@@ -195,7 +196,7 @@ class PoolReader:
     def samples(
         self,
         *,
-        key_filter: Mapping[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
         status: SampleStatus | Iterable[SampleStatus] | None = None,
     ) -> Iterator[PoolSample]:
         """Stream samples; see :meth:`PoolStore.iter_samples` for filter semantics.
@@ -204,26 +205,26 @@ class PoolReader:
         or prefer :meth:`samples_list`.
         """
         return self._store.iter_samples(
-            key_filter=dict(key_filter) if key_filter else None,
+            key_filter=key_filter,
             status=status,
         )
 
     def samples_list(
         self,
         *,
-        key_filter: Mapping[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
         status: SampleStatus | Iterable[SampleStatus] | None = None,
     ) -> list[PoolSample]:
         """Eagerly materialize samples into a list."""
         return self._store.bulk_load(
-            key_filter=dict(key_filter) if key_filter else None,
+            key_filter=key_filter,
             status=status,
         )
 
     def pending(
         self,
         *,
-        key_filter: Mapping[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
         status: PendingStatus | Iterable[PendingStatus] | None = None,
     ) -> Iterator[PendingSample]:
         """Stream pending samples; see :meth:`PendingStore.iter_pending` for filter semantics.
@@ -233,19 +234,19 @@ class PoolReader:
         Pass an explicit set to inspect ``promoted`` or ``failed`` rows.
         """
         return self._store.pending.iter_pending(
-            key_filter=dict(key_filter) if key_filter else None,
+            key_filter=key_filter,
             status=status,
         )
 
     def pending_list(
         self,
         *,
-        key_filter: Mapping[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
         status: PendingStatus | Iterable[PendingStatus] | None = None,
     ) -> list[PendingSample]:
         """Eagerly materialize pending samples into a list."""
         return self._store.pending.bulk_load(
-            key_filter=dict(key_filter) if key_filter else None,
+            key_filter=key_filter,
             status=status,
         )
 

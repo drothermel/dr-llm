@@ -6,6 +6,7 @@ import pytest
 
 from dr_llm.logging.events import get_generation_log_context
 from dr_llm.pool.call_stats import CallStats
+from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.backend import (
     PoolPendingBackend,
     PoolPendingBackendConfig,
@@ -40,7 +41,7 @@ class _FakePendingStore:
         *,
         worker_id: str,
         lease_seconds: int,
-        key_filter: dict[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
     ) -> PendingSample | None:
         self.last_claim_args = {
             "worker_id": worker_id,
@@ -74,9 +75,9 @@ class _FakePendingStore:
     def status_counts(
         self,
         *,
-        key_filter: dict[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
     ) -> PendingStatusCounts:
-        assert key_filter is None or isinstance(key_filter, dict)
+        assert key_filter is None or isinstance(key_filter, PoolKeyFilter)
         return self.status_counts_value
 
 
@@ -99,13 +100,17 @@ def _sample(*, attempt_count: int = 1) -> PendingSample:
     )
 
 
+def _eq_filter(**key_values: object) -> PoolKeyFilter:
+    return PoolKeyFilter.eq(**key_values)
+
+
 def test_backend_claims_one_item() -> None:
     store = _FakeStore()
     sample = _sample()
     store.pending.claimed = sample
     backend = PoolPendingBackend(
         cast(PoolStore, store),
-        config=PoolPendingBackendConfig(key_filter={"model": "m1"}),
+        config=PoolPendingBackendConfig(key_filter=_eq_filter(model="m1")),
     )
 
     claimed = backend.claim(worker_id="worker-1", lease_seconds=30)
@@ -114,7 +119,7 @@ def test_backend_claims_one_item() -> None:
     assert store.pending.last_claim_args == {
         "worker_id": "worker-1",
         "lease_seconds": 30,
-        "key_filter": {"model": "m1"},
+        "key_filter": _eq_filter(model="m1"),
     }
 
 
@@ -270,7 +275,7 @@ def test_backend_snapshot_exposes_pool_specific_state() -> None:
         cast(PoolStore, store),
         config=PoolPendingBackendConfig(
             max_retries=3,
-            key_filter={"model": "m1"},
+            key_filter=_eq_filter(model="m1"),
         ),
     )
 
@@ -278,7 +283,7 @@ def test_backend_snapshot_exposes_pool_specific_state() -> None:
 
     assert snapshot.status_counts.promoted == 2
     assert snapshot.status_counts.failed == 1
-    assert snapshot.key_filter == {"model": "m1"}
+    assert snapshot.key_filter == _eq_filter(model="m1")
     assert snapshot.max_retries == 3
 
 

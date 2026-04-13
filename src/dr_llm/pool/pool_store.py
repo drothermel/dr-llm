@@ -23,6 +23,7 @@ from dr_llm.pool.db.sql_helpers import (
 )
 from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.db.tables import PoolTables
+from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.metadata_store import MetadataStore
 from dr_llm.pool.models import AcquireQuery, AcquireResult, CoverageRow, InsertResult
 from dr_llm.pool.pending.store import PendingStore
@@ -373,7 +374,7 @@ class PoolStore:
     def bulk_load(
         self,
         *,
-        key_filter: dict[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
         status: SampleStatus | Iterable[SampleStatus] | None = None,
     ) -> list[PoolSample]:
         """Load all samples, optionally filtered by partial key match.
@@ -386,7 +387,7 @@ class PoolStore:
     def iter_samples(
         self,
         *,
-        key_filter: dict[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
         status: SampleStatus | Iterable[SampleStatus] | None = None,
         chunk_size: int = 1000,
     ) -> Iterator[PoolSample]:
