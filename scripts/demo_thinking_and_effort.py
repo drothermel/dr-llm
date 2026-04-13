@@ -26,6 +26,8 @@ from dr_llm.llm.request import (
     ApiProviderName,
     HeadlessLlmRequest,
     HeadlessProviderName,
+    KimiCodeLlmRequest,
+    KimiCodeProviderName,
     LlmRequest,
 )
 from dr_llm.llm.providers.anthropic.thinking import (
@@ -329,6 +331,15 @@ def make_request(
             provider=cast(HeadlessProviderName, provider),
             model=model,
             messages=[Message(role="user", content=PROMPT)],
+            effort=effort,
+            reasoning=reasoning,
+        )
+    if provider == "kimi-code":
+        return KimiCodeLlmRequest(
+            provider=cast(KimiCodeProviderName, provider),
+            model=model,
+            messages=[Message(role="user", content=PROMPT)],
+            max_tokens=KIMI_CODE_MAX_TOKENS,
             effort=effort,
             reasoning=reasoning,
         )

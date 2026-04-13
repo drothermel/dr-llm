@@ -70,9 +70,9 @@ Some providers use static model lists for `models sync` (no `/models` endpoint).
 
 ## Python API
 
-`ApiLlmRequest` / `ApiLlmConfig` are the concrete request/config shapes for API-backed providers. `HeadlessLlmRequest` / `HeadlessLlmConfig` are the concrete shapes for CLI-backed providers. `LlmRequest` and `LlmConfig` remain available as unions, and `parse_llm_request(...)` / `parse_llm_config(...)` validate raw payloads into the correct concrete model by `provider`.
+`ApiLlmRequest` / `ApiLlmConfig` are the concrete request/config shapes for sampling-capable API providers. `KimiCodeLlmRequest` / `KimiCodeLlmConfig` are the concrete shapes for `kimi-code`. `HeadlessLlmRequest` / `HeadlessLlmConfig` are the concrete shapes for CLI-backed providers. `LlmRequest` and `LlmConfig` remain available as unions, and `parse_llm_request(...)` / `parse_llm_config(...)` validate raw payloads into the correct concrete model by `provider`.
 
-For API-backed providers, omitted sampling controls default to `temperature=1.0` and `top_p=0.95`. Headless providers reject those fields entirely.
+For sampling-capable API providers, omitted sampling controls default to `temperature=1.0` and `top_p=0.95`. `kimi-code` and headless providers reject those fields entirely.
 
 ### Calling a provider
 
