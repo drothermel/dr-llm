@@ -15,6 +15,7 @@ from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
+from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
 from dr_llm.pool.pool_sample import PoolSample, SampleStatus
@@ -35,6 +36,14 @@ _READER_TABLES = (
     _READER_SCHEMA.pending_table,
     _READER_SCHEMA.samples_table,
 )
+
+
+def _eq_filter(**key_values: object) -> PoolKeyFilter:
+    return PoolKeyFilter.eq(**key_values)
+
+
+def _in_filter(**key_values: list[object]) -> PoolKeyFilter:
+    return PoolKeyFilter.in_(**key_values)
 
 
 def _get_dsn() -> str:
@@ -121,7 +130,7 @@ def reader_runtime() -> Generator[DbRuntime, None, None]:
         claimed_promote = store.pending.claim(
             worker_id="w-promote",
             lease_seconds=60,
-            key_filter={"dim_a": "alpha", "dim_b": 1},
+            key_filter=_eq_filter(dim_a="alpha", dim_b=1),
         )
         assert claimed_promote is not None
         # claim() returns oldest first, so we may have grabbed pending #1 not #2;
@@ -135,7 +144,7 @@ def reader_runtime() -> Generator[DbRuntime, None, None]:
         claimed_fail = store.pending.claim(
             worker_id="w-fail",
             lease_seconds=60,
-            key_filter={"dim_a": "beta", "dim_b": 2},
+            key_filter=_eq_filter(dim_a="beta", dim_b=2),
         )
         assert claimed_fail is not None
         store.pending.fail(
@@ -175,7 +184,7 @@ def test_samples_list_returns_all_seeded(reader_runtime: DbRuntime) -> None:
 @pytest.mark.integration
 def test_samples_list_with_key_filter(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    alpha = reader.samples_list(key_filter={"dim_a": "alpha"})
+    alpha = reader.samples_list(key_filter=_eq_filter(dim_a="alpha"))
     assert all(s.key_values["dim_a"] == "alpha" for s in alpha)
     # 3 originally seeded + 1 promoted from pending
     assert len(alpha) == 4
@@ -192,9 +201,17 @@ def test_samples_list_with_status_filter(reader_runtime: DbRuntime) -> None:
 @pytest.mark.integration
 def test_samples_streaming_iterator(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    streamed = list(reader.samples(key_filter={"dim_a": "beta"}))
+    streamed = list(reader.samples(key_filter=_eq_filter(dim_a="beta")))
     assert len(streamed) == 2
     assert all(s.key_values["dim_a"] == "beta" for s in streamed)
+
+
+@pytest.mark.integration
+def test_samples_list_supports_in_filter(reader_runtime: DbRuntime) -> None:
+    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
+    rows = reader.samples_list(key_filter=_in_filter(dim_a=["alpha", "beta"]))
+
+    assert len(rows) == 6
 
 
 @pytest.mark.integration

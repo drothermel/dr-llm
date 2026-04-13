@@ -36,6 +36,7 @@ from dr_llm.pool.db.sql_helpers import (
 )
 from dr_llm.pool.db.tables import PoolTables
 from dr_llm.pool.models import InsertResult
+from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import (
     IN_FLIGHT_STATUSES,
@@ -87,7 +88,7 @@ class PendingStore:
         *,
         worker_id: str,
         lease_seconds: int,
-        key_filter: dict[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
     ) -> PendingSample | None:
         """Lease one pending sample for processing via FOR UPDATE SKIP LOCKED."""
         if lease_seconds <= 0:
@@ -329,7 +330,7 @@ class PendingStore:
         self,
         *,
         seed: int | None = None,
-        key_filter: dict[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
         upper_bound: int = 1_000_000_000,
     ) -> int:
         """Assign each pending row a uniformly random priority.
@@ -403,7 +404,7 @@ class PendingStore:
     def bulk_load(
         self,
         *,
-        key_filter: dict[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
         status: PendingStatus | Iterable[PendingStatus] | None = None,
     ) -> list[PendingSample]:
         """Load pending samples, optionally filtered by partial key match.
@@ -416,7 +417,7 @@ class PendingStore:
     def iter_pending(
         self,
         *,
-        key_filter: dict[str, Any] | None = None,
+        key_filter: PoolKeyFilter | None = None,
         status: PendingStatus | Iterable[PendingStatus] | None = None,
         chunk_size: int = 1000,
     ) -> Iterator[PendingSample]:
@@ -452,7 +453,7 @@ class PendingStore:
             yield PendingSample.from_db_row(self._schema, row)
 
     def status_counts(
-        self, *, key_filter: dict[str, Any] | None = None
+        self, *, key_filter: PoolKeyFilter | None = None
     ) -> PendingStatusCounts:
         """Count pending rows by lifecycle status."""
         stmt = select(
@@ -468,3 +469,28 @@ class PendingStore:
         with self._runtime.connect() as conn:
             rows = conn.execute(stmt).mappings().all()
         return PendingStatusCounts.from_rows(dict(row) for row in rows)
+
+    def requeue_failed(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+        """Reset failed rows matching ``key_filter`` back to pending."""
+        metadata_json = self._pending.c.metadata_json - "fail_reason"
+        predicates: list[Any] = [self._pending.c.status == PendingStatus.failed]
+        partial_filter = partial_key_filter_clause(
+            self._schema, self._pending, key_filter
+        )
+        if partial_filter is not None:
+            predicates.append(partial_filter)
+
+        stmt = (
+            update(self._pending)
+            .where(*predicates)
+            .values(
+                status=PendingStatus.pending,
+                worker_id=None,
+                lease_expires_at=None,
+                attempt_count=0,
+                metadata_json=metadata_json,
+            )
+        )
+        with self._runtime.begin() as conn:
+            result = conn.execute(stmt)
+        return result.rowcount or 0

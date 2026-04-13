@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from dr_llm.logging.events import generation_log_context
 from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.db.sql_helpers import validate_key_filter
+from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
 from dr_llm.pool.pool_store import PoolStore
@@ -21,14 +22,14 @@ class PoolPendingBackendConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     max_retries: int = Field(default=0, ge=0)
-    key_filter: dict[str, Any] | None = None
+    key_filter: PoolKeyFilter | None = None
 
 
 class PoolPendingBackendState(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     status_counts: PendingStatusCounts = Field(default_factory=PendingStatusCounts)
-    key_filter: dict[str, Any] | None = None
+    key_filter: PoolKeyFilter | None = None
     max_retries: int = 0
 
 
@@ -118,7 +119,7 @@ class PoolPendingBackend(
             key_filter=(
                 None
                 if self._config.key_filter is None
-                else dict(self._config.key_filter)
+                else self._config.key_filter.model_copy(deep=True)
             ),
             max_retries=self._config.max_retries,
         )
