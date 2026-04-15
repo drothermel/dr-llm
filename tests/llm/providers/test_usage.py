@@ -4,13 +4,17 @@ from dr_llm.llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
 
 
 def test_token_usage_defaults_total():
-    usage = TokenUsage.from_raw(prompt_tokens=10, completion_tokens=5, total_tokens=None)
+    usage = TokenUsage.from_raw(
+        prompt_tokens=10, completion_tokens=5, total_tokens=None
+    )
     assert usage.total_tokens == 15
     assert usage.reasoning_tokens == 0
 
 
 def test_token_usage_includes_reasoning_tokens():
-    usage = TokenUsage.from_raw(prompt_tokens=10, completion_tokens=5, reasoning_tokens=7)
+    usage = TokenUsage.from_raw(
+        prompt_tokens=10, completion_tokens=5, reasoning_tokens=7
+    )
     assert usage.reasoning_tokens == 7
 
 

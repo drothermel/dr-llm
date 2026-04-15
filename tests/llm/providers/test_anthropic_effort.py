@@ -21,7 +21,9 @@ _LOW_MEDIUM_HIGH_MAX = (
         "claude-opus-4-6-20260101",
     ],
 )
-def test_supported_effort_levels_for_anthropic_opus_4_6_includes_max(model: str) -> None:
+def test_supported_effort_levels_for_anthropic_opus_4_6_includes_max(
+    model: str,
+) -> None:
     assert supported_effort_levels_for_anthropic(model) == _LOW_MEDIUM_HIGH_MAX
 
 

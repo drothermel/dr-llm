@@ -269,7 +269,9 @@ def test_request_rejects_extra_body_key_collisions() -> None:
         idempotency_key="fixed-key",
     )
 
-    with pytest.raises(ValueError, match="extra_body conflicts with validated payload keys: model"):
+    with pytest.raises(
+        ValueError, match="extra_body conflicts with validated payload keys: model"
+    ):
         provider_request.json_payload()
 
 

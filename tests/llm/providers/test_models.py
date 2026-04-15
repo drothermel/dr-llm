@@ -74,7 +74,10 @@ def test_anthropic_adaptive_rejects_budget_tokens() -> None:
 
 
 def test_glm_reasoning_accepts_only_off_and_adaptive() -> None:
-    assert GlmReasoning(thinking_level=ThinkingLevel.OFF).thinking_level == ThinkingLevel.OFF
+    assert (
+        GlmReasoning(thinking_level=ThinkingLevel.OFF).thinking_level
+        == ThinkingLevel.OFF
+    )
     assert (
         GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE).thinking_level
         == ThinkingLevel.ADAPTIVE

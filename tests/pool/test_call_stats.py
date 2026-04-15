@@ -46,35 +46,27 @@ def test_from_response_full() -> None:
 def test_from_response_no_cost() -> None:
     response = _full_response()
     response["cost"] = None
-    stats = CallStats.from_response(
-        sample_id="s1", response=response, attempt_count=1
-    )
+    stats = CallStats.from_response(sample_id="s1", response=response, attempt_count=1)
     assert stats.total_cost_usd is None
 
 
 def test_from_response_reasoning_tokens_zero_becomes_none() -> None:
     response = _full_response()
     response["usage"]["reasoning_tokens"] = 0
-    stats = CallStats.from_response(
-        sample_id="s1", response=response, attempt_count=1
-    )
+    stats = CallStats.from_response(sample_id="s1", response=response, attempt_count=1)
     assert stats.reasoning_tokens is None
 
 
 def test_from_response_reasoning_tokens_nonzero_preserved() -> None:
     response = _full_response()
     response["usage"]["reasoning_tokens"] = 42
-    stats = CallStats.from_response(
-        sample_id="s1", response=response, attempt_count=1
-    )
+    stats = CallStats.from_response(sample_id="s1", response=response, attempt_count=1)
     assert stats.reasoning_tokens == 42
 
 
 def test_from_response_missing_usage() -> None:
     response = {"text": "hi", "latency_ms": 500, "provider": "test", "model": "m"}
-    stats = CallStats.from_response(
-        sample_id="s1", response=response, attempt_count=1
-    )
+    stats = CallStats.from_response(sample_id="s1", response=response, attempt_count=1)
     assert stats.prompt_tokens == 0
     assert stats.completion_tokens == 0
     assert stats.total_tokens == 0
@@ -93,9 +85,7 @@ def test_from_response_malformed_usage(usage_value: object) -> None:
         "provider": "test",
         "model": "m",
     }
-    stats = CallStats.from_response(
-        sample_id="s1", response=response, attempt_count=1
-    )
+    stats = CallStats.from_response(sample_id="s1", response=response, attempt_count=1)
     assert stats.prompt_tokens == 0
     assert stats.completion_tokens == 0
     assert stats.total_tokens == 0
@@ -108,7 +98,5 @@ def test_from_response_malformed_usage(usage_value: object) -> None:
 def test_from_response_missing_cost_key() -> None:
     response = _full_response()
     del response["cost"]
-    stats = CallStats.from_response(
-        sample_id="s1", response=response, attempt_count=1
-    )
+    stats = CallStats.from_response(sample_id="s1", response=response, attempt_count=1)
     assert stats.total_cost_usd is None

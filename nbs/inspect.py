@@ -11,7 +11,8 @@ with app.setup:
 
     from dr_llm.pool.db.runtime import DbConfig, DbRuntime
     from dr_llm.pool.db.schema import PoolSchema
-    from dr_llm.pool.pool_store import PoolStore
+    from dr_llm.pool.pool_store import PoolStore, SCHEMA_METADATA_KEY
+    from dr_llm.pool.reader import PoolReader, _load_schema_from_db as load_schema_from_db
     from dr_llm.project.project_service import list_projects
 
     POOL_TABLE_RE = re.compile(r"^pool_(.+)_samples$")
@@ -32,12 +33,14 @@ def _():
     - `list_projects()` asks Docker for dr-llm project containers.
     - `discover_pools(...)` scans `information_schema.tables` for
       `pool_*_samples` tables in each running project database.
+    - `get_pool_info(...)` opens a pool via `PoolReader`, reads progress, and
+      queries the `_schema` metadata row timestamp as a pool creation proxy.
     - `create_pool(...)` is currently a dry run that builds the schema and
       store, prints what `ensure_schema()` would create, and returns the store.
     - `parse_create_pool_inputs(...)` resolves the project name and parses the
       comma-separated axes list before calling `create_pool(...)`.
-    - The run button uses `mo.ui.run_button(...)`; clicking it reruns cells that
-      reference the button, and its value resets after those cells run.
+    - The create-pool UI now uses a marimo `form`, so the notebook only receives
+      values after you submit the form.
     - If Docker or DB access fails, the exception bubbles up naturally.
     """)
     return
@@ -56,6 +59,51 @@ def discover_pools(dsn: str) -> list[str]:
         ]
     finally:
         runtime.close()
+
+
+@app.function
+def get_pool_info(project, pool_name: str) -> dict[str, object]:
+    if project.dsn is None:
+        raise ValueError(f"Project {project.name!r} has no DSN; start it first.")
+
+    runtime = DbRuntime(DbConfig(dsn=project.dsn))
+    try:
+        schema = load_schema_from_db(runtime, pool_name)
+        reader = PoolReader.from_runtime(runtime, schema=schema)
+        progress = reader.progress()
+
+        metadata_created_at_sql = text(
+            f"SELECT created_at FROM {schema.metadata_table} "
+            "WHERE pool_name = :pool_name AND key = :key"
+        )
+        with runtime.connect() as conn:
+            created_at = conn.execute(
+                metadata_created_at_sql,
+                {"pool_name": schema.name, "key": SCHEMA_METADATA_KEY},
+            ).scalar_one_or_none()
+    finally:
+        runtime.close()
+
+    pending_counts = {
+        **progress.pending_counts.model_dump(),
+        "total": progress.pending_counts.total,
+        "in_flight": progress.pending_counts.in_flight,
+    }
+    if progress.samples_total == 0 and progress.pending_counts.total == 0:
+        status = "empty"
+    elif progress.pending_counts.in_flight > 0:
+        status = "in_progress"
+    else:
+        status = "complete"
+
+    return {
+        "name": schema.name,
+        "schema": schema,
+        "created_at": created_at,
+        "sample_count": progress.samples_total,
+        "pending_counts": pending_counts,
+        "status": status,
+    }
 
 
 @app.function
@@ -167,54 +215,46 @@ def _():
 
 @app.cell(hide_code=True)
 def _():
-    project_name_input = mo.ui.text(
-        label="Project name",
-        placeholder="code_comp_v0",
-    )
-    pool_name_input = mo.ui.text(
-        label="Pool name",
-        placeholder="demo_pool",
-    )
-    axes_csv_input = mo.ui.text(
-        label="Key axes (comma separated)",
-        placeholder="provider, model",
-        full_width=True,
-    )
-    create_pool_run_button = mo.ui.run_button(
-        label="Create pool dry run",
-        kind="success",
+    create_pool_form = (
+        mo.md(
+            """
+            **Selections for Pool Creation**
+
+            {project_name}
+
+            {pool_name}
+
+            {axes_csv}
+            """
+        )
+        .batch(
+            project_name=mo.ui.text(
+                label="Project name",
+                placeholder="code_comp_v0",
+            ),
+            pool_name=mo.ui.text(
+                label="Pool name",
+                placeholder="demo_pool",
+            ),
+            axes_csv=mo.ui.text(
+                label="Key axes (comma separated)",
+                placeholder="provider, model",
+                full_width=True,
+            ),
+        )
+        .form(
+            submit_button_label="Create pool dry run",
+        )
     )
 
-    mo.vstack(
-        [
-            mo.md("**Selections for Pool Creation**"),
-            project_name_input,
-            pool_name_input,
-            axes_csv_input,
-            create_pool_run_button,
-        ]
-    )
-    return (
-        axes_csv_input,
-        create_pool_run_button,
-        pool_name_input,
-        project_name_input,
-    )
+    create_pool_form
+    return (create_pool_form,)
 
 
 @app.cell(hide_code=True)
-def _(
-    axes_csv_input,
-    create_pool_run_button,
-    pool_name_input,
-    project_name_input,
-):
-    mo.stop(not create_pool_run_button.value)
-    project, pool_name, key_axes = parse_create_pool_inputs(
-        project_name_input.value,
-        pool_name_input.value,
-        axes_csv_input.value,
-    )
+def _(create_pool_form):
+    mo.stop(create_pool_form.value is None)
+    project, pool_name, key_axes = parse_create_pool_inputs(**create_pool_form.value)
     store = create_pool(project, pool_name, key_axes)
     store
     return

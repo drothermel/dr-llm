@@ -263,7 +263,9 @@ def test_list_multi_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     result = runner.invoke(app, ["models", "list"])
 
     assert result.exit_code == 0
-    assert f"Models (Showing 2 out of {total_count} across 2 providers)" in result.stdout
+    assert (
+        f"Models (Showing 2 out of {total_count} across 2 providers)" in result.stdout
+    )
     assert "- anthropic: claude-sonnet-4" in result.stdout
     assert "- openai: gpt-4o-mini" in result.stdout
     _assert_grouped_blacklist_text_present(result.stdout)

@@ -21,11 +21,23 @@ from tests.llm.providers.conftest import make_subprocess_mock
 
 
 def test_codex_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
-    stdout = "\n".join([
-        json.dumps({"type": "turn.started"}),
-        json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "OK"}}),
-        json.dumps({"type": "turn.completed", "usage": {"input_tokens": 2, "output_tokens": 3}}),
-    ])
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "turn.started"}),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "OK"},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "turn.completed",
+                    "usage": {"input_tokens": 2, "output_tokens": 3},
+                }
+            ),
+        ]
+    )
     captured, fake_run = make_subprocess_mock(stdout)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -100,10 +112,16 @@ def test_codex_command_includes_reasoning_effort_config(
         [
             json.dumps({"type": "turn.started"}),
             json.dumps(
-                {"type": "item.completed", "item": {"type": "agent_message", "text": "OK"}}
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "OK"},
+                }
             ),
             json.dumps(
-                {"type": "turn.completed", "usage": {"input_tokens": 2, "output_tokens": 3}}
+                {
+                    "type": "turn.completed",
+                    "usage": {"input_tokens": 2, "output_tokens": 3},
+                }
             ),
         ]
     )
@@ -119,19 +137,21 @@ def test_codex_command_includes_reasoning_effort_config(
     adapter.generate(request)
 
     command = cast(list[str], captured["command"])
-    assert '-c' in command
+    assert "-c" in command
     assert 'model_reasoning_effort="xhigh"' in command
 
 
 def test_claude_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
-    stdout = json.dumps({
-        "type": "result",
-        "subtype": "success",
-        "is_error": False,
-        "result": "OK",
-        "usage": {"input_tokens": 1, "output_tokens": 2},
-        "total_cost_usd": 0.01,
-    })
+    stdout = json.dumps(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "result": "OK",
+            "usage": {"input_tokens": 1, "output_tokens": 2},
+            "total_cost_usd": 0.01,
+        }
+    )
     captured, fake_run = make_subprocess_mock(stdout)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -222,7 +242,9 @@ def test_claude_command_includes_effort(monkeypatch: pytest.MonkeyPatch) -> None
     assert command[command.index("--effort") + 1] == "high"
 
 
-def test_codex_rejects_reasoning_before_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_codex_rejects_reasoning_before_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     stdout = "\n".join(
         [
             json.dumps({"type": "turn.started"}),
@@ -233,7 +255,10 @@ def test_codex_rejects_reasoning_before_subprocess(monkeypatch: pytest.MonkeyPat
                 }
             ),
             json.dumps(
-                {"type": "turn.completed", "usage": {"input_tokens": 2, "output_tokens": 3}}
+                {
+                    "type": "turn.completed",
+                    "usage": {"input_tokens": 2, "output_tokens": 3},
+                }
             ),
         ]
     )

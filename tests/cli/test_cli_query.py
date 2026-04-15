@@ -60,7 +60,16 @@ def test_query_emits_response_json(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_query_recording_flags_are_removed() -> None:
     result = runner.invoke(
         app,
-        ["query", "--provider", "openai", "--model", "gpt-4.1", "--message", "hi", "--no-record"],
+        [
+            "query",
+            "--provider",
+            "openai",
+            "--model",
+            "gpt-4.1",
+            "--message",
+            "hi",
+            "--no-record",
+        ],
     )
 
     assert result.exit_code != 0

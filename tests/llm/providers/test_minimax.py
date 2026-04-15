@@ -14,7 +14,10 @@ from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 
 _MOCK_RESPONSE: dict[str, Any] = {
-    "content": [{"type": "thinking", "thinking": "hidden"}, {"type": "text", "text": "done"}],
+    "content": [
+        {"type": "thinking", "thinking": "hidden"},
+        {"type": "text", "text": "done"},
+    ],
     "usage": {"input_tokens": 1, "output_tokens": 1},
     "stop_reason": "end_turn",
 }
