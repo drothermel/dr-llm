@@ -46,6 +46,7 @@ from dr_llm.pool.pending.grid import Axis, AxisMember, GridCell
 from dr_llm.pool.pending.progress import drain, format_pool_progress_line
 from dr_llm.pool.pool_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
+from dr_llm.project.models import CreateProjectRequest
 from dr_llm.project.project_service import create_project, destroy_project
 from dr_llm.workers import WorkerConfig, start_workers
 
@@ -253,7 +254,7 @@ def main(
     project: ProjectInfo | None = None
     try:
         print(f"Creating temporary project '{project_name}'...")
-        project = create_project(project_name)
+        project = create_project(CreateProjectRequest(project_name=project_name))
         assert project.dsn is not None
         print(f"Postgres ready at {project.dsn}")
         _run_demo(

@@ -40,6 +40,7 @@ from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
+from dr_llm.project.models import CreateProjectRequest
 from dr_llm.project.project_service import (
     create_project,
     destroy_project,
@@ -121,7 +122,7 @@ def create_demo_project(project_name: str) -> ProjectInfo:
     existing = maybe_get_project(project_name)
     if existing is not None:
         destroy_project(project_name)
-    return create_project(project_name)
+    return create_project(CreateProjectRequest(project_name=project_name))
 
 
 # --- Model Resolution ---
