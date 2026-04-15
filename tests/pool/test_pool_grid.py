@@ -202,7 +202,7 @@ def test_seed_grid_upserts_each_axis_member_metadata_once() -> None:
     seed_grid(
         store,
         axes=axes,
-        build_payload=lambda cell: {},
+        build_payload=lambda _: {},
         n=5,
     )
 
@@ -229,7 +229,7 @@ def test_seed_grid_chunks_inserts() -> None:
     seed_grid(
         store,
         axes=axes,
-        build_payload=lambda cell: {},
+        build_payload=lambda _: {},
         n=2,
         chunk_size=4,
     )
@@ -251,7 +251,7 @@ def test_seed_grid_validates_axis_names_match_schema() -> None:
         ),
     ]
     with pytest.raises(ValueError, match="do not match"):
-        seed_grid(store, axes=bad_axes, build_payload=lambda cell: {})
+        seed_grid(store, axes=bad_axes, build_payload=lambda _: {})
 
 
 def test_seed_grid_rejects_empty_axis() -> None:
@@ -261,13 +261,13 @@ def test_seed_grid_rejects_empty_axis() -> None:
         Axis(name="axis_b", members=[]),
     ]
     with pytest.raises(ValueError, match="no members"):
-        seed_grid(store, axes=axes, build_payload=lambda cell: {})
+        seed_grid(store, axes=axes, build_payload=lambda _: {})
 
 
 def test_seed_grid_rejects_empty_axes_list() -> None:
     store, _, _ = _make_store_mock()
     with pytest.raises(ValueError, match="at least one axis"):
-        seed_grid(store, axes=[], build_payload=lambda cell: {})
+        seed_grid(store, axes=[], build_payload=lambda _: {})
 
 
 def test_seed_grid_rejects_n_below_one() -> None:
@@ -277,7 +277,7 @@ def test_seed_grid_rejects_n_below_one() -> None:
         Axis(name="axis_b", members=[AxisMember[str](id="b", value="b")]),
     ]
     with pytest.raises(ValueError, match="n must be"):
-        seed_grid(store, axes=axes, build_payload=lambda cell: {}, n=0)
+        seed_grid(store, axes=axes, build_payload=lambda _: {}, n=0)
 
 
 def test_seed_grid_passes_build_metadata_to_rows() -> None:

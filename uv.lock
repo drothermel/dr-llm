@@ -150,7 +150,6 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "marimo" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
     { name = "pydantic" },
@@ -161,6 +160,11 @@ dependencies = [
     { name = "tenacity" },
     { name = "typer" },
     { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+notebooks = [
+    { name = "marimo" },
 ]
 
 [package.dev-dependencies]
@@ -176,7 +180,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.135.2" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "marimo", extras = ["default"], specifier = ">=0.23.1" },
+    { name = "marimo", marker = "extra == 'notebooks'", specifier = ">=0.23.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.10" },
     { name = "psycopg-pool", specifier = ">=3.2.6" },
     { name = "pydantic", specifier = ">=2.11.7" },
@@ -188,6 +192,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.17.4" },
     { name = "uvicorn", specifier = ">=0.42.0" },
 ]
+provides-extras = ["notebooks"]
 
 [package.metadata.requires-dev]
 dev = [

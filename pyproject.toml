@@ -30,7 +30,11 @@ dependencies = [
     "uvicorn>=0.42.0",
     "sqlalchemy>=2.0.49",
     "pydantic-settings>=2.13.1",
-    "marimo[default]>=0.23.1",
+]
+
+[project.optional-dependencies]
+notebooks = [
+    "marimo>=0.23.1",
 ]
 
 [project.urls]

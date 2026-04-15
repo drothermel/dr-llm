@@ -116,6 +116,15 @@ def get_pool_info(project, pool_name: str) -> dict[str, object]:
 
 
 @app.function
+def normalize_utc(dt):
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+@app.function
 def check_pool_creation_guardrails(
     project,
     *,
@@ -151,7 +160,8 @@ def check_pool_creation_guardrails(
     recent_pools = [
         info["name"]
         for info in pool_infos
-        if info["created_at"] is not None and info["created_at"] >= cutoff
+        if (created_at := normalize_utc(info["created_at"])) is not None
+        and created_at >= cutoff
     ]
     if recent_pools:
         raise ValueError(
@@ -216,6 +226,7 @@ def create_pool(project, pool_name: str, key_axes: list[str]) -> PoolStore:
     print(f"  - {schema.pending_table}")
     print(f"  - {schema.metadata_table}")
     print(f"  - {schema.call_stats_table}")
+    print("[created] cleanup: call store.close() when you are done with it")
 
     return store
 
@@ -279,7 +290,8 @@ def check_project_creation_guardrails(
     recent_projects = [
         project.name
         for project in projects
-        if project.created_at is not None and project.created_at >= cutoff
+        if (created_at := normalize_utc(project.created_at)) is not None
+        and created_at >= cutoff
     ]
     if recent_projects:
         raise ValueError(
@@ -394,8 +406,11 @@ def _(create_pool_form):
     mo.stop(create_pool_form.value is None)
     project, pool_name, key_axes = parse_create_pool_inputs(**create_pool_form.value)
     check_pool_creation_guardrails(project, max_pools_per_project=5)
-    create_pool(project, pool_name, key_axes)
-    get_pool_info(project, pool_name)
+    store = create_pool(project, pool_name, key_axes)
+    try:
+        get_pool_info(project, pool_name)
+    finally:
+        store.close()
     return
 
 
