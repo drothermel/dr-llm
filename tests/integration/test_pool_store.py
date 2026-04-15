@@ -526,9 +526,7 @@ def test_clear_pending_deletes_only_pending_rows(pool_store: PoolStore) -> None:
     leased_row = _pending(dim_a="clear_all_leased", dim_b=1, sample_idx=0)
     failed_row = _pending(dim_a="clear_all_failed", dim_b=1, sample_idx=0)
     promoted_row = _pending(dim_a="clear_all_promoted", dim_b=1, sample_idx=0)
-    pool_store.pending.insert_many(
-        [pending_only, leased_row, failed_row, promoted_row]
-    )
+    pool_store.pending.insert_many([pending_only, leased_row, failed_row, promoted_row])
 
     leased = pool_store.pending.claim(
         worker_id="w-clear-leased",
@@ -574,28 +572,40 @@ def test_clear_pending_deletes_only_pending_rows(pool_store: PoolStore) -> None:
     )
 
     assert cleared == 1
-    assert pool_store.pending.bulk_load(
-        key_filter=_eq_filter(dim_a="clear_all_pending"),
-        status=PendingStatus.pending,
-    ) == []
-    assert len(
+    assert (
         pool_store.pending.bulk_load(
-            key_filter=_eq_filter(dim_a="clear_all_leased"),
-            status=PendingStatus.leased,
+            key_filter=_eq_filter(dim_a="clear_all_pending"),
+            status=PendingStatus.pending,
         )
-    ) == 1
-    assert len(
-        pool_store.pending.bulk_load(
-            key_filter=_eq_filter(dim_a="clear_all_failed"),
-            status=PendingStatus.failed,
+        == []
+    )
+    assert (
+        len(
+            pool_store.pending.bulk_load(
+                key_filter=_eq_filter(dim_a="clear_all_leased"),
+                status=PendingStatus.leased,
+            )
         )
-    ) == 1
-    assert len(
-        pool_store.pending.bulk_load(
-            key_filter=_eq_filter(dim_a="clear_all_promoted"),
-            status=PendingStatus.promoted,
+        == 1
+    )
+    assert (
+        len(
+            pool_store.pending.bulk_load(
+                key_filter=_eq_filter(dim_a="clear_all_failed"),
+                status=PendingStatus.failed,
+            )
         )
-    ) == 1
+        == 1
+    )
+    assert (
+        len(
+            pool_store.pending.bulk_load(
+                key_filter=_eq_filter(dim_a="clear_all_promoted"),
+                status=PendingStatus.promoted,
+            )
+        )
+        == 1
+    )
 
 
 @pytest.mark.integration
@@ -622,22 +632,31 @@ def test_clear_pending_supports_filtered_subset(pool_store: PoolStore) -> None:
     )
 
     assert cleared == 1
-    assert pool_store.pending.bulk_load(
-        key_filter=_eq_filter(dim_a="clear_in_a"),
-        status=PendingStatus.pending,
-    ) == []
-    assert len(
+    assert (
         pool_store.pending.bulk_load(
-            key_filter=_eq_filter(dim_a="clear_in_b"),
-            status=PendingStatus.failed,
-        )
-    ) == 1
-    assert len(
-        pool_store.pending.bulk_load(
-            key_filter=_eq_filter(dim_a="clear_in_c"),
+            key_filter=_eq_filter(dim_a="clear_in_a"),
             status=PendingStatus.pending,
         )
-    ) == 1
+        == []
+    )
+    assert (
+        len(
+            pool_store.pending.bulk_load(
+                key_filter=_eq_filter(dim_a="clear_in_b"),
+                status=PendingStatus.failed,
+            )
+        )
+        == 1
+    )
+    assert (
+        len(
+            pool_store.pending.bulk_load(
+                key_filter=_eq_filter(dim_a="clear_in_c"),
+                status=PendingStatus.pending,
+            )
+        )
+        == 1
+    )
 
 
 @pytest.mark.integration
@@ -696,33 +715,45 @@ def test_clear_pending_without_filter_deletes_all_pending_rows(
     assert after_counts.leased == before_counts.leased + 1
     assert after_counts.failed == before_counts.failed + 1
     assert after_counts.promoted == before_counts.promoted + 1
-    assert len(
-        pool_store.pending.bulk_load(
-            key_filter=_eq_filter(dim_a="clear_unfiltered_leased"),
-            status=PendingStatus.leased,
+    assert (
+        len(
+            pool_store.pending.bulk_load(
+                key_filter=_eq_filter(dim_a="clear_unfiltered_leased"),
+                status=PendingStatus.leased,
+            )
         )
-    ) == 1
-    assert len(
-        pool_store.pending.bulk_load(
-            key_filter=_eq_filter(dim_a="clear_unfiltered_failed"),
-            status=PendingStatus.failed,
+        == 1
+    )
+    assert (
+        len(
+            pool_store.pending.bulk_load(
+                key_filter=_eq_filter(dim_a="clear_unfiltered_failed"),
+                status=PendingStatus.failed,
+            )
         )
-    ) == 1
-    assert len(
-        pool_store.pending.bulk_load(
-            key_filter=_eq_filter(dim_a="clear_unfiltered_promoted"),
-            status=PendingStatus.promoted,
+        == 1
+    )
+    assert (
+        len(
+            pool_store.pending.bulk_load(
+                key_filter=_eq_filter(dim_a="clear_unfiltered_promoted"),
+                status=PendingStatus.promoted,
+            )
         )
-    ) == 1
-    assert pool_store.pending.bulk_load(
-        key_filter=_in_filter(
-            dim_a=[
-                "clear_unfiltered_pending_a",
-                "clear_unfiltered_pending_b",
-            ]
-        ),
-        status=PendingStatus.pending,
-    ) == []
+        == 1
+    )
+    assert (
+        pool_store.pending.bulk_load(
+            key_filter=_in_filter(
+                dim_a=[
+                    "clear_unfiltered_pending_a",
+                    "clear_unfiltered_pending_b",
+                ]
+            ),
+            status=PendingStatus.pending,
+        )
+        == []
+    )
 
 
 @pytest.mark.integration
@@ -744,12 +775,15 @@ def test_clear_pending_returns_zero_when_no_matching_pending_rows(
     )
 
     assert cleared == 0
-    assert len(
-        pool_store.pending.bulk_load(
-            key_filter=_eq_filter(dim_a="clear_none_pending"),
-            status=PendingStatus.leased,
+    assert (
+        len(
+            pool_store.pending.bulk_load(
+                key_filter=_eq_filter(dim_a="clear_none_pending"),
+                status=PendingStatus.leased,
+            )
         )
-    ) == 1
+        == 1
+    )
 
 
 @pytest.mark.integration
@@ -772,9 +806,7 @@ def test_shuffle_priorities_randomizes_pending_rows(
     ]
     pool_store.pending.insert_many(samples)
 
-    updated = pool_store.pending.shuffle_priorities(
-        key_filter=_eq_filter(dim_a="shuf")
-    )
+    updated = pool_store.pending.shuffle_priorities(key_filter=_eq_filter(dim_a="shuf"))
     assert updated == 20
 
     rows = pool_store.pending.bulk_load(key_filter=_eq_filter(dim_a="shuf"))
@@ -819,8 +851,7 @@ def test_shuffle_priorities_is_reproducible_with_seed(
     pool_store: PoolStore,
 ) -> None:
     samples = [
-        _pending(dim_a="shufseed", dim_b=1, sample_idx=i, priority=0)
-        for i in range(10)
+        _pending(dim_a="shufseed", dim_b=1, sample_idx=i, priority=0) for i in range(10)
     ]
     pool_store.pending.insert_many(samples)
 
@@ -829,9 +860,7 @@ def test_shuffle_priorities_is_reproducible_with_seed(
     )
     first_pass = {
         row.pending_id: row.priority
-        for row in pool_store.pending.bulk_load(
-            key_filter=_eq_filter(dim_a="shufseed")
-        )
+        for row in pool_store.pending.bulk_load(key_filter=_eq_filter(dim_a="shufseed"))
     }
 
     pool_store.pending.shuffle_priorities(
@@ -839,9 +868,7 @@ def test_shuffle_priorities_is_reproducible_with_seed(
     )
     second_pass = {
         row.pending_id: row.priority
-        for row in pool_store.pending.bulk_load(
-            key_filter=_eq_filter(dim_a="shufseed")
-        )
+        for row in pool_store.pending.bulk_load(key_filter=_eq_filter(dim_a="shufseed"))
     }
 
     assert first_pass == second_pass
@@ -927,9 +954,7 @@ def test_bulk_load_pending(pool_store: PoolStore) -> None:
     )
     pool_store.pending.insert(_pending(dim_a="blp", dim_b=70, sample_idx=1))
 
-    results = pool_store.pending.bulk_load(
-        key_filter=_eq_filter(dim_a="blp", dim_b=70)
-    )
+    results = pool_store.pending.bulk_load(key_filter=_eq_filter(dim_a="blp", dim_b=70))
     assert len(results) == 2
     assert all(isinstance(r, PendingSample) for r in results)
     assert all(r.key_values["dim_a"] == "blp" for r in results)
@@ -1049,9 +1074,7 @@ def test_insert_call_stats(pool_store: PoolStore) -> None:
     s = _sample(dim_a="cs_insert", dim_b=1, sample_idx=0)
     pool_store.insert_sample(s)
 
-    samples = pool_store.bulk_load(
-        key_filter=_eq_filter(dim_a="cs_insert", dim_b=1)
-    )
+    samples = pool_store.bulk_load(key_filter=_eq_filter(dim_a="cs_insert", dim_b=1))
     assert len(samples) == 1
     sample_id = samples[0].sample_id
 

@@ -89,7 +89,9 @@ def test_openrouter_static_models_use_curated_policy(
 ) -> None:
     adapter = FakeProvider(
         "openrouter",
-        config=ProviderConfig(name="openrouter", required_env_vars=["MISSING_TEST_ENV"]),
+        config=ProviderConfig(
+            name="openrouter", required_env_vars=["MISSING_TEST_ENV"]
+        ),
     )
     registry = ProviderRegistry()
     registry.register(adapter)
@@ -103,6 +105,5 @@ def test_openrouter_static_models_use_curated_policy(
     assert payload["source"] == "static"
     assert any(model["model"] == "openai/gpt-oss-20b" for model in payload["models"])
     assert any(
-        model["model"] == "deepseek/deepseek-chat-v3.1"
-        for model in payload["models"]
+        model["model"] == "deepseek/deepseek-chat-v3.1" for model in payload["models"]
     )

@@ -166,8 +166,7 @@ def test_read_filters_blacklisted_models(store: FileCatalogStore) -> None:
     assert [entry.model for entry in result] == ["claude-haiku-4-5-20251001"]
     assert store.count_models(query=ModelCatalogQuery(provider="anthropic")) == 1
     assert (
-        store.get_model(provider="anthropic", model="claude-3-haiku-20240307")
-        is None
+        store.get_model(provider="anthropic", model="claude-3-haiku-20240307") is None
     )
 
 
@@ -185,7 +184,9 @@ def test_load_all_skips_corrupt_cache_files_with_warning(
         all_models = store.list_models(query=ModelCatalogQuery())
     assert len(all_models) == 1
     assert all_models[0].provider == "openai"
-    assert any("Skipping unreadable catalog cache file" in r.message for r in caplog.records)
+    assert any(
+        "Skipping unreadable catalog cache file" in r.message for r in caplog.records
+    )
 
 
 def test_load_single_provider_still_raises_on_corrupt_file(tmp_path: Path) -> None:

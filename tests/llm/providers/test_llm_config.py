@@ -551,7 +551,9 @@ def test_openai_rejects_sampling_for_older_gpt5_models() -> None:
         )
 
 
-def test_openai_rejects_sampling_for_gpt5_when_reasoning_is_not_explicitly_off() -> None:
+def test_openai_rejects_sampling_for_gpt5_when_reasoning_is_not_explicitly_off() -> (
+    None
+):
     with pytest.raises(
         ValidationError,
         match=r"require OpenAIReasoning\(thinking_level='off'\)",
@@ -863,7 +865,9 @@ def test_google_level_models_accept_only_level_controls() -> None:
         )
 
 
-def test_google_unsupported_models_allow_omission_and_reject_explicit_reasoning() -> None:
+def test_google_unsupported_models_allow_omission_and_reject_explicit_reasoning() -> (
+    None
+):
     LlmConfig(
         provider="google",
         model="gemini-2.0-flash-lite-001",

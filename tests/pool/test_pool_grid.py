@@ -66,9 +66,7 @@ def test_axis_member_holds_arbitrary_value() -> None:
         def __init__(self, label: str) -> None:
             self.label = label
 
-    member = AxisMember[Domain](
-        id="d1", value=Domain("hi"), metadata={"label": "hi"}
-    )
+    member = AxisMember[Domain](id="d1", value=Domain("hi"), metadata={"label": "hi"})
     assert member.value.label == "hi"
     assert member.metadata == {"label": "hi"}
 
@@ -204,7 +202,7 @@ def test_seed_grid_upserts_each_axis_member_metadata_once() -> None:
     seed_grid(
         store,
         axes=axes,
-        build_payload=lambda cell: {},
+        build_payload=lambda _: {},
         n=5,
     )
 
@@ -231,7 +229,7 @@ def test_seed_grid_chunks_inserts() -> None:
     seed_grid(
         store,
         axes=axes,
-        build_payload=lambda cell: {},
+        build_payload=lambda _: {},
         n=2,
         chunk_size=4,
     )
@@ -253,9 +251,7 @@ def test_seed_grid_validates_axis_names_match_schema() -> None:
         ),
     ]
     with pytest.raises(ValueError, match="do not match"):
-        seed_grid(
-            store, axes=bad_axes, build_payload=lambda cell: {}
-        )
+        seed_grid(store, axes=bad_axes, build_payload=lambda _: {})
 
 
 def test_seed_grid_rejects_empty_axis() -> None:
@@ -265,13 +261,13 @@ def test_seed_grid_rejects_empty_axis() -> None:
         Axis(name="axis_b", members=[]),
     ]
     with pytest.raises(ValueError, match="no members"):
-        seed_grid(store, axes=axes, build_payload=lambda cell: {})
+        seed_grid(store, axes=axes, build_payload=lambda _: {})
 
 
 def test_seed_grid_rejects_empty_axes_list() -> None:
     store, _, _ = _make_store_mock()
     with pytest.raises(ValueError, match="at least one axis"):
-        seed_grid(store, axes=[], build_payload=lambda cell: {})
+        seed_grid(store, axes=[], build_payload=lambda _: {})
 
 
 def test_seed_grid_rejects_n_below_one() -> None:
@@ -281,9 +277,7 @@ def test_seed_grid_rejects_n_below_one() -> None:
         Axis(name="axis_b", members=[AxisMember[str](id="b", value="b")]),
     ]
     with pytest.raises(ValueError, match="n must be"):
-        seed_grid(
-            store, axes=axes, build_payload=lambda cell: {}, n=0
-        )
+        seed_grid(store, axes=axes, build_payload=lambda _: {}, n=0)
 
 
 def test_seed_grid_passes_build_metadata_to_rows() -> None:
@@ -305,9 +299,7 @@ def test_seed_grid_passes_build_metadata_to_rows() -> None:
 
 
 def test_pool_schema_from_axis_names_builds_text_columns() -> None:
-    schema = PoolSchema.from_axis_names(
-        "demo", ["axis_a", "axis_b", "axis_c"]
-    )
+    schema = PoolSchema.from_axis_names("demo", ["axis_a", "axis_b", "axis_c"])
     assert schema.name == "demo"
     assert schema.key_column_names == ["axis_a", "axis_b", "axis_c"]
     assert all(kc.type.value == "text" for kc in schema.key_columns)

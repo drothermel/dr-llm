@@ -183,7 +183,9 @@ def test_migrate_call_stats_dry_run_does_not_create_table() -> None:
 
         assert result.exit_code == 0
         assert f"Processing pool: {schema.name}" in result.output
-        assert f"[dry-run] would create table {schema.call_stats_table}" in result.output
+        assert (
+            f"[dry-run] would create table {schema.call_stats_table}" in result.output
+        )
         assert _table_exists(dsn, schema.call_stats_table) is False
     except (psycopg.OperationalError, TransientPersistenceError) as exc:
         pytest.skip(f"Postgres unavailable for migration integration tests: {exc}")

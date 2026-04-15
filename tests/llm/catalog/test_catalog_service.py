@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogSyncResult
+from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.catalog.service import ModelCatalogService
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import LlmResponse
@@ -229,7 +229,9 @@ def test_sync_records_failure_when_replace_fails_without_success_snapshot(
             entries: list[ModelCatalogEntry],
         ) -> int:
             self.actions.append("replace")
-            raise RuntimeError(f"replace failed for {provider} with {len(entries)} entries")
+            raise RuntimeError(
+                f"replace failed for {provider} with {len(entries)} entries"
+            )
 
     registry = ProviderRegistry()
     registry.register(_DummyProvider())

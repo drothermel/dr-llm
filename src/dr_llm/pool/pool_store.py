@@ -49,6 +49,10 @@ class PoolStore:
         self.pending = PendingStore(schema, runtime, self._tables)
         self.metadata = MetadataStore(schema, runtime, self._tables)
 
+    def close(self) -> None:
+        """Dispose the underlying runtime owned by this store."""
+        self._runtime.close()
+
     def ensure_schema(self) -> None:
         """Create dynamic pool tables and indexes if they don't exist.
 

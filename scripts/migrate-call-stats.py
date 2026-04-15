@@ -127,9 +127,7 @@ def _discover_key_columns(runtime: DbRuntime, pool_name: str) -> list[str]:
     return [c for c in all_columns if c not in _FIXED_SAMPLE_COLUMNS]
 
 
-def _backfill_pool(
-    runtime: DbRuntime, pool_name: str, key_columns: list[str]
-) -> int:
+def _backfill_pool(runtime: DbRuntime, pool_name: str, key_columns: list[str]) -> int:
     """Backfill call_stats from existing sample payloads + pending attempt_count."""
     with runtime.begin() as conn:
         preparer = conn.dialect.identifier_preparer
@@ -143,15 +141,15 @@ def _backfill_pool(
         quoted_payload_json = preparer.quote_identifier("payload_json")
         quoted_attempt_count = preparer.quote_identifier("attempt_count")
         quoted_samples_table = (
-            f'{preparer.quote_identifier("public")}.'
+            f"{preparer.quote_identifier('public')}."
             f"{preparer.quote_identifier(samples_table)}"
         )
         quoted_pending_table = (
-            f'{preparer.quote_identifier("public")}.'
+            f"{preparer.quote_identifier('public')}."
             f"{preparer.quote_identifier(pending_table)}"
         )
         quoted_call_stats_table = (
-            f'{preparer.quote_identifier("public")}.'
+            f"{preparer.quote_identifier('public')}."
             f"{preparer.quote_identifier(call_stats_table)}"
         )
         key_join_clauses = [
@@ -222,9 +220,13 @@ def _process_pool(
         typer.echo(f"  {pool_name}: key_columns={key_columns}")
 
     if dry_run:
-        typer.echo(f"  [dry-run] would create table {_call_stats_table_name(pool_name)}")
+        typer.echo(
+            f"  [dry-run] would create table {_call_stats_table_name(pool_name)}"
+        )
         if backfill:
-            typer.echo(f"  [dry-run] would backfill from {_samples_table_name(pool_name)}")
+            typer.echo(
+                f"  [dry-run] would backfill from {_samples_table_name(pool_name)}"
+            )
         return
 
     _ensure_call_stats_table(runtime, pool_name)
@@ -251,13 +253,13 @@ def main(
     ] = False,
     dry_run: Annotated[
         bool,
-        typer.Option("--dry-run", help="Show what would be done without making changes"),
+        typer.Option(
+            "--dry-run", help="Show what would be done without making changes"
+        ),
     ] = False,
 ) -> None:
     """Create call_stats tables for existing pools."""
-    resolved_dsn = dsn or getenv(
-        "DR_LLM_DATABASE_URL", "postgresql://localhost/dr_llm"
-    )
+    resolved_dsn = dsn or getenv("DR_LLM_DATABASE_URL", "postgresql://localhost/dr_llm")
     runtime = DbRuntime(DbConfig(dsn=resolved_dsn))
     try:
         if pool:

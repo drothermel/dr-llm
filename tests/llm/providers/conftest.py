@@ -8,7 +8,9 @@ from typing import Any
 import httpx
 
 
-def make_http_client(response_json: dict[str, Any]) -> tuple[dict[str, Any], httpx.Client]:
+def make_http_client(
+    response_json: dict[str, Any],
+) -> tuple[dict[str, Any], httpx.Client]:
     captured: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
