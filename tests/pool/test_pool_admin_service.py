@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import dr_llm.pool.admin_service as admin_service
+from dr_llm.pool import admin_service
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolError
 from dr_llm.pool.models import (
@@ -136,10 +136,8 @@ def test_inspect_pool_derives_status_from_reader_progress(
                 def __exit__(self, *exc_info: object) -> None:
                     return None
 
-                def execute(
-                    self, stmt: object, params: dict[str, object]
-                ) -> SimpleNamespace:
-                    _ = (stmt, params)
+                def execute(self, stmt: object) -> SimpleNamespace:
+                    _ = stmt
                     return SimpleNamespace(
                         scalar_one_or_none=lambda: datetime(2024, 1, 2, tzinfo=UTC)
                     )

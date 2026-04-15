@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
-from sqlalchemy import text
+from sqlalchemy import Column, DateTime, MetaData, Table, Text, select, text
 
+from dr_llm.datetime_utils import UTC, normalize_utc
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.models import (
@@ -143,7 +144,7 @@ def assess_pool_creation(
     recent_pools = [
         pool.name
         for pool in existing_pools
-        if (created_at := _normalize_utc(pool.created_at)) is not None
+        if (created_at := normalize_utc(pool.created_at)) is not None
         and created_at >= cutoff
     ]
     if recent_pools:
@@ -210,15 +211,19 @@ def _inspect_pool_for_project(project: ProjectInfo, pool_name: str) -> PoolInspe
         schema = load_schema_from_db(runtime, pool_name)
         reader = PoolReader.from_runtime(runtime, schema=schema)
         progress = reader.progress()
-        metadata_created_at_sql = text(
-            f"SELECT created_at FROM {schema.metadata_table} "
-            "WHERE pool_name = :pool_name AND key = :key"
+        metadata_table = Table(
+            schema.metadata_table,
+            MetaData(),
+            Column("pool_name", Text, nullable=False),
+            Column("key", Text, nullable=False),
+            Column("created_at", DateTime(timezone=True)),
+        )
+        metadata_created_at_stmt = select(metadata_table.c.created_at).where(
+            metadata_table.c.pool_name == schema.name,
+            metadata_table.c.key == SCHEMA_METADATA_KEY,
         )
         with runtime.connect() as conn:
-            created_at = conn.execute(
-                metadata_created_at_sql,
-                {"pool_name": schema.name, "key": SCHEMA_METADATA_KEY},
-            ).scalar_one_or_none()
+            created_at = conn.execute(metadata_created_at_stmt).scalar_one_or_none()
     finally:
         runtime.close()
 
@@ -279,11 +284,3 @@ def _request_violations(request: CreatePoolRequest) -> list[PoolCreationViolatio
                 )
             )
     return violations
-
-
-def _normalize_utc(dt: datetime | None) -> datetime | None:
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC)

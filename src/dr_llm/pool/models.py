@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
@@ -8,12 +7,10 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
-from dr_llm.pool.db.schema import PoolSchema
+from dr_llm.pool.db.schema import PoolSchema, _VALID_NAME_RE
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.project.project_info import ProjectInfo
-
-_POOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 class InsertResult(BaseModel):
@@ -131,7 +128,7 @@ class CreatePoolRequest(BaseModel):
     @computed_field
     @property
     def pool_name_is_valid(self) -> bool:
-        return bool(_POOL_NAME_RE.match(self.pool_name))
+        return bool(_VALID_NAME_RE.match(self.pool_name))
 
 
 class PoolInspectionStatus(StrEnum):

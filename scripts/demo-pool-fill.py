@@ -250,7 +250,7 @@ def main(
         print("Either install Docker or pass --dsn to use an existing database.")
         raise typer.Exit(1)
 
-    project_name = f"demo-pool-fill-{uuid4().hex[:8]}"
+    project_name = f"demo_pool_fill_{uuid4().hex[:8]}"
     project: ProjectInfo | None = None
     try:
         print(f"Creating temporary project '{project_name}'...")

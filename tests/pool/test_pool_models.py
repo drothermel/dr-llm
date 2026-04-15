@@ -281,7 +281,7 @@ def test_worker_snapshot_defaults() -> None:
 
 
 def test_pool_root_re_exports_admin_models_and_services() -> None:
-    import dr_llm.pool as pool
+    from dr_llm import pool
 
     assert not hasattr(pool, "PoolStore")
     assert not hasattr(pool, "PoolService")

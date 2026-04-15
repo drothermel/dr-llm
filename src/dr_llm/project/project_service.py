@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import gzip
+import logging
 import socket
 from contextlib import suppress
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
+from dr_llm.datetime_utils import UTC, normalize_utc
 from dr_llm.project.models import (
     CreateProjectRequest,
     ProjectCreationBlockReason,
@@ -52,6 +54,7 @@ BASE_PORT = 5500
 PORT_PROBE_TIMEOUT_SECONDS = 0.05
 
 validate_pg_identifier(ProjectInfo.db_name, "database name")
+logger = logging.getLogger(__name__)
 
 
 def _port_has_listener(port: int) -> bool:
@@ -106,12 +109,11 @@ def list_projects() -> list[ProjectInfo]:
 
 
 def inspect_projects() -> list[ProjectInspectionSummary]:
-    from dr_llm.pool.admin_service import discover_pools
 
     return [
         ProjectInspectionSummary(
             project=project,
-            pool_names=discover_pools(project.dsn) if project.dsn else [],
+            pool_names=_safe_discover_pools(project),
         )
         for project in list_projects()
     ]
@@ -148,7 +150,7 @@ def assess_project_creation(
     recent_project_names = [
         project.name
         for project in projects
-        if (created_at := _normalize_utc(project.created_at)) is not None
+        if (created_at := normalize_utc(project.created_at)) is not None
         and created_at >= cutoff
     ]
     if recent_project_names:
@@ -192,20 +194,24 @@ def create_project(request: CreateProjectRequest) -> ProjectInfo:
     return project.model_copy(update={"status": status})
 
 
-def _normalize_utc(dt: datetime | None) -> datetime | None:
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC)
-
-
 def _collect_claimed_ports() -> set[int]:
     return {
         metadata.port
         for metadata in get_all_docker_project_metadata()
         if metadata.port is not None
     }
+
+
+def _safe_discover_pools(project: ProjectInfo) -> list[str]:
+    from dr_llm.pool.admin_service import discover_pools
+
+    if project.dsn is None:
+        return []
+    try:
+        return discover_pools(project.dsn)
+    except Exception:
+        logger.exception("Failed to discover pools for project %r", project.name)
+        return []
 
 
 def _create_container_with_port_retry(

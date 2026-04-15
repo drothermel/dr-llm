@@ -272,6 +272,24 @@ def test_inspect_projects_includes_discovered_pool_names(
     ]
 
 
+def test_inspect_projects_tolerates_pool_discovery_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectInfo(name="running", port=5500, status=ContainerStatus.RUNNING)
+    monkeypatch.setattr(project_service_module, "list_projects", lambda: [project])
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: (_ for _ in ()).throw(RuntimeError("db unavailable")),
+    )
+
+    summaries = inspect_projects()
+
+    assert [
+        (summary.project.name, summary.pool_names, summary.pool_count)
+        for summary in summaries
+    ] == [("running", [], 0)]
+
+
 def test_get_project_raises_project_not_found(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

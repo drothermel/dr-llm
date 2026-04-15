@@ -4,6 +4,8 @@ __generated_with = "0.23.1"
 app = marimo.App(width="columns")
 
 with app.setup:
+    from collections.abc import Sequence
+
     import marimo as mo
 
     from dr_llm.pool.admin_service import (
@@ -12,8 +14,15 @@ with app.setup:
         discover_pools as discover_pools_service,
         inspect_pool,
     )
-    from dr_llm.pool.models import CreatePoolRequest, PoolInspectionRequest
-    from dr_llm.project.models import CreateProjectRequest
+    from dr_llm.pool.models import (
+        CreatePoolRequest,
+        PoolCreationViolation,
+        PoolInspectionRequest,
+    )
+    from dr_llm.project.models import (
+        CreateProjectRequest,
+        ProjectCreationViolation,
+    )
     from dr_llm.project.project_service import (
         assess_project_creation,
         create_project as create_project_service,
@@ -57,7 +66,9 @@ def get_pool_info(project_name: str, pool_name: str):
 
 
 @app.function
-def format_blocked(violations) -> str:
+def format_blocked(
+    violations: Sequence[PoolCreationViolation | ProjectCreationViolation],
+) -> str:
     return "\n".join(violation.message for violation in violations)
 
 

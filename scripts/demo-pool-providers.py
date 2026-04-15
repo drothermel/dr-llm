@@ -15,14 +15,14 @@ Usage:
   uv run python scripts/demo-pool-providers.py
 
   The script will:
-  - Create a Docker-based Postgres project called 'demo-pool'
+  - Create a Docker-based Postgres project called 'demo_pool'
   - Detect which LLM providers are available
   - Query each provider and store results in a typed pool
   - Print a summary table of all results
   - Leave the project running so you can inspect the data
 
   To clean up afterwards:
-    uv run dr-llm project destroy demo-pool --yes-really-delete-everything
+    uv run dr-llm project destroy demo_pool --yes-really-delete-everything
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ from dr_llm.llm.providers.config import ProviderAvailabilityStatus
 app = typer.Typer()
 
 DEFAULT_PROMPT = "What is 2+2? Answer in one sentence."
-DEFAULT_PROJECT = "demo-pool"
+DEFAULT_PROJECT = "demo_pool"
 API_TIMEOUT = 120
 HEADLESS_TIMEOUT = 300
 ANTHROPIC_MAX_TOKENS = 256
