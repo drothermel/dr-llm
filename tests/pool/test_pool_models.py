@@ -280,13 +280,19 @@ def test_worker_snapshot_defaults() -> None:
     assert snapshot.backend_state.status_counts.total == 0
 
 
-def test_pool_root_has_no_re_exports() -> None:
-    import dr_llm.pool as pool
+def test_pool_root_re_exports_admin_models_and_services() -> None:
+    from dr_llm import pool
 
     assert not hasattr(pool, "PoolStore")
     assert not hasattr(pool, "PoolService")
     assert not hasattr(pool, "PoolSchema")
-    assert not hasattr(pool, "AcquireQuery")
+    assert hasattr(pool, "AcquireQuery")
+    assert hasattr(pool, "AcquireResult")
+    assert hasattr(pool, "CreatePoolRequest")
+    assert hasattr(pool, "PoolInspection")
+    assert hasattr(pool, "assess_pool_creation")
+    assert hasattr(pool, "create_pool")
+    assert hasattr(pool, "discover_pools")
     assert not hasattr(pool, "PendingSample")
     assert not hasattr(pool, "PoolDb")
 

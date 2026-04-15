@@ -22,6 +22,7 @@ from sqlalchemy import Column, Double, Integer, MetaData, Table, Text, text as s
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
+from dr_llm.pool.admin_service import discover_pools_from_runtime
 
 app = typer.Typer(add_completion=False)
 
@@ -37,7 +38,6 @@ _FIXED_SAMPLE_COLUMNS = frozenset(
     }
 )
 
-_POOL_TABLE_RE = re.compile(r"^pool_(.+)_samples$")
 _VALID_IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -89,25 +89,6 @@ def _ensure_call_stats_table(runtime: DbRuntime, pool_name: str) -> None:
     table = _build_call_stats_table(pool_name)
     with runtime.begin() as conn:
         table.metadata.create_all(bind=conn, tables=[table], checkfirst=True)
-
-
-def _discover_pools(runtime: DbRuntime) -> list[str]:
-    """Find pool names by matching table names against pool_{name}_samples."""
-    with runtime.connect() as conn:
-        rows = conn.execute(
-            sa_text(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'public' "
-                "AND table_name LIKE 'pool\\_%\\_samples' "
-                "ORDER BY table_name"
-            )
-        ).fetchall()
-    names: list[str] = []
-    for (table_name,) in rows:
-        m = _POOL_TABLE_RE.match(table_name)
-        if m:
-            names.append(m.group(1))
-    return names
 
 
 def _discover_key_columns(runtime: DbRuntime, pool_name: str) -> list[str]:
@@ -266,7 +247,7 @@ def main(
             pool_names = [pool]
             typer.echo(f"Processing pool: {pool}")
         else:
-            pool_names = _discover_pools(runtime)
+            pool_names = discover_pools_from_runtime(runtime)
             typer.echo(f"Discovered {len(pool_names)} pool(s): {pool_names}")
 
         if not pool_names:

@@ -7,7 +7,7 @@ set -euo pipefail
 # The script creates a project via `dr-llm project create`, runs the
 # integration test suite, and destroys the project on exit.
 
-PROJECT_NAME="dr-llm-test-runner"
+PROJECT_NAME="dr_llm_test_runner"
 
 cleanup() {
   echo "Destroying temporary project '${PROJECT_NAME}'..."

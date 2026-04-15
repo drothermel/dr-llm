@@ -4,9 +4,11 @@ import json
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 
 from dr_llm.cli.common import handle_cli_errors
 from dr_llm.project.errors import ProjectError
+from dr_llm.project.models import CreateProjectRequest
 from dr_llm.project.project_service import (
     backup_project,
     create_project,
@@ -22,14 +24,14 @@ project_app = typer.Typer(help="Manage isolated dr-llm project databases")
 
 
 @project_app.command("create")
-@handle_cli_errors(ProjectError)
+@handle_cli_errors(ProjectError, ValidationError)
 def project_create(
     name: str = typer.Argument(
         ..., help="Project name (used in container/volume naming)"
     ),
 ) -> None:
     """Create a new project with its own Postgres container and persistent volume."""
-    project_info = create_project(name)
+    project_info = create_project(CreateProjectRequest(project_name=name))
     typer.echo(
         json.dumps(project_info.model_dump(mode="json", exclude_none=True), indent=2)
     )

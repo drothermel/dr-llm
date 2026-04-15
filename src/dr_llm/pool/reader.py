@@ -9,7 +9,6 @@ its read-side methods.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Iterator
 from typing import Any
 
@@ -20,7 +19,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import ProgrammingError
 
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import PoolSchema
+from dr_llm.pool.db.schema import PoolSchema, _VALID_NAME_RE
 from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
@@ -29,8 +28,6 @@ from dr_llm.pool.pool_sample import PoolSample, SampleStatus
 from dr_llm.pool.pool_store import SCHEMA_METADATA_KEY, PoolStore
 from dr_llm.project.errors import ProjectNotFoundError
 from dr_llm.project.project_service import maybe_get_project
-
-_POOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 class PoolProgress(BaseModel):
@@ -60,7 +57,7 @@ class PoolProgress(BaseModel):
 
 
 def _validate_pool_name(pool_name: str) -> None:
-    if not _POOL_NAME_RE.match(pool_name):
+    if not _VALID_NAME_RE.match(pool_name):
         raise ValueError(
             f"pool_name must be lowercase alphanumeric with underscores, "
             f"starting with a letter; got {pool_name!r}"

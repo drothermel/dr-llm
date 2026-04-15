@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import gzip
+import logging
 import socket
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
+from dr_llm.datetime_utils import UTC, normalize_utc
+from dr_llm.project.models import (
+    CreateProjectRequest,
+    ProjectCreationBlockReason,
+    ProjectCreationReadiness,
+    ProjectCreationViolation,
+    ProjectInspectionSummary,
+)
 from dr_llm.project.docker_inspect import (
     get_all_docker_project_metadata,
     get_docker_project_metadata,
@@ -45,6 +54,7 @@ BASE_PORT = 5500
 PORT_PROBE_TIMEOUT_SECONDS = 0.05
 
 validate_pg_identifier(ProjectInfo.db_name, "database name")
+logger = logging.getLogger(__name__)
 
 
 def _port_has_listener(port: int) -> bool:
@@ -98,7 +108,86 @@ def list_projects() -> list[ProjectInfo]:
     return [_project_from_metadata(m) for m in get_all_docker_project_metadata()]
 
 
-def create_project(name: str) -> ProjectInfo:
+def inspect_projects() -> list[ProjectInspectionSummary]:
+
+    return [
+        ProjectInspectionSummary(
+            project=project,
+            pool_names=_safe_discover_pools(project),
+        )
+        for project in list_projects()
+    ]
+
+
+def assess_project_creation(
+    request: CreateProjectRequest,
+    *,
+    cooldown_seconds: int = 60,
+) -> ProjectCreationReadiness:
+    projects = list_projects()
+    violations: list[ProjectCreationViolation] = []
+    if not request.name_is_valid:
+        violations.append(
+            ProjectCreationViolation(
+                reason=ProjectCreationBlockReason.invalid_name,
+                message=(
+                    "project_name must be lowercase alphanumeric with underscores, "
+                    f"starting with a letter; got {request.project_name!r}"
+                ),
+                project_name=request.project_name,
+            )
+        )
+    if any(project.name == request.project_name for project in projects):
+        violations.append(
+            ProjectCreationViolation(
+                reason=ProjectCreationBlockReason.already_exists,
+                message=f"Project {request.project_name!r} already exists.",
+                project_name=request.project_name,
+            )
+        )
+
+    cutoff = datetime.now(UTC) - timedelta(seconds=cooldown_seconds)
+    recent_project_names = [
+        project.name
+        for project in projects
+        if (created_at := normalize_utc(project.created_at)) is not None
+        and created_at >= cutoff
+    ]
+    if recent_project_names:
+        violations.append(
+            ProjectCreationViolation(
+                reason=ProjectCreationBlockReason.cooldown_active,
+                message=(
+                    "Cannot create a new project yet; recent projects are still within "
+                    "the cooldown window: " + ", ".join(recent_project_names)
+                ),
+            )
+        )
+
+    return ProjectCreationReadiness(
+        request=request,
+        existing_projects=projects,
+        recent_project_names=recent_project_names,
+        violations=violations,
+    )
+
+
+def create_project(request: CreateProjectRequest) -> ProjectInfo:
+    readiness = assess_project_creation(request)
+    if not readiness.allowed:
+        duplicate = next(
+            (
+                violation
+                for violation in readiness.violations
+                if violation.reason == ProjectCreationBlockReason.already_exists
+            ),
+            None,
+        )
+        if duplicate is not None:
+            raise ProjectAlreadyExistsError(duplicate.message)
+        raise ProjectError("\n".join(v.message for v in readiness.violations))
+
+    name = request.project_name
     claimed_ports = _collect_claimed_ports()
     project = _create_container_with_port_retry(name, claimed_ports)
     status = _wait_ready_or_destroy(project)
@@ -111,6 +200,18 @@ def _collect_claimed_ports() -> set[int]:
         for metadata in get_all_docker_project_metadata()
         if metadata.port is not None
     }
+
+
+def _safe_discover_pools(project: ProjectInfo) -> list[str]:
+    from dr_llm.pool.admin_service import discover_pools
+
+    if project.dsn is None:
+        return []
+    try:
+        return discover_pools(project.dsn)
+    except Exception:
+        logger.exception("Failed to discover pools for project %r", project.name)
+        return []
 
 
 def _create_container_with_port_retry(

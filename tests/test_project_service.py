@@ -20,11 +20,17 @@ from dr_llm.project.errors import (
     ProjectError,
     ProjectNotFoundError,
 )
+from dr_llm.project.models import (
+    CreateProjectRequest,
+    ProjectCreationBlockReason,
+)
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import (
+    assess_project_creation,
     backup_project,
     create_project,
     get_project,
+    inspect_projects,
     restore_project,
     start_project,
 )
@@ -59,7 +65,7 @@ def test_create_project_retries_when_docker_reports_port_collision(
     )
     monkeypatch.setattr(project_service_module, "wait_dsn_ready", lambda dsn: None)
 
-    project = create_project("demo")
+    project = create_project(CreateProjectRequest(project_name="demo"))
 
     assert attempted_ports == [5500, 5501]
     assert project.port == 5501
@@ -93,7 +99,7 @@ def test_create_project_skips_ports_with_existing_listeners(
     )
     monkeypatch.setattr(project_service_module, "wait_dsn_ready", lambda dsn: None)
 
-    project = create_project("demo")
+    project = create_project(CreateProjectRequest(project_name="demo"))
 
     assert attempted_ports == [5501]
     assert project.port == 5501
@@ -122,7 +128,7 @@ def test_create_project_translates_container_conflict(
         ProjectAlreadyExistsError,
         match="Project 'demo' already exists",
     ):
-        create_project("demo")
+        create_project(CreateProjectRequest(project_name="demo"))
 
 
 def test_create_project_cleans_up_container_when_ready_check_fails(
@@ -155,7 +161,7 @@ def test_create_project_cleans_up_container_when_ready_check_fails(
     monkeypatch.setattr(project_service_module, "call_docker_destroy", fake_destroy)
 
     with pytest.raises(ProjectError, match="container did not become ready"):
-        create_project("demo")
+        create_project(CreateProjectRequest(project_name="demo"))
 
     assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
 
@@ -200,10 +206,88 @@ def test_create_project_cleans_up_container_when_dsn_probe_fails(
     )
 
     with pytest.raises(ProjectError, match="did not accept SQL connections"):
-        create_project("demo")
+        create_project(CreateProjectRequest(project_name="demo"))
 
     assert probed_dsns == ["postgresql://postgres:postgres@localhost:5500/dr_llm"]
     assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
+
+
+def test_assess_project_creation_reports_invalid_name_existing_project_and_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recent = ProjectInfo(
+        name="demo",
+        port=5500,
+        created_at=project_service_module.datetime.now(project_service_module.UTC),
+    )
+    monkeypatch.setattr(project_service_module, "list_projects", lambda: [recent])
+
+    readiness = assess_project_creation(CreateProjectRequest(project_name="Demo"))
+
+    assert readiness.allowed is False
+    assert {violation.reason for violation in readiness.violations} == {
+        ProjectCreationBlockReason.invalid_name,
+        ProjectCreationBlockReason.cooldown_active,
+    }
+
+
+def test_assess_project_creation_reports_duplicate_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        project_service_module,
+        "list_projects",
+        lambda: [ProjectInfo(name="demo", port=5500)],
+    )
+
+    readiness = assess_project_creation(CreateProjectRequest(project_name="demo"))
+
+    assert readiness.allowed is False
+    assert [violation.reason for violation in readiness.violations] == [
+        ProjectCreationBlockReason.already_exists
+    ]
+
+
+def test_inspect_projects_includes_discovered_pool_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    projects = [
+        ProjectInfo(name="running", port=5500, status=ContainerStatus.RUNNING),
+        ProjectInfo(name="stopped", status=ContainerStatus.STOPPED),
+    ]
+    monkeypatch.setattr(project_service_module, "list_projects", lambda: projects)
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: ["alpha", "beta"] if dsn.endswith(":5500/dr_llm") else [],
+    )
+
+    summaries = inspect_projects()
+
+    assert [
+        (summary.project.name, summary.pool_names, summary.pool_count)
+        for summary in summaries
+    ] == [
+        ("running", ["alpha", "beta"], 2),
+        ("stopped", [], 0),
+    ]
+
+
+def test_inspect_projects_tolerates_pool_discovery_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectInfo(name="running", port=5500, status=ContainerStatus.RUNNING)
+    monkeypatch.setattr(project_service_module, "list_projects", lambda: [project])
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: (_ for _ in ()).throw(RuntimeError("db unavailable")),
+    )
+
+    summaries = inspect_projects()
+
+    assert [
+        (summary.project.name, summary.pool_names, summary.pool_count)
+        for summary in summaries
+    ] == [("running", [], 0)]
 
 
 def test_get_project_raises_project_not_found(

@@ -9,6 +9,7 @@ import dr_llm.cli.project as project_cli
 from dr_llm.cli import app
 from dr_llm.project.docker_project_metadata import ContainerStatus
 from dr_llm.project.errors import ProjectError
+from dr_llm.project.models import CreateProjectRequest
 from dr_llm.project.project_info import ProjectInfo
 
 runner = CliRunner()
@@ -142,8 +143,8 @@ def test_project_use_prints_export_for_running_project(
 def test_project_create_reports_typed_project_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_create_project(name: str) -> ProjectInfo:
-        _ = name
+    def fake_create_project(request: CreateProjectRequest) -> ProjectInfo:
+        assert request.project_name == "demo"
         raise ProjectError("typed project failure")
 
     monkeypatch.setattr(project_cli, "create_project", fake_create_project)
