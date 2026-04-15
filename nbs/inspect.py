@@ -23,6 +23,26 @@ with app.setup:
     )
 
 
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    **How this works**
+
+    - `build_project_display()` assembles the visible project summary table.
+    - `list_projects()` asks Docker for dr-llm project containers.
+    - `discover_pools(...)` scans `information_schema.tables` for
+      `pool_*_samples` tables in each running project database.
+    - `create_pool(...)` is currently a dry run that builds the schema and
+      store, prints what `ensure_schema()` would create, and returns the store.
+    - `parse_create_pool_inputs(...)` resolves the project name and parses the
+      comma-separated axes list before calling `create_pool(...)`.
+    - The run button uses `mo.ui.run_button(...)`; clicking it reruns cells that
+      reference the button, and its value resets after those cells run.
+    - If Docker or DB access fails, the exception bubbles up naturally.
+    """)
+    return
+
+
 @app.function
 def discover_pools(dsn: str) -> list[str]:
     runtime = DbRuntime(DbConfig(dsn=dsn))
@@ -97,6 +117,37 @@ def create_pool(project, pool_name: str, key_axes: list[str]) -> PoolStore:
     return store
 
 
+@app.function
+def parse_create_pool_inputs(
+    project_name: str,
+    pool_name: str,
+    axes_csv: str,
+):
+    normalized_project_name = project_name.strip()
+    normalized_pool_name = pool_name.strip()
+    key_axes = [axis.strip() for axis in axes_csv.split(",") if axis.strip()]
+
+    if not normalized_project_name:
+        raise ValueError("project_name is required")
+    if not normalized_pool_name:
+        raise ValueError("pool_name is required")
+    if not key_axes:
+        raise ValueError("At least one key axis is required")
+
+    project = next(
+        (
+            candidate
+            for candidate in list_projects()
+            if candidate.name == normalized_project_name
+        ),
+        None,
+    )
+    if project is None:
+        raise ValueError(f"Project {normalized_project_name!r} not found")
+
+    return project, normalized_pool_name, key_axes
+
+
 @app.cell(column=1, hide_code=True)
 def _():
     mo.md("""
@@ -110,29 +161,62 @@ def _():
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""
-    **How this works**
-
-    - `build_project_display()` assembles the visible project summary table.
-    - `list_projects()` asks Docker for dr-llm project containers.
-    - `discover_pools(...)` scans `information_schema.tables` for
-      `pool_*_samples` tables in each running project database.
-    - `create_pool(...)` is currently a dry run that builds the schema and
-      store, prints what `ensure_schema()` would create, and returns the store.
-    - If Docker or DB access fails, the exception bubbles up naturally.
-    """)
+    build_project_display()
     return
 
 
 @app.cell(hide_code=True)
 def _():
-    build_project_display()
-    return
+    project_name_input = mo.ui.text(
+        label="Project name",
+        placeholder="code_comp_v0",
+    )
+    pool_name_input = mo.ui.text(
+        label="Pool name",
+        placeholder="demo_pool",
+    )
+    axes_csv_input = mo.ui.text(
+        label="Key axes (comma separated)",
+        placeholder="provider, model",
+        full_width=True,
+    )
+    create_pool_run_button = mo.ui.run_button(
+        label="Create pool dry run",
+        kind="success",
+    )
+
+    mo.vstack(
+        [
+            mo.md("**Selections for Pool Creation**"),
+            project_name_input,
+            pool_name_input,
+            axes_csv_input,
+            create_pool_run_button,
+        ]
+    )
+    return (
+        axes_csv_input,
+        create_pool_run_button,
+        pool_name_input,
+        project_name_input,
+    )
 
 
-@app.cell
-def _():
-    # ADD A CREATE POOL RUN BUTTON HERE
+@app.cell(hide_code=True)
+def _(
+    axes_csv_input,
+    create_pool_run_button,
+    pool_name_input,
+    project_name_input,
+):
+    mo.stop(not create_pool_run_button.value)
+    project, pool_name, key_axes = parse_create_pool_inputs(
+        project_name_input.value,
+        pool_name_input.value,
+        axes_csv_input.value,
+    )
+    store = create_pool(project, pool_name, key_axes)
+    store
     return
 
 
