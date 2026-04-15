@@ -6,6 +6,7 @@ app = marimo.App(width="columns")
 with app.setup:
     import marimo as mo
     import re
+    from datetime import UTC, datetime, timedelta
 
     from sqlalchemy import text
 
@@ -13,8 +14,12 @@ with app.setup:
     from dr_llm.pool.db.schema import PoolSchema
     from dr_llm.pool.pool_store import PoolStore, SCHEMA_METADATA_KEY
     from dr_llm.pool.reader import PoolReader, _load_schema_from_db as load_schema_from_db
-    from dr_llm.project.project_service import list_projects
+    from dr_llm.project.project_service import (
+        create_project as create_project_service,
+        list_projects,
+    )
 
+    NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
     POOL_TABLE_RE = re.compile(r"^pool_(.+)_samples$")
     POOL_DISCOVERY_SQL = text(
         "SELECT table_name FROM information_schema.tables "
@@ -31,16 +36,20 @@ def _():
 
     - `build_project_display()` assembles the visible project summary table.
     - `list_projects()` asks Docker for dr-llm project containers.
+    - `check_project_creation_guardrails(...)` blocks project creation when the
+      name is invalid, the project already exists, or another project was created
+      too recently.
+    - `create_project(...)` creates a real Docker-backed project and returns it.
     - `discover_pools(...)` scans `information_schema.tables` for
       `pool_*_samples` tables in each running project database.
     - `get_pool_info(...)` opens a pool via `PoolReader`, reads progress, and
       queries the `_schema` metadata row timestamp as a pool creation proxy.
-    - `create_pool(...)` is currently a dry run that builds the schema and
-      store, prints what `ensure_schema()` would create, and returns the store.
-    - `parse_create_pool_inputs(...)` resolves the project name and parses the
-      comma-separated axes list before calling `create_pool(...)`.
-    - The create-pool UI now uses a marimo `form`, so the notebook only receives
-      values after you submit the form.
+    - `check_pool_creation_guardrails(...)` blocks pool creation when the project is not
+      running, the project already has too many pools, another pool is in progress,
+      or a pool was created too recently.
+    - `create_pool(...)` runs `ensure_schema()` for real and returns the store.
+    - The project and pool creation UIs use marimo `form`s, so the notebook only
+      receives values after you submit them.
     - If Docker or DB access fails, the exception bubbles up naturally.
     """)
     return
@@ -107,6 +116,53 @@ def get_pool_info(project, pool_name: str) -> dict[str, object]:
 
 
 @app.function
+def check_pool_creation_guardrails(
+    project,
+    *,
+    max_pools_per_project: int = 5,
+    cooldown_seconds: int = 60,
+) -> list[dict[str, object]]:
+    if not project.running:
+        raise ValueError(
+            f"Project {project.name!r} must be running before creating a pool."
+        )
+    if project.dsn is None:
+        raise ValueError(f"Project {project.name!r} has no DSN; start it first.")
+
+    pool_names = discover_pools(project.dsn)
+    if len(pool_names) >= max_pools_per_project:
+        raise ValueError(
+            f"Project {project.name!r} already has {len(pool_names)} pools; "
+            f"max_pools_per_project={max_pools_per_project}."
+        )
+
+    pool_infos = [get_pool_info(project, pool_name) for pool_name in pool_names]
+
+    in_progress_pools = [
+        info["name"] for info in pool_infos if info["status"] == "in_progress"
+    ]
+    if in_progress_pools:
+        raise ValueError(
+            "Cannot create a new pool while other pools are in progress: "
+            + ", ".join(str(name) for name in in_progress_pools)
+        )
+
+    cutoff = datetime.now(UTC) - timedelta(seconds=cooldown_seconds)
+    recent_pools = [
+        info["name"]
+        for info in pool_infos
+        if info["created_at"] is not None and info["created_at"] >= cutoff
+    ]
+    if recent_pools:
+        raise ValueError(
+            "Cannot create a new pool yet; recent pools are still within the cooldown window: "
+            + ", ".join(str(name) for name in recent_pools)
+        )
+
+    return pool_infos
+
+
+@app.function
 def build_project_display():
     projects = list_projects()
     project_rows = []
@@ -148,19 +204,18 @@ def create_pool(project, pool_name: str, key_axes: list[str]) -> PoolStore:
     schema = PoolSchema.from_axis_names(pool_name, key_axes)
     runtime = DbRuntime(DbConfig(dsn=project.dsn))
     store = PoolStore(schema, runtime)
+    store.ensure_schema()
 
-    print(f"[dry-run] project: {project.name}")
-    print(f"[dry-run] dsn: {project.dsn}")
-    print(f"[dry-run] pool: {schema.name}")
-    print(f"[dry-run] key axes: {schema.key_column_names}")
-    print("[dry-run] would create tables:")
+    print(f"[created] project: {project.name}")
+    print(f"[created] dsn: {project.dsn}")
+    print(f"[created] pool: {schema.name}")
+    print(f"[created] key axes: {schema.key_column_names}")
+    print("[created] tables:")
     print(f"  - {schema.samples_table}")
     print(f"  - {schema.claims_table}")
     print(f"  - {schema.pending_table}")
     print(f"  - {schema.metadata_table}")
     print(f"  - {schema.call_stats_table}")
-    print("[dry-run] would call store.ensure_schema()")
-    print("[dry-run] would persist the schema into the metadata table under '_schema'")
 
     return store
 
@@ -196,6 +251,55 @@ def parse_create_pool_inputs(
     return project, normalized_pool_name, key_axes
 
 
+@app.function
+def parse_create_project_inputs(project_name: str) -> str:
+    normalized_project_name = project_name.strip()
+    if not normalized_project_name:
+        raise ValueError("project_name is required")
+    return normalized_project_name
+
+
+@app.function
+def check_project_creation_guardrails(
+    project_name: str,
+    *,
+    cooldown_seconds: int = 60,
+) -> list[object]:
+    if not NAME_RE.match(project_name):
+        raise ValueError(
+            "project_name must be lowercase alphanumeric with underscores, "
+            f"starting with a letter; got {project_name!r}"
+        )
+
+    projects = list_projects()
+    if any(project.name == project_name for project in projects):
+        raise ValueError(f"Project {project_name!r} already exists.")
+
+    cutoff = datetime.now(UTC) - timedelta(seconds=cooldown_seconds)
+    recent_projects = [
+        project.name
+        for project in projects
+        if project.created_at is not None and project.created_at >= cutoff
+    ]
+    if recent_projects:
+        raise ValueError(
+            "Cannot create a new project yet; recent projects are still within the cooldown window: "
+            + ", ".join(recent_projects)
+        )
+
+    return projects
+
+
+@app.function
+def create_project(project_name: str):
+    project = create_project_service(project_name)
+    print(f"[created] project: {project.name}")
+    print(f"[created] status: {project.status}")
+    print(f"[created] port: {project.port}")
+    print(f"[created] dsn: {project.dsn}")
+    return project
+
+
 @app.cell(column=1, hide_code=True)
 def _():
     mo.md("""
@@ -208,8 +312,43 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _():
+def _(create_pool_form, create_project_form):
+    _ = (create_project_form.value, create_pool_form.value)
     build_project_display()
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    create_project_form = (
+        mo.md(
+            """
+            **Selections for Project Creation**
+
+            {project_name}
+            """
+        )
+        .batch(
+            project_name=mo.ui.text(
+                label="Project name",
+                placeholder="demo_project",
+            ),
+        )
+        .form(
+            submit_button_label="Create project",
+        )
+    )
+
+    create_project_form
+    return (create_project_form,)
+
+
+@app.cell(hide_code=True)
+def _(create_project_form):
+    mo.stop(create_project_form.value is None)
+    project_name = parse_create_project_inputs(**create_project_form.value)
+    check_project_creation_guardrails(project_name, cooldown_seconds=60)
+    create_project(project_name)
     return
 
 
@@ -243,7 +382,7 @@ def _():
             ),
         )
         .form(
-            submit_button_label="Create pool dry run",
+            submit_button_label="Create pool",
         )
     )
 
@@ -255,8 +394,9 @@ def _():
 def _(create_pool_form):
     mo.stop(create_pool_form.value is None)
     project, pool_name, key_axes = parse_create_pool_inputs(**create_pool_form.value)
-    store = create_pool(project, pool_name, key_axes)
-    store
+    check_pool_creation_guardrails(project, max_pools_per_project=5)
+    create_pool(project, pool_name, key_axes)
+    get_pool_info(project, pool_name)
     return
 
 
