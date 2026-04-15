@@ -300,6 +300,30 @@ def create_project(project_name: str):
     return project
 
 
+@app.function
+def parse_get_pool_info_inputs(project_name: str, pool_name: str):
+    normalized_project_name = project_name.strip()
+    normalized_pool_name = pool_name.strip()
+
+    if not normalized_project_name:
+        raise ValueError("project_name is required")
+    if not normalized_pool_name:
+        raise ValueError("pool_name is required")
+
+    resolved_project = next(
+        (
+            candidate
+            for candidate in list_projects()
+            if candidate.name == normalized_project_name
+        ),
+        None,
+    )
+    if resolved_project is None:
+        raise ValueError(f"Project {normalized_project_name!r} not found")
+
+    return resolved_project, normalized_pool_name
+
+
 @app.cell(column=1, hide_code=True)
 def _():
     mo.md("""
@@ -316,31 +340,6 @@ def _(create_pool_form, create_project_form):
     _ = (create_project_form.value, create_pool_form.value)
     build_project_display()
     return
-
-
-@app.cell(hide_code=True)
-def _():
-    create_project_form = (
-        mo.md(
-            """
-            **Selections for Project Creation**
-
-            {project_name}
-            """
-        )
-        .batch(
-            project_name=mo.ui.text(
-                label="Project name",
-                placeholder="demo_project",
-            ),
-        )
-        .form(
-            submit_button_label="Create project",
-        )
-    )
-
-    create_project_form
-    return (create_project_form,)
 
 
 @app.cell(hide_code=True)
@@ -401,6 +400,72 @@ def _(create_pool_form):
 
 
 @app.cell(column=2, hide_code=True)
+def _():
+    create_project_form = (
+        mo.md(
+            """
+            **Selections for Project Creation**
+
+            {project_name}
+            """
+        )
+        .batch(
+            project_name=mo.ui.text(
+                label="Project name",
+                placeholder="demo_project",
+            ),
+        )
+        .form(
+            submit_button_label="Create project",
+        )
+    )
+
+    create_project_form
+    return (create_project_form,)
+
+
+@app.cell(hide_code=True)
+def _():
+    get_pool_info_form = (
+        mo.md(
+            """
+            **Selections for Pool Info**
+
+            {project_name}
+
+            {pool_name}
+            """
+        )
+        .batch(
+            project_name=mo.ui.text(
+                label="Project name",
+                placeholder="code_comp_v0",
+            ),
+            pool_name=mo.ui.text(
+                label="Pool name",
+                placeholder="demo_pool",
+            ),
+        )
+        .form(
+            submit_button_label="Get pool info",
+        )
+    )
+
+    get_pool_info_form
+    return (get_pool_info_form,)
+
+
+@app.cell(hide_code=True)
+def _(get_pool_info_form):
+    mo.stop(get_pool_info_form.value is None)
+    pool_info_project, pool_info_name = parse_get_pool_info_inputs(
+        **get_pool_info_form.value
+    )
+    get_pool_info(pool_info_project, pool_info_name)
+    return
+
+
+@app.cell(column=3, hide_code=True)
 def _():
     mo.md(r"""
     (leave space)
