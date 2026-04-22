@@ -96,30 +96,6 @@ def status_colors(status: str, colors: dict[str, str]) -> tuple[str, str, str]:
 
 
 @app.function
-def metric_card(label: str, value: str | int, accent: str) -> div:
-    return div(
-        p(
-            label,
-            style=(
-                "margin: 0; font-size: 0.75rem; text-transform: uppercase; "
-                "letter-spacing: 0.08em; color: #475569; font-weight: 700;"
-            ),
-        ),
-        p(
-            str(value),
-            style=(
-                f"margin: 0.3rem 0 0; color: {accent}; font-size: 1.7rem; "
-                "font-weight: 700; line-height: 1;"
-            ),
-        ),
-        style=(
-            "background: rgba(255, 255, 255, 0.88); border: 1px solid "
-            "rgba(148, 163, 184, 0.18); border-radius: 16px; padding: 0.95rem;"
-        ),
-    )
-
-
-@app.function
 def axis_chip(name: str, column_type: str, colors: dict[str, str]) -> span:
     _ = column_type
     return span(
