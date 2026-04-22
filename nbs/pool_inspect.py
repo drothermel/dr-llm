@@ -36,7 +36,7 @@ with app.setup:
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""
-    **Goal:** Make a version of the pool card that has a pie chart with numeric labels instead of a list of numbers.  That will be the first step towards visually representing the coverage of different providers/models, datasets, etc in a given pool.  And then cards for seeing a given prompt or response or code snippet, etc.
+    **Goal:** Make a version of the pool card that has a pie chart with numeric labels instead of a list of numbers. The pie should use the disjoint card values as slices so the total is the sum of the listed numbers. That will be the first step towards visually representing the coverage of different providers/models, datasets, etc in a given pool. And then cards for seeing a given prompt or response or code snippet, etc.
     """)
     return
 
@@ -59,7 +59,6 @@ def _():
         pending_counts={
             "pending": 36,
             "leased": 8,
-            "promoted": 120,
             "failed": 3,
         },
         status="in_progress",

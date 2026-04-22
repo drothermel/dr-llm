@@ -26,7 +26,6 @@ class PendingDataItems(BaseModel):
             "pending": PaletteToneName.WARNING,
             "failed": PaletteToneName.DANGER,
             "leased": None,
-            "promoted": None,
         }
     )
 

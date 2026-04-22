@@ -250,7 +250,6 @@ def test_progress_aggregates_correctly(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
     progress = reader.progress()
     assert progress.samples_total == 6
-    assert progress.pending_counts.promoted == 1
     assert progress.pending_counts.failed == 1
     # 3 inserted - 1 promoted - 1 failed = 1 still pending
     assert progress.pending_counts.pending + progress.pending_counts.leased == 1

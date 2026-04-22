@@ -456,7 +456,6 @@ def test_pending_status_counts_support_in_filter(pool_store: PoolStore) -> None:
 
     assert counts.pending == 2
     assert counts.leased == 0
-    assert counts.promoted == 0
     assert counts.failed == 0
 
 
@@ -714,7 +713,6 @@ def test_clear_pending_without_filter_deletes_all_pending_rows(
     assert after_counts.pending == 0
     assert after_counts.leased == before_counts.leased + 1
     assert after_counts.failed == before_counts.failed + 1
-    assert after_counts.promoted == before_counts.promoted + 1
     assert (
         len(
             pool_store.pending.bulk_load(

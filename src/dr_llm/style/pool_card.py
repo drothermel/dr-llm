@@ -138,14 +138,6 @@ class PoolCard(BaseModel):
                 value=f"{self.pool.sample_count:,}",
                 value_tone=PaletteToneName.SUCCESS,
             ).render(),
-            DataItem(
-                palette=self.palette,
-                typography=self.typography,
-                spacing=self.spacing,
-                label="In flight",
-                value=str(self.pool.in_flight),
-                value_tone=PaletteToneName.INFO,
-            ).render(),
             self.pending_data_items().render(),
         )
 

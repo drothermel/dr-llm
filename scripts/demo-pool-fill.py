@@ -172,7 +172,6 @@ def _run_demo(
             "Final queue counts: "
             f"pending={final_counts.pending} "
             f"leased={final_counts.leased} "
-            f"promoted={final_counts.promoted} "
             f"failed={final_counts.failed}"
         )
 

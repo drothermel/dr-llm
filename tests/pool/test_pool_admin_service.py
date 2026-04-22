@@ -175,9 +175,7 @@ def test_inspect_pool_derives_status_from_reader_progress(
         lambda runtime, schema: SimpleNamespace(
             progress=lambda: SimpleNamespace(
                 samples_total=2,
-                pending_counts=PendingStatusCounts(
-                    pending=1, leased=0, promoted=0, failed=0
-                ),
+                pending_counts=PendingStatusCounts(pending=1, leased=0, failed=0),
             )
         ),
     )

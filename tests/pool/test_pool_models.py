@@ -224,12 +224,12 @@ def test_insert_result_defaults() -> None:
 
 
 def test_pending_status_counts_total() -> None:
-    counts = PendingStatusCounts(pending=1, leased=2, promoted=3, failed=4)
-    assert counts.total == 10
+    counts = PendingStatusCounts(pending=1, leased=2, failed=4)
+    assert counts.total == 7
 
 
 def test_pending_status_counts_in_flight() -> None:
-    counts = PendingStatusCounts(pending=3, leased=2, promoted=10, failed=1)
+    counts = PendingStatusCounts(pending=3, leased=2, failed=1)
     assert counts.in_flight == 5
 
 
@@ -243,7 +243,6 @@ def test_pending_status_counts_from_rows() -> None:
     counts = PendingStatusCounts.from_rows(rows)
     assert counts.pending == 3
     assert counts.leased == 2
-    assert counts.promoted == 5
     assert counts.failed == 1
 
 
@@ -255,7 +254,6 @@ def test_pending_status_counts_from_rows_handles_partial_and_unknown() -> None:
     counts = PendingStatusCounts.from_rows(rows)
     assert counts.pending == 4
     assert counts.leased == 0
-    assert counts.promoted == 0
     assert counts.failed == 0
 
 

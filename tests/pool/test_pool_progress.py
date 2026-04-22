@@ -35,12 +35,11 @@ def _backend_state(
     *,
     pending: int = 0,
     leased: int = 0,
-    promoted: int = 0,
     failed: int = 0,
 ) -> PoolPendingBackendState:
     return PoolPendingBackendState(
         status_counts=PendingStatusCounts(
-            pending=pending, leased=leased, promoted=promoted, failed=failed
+            pending=pending, leased=leased, failed=failed
         ),
     )
 
@@ -48,7 +47,7 @@ def _backend_state(
 def test_format_pool_progress_line_with_backend_state() -> None:
     snap = _snapshot(
         counts=WorkerStatCounts(claimed=6, completed=4, failed=1),
-        backend_state=_backend_state(pending=2, leased=1, promoted=4, failed=1),
+        backend_state=_backend_state(pending=2, leased=1, failed=1),
     )
     assert (
         format_pool_progress_line(snap)
@@ -67,7 +66,7 @@ def test_format_pool_progress_line_backend_state_none() -> None:
 def test_pool_progress_key_with_backend_state() -> None:
     snap = _snapshot(
         counts=WorkerStatCounts(claimed=6, completed=4, failed=1),
-        backend_state=_backend_state(pending=2, leased=1, promoted=4, failed=1),
+        backend_state=_backend_state(pending=2, leased=1, failed=1),
     )
     assert pool_progress_key(snap) == (6, 4, 1, 2, 1)
 
@@ -104,7 +103,7 @@ def test_pool_progress_key_ignores_unrelated_fields() -> None:
 def test_pool_is_idle_true_when_in_flight_zero() -> None:
     snap = _snapshot(
         counts=WorkerStatCounts(claimed=6, completed=5, failed=1),
-        backend_state=_backend_state(pending=0, leased=0, promoted=5, failed=1),
+        backend_state=_backend_state(pending=0, leased=0, failed=1),
     )
     assert pool_is_idle(snap) is True
 
@@ -162,7 +161,7 @@ def test_drain_returns_idle_snapshot_and_skips_sleep_at_end(
         ),
         _snapshot(
             counts=WorkerStatCounts(claimed=2, completed=2, failed=0),
-            backend_state=_backend_state(pending=0, leased=0, promoted=2),
+            backend_state=_backend_state(pending=0, leased=0),
         ),
     ]
     controller = _fake_controller_yielding(snapshots)
@@ -194,7 +193,7 @@ def test_drain_calls_on_change_only_on_visible_state_changes(
     )
     idle = _snapshot(
         counts=WorkerStatCounts(claimed=2, completed=2, failed=0),
-        backend_state=_backend_state(pending=0, leased=0, promoted=2),
+        backend_state=_backend_state(pending=0, leased=0),
     )
     controller = _fake_controller_yielding(
         [in_flight, in_flight_noisy, progressed, idle]

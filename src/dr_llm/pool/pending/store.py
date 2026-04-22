@@ -456,7 +456,7 @@ class PendingStore:
     def status_counts(
         self, *, key_filter: PoolKeyFilter | None = None
     ) -> PendingStatusCounts:
-        """Count pending rows by lifecycle status."""
+        """Count queue rows for reporting, excluding promoted successes."""
         stmt = select(
             self._pending.c.status,
             func.count().label("cnt"),
