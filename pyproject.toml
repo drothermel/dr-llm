@@ -57,6 +57,7 @@ packages = ["src/dr_llm"]
 [dependency-groups]
 dev = [
     "alembic>=1.18.4",
+    "mohtml>=0.1.11",
     "pytest>=9.0.2",
     "pytest-xdist>=3.8.0",
     "ruff>=0.15.2",
