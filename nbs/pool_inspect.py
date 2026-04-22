@@ -11,7 +11,7 @@ with app.setup:
 
     import marimo as mo
     from mohtml import div, p, span
-    from pydantic import BaseModel, ConfigDict
+    from pydantic import BaseModel, ConfigDict, Field
 
     marimo_utils_src = Path(__file__).resolve().parents[2] / "marimo_utils" / "src"
     if str(marimo_utils_src) not in sys.path:
@@ -25,6 +25,7 @@ with app.setup:
     )
     from dr_llm.pool.models import (
         CreatePoolRequest,
+        PendingStatusCounts,
         PoolInspection,
         PoolInspectionRequest,
     )
@@ -125,6 +126,71 @@ class BadgeItem(BaseModel):
 
 
 @app.class_definition
+class DataItem(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    palette: ColorPalette
+    label: str
+    value: str
+    value_tone: PaletteToneName | None = None
+
+    def value_color(self) -> str:
+        if self.value_tone is None:
+            return self.palette.text_primary
+        return self.palette.tone(self.value_tone).text
+
+    def render(self) -> div:
+        return div(
+            span(
+                self.label,
+                style=(
+                    f"display: inline-block; min-width: 7rem; color: {self.palette.text_muted}; "
+                    "font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; "
+                    "font-weight: 700;"
+                ),
+            ),
+            span(
+                self.value,
+                style=(
+                    f"color: {self.value_color()}; font-size: 0.82rem; font-weight: 600;"
+                ),
+            ),
+            style="margin-top: 0.38rem;",
+        )
+
+
+@app.class_definition
+class PendingDataItems(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    pending_counts: PendingStatusCounts
+    palette: ColorPalette
+    field_tones: dict[str, PaletteToneName | None] = Field(
+        default_factory=lambda: {
+            "pending": PaletteToneName.WARNING,
+            "leased": None,
+            "promoted": None,
+            "failed": PaletteToneName.DANGER,
+        }
+    )
+
+    def items(self) -> list[DataItem]:
+        pending_counts_model = type(self.pending_counts)
+        return [
+            DataItem(
+                palette=self.palette,
+                label=field_name.title(),
+                value=str(getattr(self.pending_counts, field_name)),
+                value_tone=self.field_tones.get(field_name),
+            )
+            for field_name in pending_counts_model.model_fields
+        ]
+
+    def render(self) -> div:
+        return div(*[item.render() for item in self.items()])
+
+
+@app.class_definition
 class BadgeList(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -172,33 +238,6 @@ class PoolCard(BaseModel):
             return "Not recorded"
         return value.strftime("%b %-d, %Y")
 
-    def data_item(
-        self,
-        label: str,
-        value: str,
-        value_color: str | None = None,
-    ) -> div:
-        resolved_value_color = (
-            self.palette.text_primary if value_color is None else value_color
-        )
-        return div(
-            span(
-                label,
-                style=(
-                    f"display: inline-block; min-width: 7rem; color: {self.palette.text_muted}; "
-                    "font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; "
-                    "font-weight: 700;"
-                ),
-            ),
-            span(
-                value,
-                style=(
-                    f"color: {resolved_value_color}; font-size: 0.82rem; font-weight: 600;"
-                ),
-            ),
-            style="margin-top: 0.38rem;",
-        )
-
     def status_tone(self) -> TonePalette:
         if self.pool.status.value == "complete":
             return self.palette.tone(PaletteToneName.SUCCESS)
@@ -216,9 +255,14 @@ class PoolCard(BaseModel):
             ],
         )
 
+    def pending_data_items(self) -> PendingDataItems:
+        return PendingDataItems(
+            pending_counts=self.pool.pending_counts,
+            palette=self.palette,
+        )
+
     def render(self) -> div:
         status_tone = self.status_tone()
-        pending = self.pool.pending_counts
 
         return div(
             div(
@@ -251,34 +295,27 @@ class PoolCard(BaseModel):
             ),
             self.axes_badges().render(),
             div(
-                self.data_item(
-                    "Created", self.format_datetime(self.pool.created_at)
-                ),
+                DataItem(
+                    palette=self.palette,
+                    label="Created",
+                    value=self.format_datetime(self.pool.created_at),
+                ).render(),
                 style="margin-top: 0.2rem;",
             ),
             div(
-                self.data_item(
-                    "Samples",
-                    f"{self.pool.sample_count:,}",
-                    self.palette.tone(PaletteToneName.SUCCESS).text,
-                ),
-                self.data_item(
-                    "In flight",
-                    str(self.pool.in_flight),
-                    self.palette.tone(PaletteToneName.INFO).text,
-                ),
-                self.data_item(
-                    "Pending",
-                    str(pending.pending),
-                    self.palette.tone(PaletteToneName.WARNING).text,
-                ),
-                self.data_item(
-                    "Failed",
-                    str(pending.failed),
-                    self.palette.tone(PaletteToneName.DANGER).text,
-                ),
-                self.data_item("Promoted", str(pending.promoted)),
-                self.data_item("Leased", str(pending.leased)),
+                DataItem(
+                    palette=self.palette,
+                    label="Samples",
+                    value=f"{self.pool.sample_count:,}",
+                    value_tone=PaletteToneName.SUCCESS,
+                ).render(),
+                DataItem(
+                    palette=self.palette,
+                    label="In flight",
+                    value=str(self.pool.in_flight),
+                    value_tone=PaletteToneName.INFO,
+                ).render(),
+                self.pending_data_items().render(),
                 style=(
                     "margin-top: 0.55rem; padding-top: 0.28rem; "
                     f"border-top: 1px solid {self.palette.surface_border};"
