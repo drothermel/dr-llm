@@ -118,11 +118,24 @@ class ColorPalette(BaseModel):
 
 
 @app.class_definition
-class BadgeItem(BaseModel):
+class Badge(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    palette: ColorPalette
     label: str
-    tone: PaletteToneName | None = None
+    tone: PaletteToneName = PaletteToneName.INFO
+
+    def render(self) -> span:
+        tone = self.palette.tone(self.tone)
+        return span(
+            self.label,
+            style=(
+                "display: inline-block; padding: 0.12rem 0.42rem; "
+                f"border-radius: 999px; background: {tone.bg}; "
+                f"color: {tone.text}; border: 1px solid {tone.border}; "
+                "font-size: 0.68rem; font-weight: 600;"
+            ),
+        )
 
 
 @app.class_definition
@@ -160,6 +173,88 @@ class DataItem(BaseModel):
 
 
 @app.class_definition
+class MetaStamp(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    palette: ColorPalette
+
+    def icon(self) -> span:
+        raise NotImplementedError(
+            "MetaStamp subclasses must implement icon()."
+        )
+
+    def text(self) -> str:
+        raise NotImplementedError(
+            "MetaStamp subclasses must implement text()."
+        )
+
+    def render(self) -> div:
+        return div(
+            self.icon(),
+            span(
+                self.text(),
+                style=(
+                    f"color: {self.palette.text_subtle}; font-size: 0.68rem; font-weight: 600; "
+                    "letter-spacing: 0.04em;"
+                ),
+            ),
+            style="margin-top: 0.28rem; display: inline-flex; align-items: center; gap: 0.32rem;",
+        )
+
+
+@app.class_definition
+class DateStamp(MetaStamp):
+    value: datetime | None
+
+    def icon(self) -> span:
+        return span(
+            span(
+                style=(
+                    f"display: block; height: 0.22rem; background: {self.palette.text_subtle}; "
+                    f"border-bottom: 1px solid {self.palette.text_subtle};"
+                ),
+            ),
+            span(
+                style="display: block; flex: 1; background: rgba(255, 255, 255, 0.45);",
+            ),
+            style=(
+                "display: inline-flex; flex: 0 0 auto; flex-direction: column; overflow: hidden; "
+                "width: 0.8rem; height: 0.8rem; border-radius: 0.22rem; box-sizing: border-box; "
+                f"border: 1px solid {self.palette.text_subtle};"
+            ),
+        )
+
+    def text(self) -> str:
+        if self.value is None:
+            return "--- --"
+        return self.value.strftime("%b %d")
+
+
+@app.class_definition
+class ProjectStamp(MetaStamp):
+    project_name: str
+
+    def icon(self) -> span:
+        return span(
+            span(
+                style=(
+                    "position: absolute; left: 0.1rem; top: -0.16rem; width: 0.34rem; height: 0.18rem; "
+                    f"border: 1px solid {self.palette.text_subtle}; border-bottom: none; "
+                    f"border-radius: 0.14rem 0.14rem 0 0; background: rgba(255, 255, 255, 0.45);"
+                ),
+            ),
+            style=(
+                "position: relative; display: inline-block; width: 0.84rem; height: 0.56rem; "
+                f"border: 1px solid {self.palette.text_subtle}; border-radius: 0.14rem; "
+                f"background: rgba(255, 255, 255, 0.45); box-sizing: border-box;"
+            ),
+        )
+
+    def text(self) -> str:
+        return self.project_name
+
+
+@app.class_definition
 class PendingDataItems(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -168,9 +263,9 @@ class PendingDataItems(BaseModel):
     field_tones: dict[str, PaletteToneName | None] = Field(
         default_factory=lambda: {
             "pending": PaletteToneName.WARNING,
+            "failed": PaletteToneName.DANGER,
             "leased": None,
             "promoted": None,
-            "failed": PaletteToneName.DANGER,
         }
     )
 
@@ -196,21 +291,7 @@ class BadgeList(BaseModel):
 
     palette: ColorPalette
     section_label: str
-    items: list[BadgeItem]
-    default_tone: PaletteToneName = PaletteToneName.INFO
-
-    def badge(self, item: BadgeItem) -> span:
-        tone_name = self.default_tone if item.tone is None else item.tone
-        tone = self.palette.tone(tone_name)
-        return span(
-            item.label,
-            style=(
-                "display: inline-block; padding: 0.12rem 0.42rem; "
-                f"border-radius: 999px; background: {tone.bg}; "
-                f"color: {tone.text}; border: 1px solid {tone.border}; "
-                "font-size: 0.68rem; font-weight: 600; margin-right: 0.28rem;"
-            ),
-        )
+    items: list[Badge]
 
     def render(self) -> div:
         return div(
@@ -221,7 +302,13 @@ class BadgeList(BaseModel):
                     "letter-spacing: 0.06em; font-weight: 700; margin-right: 0.35rem;"
                 ),
             ),
-            *[self.badge(item) for item in self.items],
+            *[
+                div(
+                    item.render(),
+                    style="display: inline-block; margin-right: 0.28rem;",
+                )
+                for item in self.items
+            ],
             style="margin-top: 0.55rem; line-height: 1.8;",
         )
 
@@ -233,24 +320,41 @@ class PoolCard(BaseModel):
     pool: PoolInspection
     palette: ColorPalette
 
-    def format_datetime(self, value: datetime | None) -> str:
-        if value is None:
-            return "Not recorded"
-        return value.strftime("%b %-d, %Y")
-
-    def status_tone(self) -> TonePalette:
+    def status_tone_name(self) -> PaletteToneName:
         if self.pool.status.value == "complete":
-            return self.palette.tone(PaletteToneName.SUCCESS)
+            return PaletteToneName.SUCCESS
         if self.pool.status.value == "in_progress":
-            return self.palette.tone(PaletteToneName.WARNING)
-        return self.palette.tone(PaletteToneName.NEUTRAL)
+            return PaletteToneName.WARNING
+        return PaletteToneName.NEUTRAL
+
+    def project_stamp(self) -> ProjectStamp:
+        return ProjectStamp(
+            palette=self.palette,
+            project_name=self.pool.project_name,
+        )
+
+    def created_stamp(self) -> DateStamp:
+        return DateStamp(
+            palette=self.palette,
+            value=self.pool.created_at,
+        )
+
+    def status_badge(self) -> Badge:
+        return Badge(
+            palette=self.palette,
+            label=self.pool.status.value.replace("_", " "),
+            tone=self.status_tone_name(),
+        )
 
     def axes_badges(self) -> BadgeList:
         return BadgeList(
             palette=self.palette,
             section_label="Axes",
             items=[
-                BadgeItem(label=column.name)
+                Badge(
+                    palette=self.palette,
+                    label=column.name,
+                )
                 for column in self.pool.pool_schema.key_columns
             ],
         )
@@ -262,46 +366,30 @@ class PoolCard(BaseModel):
         )
 
     def render(self) -> div:
-        status_tone = self.status_tone()
-
         return div(
             div(
-                div(
-                    p(
-                        self.pool.project_name,
-                        style=(
-                            f"margin: 0; color: {self.palette.text_subtle}; font-size: 0.7rem; "
-                            "font-weight: 600; letter-spacing: 0.03em;"
-                        ),
-                    ),
-                    p(
-                        self.pool.name,
-                        style=(
-                            f"margin: 0.08rem 0 0; color: {self.palette.text_primary}; font-size: 1rem; "
-                            "line-height: 1.15; font-weight: 800;"
-                        ),
-                    ),
-                ),
-                span(
-                    self.pool.status.value.replace("_", " "),
+                p(
+                    "Pool Card",
                     style=(
-                        f"display: inline-block; color: {status_tone.text}; background: {status_tone.bg}; "
-                        f"border: 1px solid {status_tone.border}; border-radius: 999px; "
-                        "padding: 0.2rem 0.45rem; font-size: 0.62rem; font-weight: 700; "
-                        "text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;"
+                        f"margin: 0; color: {self.palette.text_subtle}; font-size: 0.66rem; "
+                        "font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;"
                     ),
                 ),
-                style="display: flex; justify-content: space-between; gap: 0.7rem; align-items: start;",
+                p(
+                    self.pool.name,
+                    style=(
+                        f"margin: 0.08rem 0 0; color: {self.palette.text_primary}; font-size: 1rem; "
+                        "line-height: 1.15; font-weight: 800;"
+                    ),
+                ),
+                div(
+                    self.status_badge().render(),
+                    self.project_stamp().render(),
+                    self.created_stamp().render(),
+                    style="margin-top: 0.28rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.42rem;",
+                ),
             ),
             self.axes_badges().render(),
-            div(
-                DataItem(
-                    palette=self.palette,
-                    label="Created",
-                    value=self.format_datetime(self.pool.created_at),
-                ).render(),
-                style="margin-top: 0.2rem;",
-            ),
             div(
                 DataItem(
                     palette=self.palette,
@@ -328,6 +416,11 @@ class PoolCard(BaseModel):
                 f"box-shadow: {self.palette.surface_shadow};"
             ),
         )
+
+
+@app.cell
+def _():
+    return
 
 
 @app.cell(column=2, hide_code=True)
