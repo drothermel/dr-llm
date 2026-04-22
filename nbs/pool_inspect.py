@@ -10,8 +10,9 @@ with app.setup:
     from pathlib import Path
 
     import marimo as mo
-    from mohtml import div, p, span
+    from mohtml import div, p, path, rect, span, svg
     from pydantic import BaseModel, ConfigDict, Field
+    from typing import Literal
 
     marimo_utils_src = Path(__file__).resolve().parents[2] / "marimo_utils" / "src"
     if str(marimo_utils_src) not in sys.path:
@@ -118,57 +119,172 @@ class ColorPalette(BaseModel):
 
 
 @app.class_definition
-class Badge(BaseModel):
+class TextStyle(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    palette: ColorPalette
-    label: str
-    tone: PaletteToneName = PaletteToneName.INFO
+    font_size: str
+    font_weight: int
+    letter_spacing: str = "0"
+    line_height: str = "1.2"
+    text_transform: str | None = None
 
-    def render(self) -> span:
-        tone = self.palette.tone(self.tone)
-        return span(
-            self.label,
-            style=(
-                "display: inline-block; padding: 0.12rem 0.42rem; "
-                f"border-radius: 999px; background: {tone.bg}; "
-                f"color: {tone.text}; border: 1px solid {tone.border}; "
-                "font-size: 0.68rem; font-weight: 600;"
+    def css(self, *, color: str | None = None) -> str:
+        parts = [
+            f"font-size: {self.font_size}",
+            f"font-weight: {self.font_weight}",
+            f"letter-spacing: {self.letter_spacing}",
+            f"line-height: {self.line_height}",
+        ]
+        if self.text_transform is not None:
+            parts.append(f"text-transform: {self.text_transform}")
+        if color is not None:
+            parts.append(f"color: {color}")
+        return "; ".join(parts) + ";"
+
+
+@app.class_definition
+class IconStyle(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    width: str
+    height: str
+    view_box: str
+    fill: str
+    stroke: str
+    stroke_width: str
+    stroke_linecap: str
+    stroke_linejoin: str
+    flex: str = "0 0 auto"
+
+    def svg_kwargs(self) -> dict[str, str]:
+        return {
+            "xmlns": "http://www.w3.org/2000/svg",
+            "width": self.width,
+            "height": self.height,
+            "viewBox": self.view_box,
+            "fill": self.fill,
+            "stroke": self.stroke,
+            "stroke_width": self.stroke_width,
+            "stroke_linecap": self.stroke_linecap,
+            "stroke_linejoin": self.stroke_linejoin,
+        }
+
+    def css(self, *, color: str | None = None) -> str:
+        parts = [f"flex: {self.flex}"]
+        if color is not None:
+            parts.insert(0, f"color: {color}")
+        return "; ".join(parts) + ";"
+
+    @classmethod
+    def default(cls) -> "IconStyle":
+        return cls(
+            width="14",
+            height="14",
+            view_box="0 0 24 24",
+            fill="none",
+            stroke="currentColor",
+            stroke_width="2",
+            stroke_linecap="round",
+            stroke_linejoin="round",
+        )
+
+
+@app.class_definition
+class LayoutToken(StrEnum):
+    FLEX = "display: flex"
+    INLINE_FLEX = "display: inline-flex"
+    INLINE_BLOCK = "display: inline-block"
+    FLEX_WRAP = "flex-wrap: wrap"
+    ALIGN_CENTER = "align-items: center"
+
+    @classmethod
+    def css(cls, tokens: list["LayoutToken"]) -> str:
+        if not tokens:
+            return ""
+        return "; ".join(token.value for token in tokens) + ";"
+
+
+@app.class_definition
+class Typography(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    font_family: str
+    title: TextStyle
+    drop_title: TextStyle
+    body: TextStyle
+    meta: TextStyle
+    badge: TextStyle
+    label: TextStyle
+
+    @classmethod
+    def default(cls) -> "Typography":
+        return cls(
+            font_family=(
+                "ui-sans-serif, -apple-system, BlinkMacSystemFont, "
+                "'Segoe UI', sans-serif"
+            ),
+            title=TextStyle(
+                font_size="1rem",
+                font_weight=800,
+                line_height="1.15",
+            ),
+            drop_title=TextStyle(
+                font_size="0.66rem",
+                font_weight=700,
+                letter_spacing="0.09em",
+                line_height="1.1",
+                text_transform="uppercase",
+            ),
+            body=TextStyle(
+                font_size="0.82rem",
+                font_weight=600,
+                line_height="1.2",
+            ),
+            meta=TextStyle(
+                font_size="0.68rem",
+                font_weight=600,
+                letter_spacing="0.04em",
+                line_height="1.2",
+            ),
+            badge=TextStyle(
+                font_size="0.68rem",
+                font_weight=600,
+                line_height="1.2",
+            ),
+            label=TextStyle(
+                font_size="0.68rem",
+                font_weight=700,
+                letter_spacing="0.06em",
+                line_height="1.2",
+                text_transform="uppercase",
             ),
         )
 
 
 @app.class_definition
-class DataItem(BaseModel):
+class SpacingScale(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    palette: ColorPalette
-    label: str
-    value: str
-    value_tone: PaletteToneName | None = None
+    xxs: str
+    xs: str
+    sm: str
+    md: str
+    lg: str
+    xl: str
+    xxl: str
+    line_height_loose: str
 
-    def value_color(self) -> str:
-        if self.value_tone is None:
-            return self.palette.text_primary
-        return self.palette.tone(self.value_tone).text
-
-    def render(self) -> div:
-        return div(
-            span(
-                self.label,
-                style=(
-                    f"display: inline-block; min-width: 7rem; color: {self.palette.text_muted}; "
-                    "font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; "
-                    "font-weight: 700;"
-                ),
-            ),
-            span(
-                self.value,
-                style=(
-                    f"color: {self.value_color()}; font-size: 0.82rem; font-weight: 600;"
-                ),
-            ),
-            style="margin-top: 0.38rem;",
+    @classmethod
+    def default(cls) -> "SpacingScale":
+        return cls(
+            xxs="0.08rem",
+            xs="0.12rem",
+            sm="0.28rem",
+            md="0.42rem",
+            lg="0.55rem",
+            xl="0.8rem",
+            xxl="0.9rem",
+            line_height_loose="1.8",
         )
 
 
@@ -177,6 +293,15 @@ class MetaStamp(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     palette: ColorPalette
+    typography: Typography
+    spacing: SpacingScale
+    icon_style: IconStyle = Field(default_factory=IconStyle.default)
+    display_styles: list[LayoutToken] = Field(
+        default_factory=lambda: [
+            LayoutToken.INLINE_FLEX,
+            LayoutToken.ALIGN_CENTER,
+        ]
+    )
 
     def icon(self) -> span:
         raise NotImplementedError(
@@ -193,12 +318,13 @@ class MetaStamp(BaseModel):
             self.icon(),
             span(
                 self.text(),
-                style=(
-                    f"color: {self.palette.text_subtle}; font-size: 0.68rem; font-weight: 600; "
-                    "letter-spacing: 0.04em;"
-                ),
+                style=self.typography.meta.css(color=self.palette.text_subtle),
             ),
-            style="margin-top: 0.28rem; display: inline-flex; align-items: center; gap: 0.32rem;",
+            style=(
+                f"margin-top: {self.spacing.sm}; "
+                f"gap: {self.spacing.sm}; "
+                f"{LayoutToken.css(self.display_styles)}"
+            ),
         )
 
 
@@ -206,22 +332,14 @@ class MetaStamp(BaseModel):
 class DateStamp(MetaStamp):
     value: datetime | None
 
-    def icon(self) -> span:
-        return span(
-            span(
-                style=(
-                    f"display: block; height: 0.22rem; background: {self.palette.text_subtle}; "
-                    f"border-bottom: 1px solid {self.palette.text_subtle};"
-                ),
-            ),
-            span(
-                style="display: block; flex: 1; background: rgba(255, 255, 255, 0.45);",
-            ),
-            style=(
-                "display: inline-flex; flex: 0 0 auto; flex-direction: column; overflow: hidden; "
-                "width: 0.8rem; height: 0.8rem; border-radius: 0.22rem; box-sizing: border-box; "
-                f"border: 1px solid {self.palette.text_subtle};"
-            ),
+    def icon(self) -> svg:
+        return svg(
+            path(d="M8 2v4"),
+            path(d="M16 2v4"),
+            rect(width="18", height="18", x="3", y="4", rx="2"),
+            path(d="M3 10h18"),
+            **self.icon_style.svg_kwargs(),
+            style=self.icon_style.css(color=self.palette.text_subtle),
         )
 
     def text(self) -> str:
@@ -234,24 +352,241 @@ class DateStamp(MetaStamp):
 class ProjectStamp(MetaStamp):
     project_name: str
 
-    def icon(self) -> span:
-        return span(
-            span(
-                style=(
-                    "position: absolute; left: 0.1rem; top: -0.16rem; width: 0.34rem; height: 0.18rem; "
-                    f"border: 1px solid {self.palette.text_subtle}; border-bottom: none; "
-                    f"border-radius: 0.14rem 0.14rem 0 0; background: rgba(255, 255, 255, 0.45);"
-                ),
+    def icon(self) -> svg:
+        return svg(
+            path(
+                d=(
+                    "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9"
+                    "L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+                )
             ),
-            style=(
-                "position: relative; display: inline-block; width: 0.84rem; height: 0.56rem; "
-                f"border: 1px solid {self.palette.text_subtle}; border-radius: 0.14rem; "
-                f"background: rgba(255, 255, 255, 0.45); box-sizing: border-box;"
-            ),
+            **self.icon_style.svg_kwargs(),
+            style=self.icon_style.css(color=self.palette.text_subtle),
         )
 
     def text(self) -> str:
         return self.project_name
+
+
+@app.function(column=1)
+def norm_str(st):
+    return st.replace("_", " ").title()
+
+
+@app.cell
+def _():
+    class PoolCard(BaseModel):
+        model_config = ConfigDict(frozen=True)
+
+        card_type: Literal["Pool"] = "Pool"
+        pool: PoolInspection
+        palette: ColorPalette
+        typography: Typography = Field(default_factory=Typography.default)
+        spacing: SpacingScale = Field(default_factory=SpacingScale.default)
+
+        def status_tone_name(self) -> PaletteToneName:
+            if self.pool.status.value == "complete":
+                return PaletteToneName.SUCCESS
+            if self.pool.status.value == "in_progress":
+                return PaletteToneName.WARNING
+            return PaletteToneName.NEUTRAL
+
+        def title(self) -> Title:
+            return Title(
+                palette=self.palette,
+                typography=self.typography,
+                spacing=self.spacing,
+                drop_text=f"{norm_str(self.card_type)} Card",
+                text=norm_str(self.pool.name),
+            )
+
+        def project_stamp(self) -> ProjectStamp:
+            return ProjectStamp(
+                palette=self.palette,
+                typography=self.typography,
+                spacing=self.spacing,
+                project_name=self.pool.project_name,
+            )
+
+        def created_stamp(self) -> DateStamp:
+            return DateStamp(
+                palette=self.palette,
+                typography=self.typography,
+                spacing=self.spacing,
+                value=self.pool.created_at,
+            )
+
+        def status_badge(self) -> Badge:
+            return Badge(
+                palette=self.palette,
+                typography=self.typography,
+                spacing=self.spacing,
+                label=self.pool.status.value.replace("_", " "),
+                tone=self.status_tone_name(),
+            )
+
+        def header(self) -> div:
+            return div(
+                div(
+                    self.status_badge().render(),
+                    self.project_stamp().render(),
+                    self.created_stamp().render(),
+                    style=(
+                        f"margin-top: {self.spacing.sm}; display: flex; flex-wrap: wrap; "
+                        f"align-items: center; gap: {self.spacing.md};"
+                    ),
+                ),
+                self.axes_list().render(),
+            )
+
+        def axes_list(self) -> LabeledList:
+            return LabeledList(
+                palette=self.palette,
+                typography=self.typography,
+                spacing=self.spacing,
+                section_label="Axes",
+                items=[
+                    Badge(
+                        palette=self.palette,
+                        typography=self.typography,
+                        spacing=self.spacing,
+                        label=column.name,
+                    ).render()
+                    for column in self.pool.pool_schema.key_columns
+                ],
+            )
+
+        def pending_data_items(self) -> PendingDataItems:
+            return PendingDataItems(
+                pending_counts=self.pool.pending_counts,
+                palette=self.palette,
+                typography=self.typography,
+                spacing=self.spacing,
+            )
+
+        def content(self) -> div:
+            return div(
+                DataItem(
+                    palette=self.palette,
+                    typography=self.typography,
+                    spacing=self.spacing,
+                    label="Samples",
+                    value=f"{self.pool.sample_count:,}",
+                    value_tone=PaletteToneName.SUCCESS,
+                ).render(),
+                DataItem(
+                    palette=self.palette,
+                    typography=self.typography,
+                    spacing=self.spacing,
+                    label="In flight",
+                    value=str(self.pool.in_flight),
+                    value_tone=PaletteToneName.INFO,
+                ).render(),
+                self.pending_data_items().render(),
+            )
+
+        def render(self) -> div:
+            return Card(
+                palette=self.palette,
+                typography=self.typography,
+                spacing=self.spacing,
+                title=self.title(),
+                header=self.header(),
+                content=self.content(),
+            ).render()
+
+    return (PoolCard,)
+
+
+@app.class_definition
+class Badge(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    palette: ColorPalette
+    typography: Typography
+    spacing: SpacingScale
+    label: str
+    tone: PaletteToneName = PaletteToneName.INFO
+    display_styles: list[LayoutToken] = Field(
+        default_factory=lambda: [LayoutToken.INLINE_BLOCK]
+    )
+
+    def render(self) -> span:
+        tone = self.palette.tone(self.tone)
+        return span(
+            self.label,
+            style=(
+                f"{LayoutToken.css(self.display_styles)}"
+                "white-space: nowrap; "
+                f"padding: {self.spacing.xs} {self.spacing.md}; "
+                f"border-radius: 999px; background: {tone.bg}; "
+                f"border: 1px solid {tone.border}; "
+                f"{self.typography.badge.css(color=tone.text)}"
+            ),
+        )
+
+
+@app.class_definition
+class DataItem(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    palette: ColorPalette
+    typography: Typography
+    spacing: SpacingScale
+    label: str
+    value: str
+    value_tone: PaletteToneName | None = None
+
+    def value_color(self) -> str:
+        if self.value_tone is None:
+            return self.palette.text_primary
+        return self.palette.tone(self.value_tone).text
+
+    def render(self) -> div:
+        return div(
+            span(
+                self.label,
+                style=(
+                    f"display: inline-block; min-width: 7rem; {self.typography.label.css(color=self.palette.text_muted)}"
+                ),
+            ),
+            span(
+                self.value,
+                style=self.typography.body.css(color=self.value_color()),
+            ),
+            style=f"margin-top: {self.spacing.md};",
+        )
+
+
+@app.class_definition
+class Title(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    palette: ColorPalette
+    typography: Typography
+    spacing: SpacingScale
+    drop_text: str
+    text: str
+
+    def render(self) -> div:
+        return div(
+            p(
+                self.drop_text,
+                style="margin: 0; "
+                + self.typography.drop_title.css(
+                    color=self.palette.text_subtle
+                ),
+            ),
+            p(
+                self.text,
+                style=(
+                    f"margin: {self.spacing.xxs} 0 0; "
+                    + self.typography.title.css(
+                        color=self.palette.text_primary
+                    )
+                ),
+            ),
+        )
 
 
 @app.class_definition
@@ -260,6 +595,8 @@ class PendingDataItems(BaseModel):
 
     pending_counts: PendingStatusCounts
     palette: ColorPalette
+    typography: Typography
+    spacing: SpacingScale
     field_tones: dict[str, PaletteToneName | None] = Field(
         default_factory=lambda: {
             "pending": PaletteToneName.WARNING,
@@ -274,6 +611,8 @@ class PendingDataItems(BaseModel):
         return [
             DataItem(
                 palette=self.palette,
+                typography=self.typography,
+                spacing=self.spacing,
                 label=field_name.title(),
                 value=str(getattr(self.pending_counts, field_name)),
                 value_tone=self.field_tones.get(field_name),
@@ -286,145 +625,83 @@ class PendingDataItems(BaseModel):
 
 
 @app.class_definition
-class BadgeList(BaseModel):
-    model_config = ConfigDict(frozen=True)
+class LabeledList(BaseModel):
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     palette: ColorPalette
+    typography: Typography
+    spacing: SpacingScale
     section_label: str
-    items: list[Badge]
+    items: list[object]
+    display_styles: list[LayoutToken] = Field(
+        default_factory=lambda: [
+            LayoutToken.FLEX,
+            LayoutToken.FLEX_WRAP,
+            LayoutToken.ALIGN_CENTER,
+        ]
+    )
 
     def render(self) -> div:
         return div(
             span(
                 f"{self.section_label}:",
-                style=(
-                    f"color: {self.palette.text_muted}; font-size: 0.68rem; text-transform: uppercase; "
-                    "letter-spacing: 0.06em; font-weight: 700; margin-right: 0.35rem;"
-                ),
+                style=self.typography.label.css(color=self.palette.text_muted),
             ),
-            *[
-                div(
-                    item.render(),
-                    style="display: inline-block; margin-right: 0.28rem;",
-                )
-                for item in self.items
-            ],
-            style="margin-top: 0.55rem; line-height: 1.8;",
+            *self.items,
+            style=(
+                f"margin-top: {self.spacing.lg}; "
+                f"gap: {self.spacing.sm}; "
+                f"line-height: {self.spacing.line_height_loose}; "
+                f"{LayoutToken.css(self.display_styles)}"
+            ),
         )
 
 
-@app.class_definition(column=1)
-class PoolCard(BaseModel):
-    model_config = ConfigDict(frozen=True)
+@app.class_definition(column=2)
+class Card(BaseModel):
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    pool: PoolInspection
     palette: ColorPalette
+    typography: Typography
+    spacing: SpacingScale
+    title: Title | None = None
+    header: div | None = None
+    content: div | None = None
 
-    def status_tone_name(self) -> PaletteToneName:
-        if self.pool.status.value == "complete":
-            return PaletteToneName.SUCCESS
-        if self.pool.status.value == "in_progress":
-            return PaletteToneName.WARNING
-        return PaletteToneName.NEUTRAL
-
-    def project_stamp(self) -> ProjectStamp:
-        return ProjectStamp(
-            palette=self.palette,
-            project_name=self.pool.project_name,
-        )
-
-    def created_stamp(self) -> DateStamp:
-        return DateStamp(
-            palette=self.palette,
-            value=self.pool.created_at,
-        )
-
-    def status_badge(self) -> Badge:
-        return Badge(
-            palette=self.palette,
-            label=self.pool.status.value.replace("_", " "),
-            tone=self.status_tone_name(),
-        )
-
-    def axes_badges(self) -> BadgeList:
-        return BadgeList(
-            palette=self.palette,
-            section_label="Axes",
-            items=[
-                Badge(
-                    palette=self.palette,
-                    label=column.name,
-                )
-                for column in self.pool.pool_schema.key_columns
-            ],
-        )
-
-    def pending_data_items(self) -> PendingDataItems:
-        return PendingDataItems(
-            pending_counts=self.pool.pending_counts,
-            palette=self.palette,
+    def divider(self) -> div:
+        return div(
+            style=(
+                f"margin-top: {self.spacing.lg}; padding-top: {self.spacing.sm}; "
+                f"border-top: 1px solid {self.palette.surface_border};"
+            ),
         )
 
     def render(self) -> div:
+        top_sections: list[div] = []
+        if self.title is not None:
+            top_sections.append(self.title.render())
+        if self.header is not None:
+            top_sections.append(self.header)
+
+        sections: list[div] = [*top_sections]
+        if top_sections and self.content is not None:
+            sections.append(self.divider())
+        if self.content is not None:
+            sections.append(self.content)
+
         return div(
-            div(
-                p(
-                    "Pool Card",
-                    style=(
-                        f"margin: 0; color: {self.palette.text_subtle}; font-size: 0.66rem; "
-                        "font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;"
-                    ),
-                ),
-                p(
-                    self.pool.name,
-                    style=(
-                        f"margin: 0.08rem 0 0; color: {self.palette.text_primary}; font-size: 1rem; "
-                        "line-height: 1.15; font-weight: 800;"
-                    ),
-                ),
-                div(
-                    self.status_badge().render(),
-                    self.project_stamp().render(),
-                    self.created_stamp().render(),
-                    style="margin-top: 0.28rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.42rem;",
-                ),
-            ),
-            self.axes_badges().render(),
-            div(
-                DataItem(
-                    palette=self.palette,
-                    label="Samples",
-                    value=f"{self.pool.sample_count:,}",
-                    value_tone=PaletteToneName.SUCCESS,
-                ).render(),
-                DataItem(
-                    palette=self.palette,
-                    label="In flight",
-                    value=str(self.pool.in_flight),
-                    value_tone=PaletteToneName.INFO,
-                ).render(),
-                self.pending_data_items().render(),
-                style=(
-                    "margin-top: 0.55rem; padding-top: 0.28rem; "
-                    f"border-top: 1px solid {self.palette.surface_border};"
-                ),
-            ),
+            *sections,
             style=(
-                "font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; "
-                f"color: {self.palette.text_primary}; width: 18rem; padding: 0.8rem 0.9rem; border-radius: 16px; "
+                f"font-family: {self.typography.font_family}; "
+                f"color: {self.palette.text_primary}; width: 18rem; padding: {self.spacing.xl} {self.spacing.xxl}; border-radius: 16px; "
                 f"border: 1px solid {self.palette.surface_border}; background: {self.palette.surface_background}; "
                 f"box-shadow: {self.palette.surface_shadow};"
             ),
         )
 
 
-@app.cell
-def _():
-    return
-
-
-@app.cell(column=2, hide_code=True)
-def _():
+@app.cell(column=3, hide_code=True)
+def _(PoolCard):
     demo_pool_inspection = PoolInspection(
         project_name="demo_project",
         name="code_comp_demo",
@@ -462,7 +739,7 @@ def _():
     return
 
 
-@app.cell(column=3, hide_code=True)
+@app.cell(column=4, hide_code=True)
 def _(create_pool_form, create_project_form):
     _ = (create_project_form.value, create_pool_form.value)
     mo.vstack(
@@ -520,7 +797,7 @@ def _(get_pool_info_form):
     return (pool_inspection,)
 
 
-@app.cell(column=4, hide_code=True)
+@app.cell(column=5, hide_code=True)
 def _():
     create_project_form = (
         mo.md(
@@ -615,7 +892,7 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _(default_card_palette, pool_inspection):
+def _(PoolCard, default_card_palette, pool_inspection):
     mo.vstack(
         [
             mo.md("## Pool Inspection"),
