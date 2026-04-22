@@ -51,259 +51,249 @@ class TonePalette(BaseModel):
     border: str
 
 
-@app.cell
-def _():
-    class PaletteToneName(StrEnum):
-        NEUTRAL = "neutral"
-        INFO = "info"
-        SUCCESS = "success"
-        WARNING = "warning"
-        DANGER = "danger"
+@app.class_definition
+class PaletteToneName(StrEnum):
+    NEUTRAL = "neutral"
+    INFO = "info"
+    SUCCESS = "success"
+    WARNING = "warning"
+    DANGER = "danger"
 
 
-    class ColorPalette(BaseModel):
-        model_config = ConfigDict(frozen=True)
+@app.class_definition
+class ColorPalette(BaseModel):
+    model_config = ConfigDict(frozen=True)
 
-        text_primary: str
-        text_muted: str
-        text_subtle: str
-        surface_background: str
-        surface_border: str
-        surface_shadow: str
-        chip_background: str
-        chip_text: str
-        neutral: TonePalette
-        info: TonePalette
-        success: TonePalette
-        warning: TonePalette
-        danger: TonePalette
+    text_primary: str
+    text_muted: str
+    text_subtle: str
+    surface_background: str
+    surface_border: str
+    surface_shadow: str
+    neutral: TonePalette
+    info: TonePalette
+    success: TonePalette
+    warning: TonePalette
+    danger: TonePalette
 
-        @classmethod
-        def default(cls) -> "ColorPalette":
-            return cls(
-                text_primary="#0f172a",
-                text_muted="#475569",
-                text_subtle="#64748b",
-                surface_background="linear-gradient(160deg, #f8fafc 0%, #eef4ff 62%, #fff7ed 100%)",
-                surface_border="rgba(148, 163, 184, 0.18)",
-                surface_shadow="0 10px 24px rgba(15, 23, 42, 0.07)",
-                chip_background="#dbeafe",
-                chip_text="#1d4ed8",
-                neutral=TonePalette(
-                    text="#334155",
-                    bg="#e2e8f0",
-                    border="#475569",
-                ),
-                info=TonePalette(
-                    text="#1d4ed8",
-                    bg="#dbeafe",
-                    border="#2563eb",
-                ),
-                success=TonePalette(
-                    text="#0f766e",
-                    bg="#ccfbf1",
-                    border="#115e59",
-                ),
-                warning=TonePalette(
-                    text="#9a3412",
-                    bg="#ffedd5",
-                    border="#c2410c",
-                ),
-                danger=TonePalette(
-                    text="#b91c1c",
-                    bg="#fee2e2",
-                    border="#b91c1c",
-                ),
-            )
+    def tone(self, tone_name: PaletteToneName) -> TonePalette:
+        return getattr(self, tone_name.value)
 
-    return ColorPalette, PaletteToneName
+    @classmethod
+    def default(cls) -> "ColorPalette":
+        return cls(
+            text_primary="#0f172a",
+            text_muted="#475569",
+            text_subtle="#64748b",
+            surface_background="linear-gradient(160deg, #f8fafc 0%, #eef4ff 62%, #fff7ed 100%)",
+            surface_border="rgba(148, 163, 184, 0.18)",
+            surface_shadow="0 10px 24px rgba(15, 23, 42, 0.07)",
+            neutral=TonePalette(
+                text="#334155",
+                bg="#e2e8f0",
+                border="#475569",
+            ),
+            info=TonePalette(
+                text="#1d4ed8",
+                bg="#dbeafe",
+                border="#2563eb",
+            ),
+            success=TonePalette(
+                text="#0f766e",
+                bg="#ccfbf1",
+                border="#115e59",
+            ),
+            warning=TonePalette(
+                text="#9a3412",
+                bg="#ffedd5",
+                border="#c2410c",
+            ),
+            danger=TonePalette(
+                text="#b91c1c",
+                bg="#fee2e2",
+                border="#b91c1c",
+            ),
+        )
 
 
-@app.cell
-def _(ColorPalette, PaletteToneName):
-    class PoolCardTheme(BaseModel):
-        model_config = ConfigDict(frozen=True)
+@app.class_definition
+class BadgeItem(BaseModel):
+    model_config = ConfigDict(frozen=True)
 
-        palette: ColorPalette
-        status_complete: PaletteToneName = PaletteToneName.SUCCESS
-        status_in_progress: PaletteToneName = PaletteToneName.WARNING
-        status_default: PaletteToneName = PaletteToneName.NEUTRAL
-        samples: PaletteToneName = PaletteToneName.SUCCESS
-        in_flight: PaletteToneName = PaletteToneName.INFO
-        pending: PaletteToneName = PaletteToneName.WARNING
-        failed: PaletteToneName = PaletteToneName.DANGER
-
-        @classmethod
-        def default(cls) -> "PoolCardTheme":
-            return cls(palette=ColorPalette.default())
-
-        def tone(self, tone_name: PaletteToneName) -> TonePalette:
-            return getattr(self.palette, tone_name.value)
-
-        def status_tone(self, status: str) -> TonePalette:
-            if status == "complete":
-                return self.tone(self.status_complete)
-            if status == "in_progress":
-                return self.tone(self.status_in_progress)
-            return self.tone(self.status_default)
-
-    return (PoolCardTheme,)
+    label: str
+    tone: PaletteToneName | None = None
 
 
-@app.cell
-def _(PoolCardTheme):
-    class PoolCardRenderer(BaseModel):
-        model_config = ConfigDict(frozen=True)
+@app.class_definition
+class BadgeList(BaseModel):
+    model_config = ConfigDict(frozen=True)
 
-        theme: PoolCardTheme
+    palette: ColorPalette
+    section_label: str
+    items: list[BadgeItem]
+    default_tone: PaletteToneName = PaletteToneName.INFO
 
-        def format_datetime(self, value: datetime | None) -> str:
-            if value is None:
-                return "Not recorded"
-            return value.strftime("%b %-d, %Y")
+    def badge(self, item: BadgeItem) -> span:
+        tone_name = self.default_tone if item.tone is None else item.tone
+        tone = self.palette.tone(tone_name)
+        return span(
+            item.label,
+            style=(
+                "display: inline-block; padding: 0.12rem 0.42rem; "
+                f"border-radius: 999px; background: {tone.bg}; "
+                f"color: {tone.text}; border: 1px solid {tone.border}; "
+                "font-size: 0.68rem; font-weight: 600; margin-right: 0.28rem;"
+            ),
+        )
 
-        def data_item(
-            self,
-            label: str,
-            value: str,
-            value_color: str | None = None,
-        ) -> div:
-            palette = self.theme.palette
-            resolved_value_color = (
-                palette.text_primary if value_color is None else value_color
-            )
-            return div(
-                span(
-                    label,
-                    style=(
-                        f"display: inline-block; min-width: 7rem; color: {palette.text_muted}; "
-                        "font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; "
-                        "font-weight: 700;"
-                    ),
-                ),
-                span(
-                    value,
-                    style=(
-                        f"color: {resolved_value_color}; font-size: 0.82rem; font-weight: 600;"
-                    ),
-                ),
-                style="margin-top: 0.38rem;",
-            )
-
-        def axis_chip(self, name: str, column_type: str) -> span:
-            _ = column_type
-            palette = self.theme.palette
-            return span(
-                name,
+    def render(self) -> div:
+        return div(
+            span(
+                f"{self.section_label}:",
                 style=(
-                    "display: inline-block; padding: 0.12rem 0.42rem; "
-                    f"border-radius: 999px; background: {palette.chip_background}; "
-                    f"color: {palette.chip_text}; "
-                    "font-size: 0.68rem; font-weight: 600; margin-right: 0.28rem;"
+                    f"color: {self.palette.text_muted}; font-size: 0.68rem; text-transform: uppercase; "
+                    "letter-spacing: 0.06em; font-weight: 700; margin-right: 0.35rem;"
                 ),
-            )
+            ),
+            *[self.badge(item) for item in self.items],
+            style="margin-top: 0.55rem; line-height: 1.8;",
+        )
 
-        def render(self, pool: PoolInspection) -> div:
-            palette = self.theme.palette
-            status_tone = self.theme.status_tone(pool.status.value)
-            pending = pool.pending_counts
-            key_columns = pool.pool_schema.key_columns
 
-            return div(
-                div(
-                    div(
-                        p(
-                            pool.project_name,
-                            style=(
-                                f"margin: 0; color: {palette.text_subtle}; font-size: 0.7rem; "
-                                "font-weight: 600; letter-spacing: 0.03em;"
-                            ),
-                        ),
-                        p(
-                            pool.name,
-                            style=(
-                                f"margin: 0.08rem 0 0; color: {palette.text_primary}; font-size: 1rem; "
-                                "line-height: 1.15; font-weight: 800;"
-                            ),
-                        ),
-                    ),
-                    span(
-                        pool.status.value.replace("_", " "),
-                        style=(
-                            f"display: inline-block; color: {status_tone.text}; background: {status_tone.bg}; "
-                            f"border: 1px solid {status_tone.border}; border-radius: 999px; "
-                            "padding: 0.2rem 0.45rem; font-size: 0.62rem; font-weight: 700; "
-                            "text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;"
-                        ),
-                    ),
-                    style="display: flex; justify-content: space-between; gap: 0.7rem; align-items: start;",
-                ),
-                div(
-                    span(
-                        "Axes:",
-                        style=(
-                            f"color: {palette.text_muted}; font-size: 0.68rem; text-transform: uppercase; "
-                            "letter-spacing: 0.06em; font-weight: 700; margin-right: 0.35rem;"
-                        ),
-                    ),
-                    *[
-                        self.axis_chip(column.name, column.type.value)
-                        for column in key_columns
-                    ],
-                    style="margin-top: 0.55rem; line-height: 1.8;",
-                ),
-                div(
-                    self.data_item(
-                        "Created", self.format_datetime(pool.created_at)
-                    ),
-                    style="margin-top: 0.2rem;",
-                ),
-                div(
-                    self.data_item(
-                        "Samples",
-                        f"{pool.sample_count:,}",
-                        self.theme.tone(self.theme.samples).text,
-                    ),
-                    self.data_item(
-                        "In flight",
-                        str(pool.in_flight),
-                        self.theme.tone(self.theme.in_flight).text,
-                    ),
-                    self.data_item(
-                        "Pending",
-                        str(pending.pending),
-                        self.theme.tone(self.theme.pending).text,
-                    ),
-                    self.data_item(
-                        "Failed",
-                        str(pending.failed),
-                        self.theme.tone(self.theme.failed).text,
-                    ),
-                    self.data_item("Promoted", str(pending.promoted)),
-                    self.data_item("Leased", str(pending.leased)),
-                    style=(
-                        "margin-top: 0.55rem; padding-top: 0.28rem; "
-                        f"border-top: 1px solid {palette.surface_border};"
-                    ),
-                ),
+@app.class_definition(column=1)
+class PoolCard(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    pool: PoolInspection
+    palette: ColorPalette
+
+    def format_datetime(self, value: datetime | None) -> str:
+        if value is None:
+            return "Not recorded"
+        return value.strftime("%b %-d, %Y")
+
+    def data_item(
+        self,
+        label: str,
+        value: str,
+        value_color: str | None = None,
+    ) -> div:
+        resolved_value_color = (
+            self.palette.text_primary if value_color is None else value_color
+        )
+        return div(
+            span(
+                label,
                 style=(
-                    "font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; "
-                    f"color: {palette.text_primary}; width: 18rem; padding: 0.8rem 0.9rem; border-radius: 16px; "
-                    f"border: 1px solid {palette.surface_border}; background: {palette.surface_background}; "
-                    f"box-shadow: {palette.surface_shadow};"
+                    f"display: inline-block; min-width: 7rem; color: {self.palette.text_muted}; "
+                    "font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; "
+                    "font-weight: 700;"
                 ),
-            )
+            ),
+            span(
+                value,
+                style=(
+                    f"color: {resolved_value_color}; font-size: 0.82rem; font-weight: 600;"
+                ),
+            ),
+            style="margin-top: 0.38rem;",
+        )
 
-    return (PoolCardRenderer,)
+    def status_tone(self) -> TonePalette:
+        if self.pool.status.value == "complete":
+            return self.palette.tone(PaletteToneName.SUCCESS)
+        if self.pool.status.value == "in_progress":
+            return self.palette.tone(PaletteToneName.WARNING)
+        return self.palette.tone(PaletteToneName.NEUTRAL)
+
+    def axes_badges(self) -> BadgeList:
+        return BadgeList(
+            palette=self.palette,
+            section_label="Axes",
+            items=[
+                BadgeItem(label=column.name)
+                for column in self.pool.pool_schema.key_columns
+            ],
+        )
+
+    def render(self) -> div:
+        status_tone = self.status_tone()
+        pending = self.pool.pending_counts
+
+        return div(
+            div(
+                div(
+                    p(
+                        self.pool.project_name,
+                        style=(
+                            f"margin: 0; color: {self.palette.text_subtle}; font-size: 0.7rem; "
+                            "font-weight: 600; letter-spacing: 0.03em;"
+                        ),
+                    ),
+                    p(
+                        self.pool.name,
+                        style=(
+                            f"margin: 0.08rem 0 0; color: {self.palette.text_primary}; font-size: 1rem; "
+                            "line-height: 1.15; font-weight: 800;"
+                        ),
+                    ),
+                ),
+                span(
+                    self.pool.status.value.replace("_", " "),
+                    style=(
+                        f"display: inline-block; color: {status_tone.text}; background: {status_tone.bg}; "
+                        f"border: 1px solid {status_tone.border}; border-radius: 999px; "
+                        "padding: 0.2rem 0.45rem; font-size: 0.62rem; font-weight: 700; "
+                        "text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;"
+                    ),
+                ),
+                style="display: flex; justify-content: space-between; gap: 0.7rem; align-items: start;",
+            ),
+            self.axes_badges().render(),
+            div(
+                self.data_item(
+                    "Created", self.format_datetime(self.pool.created_at)
+                ),
+                style="margin-top: 0.2rem;",
+            ),
+            div(
+                self.data_item(
+                    "Samples",
+                    f"{self.pool.sample_count:,}",
+                    self.palette.tone(PaletteToneName.SUCCESS).text,
+                ),
+                self.data_item(
+                    "In flight",
+                    str(self.pool.in_flight),
+                    self.palette.tone(PaletteToneName.INFO).text,
+                ),
+                self.data_item(
+                    "Pending",
+                    str(pending.pending),
+                    self.palette.tone(PaletteToneName.WARNING).text,
+                ),
+                self.data_item(
+                    "Failed",
+                    str(pending.failed),
+                    self.palette.tone(PaletteToneName.DANGER).text,
+                ),
+                self.data_item("Promoted", str(pending.promoted)),
+                self.data_item("Leased", str(pending.leased)),
+                style=(
+                    "margin-top: 0.55rem; padding-top: 0.28rem; "
+                    f"border-top: 1px solid {self.palette.surface_border};"
+                ),
+            ),
+            style=(
+                "font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; "
+                f"color: {self.palette.text_primary}; width: 18rem; padding: 0.8rem 0.9rem; border-radius: 16px; "
+                f"border: 1px solid {self.palette.surface_border}; background: {self.palette.surface_background}; "
+                f"box-shadow: {self.palette.surface_shadow};"
+            ),
+        )
 
 
-@app.cell
-def _(PoolCardRenderer, PoolCardTheme):
-    pool_card_renderer = PoolCardRenderer(theme=PoolCardTheme.default())
-    return (pool_card_renderer,)
-
-
-@app.cell(column=1, hide_code=True)
+@app.cell(column=2, hide_code=True)
 def _():
     demo_pool_inspection = PoolInspection(
         project_name="demo_project",
@@ -326,32 +316,23 @@ def _():
         },
         status="in_progress",
     )
-    return (demo_pool_inspection,)
-
-
-@app.cell(hide_code=True)
-def _(demo_pool_inspection, pool_card_renderer):
     mo.vstack(
         [
             mo.md("## Pool Card Demo"),
-            mo.Html(str(pool_card_renderer.render(demo_pool_inspection))),
+            mo.Html(
+                str(
+                    PoolCard(
+                        pool=demo_pool_inspection,
+                        palette=ColorPalette.default(),
+                    ).render()
+                )
+            ),
         ]
     )
     return
 
 
-@app.cell(hide_code=True)
-def _(pool_card_renderer, pool_inspection):
-    mo.vstack(
-        [
-            mo.md("## Pool Inspection"),
-            mo.Html(str(pool_card_renderer.render(pool_inspection))),
-        ]
-    )
-    return
-
-
-@app.cell(column=2, hide_code=True)
+@app.cell(column=3, hide_code=True)
 def _(create_pool_form, create_project_form):
     _ = (create_project_form.value, create_pool_form.value)
     mo.vstack(
@@ -381,7 +362,7 @@ def _(create_project_form):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(create_pool_form):
     # Create Pool Executor
     mo.stop(create_pool_form.value is None)
@@ -399,7 +380,7 @@ def _(create_pool_form):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(get_pool_info_form):
     # Get Pool Info Executor
     mo.stop(get_pool_info_form.value is None)
@@ -409,7 +390,7 @@ def _(get_pool_info_form):
     return (pool_inspection,)
 
 
-@app.cell(column=3, hide_code=True)
+@app.cell(column=4, hide_code=True)
 def _():
     create_project_form = (
         mo.md(
@@ -501,6 +482,24 @@ def _():
 
     get_pool_info_form
     return (get_pool_info_form,)
+
+
+@app.cell(hide_code=True)
+def _(default_card_palette, pool_inspection):
+    mo.vstack(
+        [
+            mo.md("## Pool Inspection"),
+            mo.Html(
+                str(
+                    PoolCard(
+                        pool=pool_inspection,
+                        palette=default_card_palette,
+                    ).render()
+                )
+            ),
+        ]
+    )
+    return
 
 
 if __name__ == "__main__":
