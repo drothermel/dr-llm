@@ -18,7 +18,7 @@ Schema-driven sample pools with no-replacement acquisition, pending sample lifec
 uv add dr-llm
 ```
 
-For the optional marimo notebook in [`nbs/inspect.py`](nbs/inspect.py), install the
+For the optional marimo notebook in [`nbs/pool_inspect.py`](nbs/pool_inspect.py), install the
 notebook extra:
 
 ```bash

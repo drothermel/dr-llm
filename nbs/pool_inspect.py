@@ -263,11 +263,10 @@ def _():
 
 @app.cell(hide_code=True)
 def _(demo_pool_inspection):
-    colors = pool_card_colors()
     mo.vstack(
         [
             mo.md("## Pool Card Demo"),
-            mo.Html(str(PoolCard(demo_pool_inspection, colors))),
+            mo.Html(str(PoolCard(demo_pool_inspection, pool_card_colors()))),
         ]
     )
     return
@@ -275,11 +274,10 @@ def _(demo_pool_inspection):
 
 @app.cell(hide_code=True)
 def _(pool_inspection):
-    colors = pool_card_colors()
     mo.vstack(
         [
             mo.md("## Pool Inspection"),
-            mo.Html(str(PoolCard(pool_inspection, colors))),
+            mo.Html(str(PoolCard(pool_inspection, pool_card_colors()))),
         ]
     )
     return
