@@ -34,9 +34,17 @@ with app.setup:
         create_project as create_project_service,
         inspect_projects,
     )
-    from dr_llm.style.pool_card import ColorPalette, PoolCard
+    from dr_llm.style import ColorPalette, PoolCard
 
     add_marimo_display()(ProjectInfo)
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    **Goal:** Make a version of the pool card that has a pie chart with numeric labels instead of a list of numbers.  That will be the first step towards visually representing the coverage of different providers/models, datasets, etc in a given pool.  And then cards for seeing a given prompt or response or code snippet, etc.
+    """)
+    return
 
 
 @app.cell(hide_code=True)
