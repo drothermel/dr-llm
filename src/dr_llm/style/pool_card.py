@@ -7,22 +7,22 @@ from mohtml import div  # type: ignore
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.pool.models import PoolInspection
-from dr_llm.style.card import Card
-from dr_llm.style.components import (
+from dr_llm.style.components import PendingDataItems
+from marimo_utils.style import (
     Badge,
+    Card,
+    ColorPalette,
     DataItem,
     DateStamp,
+    HtmlRenderable,
     LabeledList,
-    PendingDataItems,
-    ProjectStamp,
-    Title,
-)
-from dr_llm.style.settings import (
-    ColorPalette,
     LayoutToken,
     PaletteToneName,
+    ProjectStamp,
     SpacingScale,
+    Title,
     Typography,
+    css,
 )
 
 
@@ -88,16 +88,16 @@ class PoolCard(BaseModel):
             tone=self.status_tone_name(),
         )
 
-    def header(self) -> div:
+    def header(self) -> HtmlRenderable:
         return div(
             div(
                 self.status_badge().render(),
                 self.project_stamp().render(),
                 self.created_stamp().render(),
-                style=(
-                    f"margin-top: {self.spacing.sm}; "
-                    f"gap: {self.spacing.md}; "
-                    f"{LayoutToken.css(self.header_display_styles)}"
+                style=css(
+                    LayoutToken.css(self.header_display_styles),
+                    margin_top=self.spacing.sm,
+                    gap=self.spacing.md,
                 ),
             ),
             self.axes_list().render(),
@@ -128,7 +128,7 @@ class PoolCard(BaseModel):
             spacing=self.spacing,
         )
 
-    def content(self) -> div:
+    def content(self) -> HtmlRenderable:
         return div(
             DataItem(
                 palette=self.palette,
@@ -149,7 +149,7 @@ class PoolCard(BaseModel):
             self.pending_data_items().render(),
         )
 
-    def render(self) -> div:
+    def render(self) -> HtmlRenderable:
         return Card(
             palette=self.palette,
             typography=self.typography,

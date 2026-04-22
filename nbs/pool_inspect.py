@@ -4,15 +4,9 @@ __generated_with = "0.23.2"
 app = marimo.App(width="columns")
 
 with app.setup:
-    import sys
     from datetime import datetime
-    from pathlib import Path
 
     import marimo as mo
-
-    marimo_utils_src = Path(__file__).resolve().parents[2] / "marimo_utils" / "src"
-    if str(marimo_utils_src) not in sys.path:
-        sys.path.insert(0, str(marimo_utils_src))
 
     from marimo_utils import add_marimo_display
     from dr_llm.pool.admin_service import (
@@ -130,9 +124,7 @@ def _():
 def _(get_pool_info_form):
     # Get Pool Info Executor
     mo.stop(get_pool_info_form.value is None)
-    pool_inspection = inspect_pool(
-        PoolInspectionRequest(**get_pool_info_form.value)
-    )
+    pool_inspection = inspect_pool(PoolInspectionRequest(**get_pool_info_form.value))
     (
         PoolCard(
             pool=pool_inspection,

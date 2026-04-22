@@ -271,6 +271,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "marimo", extra = ["recommended"] },
+    { name = "marimo-utils" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
     { name = "pydantic" },
@@ -304,6 +305,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "marimo", marker = "extra == 'notebooks'", specifier = ">=0.23.1" },
     { name = "marimo", extras = ["recommended"], specifier = ">=0.23.2" },
+    { name = "marimo-utils", specifier = ">=0.2.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.10" },
     { name = "psycopg-pool", specifier = ">=3.2.6" },
     { name = "pydantic", specifier = ">=2.11.7" },
@@ -794,6 +796,20 @@ recommended = [
     { name = "ruff" },
     { name = "sqlglot", extra = ["c"] },
     { name = "uv" },
+]
+
+[[package]]
+name = "marimo-utils"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "marimo", extra = ["recommended"] },
+    { name = "mohtml" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/84/94/61a4b93d4fc2d8de729c6dc3fd2194d9c65e8a25e9df92635873774df8bc/marimo_utils-0.2.0.tar.gz", hash = "sha256:d50499d42be5d6989d217cc4d29835b02dd6c1901f287a3dca65b05aa22188d4", size = 106954 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e4/17/9a9fb8f1dfb694070edb9dee22410a5afcee11842f098706039355dec57c/marimo_utils-0.2.0-py3-none-any.whl", hash = "sha256:367eb696239476f66aabfc6766bc59e377d0b584a2aa37641b11c6a6ab96a3be", size = 10647 },
 ]
 
 [[package]]
