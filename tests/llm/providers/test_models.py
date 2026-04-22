@@ -17,12 +17,12 @@ from dr_llm.llm.providers.usage import TokenUsage
 
 def test_message_rejects_unknown_role() -> None:
     with pytest.raises(ValidationError):
-        Message(role="tool", content="nope")  # type: ignore[arg-type]
+        Message.model_validate({"role": "tool", "content": "nope"})
 
 
 def test_message_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError):
-        Message(role="assistant", content="hi", tool_calls=[])  # type: ignore[call-arg]
+        Message.model_validate({"role": "assistant", "content": "hi", "tool_calls": []})
 
 
 def test_effort_spec_values() -> None:

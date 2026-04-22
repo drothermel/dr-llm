@@ -3,6 +3,9 @@ from dr_llm.project.models import (
     ProjectCreationBlockReason,
     ProjectCreationReadiness,
     ProjectCreationViolation,
+    ProjectPoolInspection,
+    ProjectPoolInspectionReason,
+    ProjectPoolInspectionStatus,
     ProjectInspectionSummary,
 )
 from dr_llm.project.project_info import ProjectInfo
@@ -20,6 +23,9 @@ __all__ = [
     "ProjectCreationBlockReason",
     "ProjectCreationReadiness",
     "ProjectCreationViolation",
+    "ProjectPoolInspection",
+    "ProjectPoolInspectionReason",
+    "ProjectPoolInspectionStatus",
     "ProjectInfo",
     "ProjectInspectionSummary",
     "assess_project_creation",

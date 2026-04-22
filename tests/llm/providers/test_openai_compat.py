@@ -113,7 +113,7 @@ def test_close_does_not_close_injected_client() -> None:
 
 def test_close_closes_adapter_owned_client() -> None:
     adapter = OpenAICompatProvider(config=_CONFIG)
-    owned_client = cast(httpx.Client, adapter._client)
+    owned_client = adapter._client
     adapter.close()
     assert owned_client.is_closed
 

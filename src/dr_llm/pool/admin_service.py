@@ -176,12 +176,13 @@ def create_pool(request: CreatePoolRequest) -> PoolInspection:
             for violation in readiness.violations
         ):
             raise ProjectNotFoundError(f"Project {request.project_name!r} not found")
+        assert readiness.blocked_message is not None
         if any(
             violation.reason == PoolCreationBlockReason.project_not_running
             for violation in readiness.violations
         ):
-            raise ProjectError("\n".join(v.message for v in readiness.violations))
-        raise PoolError("\n".join(v.message for v in readiness.violations))
+            raise ProjectError(readiness.blocked_message)
+        raise PoolError(readiness.blocked_message)
 
     assert readiness.project is not None
     assert readiness.project.dsn is not None

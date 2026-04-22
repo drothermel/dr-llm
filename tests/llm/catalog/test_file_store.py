@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -13,8 +14,8 @@ def store(tmp_path: Path) -> FileCatalogStore:
     return FileCatalogStore(cache_dir=tmp_path)
 
 
-def _entry(provider: str, model: str, **kwargs: object) -> ModelCatalogEntry:
-    return ModelCatalogEntry(provider=provider, model=model, **kwargs)  # type: ignore[arg-type]
+def _entry(provider: str, model: str, **kwargs: Any) -> ModelCatalogEntry:
+    return ModelCatalogEntry(provider=provider, model=model, **kwargs)
 
 
 def test_round_trip(store: FileCatalogStore) -> None:

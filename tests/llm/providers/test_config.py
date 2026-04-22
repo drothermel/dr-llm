@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 from dr_llm.llm.providers.api_config import APIProviderConfig
@@ -129,9 +131,11 @@ def test_available_names_accepts_precomputed_statuses() -> None:
     ],
     ids=["openai_compat", "anthropic", "google", "kimi_code", "minimax"],
 )
-def test_inline_api_key_suppresses_env_requirement(adapter_factory: object) -> None:
-    adapter = adapter_factory()  # type: ignore[operator]
+def test_inline_api_key_suppresses_env_requirement(
+    adapter_factory: Callable[[], object],
+) -> None:
+    adapter = adapter_factory()
     try:
-        assert adapter.config.required_env_vars == []
+        assert getattr(adapter, "config").required_env_vars == []
     finally:
-        adapter.close()
+        getattr(adapter, "close")()

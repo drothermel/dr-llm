@@ -7,6 +7,7 @@ from typing import IO
 import pytest
 
 import dr_llm.project.project_service as project_service_module
+from dr_llm.errors import TransientPersistenceError
 from dr_llm.project.docker_project_metadata import (
     ContainerStatus,
     DockerProjectCreateMetadata,
@@ -23,6 +24,9 @@ from dr_llm.project.errors import (
 from dr_llm.project.models import (
     CreateProjectRequest,
     ProjectCreationBlockReason,
+    ProjectCreationReadiness,
+    ProjectPoolInspectionReason,
+    ProjectPoolInspectionStatus,
 )
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import (
@@ -246,6 +250,16 @@ def test_assess_project_creation_reports_duplicate_project(
     assert [violation.reason for violation in readiness.violations] == [
         ProjectCreationBlockReason.already_exists
     ]
+    assert readiness.blocked_message == "Project 'demo' already exists."
+
+
+def test_project_creation_readiness_blocked_message_is_none_when_allowed() -> None:
+    readiness = ProjectCreationReadiness(
+        request=CreateProjectRequest(project_name="demo"),
+    )
+
+    assert readiness.allowed is True
+    assert readiness.blocked_message is None
 
 
 def test_inspect_projects_includes_discovered_pool_names(
@@ -263,31 +277,93 @@ def test_inspect_projects_includes_discovered_pool_names(
 
     summaries = inspect_projects()
 
-    assert [
-        (summary.project.name, summary.pool_names, summary.pool_count)
-        for summary in summaries
-    ] == [
-        ("running", ["alpha", "beta"], 2),
-        ("stopped", [], 0),
-    ]
+    running_summary, stopped_summary = summaries
+
+    assert running_summary.project.name == "running"
+    assert (
+        running_summary.pool_inspection.status == ProjectPoolInspectionStatus.discovered
+    )
+    assert running_summary.pool_inspection.reason is None
+    assert running_summary.pool_inspection.pool_names == ["alpha", "beta"]
+    assert running_summary.pool_inspection.pool_count == 2
+    assert running_summary.pool_inspection.inspected_at is not None
+
+    assert stopped_summary.project.name == "stopped"
+    assert stopped_summary.pool_inspection.status == ProjectPoolInspectionStatus.skipped
+    assert (
+        stopped_summary.pool_inspection.reason
+        == ProjectPoolInspectionReason.project_not_running
+    )
+    assert stopped_summary.pool_inspection.message == "Project is not running."
+    assert stopped_summary.pool_inspection.pool_names == []
+    assert stopped_summary.pool_inspection.pool_count == 0
+    assert stopped_summary.pool_inspection.inspected_at is not None
 
 
-def test_inspect_projects_tolerates_pool_discovery_failures(
+def test_inspect_projects_skips_projects_with_missing_dsn(
     monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectInfo(name="running", status=ContainerStatus.RUNNING)
+    monkeypatch.setattr(project_service_module, "list_projects", lambda: [project])
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: (_ for _ in ()).throw(AssertionError("should not inspect pools")),
+    )
+
+    summaries = inspect_projects()
+    summary = summaries[0]
+
+    assert summary.project.name == "running"
+    assert summary.pool_inspection.status == ProjectPoolInspectionStatus.skipped
+    assert summary.pool_inspection.reason == ProjectPoolInspectionReason.missing_dsn
+    assert summary.pool_inspection.message == "Project has no DSN."
+    assert summary.pool_inspection.pool_names == []
+    assert summary.pool_inspection.pool_count == 0
+
+
+def test_inspect_projects_reports_connection_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     project = ProjectInfo(name="running", port=5500, status=ContainerStatus.RUNNING)
     monkeypatch.setattr(project_service_module, "list_projects", lambda: [project])
     monkeypatch.setattr(
         "dr_llm.pool.admin_service.discover_pools",
-        lambda dsn: (_ for _ in ()).throw(RuntimeError("db unavailable")),
+        lambda dsn: (_ for _ in ()).throw(TransientPersistenceError("db unavailable")),
     )
 
-    summaries = inspect_projects()
+    with caplog.at_level("WARNING", logger="dr_llm.project.project_service"):
+        summaries = inspect_projects()
 
-    assert [
-        (summary.project.name, summary.pool_names, summary.pool_count)
-        for summary in summaries
-    ] == [("running", [], 0)]
+    summary = summaries[0]
+    assert summary.project.name == "running"
+    assert summary.pool_inspection.status == ProjectPoolInspectionStatus.failed
+    assert (
+        summary.pool_inspection.reason == ProjectPoolInspectionReason.connection_failed
+    )
+    assert summary.pool_inspection.message == "Could not connect to project database."
+    assert summary.pool_inspection.pool_names == []
+    assert summary.pool_inspection.pool_count == 0
+    assert any(
+        "Could not connect to project database during pool inspection" in record.message
+        for record in caplog.records
+    )
+    assert not any(record.levelname == "ERROR" for record in caplog.records)
+
+
+def test_inspect_projects_does_not_log_skipped_projects(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    project = ProjectInfo(name="stopped", status=ContainerStatus.STOPPED)
+    monkeypatch.setattr(project_service_module, "list_projects", lambda: [project])
+
+    with caplog.at_level("WARNING", logger="dr_llm.project.project_service"):
+        summaries = inspect_projects()
+
+    summary = summaries[0]
+    assert summary.pool_inspection.status == ProjectPoolInspectionStatus.skipped
+    assert caplog.records == []
 
 
 def test_get_project_raises_project_not_found(
