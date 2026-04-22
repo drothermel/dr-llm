@@ -913,11 +913,13 @@ def test_run_docker_process_reads_stderr_concurrently(
     monkeypatch.setattr(docker_psql.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(docker_psql, "read_process_stderr", fake_read_process_stderr)
 
+    def wait_for_stderr(process: object) -> None:
+        _ = process
+        if not stderr_started.wait(0.5):
+            raise AssertionError("stderr reader did not start")
+
     with pytest.raises(DockerCommandError, match="boom"):
         docker_psql._run_docker_process(
             ("exec", "demo", "psql"),
-            operation=lambda process: (
-                stderr_started.wait(0.5)
-                or (_ for _ in ()).throw(AssertionError("stderr reader did not start"))
-            ),
+            operation=wait_for_stderr,
         )

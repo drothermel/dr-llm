@@ -75,10 +75,12 @@ def test_extra_fields_forbidden() -> None:
 
 def test_headless_config_rejects_sampling_fields() -> None:
     with pytest.raises(ValidationError, match="temperature"):
-        HeadlessLlmConfig(
-            provider="codex",
-            model="gpt-5.4-mini",
-            temperature=0.2,  # type: ignore[call-arg]
+        HeadlessLlmConfig.model_validate(
+            {
+                "provider": "codex",
+                "model": "gpt-5.4-mini",
+                "temperature": 0.2,
+            }
         )
 
     with pytest.raises(ValidationError, match="top_p"):
@@ -103,22 +105,26 @@ def test_headless_request_rejects_sampling_and_max_tokens() -> None:
         )
 
     with pytest.raises(ValidationError, match="temperature"):
-        HeadlessLlmRequest(
-            provider="claude-code",
-            model="claude-sonnet-4-6",
-            messages=[Message(role="user", content="hi")],
-            temperature=0.2,  # type: ignore[call-arg]
+        HeadlessLlmRequest.model_validate(
+            {
+                "provider": "claude-code",
+                "model": "claude-sonnet-4-6",
+                "messages": [{"role": "user", "content": "hi"}],
+                "temperature": 0.2,
+            }
         )
 
 
 def test_kimi_code_config_rejects_sampling_fields() -> None:
     with pytest.raises(ValidationError, match="temperature"):
-        KimiCodeLlmConfig(
-            provider="kimi-code",
-            model="kimi-for-coding",
-            max_tokens=256,
-            effort=EffortSpec.HIGH,
-            temperature=0.2,  # type: ignore[call-arg]
+        KimiCodeLlmConfig.model_validate(
+            {
+                "provider": "kimi-code",
+                "model": "kimi-for-coding",
+                "max_tokens": 256,
+                "effort": EffortSpec.HIGH,
+                "temperature": 0.2,
+            }
         )
 
     with pytest.raises(ValidationError, match="top_p"):
@@ -135,13 +141,15 @@ def test_kimi_code_config_rejects_sampling_fields() -> None:
 
 def test_kimi_code_request_rejects_sampling_fields() -> None:
     with pytest.raises(ValidationError, match="temperature"):
-        KimiCodeLlmRequest(
-            provider="kimi-code",
-            model="kimi-for-coding",
-            messages=[Message(role="user", content="hi")],
-            max_tokens=256,
-            effort=EffortSpec.HIGH,
-            temperature=0.2,  # type: ignore[call-arg]
+        KimiCodeLlmRequest.model_validate(
+            {
+                "provider": "kimi-code",
+                "model": "kimi-for-coding",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 256,
+                "effort": EffortSpec.HIGH,
+                "temperature": 0.2,
+            }
         )
 
     with pytest.raises(ValidationError, match="top_p"):

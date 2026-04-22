@@ -8,12 +8,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from dr_llm.datetime_utils import UTC, normalize_utc
+from dr_llm.errors import TransientPersistenceError
 from dr_llm.project.models import (
     CreateProjectRequest,
     ProjectCreationBlockReason,
     ProjectCreationReadiness,
     ProjectCreationViolation,
     ProjectInspectionSummary,
+    ProjectPoolInspection,
+    ProjectPoolInspectionReason,
+    ProjectPoolInspectionStatus,
 )
 from dr_llm.project.docker_inspect import (
     get_all_docker_project_metadata,
@@ -109,11 +113,10 @@ def list_projects() -> list[ProjectInfo]:
 
 
 def inspect_projects() -> list[ProjectInspectionSummary]:
-
     return [
         ProjectInspectionSummary(
             project=project,
-            pool_names=_safe_discover_pools(project),
+            pool_inspection=_inspect_project_pools(project),
         )
         for project in list_projects()
     ]
@@ -185,7 +188,8 @@ def create_project(request: CreateProjectRequest) -> ProjectInfo:
         )
         if duplicate is not None:
             raise ProjectAlreadyExistsError(duplicate.message)
-        raise ProjectError("\n".join(v.message for v in readiness.violations))
+        assert readiness.blocked_message is not None
+        raise ProjectError(readiness.blocked_message)
 
     name = request.project_name
     claimed_ports = _collect_claimed_ports()
@@ -202,16 +206,52 @@ def _collect_claimed_ports() -> set[int]:
     }
 
 
-def _safe_discover_pools(project: ProjectInfo) -> list[str]:
+def _inspect_project_pools(project: ProjectInfo) -> ProjectPoolInspection:
     from dr_llm.pool.admin_service import discover_pools
 
+    inspected_at = datetime.now(UTC)
+    if not project.running:
+        return ProjectPoolInspection(
+            status=ProjectPoolInspectionStatus.skipped,
+            reason=ProjectPoolInspectionReason.project_not_running,
+            message="Project is not running.",
+            inspected_at=inspected_at,
+        )
     if project.dsn is None:
-        return []
+        return ProjectPoolInspection(
+            status=ProjectPoolInspectionStatus.skipped,
+            reason=ProjectPoolInspectionReason.missing_dsn,
+            message="Project has no DSN.",
+            inspected_at=inspected_at,
+        )
     try:
-        return discover_pools(project.dsn)
+        return ProjectPoolInspection(
+            status=ProjectPoolInspectionStatus.discovered,
+            pool_names=discover_pools(project.dsn),
+            inspected_at=inspected_at,
+        )
+    except TransientPersistenceError:
+        logger.warning(
+            "Could not connect to project database during pool inspection project=%r",
+            project.name,
+        )
+        return ProjectPoolInspection(
+            status=ProjectPoolInspectionStatus.failed,
+            reason=ProjectPoolInspectionReason.connection_failed,
+            message="Could not connect to project database.",
+            inspected_at=inspected_at,
+        )
     except Exception:
-        logger.exception("Failed to discover pools for project %r", project.name)
-        return []
+        logger.exception(
+            "Unexpected pool inspection failure for project %r",
+            project.name,
+        )
+        return ProjectPoolInspection(
+            status=ProjectPoolInspectionStatus.failed,
+            reason=ProjectPoolInspectionReason.unexpected_error,
+            message="Pool inspection failed.",
+            inspected_at=inspected_at,
+        )
 
 
 def _create_container_with_port_retry(

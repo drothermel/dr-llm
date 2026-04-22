@@ -47,6 +47,23 @@ def test_assess_pool_creation_reports_request_violations_before_project_lookup()
         PoolCreationBlockReason.missing_key_axes,
         PoolCreationBlockReason.project_not_found,
     }
+    assert readiness.blocked_message is not None
+    assert "pool_name must be lowercase alphanumeric" in readiness.blocked_message
+    assert "At least one key axis is required" in readiness.blocked_message
+    assert "Project 'demo' not found" in readiness.blocked_message
+
+
+def test_pool_creation_readiness_blocked_message_is_none_when_allowed() -> None:
+    readiness = PoolCreationReadiness(
+        request=CreatePoolRequest(
+            project_name="demo",
+            pool_name="sample_pool",
+            key_axes=["provider"],
+        )
+    )
+
+    assert readiness.allowed is True
+    assert readiness.blocked_message is None
 
 
 def test_assess_pool_creation_reports_project_not_running(

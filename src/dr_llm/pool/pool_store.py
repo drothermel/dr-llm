@@ -160,9 +160,10 @@ class PoolStore:
                     rows = self._allocate_auto_idx_rows(
                         conn, base_rows=base_rows, key_names=key_names
                     )
-                    stmt = pg_insert(samples_table).returning(samples_table.c.sample_id)
+                    stmt = pg_insert(samples_table)
                     if ignore_conflicts:
                         stmt = stmt.on_conflict_do_nothing()
+                    stmt = stmt.returning(samples_table.c.sample_id)
                     result = (
                         conn.execute(stmt.values(**rows[0]))
                         if len(rows) == 1

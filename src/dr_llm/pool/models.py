@@ -192,3 +192,10 @@ class PoolCreationReadiness(BaseModel):
     @property
     def allowed(self) -> bool:
         return not self.violations
+
+    @computed_field
+    @property
+    def blocked_message(self) -> str | None:
+        if self.allowed:
+            return None
+        return "\n".join(violation.message for violation in self.violations)

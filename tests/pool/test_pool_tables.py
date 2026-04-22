@@ -38,7 +38,7 @@ def test_pool_tables_key_columns_appear() -> None:
 def test_pool_tables_unique_index_includes_keys() -> None:
     tables = PoolTables(_simple_schema())
     sample_indexes = {
-        index.name: [str(expr).split(".")[-1] for expr in index.expressions]
+        str(index.name): [str(expr).split(".")[-1] for expr in index.expressions]
         for index in tables.samples.indexes
     }
     assert sample_indexes["uq_pool_test_samples_cell"] == [
