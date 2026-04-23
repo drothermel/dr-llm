@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Literal
 
 import marimo as mo
-from mohtml import div  # type: ignore
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.pool.models import PoolInspection
@@ -14,15 +13,12 @@ from marimo_utils.style import (
     ColorPalette,
     DataItem,
     DateStamp,
-    HtmlRenderable,
     LabeledList,
-    LayoutToken,
     PaletteToneName,
     ProjectStamp,
     SpacingScale,
     Title,
     Typography,
-    css,
 )
 
 
@@ -39,13 +35,6 @@ class PoolCard(BaseModel):
     typography: Typography = Field(default_factory=Typography.default)
     spacing: SpacingScale = Field(default_factory=SpacingScale.default)
     width: str = "18rem"
-    header_display_styles: list[LayoutToken] = Field(
-        default_factory=lambda: [
-            LayoutToken.FLEX,
-            LayoutToken.FLEX_WRAP,
-            LayoutToken.ALIGN_CENTER,
-        ]
-    )
 
     def status_tone_name(self) -> PaletteToneName:
         if self.pool.status.value == "complete":
@@ -88,19 +77,23 @@ class PoolCard(BaseModel):
             tone=self.status_tone_name(),
         )
 
-    def header(self) -> HtmlRenderable:
-        return div(
-            div(
-                self.status_badge().render(),
-                self.project_stamp().render(),
-                self.created_stamp().render(),
-                style=css(
-                    LayoutToken.css(self.header_display_styles),
-                    margin_top=self.spacing.sm,
-                    gap=self.spacing.md,
+    def header(self) -> mo.Html:
+        return mo.vstack(
+            [
+                mo.hstack(
+                    [
+                        self.status_badge().render(),
+                        self.project_stamp().render(),
+                        self.created_stamp().render(),
+                    ],
+                    justify="start",
+                    align="center",
+                    wrap=True,
+                    gap=0.4,
                 ),
-            ),
-            self.axes_list().render(),
+                self.axes_list().render(),
+            ],
+            gap=0,
         )
 
     def axes_list(self) -> LabeledList:
@@ -128,32 +121,32 @@ class PoolCard(BaseModel):
             spacing=self.spacing,
         )
 
-    def content(self) -> HtmlRenderable:
-        return div(
-            DataItem(
-                palette=self.palette,
-                typography=self.typography,
-                spacing=self.spacing,
-                label="Samples",
-                value=f"{self.pool.sample_count:,}",
-                value_tone=PaletteToneName.SUCCESS,
-            ).render(),
-            self.pending_data_items().render(),
+    def samples_data_item(self) -> DataItem:
+        return DataItem(
+            palette=self.palette,
+            typography=self.typography,
+            spacing=self.spacing,
+            label="Samples",
+            value=f"{self.pool.sample_count:,}",
+            value_tone=PaletteToneName.SUCCESS,
         )
 
-    def render(self) -> HtmlRenderable:
+    def content(self) -> mo.Html:
+        return mo.vstack(
+            [self.samples_data_item().render(), self.pending_data_items().render()],
+            gap=0,
+        )
+
+    def render(self) -> mo.Html:
         return Card(
             palette=self.palette,
             typography=self.typography,
             spacing=self.spacing,
             width=self.width,
-            title=self.title(),
+            title=self.title().render(),
             header=self.header(),
             content=self.content(),
         ).render()
-
-    def render_html(self) -> mo.Html:
-        return mo.Html(str(self.render()))
 
 
 __all__ = ["PoolCard"]

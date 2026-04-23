@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from mohtml import div  # type: ignore
+import marimo as mo
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.pool.models import PendingStatusCounts
 from marimo_utils.style import (
     ColorPalette,
     DataItem,
-    HtmlRenderable,
     PaletteToneName,
     SpacingScale,
     Typography,
@@ -43,8 +42,8 @@ class PendingDataItems(BaseModel):
             for field_name in pending_counts_model.model_fields
         ]
 
-    def render(self) -> HtmlRenderable:
-        return div(*[item.render() for item in self.items()])
+    def render(self) -> mo.Html:
+        return mo.vstack([item.render() for item in self.items()], gap=0)
 
 
 __all__ = ["PendingDataItems"]

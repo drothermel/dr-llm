@@ -31,7 +31,7 @@ dependencies = [
     "sqlalchemy>=2.0.49",
     "pydantic-settings>=2.13.1",
     "marimo[recommended]>=0.23.2",
-    "marimo-utils>=0.2.0",
+    "marimo-utils",
 ]
 
 [project.optional-dependencies]
@@ -82,3 +82,6 @@ extra-paths = ["scripts"]
 respect-ignore-files = true
 include = ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py"]
 exclude = ["nbs/**/*.py"]
+
+[tool.uv.sources]
+marimo-utils = { path = "../marimo_utils" }
