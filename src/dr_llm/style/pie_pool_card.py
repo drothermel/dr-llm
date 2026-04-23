@@ -16,7 +16,7 @@ class PiePoolCard(PoolCard):
     def pie_slices(self) -> list[PieSlice]:
         return [
             PieSlice(
-                label="Samples",
+                label="Succeeded",
                 value=self.pool.sample_count,
                 tone=PaletteToneName.SUCCESS,
             ),
