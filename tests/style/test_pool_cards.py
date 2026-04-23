@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import altair as alt
 import marimo as mo
+from dr_widget.inline import ActiveHtml
 
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
-from dr_llm.pool.models import PoolInspection
-from dr_llm.pool.models import PoolInspectionStatus
+from dr_llm.pool.models import PoolInspection, PoolInspectionStatus
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
-from dr_llm.style import ColorPalette, PiePoolCard, PoolCard
+from dr_llm.style import PieChart, PiePoolCard, PoolCard
 
 
 def demo_pool() -> PoolInspection:
@@ -25,22 +24,20 @@ def demo_pool() -> PoolInspection:
 
 
 def test_pool_card_renders_as_marimo_html() -> None:
-    card = PoolCard(pool=demo_pool(), palette=ColorPalette.default())
+    card = PoolCard(pool=demo_pool())
 
     rendered = card.render()
 
-    assert isinstance(rendered, mo.Html)
+    assert isinstance(rendered, (mo.Html, ActiveHtml))
 
 
 def test_pie_pool_card_total_matches_disjoint_card_buckets() -> None:
-    card = PiePoolCard(pool=demo_pool(), palette=ColorPalette.default())
+    card = PiePoolCard(pool=demo_pool())
 
     assert card.total_samples == 1327
 
 
-def test_pie_pool_card_uses_altair_chart_content() -> None:
-    card = PiePoolCard(pool=demo_pool(), palette=ColorPalette.default())
+def test_pie_pool_card_uses_pie_chart_content() -> None:
+    card = PiePoolCard(pool=demo_pool())
 
-    rendered_chart = card.pie_chart()
-
-    assert isinstance(rendered_chart, alt.LayerChart)
+    assert isinstance(card.pie_chart(), PieChart)

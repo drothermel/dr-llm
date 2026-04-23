@@ -28,7 +28,7 @@ with app.setup:
         create_project as create_project_service,
         inspect_projects,
     )
-    from dr_llm.style import ColorPalette, PiePoolCard, PoolCard
+    from dr_llm.style import PiePoolCard, PoolCard, Style
 
     add_marimo_display()(ProjectInfo)
 
@@ -68,7 +68,7 @@ def _():
             mo.md("## Pool Card Demo"),
             PoolCard(
                 pool=demo_pool_inspection,
-                palette=ColorPalette.default(),
+                style=Style.default(),
                 width="20rem",
             ).render(),
         ]
@@ -76,15 +76,16 @@ def _():
     return (demo_pool_inspection,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(demo_pool_inspection):
     mo.vstack(
         [
             mo.md("## Pie Pool Card Demo"),
             PiePoolCard(
                 pool=demo_pool_inspection,
-                palette=ColorPalette.default(),
+                style=Style.default(),
                 width="20rem",
+                height=None,
             ).render(),
         ]
     )
@@ -149,7 +150,7 @@ def _(get_pool_info_form):
     (
         PoolCard(
             pool=pool_inspection,
-            palette=ColorPalette.default(),
+            style=Style.default(),
         ).render(),
     )
     return
