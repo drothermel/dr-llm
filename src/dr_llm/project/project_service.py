@@ -7,7 +7,9 @@ import socket
 from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Final
+import re
+from time import perf_counter
+from typing import Final, IO, cast
 
 from dr_llm.datetime_utils import UTC, normalize_utc
 from dr_llm.errors import TransientPersistenceError
@@ -54,6 +56,7 @@ from dr_llm.project.docker_psql import (
     docker_swap_in_db,
     validate_pg_identifier,
 )
+from dr_llm.project.docker_runner import BinaryStream
 from dr_llm.project.errors import (
     DockerContainerConflictError,
     DockerContainerNotFoundError,
@@ -70,9 +73,119 @@ DEFAULT_BACKUP_DIR = Path.home() / ".dr-llm" / "backups"
 BASE_PORT = 5500
 PORT_PROBE_TIMEOUT_SECONDS = 0.05
 _POOL_DELETE_MAX_WORKERS: Final[int] = 2
+_BACKUP_PROGRESS_ROWS_STEP: Final[int] = 20_000
+_COPY_FROM_STDIN_RE: Final[re.Pattern[bytes]] = re.compile(
+    rb'^COPY\s+(?P<table>(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)(?:\.(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*))?)\s+\(.*\)\s+FROM stdin;$'
+)
 
 validate_pg_identifier(ProjectInfo.db_name, "database name")
 logger = logging.getLogger(__name__)
+
+
+class _BackupProgressWriter:
+    def __init__(
+        self,
+        *,
+        project_name: str,
+        destination: Path,
+        sink: BinaryStream,
+    ) -> None:
+        self.project_name = project_name
+        self.destination = destination
+        self._sink = sink
+        self._bytes_processed = 0
+        self._rows_processed = 0
+        self._next_rows_log = _BACKUP_PROGRESS_ROWS_STEP
+        self._line_buffer = bytearray()
+        self._active_copy_table: str | None = None
+        self._active_copy_rows = 0
+
+    @property
+    def bytes_processed(self) -> int:
+        return self._bytes_processed
+
+    @property
+    def rows_processed(self) -> int:
+        return self._rows_processed
+
+    def write(self, data: bytes) -> int:
+        written = self._sink.write(data)
+        self._bytes_processed += len(data)
+        self._track_dump_lines(data)
+        return written
+
+    def flush(self) -> None:
+        self._sink.flush()
+
+    def finalize(self) -> None:
+        if self._line_buffer:
+            self._process_dump_line(bytes(self._line_buffer))
+            self._line_buffer.clear()
+        if self._active_copy_table is not None:
+            self._log_completed_copy_table()
+
+    def _track_dump_lines(self, data: bytes) -> None:
+        self._line_buffer.extend(data)
+        while True:
+            newline_index = self._line_buffer.find(b"\n")
+            if newline_index < 0:
+                return
+            line = bytes(self._line_buffer[:newline_index])
+            del self._line_buffer[: newline_index + 1]
+            self._process_dump_line(line.rstrip(b"\r"))
+
+    def _process_dump_line(self, line: bytes) -> None:
+        if self._active_copy_table is None:
+            table_name = _parse_copy_table_name(line)
+            if table_name is None:
+                return
+            self._active_copy_table = table_name
+            self._active_copy_rows = 0
+            logger.info(
+                "Backup for project %r started dumping table %s",
+                self.project_name,
+                table_name,
+            )
+            return
+
+        if line == b"\\.":
+            self._log_completed_copy_table()
+            self._active_copy_table = None
+            self._active_copy_rows = 0
+            return
+
+        self._rows_processed += 1
+        self._active_copy_rows += 1
+        self._log_row_progress()
+
+    def _log_row_progress(self) -> None:
+        while self._rows_processed >= self._next_rows_log:
+            logger.info(
+                "Backup for project %r progress: processed %s rows",
+                self.project_name,
+                _format_count(self._next_rows_log),
+            )
+            self._next_rows_log += _BACKUP_PROGRESS_ROWS_STEP
+
+    def _log_completed_copy_table(self) -> None:
+        assert self._active_copy_table is not None
+        logger.info(
+            "Backup for project %r dumped %s rows from table %s",
+            self.project_name,
+            _format_count(self._active_copy_rows),
+            self._active_copy_table,
+        )
+
+
+def _parse_copy_table_name(line: bytes) -> str | None:
+    match = _COPY_FROM_STDIN_RE.match(line)
+    if match is None:
+        return None
+    return match.group("table").decode("utf-8")
+
+
+def _format_count(value: int) -> str:
+    return f"{value:,}"
 
 
 def _port_has_listener(port: int) -> bool:
@@ -495,16 +608,25 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
 
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     backup_file = backup_dir / f"{name}_{timestamp}.sql.gz"
+    started_at = perf_counter()
+
+    logger.info("Starting backup for project %r to %s", name, backup_file)
 
     try:
         with gzip.open(backup_file, "wb") as backup_stream:
+            progress_stream = _BackupProgressWriter(
+                project_name=name,
+                destination=backup_file,
+                sink=backup_stream,
+            )
             try:
                 call_docker_pg_dump_stream(
                     container_name=ProjectInfo.container_name_for(name),
                     db_user=ProjectInfo.db_user,
                     db_name=ProjectInfo.db_name,
-                    output_stream=backup_stream,
+                    output_stream=cast(IO[bytes], progress_stream),
                 )
+                progress_stream.finalize()
             except DockerContainerNotFoundError as exc:
                 raise ProjectNotFoundError(f"Project '{name}' not found") from exc
             except DockerContainerNotRunningError as exc:
@@ -512,8 +634,29 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
                     f"Project '{name}' is not running. Start it first."
                 ) from exc
     except Exception:
+        logger.exception(
+            "Backup for project %r failed after processing %s dump bytes and %s rows",
+            name,
+            _format_count(progress_stream.bytes_processed)
+            if "progress_stream" in locals()
+            else "0",
+            _format_count(progress_stream.rows_processed)
+            if "progress_stream" in locals()
+            else "0",
+        )
         backup_file.unlink(missing_ok=True)
         raise
+
+    elapsed_seconds = perf_counter() - started_at
+    logger.info(
+        "Completed backup for project %r to %s in %.2fs (%s dump bytes, %s rows, %s compressed bytes)",
+        name,
+        backup_file,
+        elapsed_seconds,
+        _format_count(progress_stream.bytes_processed),
+        _format_count(progress_stream.rows_processed),
+        _format_count(backup_file.stat().st_size),
+    )
 
     return backup_file
 

@@ -690,6 +690,97 @@ def test_backup_project_removes_partial_file_when_streaming_fails(
     assert list((tmp_path / "demo").glob("*.sql.gz")) == []
 
 
+def test_backup_project_logs_progress_and_table_row_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def fake_pg_dump_stream(
+        *,
+        container_name: str,
+        db_user: str,
+        db_name: str,
+        output_stream: IO[bytes],
+    ) -> None:
+        assert container_name == "dr-llm-pg-demo"
+        assert db_user == "postgres"
+        assert db_name == "dr_llm"
+        output_stream.write(
+            (
+                b"SET statement_timeout = 0;\n"
+                b"COPY public.pool_alpha_samples (id) FROM stdin;\n"
+                b"1\n"
+                b"2\n"
+                b"\\.\n"
+                b"COPY public.pool_alpha_pending (id) FROM stdin;\n"
+                b"3\n"
+                b"\\.\n"
+            )
+        )
+
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_pg_dump_stream",
+        fake_pg_dump_stream,
+    )
+    monkeypatch.setattr(project_service_module, "_BACKUP_PROGRESS_ROWS_STEP", 2)
+
+    with caplog.at_level("INFO", logger="dr_llm.project.project_service"):
+        backup_project("demo", tmp_path)
+
+    messages = [record.message for record in caplog.records]
+    assert any("Starting backup for project 'demo'" in message for message in messages)
+    assert any(
+        "started dumping table public.pool_alpha_samples" in message
+        for message in messages
+    )
+    assert any(
+        "dumped 2 rows from table public.pool_alpha_samples" in message
+        for message in messages
+    )
+    assert any(
+        "dumped 1 rows from table public.pool_alpha_pending" in message
+        for message in messages
+    )
+    assert any(message.endswith("progress: processed 2 rows") for message in messages)
+    assert any("Completed backup for project 'demo'" in message for message in messages)
+
+
+def test_backup_project_logs_failure_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def fake_pg_dump_stream(
+        *,
+        container_name: str,
+        db_user: str,
+        db_name: str,
+        output_stream: IO[bytes],
+    ) -> None:
+        assert container_name == "dr-llm-pg-demo"
+        assert db_user == "postgres"
+        assert db_name == "dr_llm"
+        output_stream.write(b"COPY public.pool_alpha_samples (id) FROM stdin;\n1\n2\n")
+        raise RuntimeError("pg_dump failed")
+
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_pg_dump_stream",
+        fake_pg_dump_stream,
+    )
+
+    with caplog.at_level("INFO", logger="dr_llm.project.project_service"):
+        with pytest.raises(RuntimeError, match="pg_dump failed"):
+            backup_project("demo", tmp_path)
+
+    messages = [record.message for record in caplog.records]
+    assert any(
+        "Backup for project 'demo' failed after processing" in message
+        for message in messages
+    )
+
+
 def test_delete_project_destroys_running_project_with_no_pools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import typer
 
 from .models import models_app
@@ -7,6 +9,21 @@ from .pool import pool_app
 from .project import project_app
 from .providers import register as register_providers
 from .query import register as register_query
+
+
+def _get_root_logger() -> logging.Logger:
+    return logging.getLogger()
+
+
+def _configure_cli_logging() -> None:
+    root_logger = _get_root_logger()
+    if not root_logger.handlers:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+        return
+    root_logger.setLevel(logging.INFO)
+
+
+_configure_cli_logging()
 
 app = typer.Typer()
 
