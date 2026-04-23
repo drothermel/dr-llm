@@ -72,7 +72,13 @@ def _():
             if IGNORE_DEMO_PROJECTS and is_demo_project(summary.project.name):
                 continue
             for pool_name in summary.pool_inspection.pool_names:
-                pool_key = f"{summary.project.name}:{pool_name}"
+                pool_key = json.dumps(
+                    {
+                        "project_name": summary.project.name,
+                        "pool_name": pool_name,
+                    },
+                    sort_keys=True,
+                )
                 rows.append(
                     {
                         "project_name": summary.project.name,
@@ -494,7 +500,7 @@ def _():
     )
 
 
-@app.cell(column=1)
+@app.cell(column=1, hide_code=True)
 def _(create_pool_form, create_project_form):
     _ = (create_project_form.value, create_pool_form.value)
     project_summaries = inspect_projects()
@@ -688,10 +694,10 @@ def _(pool_rows_from_summaries, project_summaries):
 def _(build_pool_drilldown_frames, pool_selector):
     mo.stop(pool_selector is None or pool_selector.value is None)
 
-    selected_project_name, selected_pool_name = pool_selector.value.split(":", 1)
+    selected_pool = json.loads(pool_selector.value)
     selected_pool_data = build_pool_drilldown_frames(
-        project_name=selected_project_name,
-        pool_name=selected_pool_name,
+        project_name=selected_pool["project_name"],
+        pool_name=selected_pool["pool_name"],
     )
     return (selected_pool_data,)
 

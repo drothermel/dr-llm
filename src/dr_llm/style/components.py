@@ -8,8 +8,8 @@ from mohtml import div, span  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
 from dr_llm.pool.models import PendingStatusCounts
+from dr_llm.style._rendering import auto_render, html_block
 from dr_llm.style.theme import Style
-from marimo_utils.ui._rendering import auto_render, html_block
 from marimo_utils.ui import Badge, BadgeVariant, DataItem
 
 
