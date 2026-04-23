@@ -23,8 +23,13 @@ from dr_llm.project.docker_project_metadata import ContainerStatus
 from dr_llm.project.project_info import ProjectInfo
 
 
-def _get_dsn() -> str | None:
-    return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv("DR_LLM_DATABASE_URL")
+def _get_dsn() -> str:
+    dsn = os.getenv("DR_LLM_TEST_DATABASE_URL")
+    if not dsn:
+        raise RuntimeError(
+            "Set DR_LLM_TEST_DATABASE_URL to run destructive pool integration tests"
+        )
+    return dsn
 
 
 def _project_for_dsn(name: str, dsn: str) -> ProjectInfo:

@@ -23,9 +23,13 @@ def _configure_cli_logging() -> None:
     root_logger.setLevel(logging.INFO)
 
 
-_configure_cli_logging()
-
 app = typer.Typer()
+
+
+@app.callback()
+def main() -> None:
+    _configure_cli_logging()
+
 
 app.add_typer(models_app, name="models")
 app.add_typer(pool_app, name="pool")

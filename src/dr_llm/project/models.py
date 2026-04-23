@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import importlib
 from datetime import datetime
 import re
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 _PROJECT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+if TYPE_CHECKING:
+    from dr_llm.project.project_info import ProjectInfo
 
 
 class CreateProjectRequest(BaseModel):
@@ -44,7 +48,7 @@ class ProjectCreationReadiness(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: CreateProjectRequest
-    existing_projects: list[Any] = Field(default_factory=list)
+    existing_projects: list["ProjectInfo"] = Field(default_factory=list)
     recent_project_names: list[str] = Field(default_factory=list)
     violations: list[ProjectCreationViolation] = Field(default_factory=list)
 
@@ -89,7 +93,7 @@ class ProjectDeletionReadiness(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: DeleteProjectRequest
-    project: Any | None = None
+    project: "ProjectInfo | None" = None
     violations: list[ProjectDeletionViolation] = Field(default_factory=list)
 
     @computed_field
@@ -115,7 +119,7 @@ class ProjectDeletionResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: DeleteProjectRequest
-    project: Any | None = None
+    project: "ProjectInfo | None" = None
     status: ProjectDeletionStatus
     discovered_pool_names: list[str] = Field(default_factory=list)
     pool_results: list[Any] = Field(default_factory=list)
@@ -161,7 +165,7 @@ class ProjectPoolInspection(BaseModel):
 class ProjectInspectionSummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    project: Any
+    project: "ProjectInfo"
     pool_inspection: ProjectPoolInspection
 
     @staticmethod
@@ -192,3 +196,21 @@ class ProjectInspectionSummary(BaseModel):
             "pool_count": inspection.pool_count,
             "pools": pools,
         }
+
+
+_ProjectModelsProjectInfo = importlib.import_module(
+    "dr_llm.project.project_info"
+).ProjectInfo
+
+ProjectCreationReadiness.model_rebuild(
+    _types_namespace={"ProjectInfo": _ProjectModelsProjectInfo}
+)
+ProjectDeletionReadiness.model_rebuild(
+    _types_namespace={"ProjectInfo": _ProjectModelsProjectInfo}
+)
+ProjectDeletionResult.model_rebuild(
+    _types_namespace={"ProjectInfo": _ProjectModelsProjectInfo}
+)
+ProjectInspectionSummary.model_rebuild(
+    _types_namespace={"ProjectInfo": _ProjectModelsProjectInfo}
+)

@@ -56,21 +56,23 @@ def _(project_summaries):
     project_sections = []
     card_style = Style.default()
     ignore_demo = True
-    if ignore_demo:
-        project_sections.append(
-            mo.md("*Ignoring projects with 'demo' in their name*")
-        )
+    ignore_demo_banner = (
+        mo.md("*Ignoring projects with `demo` in the name*")
+        if ignore_demo
+        else None
+    )
 
     for summary in project_summaries:
         if summary.pool_inspection.status.value != "discovered":
             continue
         if not summary.pool_inspection.pool_names:
             continue
-        if ignore_demo and "demo" in summary.project.name.lower():
+        normalized_project_name = summary.project.name.strip().lower()
+        if ignore_demo and "demo" in normalized_project_name:
             continue
 
         cards = []
-        failed_pool_names = []
+        failed_pool_names: list[tuple[str, str]] = []
         for pool_name in summary.pool_inspection.pool_names:
             try:
                 pool_inspection = inspect_pool(
@@ -79,8 +81,10 @@ def _(project_summaries):
                         pool_name=pool_name,
                     )
                 )
-            except Exception:
-                failed_pool_names.append(pool_name)
+            except Exception as exc:
+                failed_pool_names.append(
+                    (pool_name, f"{type(exc).__name__}: {exc}")
+                )
                 continue
 
             cards.append(
@@ -104,22 +108,26 @@ def _(project_summaries):
                 mo.md(
                     "Could not inspect on load: "
                     + ", ".join(
-                        f"`{pool_name}`" for pool_name in failed_pool_names
+                        f"`{pool_name}` ({error})"
+                        for pool_name, error in failed_pool_names
                     )
                 )
             )
 
         project_sections.append(mo.vstack(section_items, gap=1))
 
+    section_items = [mo.md("## Running Project Pools")]
+    if ignore_demo_banner is not None:
+        section_items.append(ignore_demo_banner)
     section = (
         mo.vstack(
-            [mo.md("## Running Project Pools"), *project_sections],
+            [*section_items, *project_sections],
             gap=1.5,
         )
         if project_sections
         else mo.vstack(
             [
-                mo.md("## Running Project Pools"),
+                *section_items,
                 mo.md("No running projects with discovered pools."),
             ],
             gap=1,

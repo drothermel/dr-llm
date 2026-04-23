@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 from pathlib import Path
+import threading
 import time
 from typing import IO
 
@@ -745,9 +746,11 @@ def test_restore_project_logs_failure_progress(
 
     monkeypatch.setattr(project_service_module, "docker_swap_in_db", fake_swap_in_db)
 
-    with caplog.at_level("INFO", logger="dr_llm.project.project_service"):
-        with pytest.raises(RuntimeError, match="restore failed"):
-            restore_project("demo", backup_file)
+    with (
+        caplog.at_level("INFO", logger="dr_llm.project.project_service"),
+        pytest.raises(RuntimeError, match="restore failed"),
+    ):
+        restore_project("demo", backup_file)
 
     messages = [record.message for record in caplog.records]
     assert any(
@@ -865,9 +868,11 @@ def test_backup_project_logs_failure_progress(
         fake_pg_dump_stream,
     )
 
-    with caplog.at_level("INFO", logger="dr_llm.project.project_service"):
-        with pytest.raises(RuntimeError, match="pg_dump failed"):
-            backup_project("demo", tmp_path)
+    with (
+        caplog.at_level("INFO", logger="dr_llm.project.project_service"),
+        pytest.raises(RuntimeError, match="pg_dump failed"),
+    ):
+        backup_project("demo", tmp_path)
 
     messages = [record.message for record in caplog.records]
     assert any(
@@ -948,13 +953,18 @@ def test_delete_project_preserves_discovered_pool_order(
 ) -> None:
     destroyed: list[tuple[str, str]] = []
     project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
+    beta_completed = threading.Event()
+    gamma_completed = threading.Event()
 
     def fake_delete_one(project_name: str, pool_name: str) -> PoolDeletionResult:
         _ = project_name
         if pool_name == "alpha":
-            time.sleep(0.03)
+            beta_completed.wait(timeout=1)
+            gamma_completed.wait(timeout=1)
         if pool_name == "beta":
-            time.sleep(0.01)
+            beta_completed.set()
+        if pool_name == "gamma":
+            gamma_completed.set()
         return PoolDeletionResult(
             request=project_service_module.DeletePoolRequest(
                 project_name="demo",

@@ -24,7 +24,7 @@ def test_configure_cli_logging_installs_basic_config_when_root_has_no_handlers(
     monkeypatch.setattr(
         app_module.logging,
         "basicConfig",
-        lambda *, level, format: calls.append((level, format)),
+        lambda **kwargs: calls.append((kwargs["level"], kwargs["format"])),
     )
 
     app_module._configure_cli_logging()

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import importlib
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
@@ -10,6 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 from dr_llm.pool.db.schema import PoolSchema, _VALID_NAME_RE
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample
+
+if TYPE_CHECKING:
+    from dr_llm.project.project_info import ProjectInfo
 
 
 class InsertResult(BaseModel):
@@ -183,7 +187,7 @@ class PoolCreationReadiness(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: CreatePoolRequest
-    project: Any | None = None
+    project: "ProjectInfo | None" = None
     existing_pools: list[PoolInspection] = Field(default_factory=list)
     violations: list[PoolCreationViolation] = Field(default_factory=list)
 
@@ -238,7 +242,7 @@ class PoolDeletionReadiness(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: DeletePoolRequest
-    project: Any | None = None
+    project: "ProjectInfo | None" = None
     existing_table_names: list[str] = Field(default_factory=list)
     in_progress_pending_count: int = 0
     violations: list[PoolDeletionViolation] = Field(default_factory=list)
@@ -267,7 +271,7 @@ class PoolDeletionResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: DeletePoolRequest
-    project: Any | None = None
+    project: "ProjectInfo | None" = None
     status: PoolDeletionStatus
     existing_table_names: list[str] = Field(default_factory=list)
     deleted_table_names: list[str] = Field(default_factory=list)
@@ -323,3 +327,18 @@ class DeletePoolsByTokenResult(BaseModel):
     @property
     def success(self) -> bool:
         return self.status == DeletePoolsByTokenStatus.completed
+
+
+_PoolModelsProjectInfo = importlib.import_module(
+    "dr_llm.project.project_info"
+).ProjectInfo
+
+PoolCreationReadiness.model_rebuild(
+    _types_namespace={"ProjectInfo": _PoolModelsProjectInfo}
+)
+PoolDeletionReadiness.model_rebuild(
+    _types_namespace={"ProjectInfo": _PoolModelsProjectInfo}
+)
+PoolDeletionResult.model_rebuild(
+    _types_namespace={"ProjectInfo": _PoolModelsProjectInfo}
+)

@@ -688,6 +688,7 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
     started_at = perf_counter()
 
     logger.info("Starting backup for project %r to %s", name, backup_file)
+    progress_stream: _BackupProgressWriter | None = None
 
     try:
         with gzip.open(backup_file, "wb") as backup_stream:
@@ -715,10 +716,10 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
             "Backup for project %r failed after processing %s dump bytes and %s rows",
             name,
             _format_count(progress_stream.bytes_processed)
-            if "progress_stream" in locals()
+            if progress_stream is not None
             else "0",
             _format_count(progress_stream.rows_processed)
-            if "progress_stream" in locals()
+            if progress_stream is not None
             else "0",
         )
         backup_file.unlink(missing_ok=True)
@@ -746,6 +747,7 @@ def restore_project(name: str, backup_file: Path) -> None:
 
     started_at = perf_counter()
     logger.info("Starting restore for project %r from %s", name, backup_file)
+    progress_stream: _RestoreProgressReader | None = None
 
     try:
         with gzip.open(backup_file, "rb") as sql_stream:
@@ -772,10 +774,10 @@ def restore_project(name: str, backup_file: Path) -> None:
             "Restore for project %r failed after processing %s SQL bytes and %s rows",
             name,
             _format_count(progress_stream.bytes_processed)
-            if "progress_stream" in locals()
+            if progress_stream is not None
             else "0",
             _format_count(progress_stream.rows_processed)
-            if "progress_stream" in locals()
+            if progress_stream is not None
             else "0",
         )
         raise
