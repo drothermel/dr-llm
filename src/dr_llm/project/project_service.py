@@ -93,6 +93,83 @@ class _BackupProgressWriter:
         self.project_name = project_name
         self.destination = destination
         self._sink = sink
+        self._tracker = _SqlCopyProgressTracker(
+            project_name=project_name,
+            operation="backup",
+            action_verb="dumping",
+            completion_verb="dumped",
+        )
+
+    @property
+    def bytes_processed(self) -> int:
+        return self._tracker.bytes_processed
+
+    @property
+    def rows_processed(self) -> int:
+        return self._tracker.rows_processed
+
+    def write(self, data: bytes) -> int:
+        written = self._sink.write(data)
+        self._tracker.process_bytes(data)
+        return written
+
+    def flush(self) -> None:
+        self._sink.flush()
+
+    def finalize(self) -> None:
+        self._tracker.finalize()
+
+
+class _RestoreProgressReader:
+    def __init__(
+        self,
+        *,
+        project_name: str,
+        source: BinaryStream,
+    ) -> None:
+        self.project_name = project_name
+        self._source = source
+        self._tracker = _SqlCopyProgressTracker(
+            project_name=project_name,
+            operation="restore",
+            action_verb="restoring",
+            completion_verb="restored",
+        )
+
+    @property
+    def bytes_processed(self) -> int:
+        return self._tracker.bytes_processed
+
+    @property
+    def rows_processed(self) -> int:
+        return self._tracker.rows_processed
+
+    def read(self, size: int = -1) -> bytes:
+        data = self._source.read(size)
+        if data:
+            self._tracker.process_bytes(data)
+        return data
+
+    def close(self) -> None:
+        self._source.close()
+
+    def finalize(self) -> None:
+        self._tracker.finalize()
+
+
+class _SqlCopyProgressTracker:
+    def __init__(
+        self,
+        *,
+        project_name: str,
+        operation: str,
+        action_verb: str,
+        completion_verb: str,
+    ) -> None:
+        self.project_name = project_name
+        self.operation = operation
+        self.action_verb = action_verb
+        self.completion_verb = completion_verb
         self._bytes_processed = 0
         self._rows_processed = 0
         self._next_rows_log = _BACKUP_PROGRESS_ROWS_STEP
@@ -108,14 +185,9 @@ class _BackupProgressWriter:
     def rows_processed(self) -> int:
         return self._rows_processed
 
-    def write(self, data: bytes) -> int:
-        written = self._sink.write(data)
+    def process_bytes(self, data: bytes) -> None:
         self._bytes_processed += len(data)
         self._track_dump_lines(data)
-        return written
-
-    def flush(self) -> None:
-        self._sink.flush()
 
     def finalize(self) -> None:
         if self._line_buffer:
@@ -142,8 +214,10 @@ class _BackupProgressWriter:
             self._active_copy_table = table_name
             self._active_copy_rows = 0
             logger.info(
-                "Backup for project %r started dumping table %s",
+                "%s for project %r started %s table %s",
+                self.operation.capitalize(),
                 self.project_name,
+                self.action_verb,
                 table_name,
             )
             return
@@ -161,7 +235,8 @@ class _BackupProgressWriter:
     def _log_row_progress(self) -> None:
         while self._rows_processed >= self._next_rows_log:
             logger.info(
-                "Backup for project %r progress: processed %s rows",
+                "%s for project %r progress: processed %s rows",
+                self.operation.capitalize(),
                 self.project_name,
                 _format_count(self._next_rows_log),
             )
@@ -170,8 +245,10 @@ class _BackupProgressWriter:
     def _log_completed_copy_table(self) -> None:
         assert self._active_copy_table is not None
         logger.info(
-            "Backup for project %r dumped %s rows from table %s",
+            "%s for project %r %s %s rows from table %s",
+            self.operation.capitalize(),
             self.project_name,
+            self.completion_verb,
             _format_count(self._active_copy_rows),
             self._active_copy_table,
         )
@@ -667,20 +744,52 @@ def restore_project(name: str, backup_file: Path) -> None:
             "Restore only supports gzip-compressed SQL backups (.sql.gz)."
         )
 
-    with gzip.open(backup_file, "rb") as sql_stream:
-        try:
-            docker_swap_in_db(
-                sql_stream=sql_stream,
-                container_name=ProjectInfo.container_name_for(name),
-                db_user=ProjectInfo.db_user,
-                target_db_name=ProjectInfo.db_name,
+    started_at = perf_counter()
+    logger.info("Starting restore for project %r from %s", name, backup_file)
+
+    try:
+        with gzip.open(backup_file, "rb") as sql_stream:
+            progress_stream = _RestoreProgressReader(
+                project_name=name,
+                source=sql_stream,
             )
-        except DockerContainerNotFoundError as exc:
-            raise ProjectNotFoundError(f"Project '{name}' not found") from exc
-        except DockerContainerNotRunningError as exc:
-            raise ProjectError(
-                f"Project '{name}' is not running. Start it first."
-            ) from exc
+            try:
+                docker_swap_in_db(
+                    sql_stream=cast(IO[bytes], progress_stream),
+                    container_name=ProjectInfo.container_name_for(name),
+                    db_user=ProjectInfo.db_user,
+                    target_db_name=ProjectInfo.db_name,
+                )
+                progress_stream.finalize()
+            except DockerContainerNotFoundError as exc:
+                raise ProjectNotFoundError(f"Project '{name}' not found") from exc
+            except DockerContainerNotRunningError as exc:
+                raise ProjectError(
+                    f"Project '{name}' is not running. Start it first."
+                ) from exc
+    except Exception:
+        logger.exception(
+            "Restore for project %r failed after processing %s SQL bytes and %s rows",
+            name,
+            _format_count(progress_stream.bytes_processed)
+            if "progress_stream" in locals()
+            else "0",
+            _format_count(progress_stream.rows_processed)
+            if "progress_stream" in locals()
+            else "0",
+        )
+        raise
+
+    elapsed_seconds = perf_counter() - started_at
+    logger.info(
+        "Completed restore for project %r from %s in %.2fs (%s SQL bytes, %s rows, %s compressed bytes)",
+        name,
+        backup_file,
+        elapsed_seconds,
+        _format_count(progress_stream.bytes_processed),
+        _format_count(progress_stream.rows_processed),
+        _format_count(backup_file.stat().st_size),
+    )
 
 
 def _delete_pools_for_project(

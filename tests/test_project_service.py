@@ -661,6 +661,101 @@ def test_restore_project_rejects_plain_sql_files(
         restore_project("demo", backup_file)
 
 
+def test_restore_project_logs_progress_and_table_row_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    backup_file = tmp_path / "demo.sql.gz"
+    with gzip.open(backup_file, "wb") as f:
+        f.write(
+            (
+                b"SET statement_timeout = 0;\n"
+                b"COPY public.pool_alpha_samples (id) FROM stdin;\n"
+                b"1\n"
+                b"2\n"
+                b"\\.\n"
+                b"COPY public.pool_alpha_pending (id) FROM stdin;\n"
+                b"3\n"
+                b"\\.\n"
+            )
+        )
+    captured: dict[str, object] = {}
+
+    def fake_swap_in_db(
+        *,
+        sql_stream: IO[bytes],
+        container_name: str,
+        db_user: str,
+        target_db_name: str,
+    ) -> None:
+        captured["sql_bytes"] = sql_stream.read()
+        captured["container_name"] = container_name
+        captured["db_user"] = db_user
+        captured["target_db_name"] = target_db_name
+
+    monkeypatch.setattr(project_service_module, "docker_swap_in_db", fake_swap_in_db)
+    monkeypatch.setattr(project_service_module, "_BACKUP_PROGRESS_ROWS_STEP", 2)
+
+    with caplog.at_level("INFO", logger="dr_llm.project.project_service"):
+        restore_project("demo", backup_file)
+
+    assert captured["container_name"] == "dr-llm-pg-demo"
+    assert captured["db_user"] == "postgres"
+    assert captured["target_db_name"] == "dr_llm"
+    messages = [record.message for record in caplog.records]
+    assert any("Starting restore for project 'demo'" in message for message in messages)
+    assert any(
+        "started restoring table public.pool_alpha_samples" in message
+        for message in messages
+    )
+    assert any(
+        "restored 2 rows from table public.pool_alpha_samples" in message
+        for message in messages
+    )
+    assert any(
+        "restored 1 rows from table public.pool_alpha_pending" in message
+        for message in messages
+    )
+    assert any(message.endswith("progress: processed 2 rows") for message in messages)
+    assert any(
+        "Completed restore for project 'demo'" in message for message in messages
+    )
+
+
+def test_restore_project_logs_failure_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    backup_file = tmp_path / "demo.sql.gz"
+    with gzip.open(backup_file, "wb") as f:
+        f.write(b"COPY public.pool_alpha_samples (id) FROM stdin;\n1\n2\n")
+
+    def fake_swap_in_db(
+        *,
+        sql_stream: IO[bytes],
+        container_name: str,
+        db_user: str,
+        target_db_name: str,
+    ) -> None:
+        _ = (container_name, db_user, target_db_name)
+        sql_stream.read()
+        raise RuntimeError("restore failed")
+
+    monkeypatch.setattr(project_service_module, "docker_swap_in_db", fake_swap_in_db)
+
+    with caplog.at_level("INFO", logger="dr_llm.project.project_service"):
+        with pytest.raises(RuntimeError, match="restore failed"):
+            restore_project("demo", backup_file)
+
+    messages = [record.message for record in caplog.records]
+    assert any(
+        "Restore for project 'demo' failed after processing" in message
+        for message in messages
+    )
+
+
 def test_backup_project_removes_partial_file_when_streaming_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
