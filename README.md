@@ -244,12 +244,6 @@ where `PoolStore.ensure_schema()` persists it under the reserved key
 `PoolSchemaNotPersistedError` on `open()`; use
 `PoolReader.from_runtime(runtime, schema=...)` to inspect them with an
 explicit schema, or re-run `ensure_schema()` once to backfill the row.
-For a manual backfill, construct the known schema explicitly, for example
-`PoolSchema.from_axis_names(pool_name, ["prompt_template_id", "data_sample_id", "llm_config_id"])`,
-then run `PoolStore(schema, runtime).ensure_schema()`. Outcome: the pool's
-tables and indexes remain unchanged, and the missing `_schema` metadata row is
-upserted so future `PoolReader.open(...)` and `inspect_pool(...)` calls work
-normally without an explicit schema.
 
 ### Migrating existing pools to `call_stats`
 

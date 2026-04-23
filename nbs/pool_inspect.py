@@ -55,11 +55,18 @@ def _(project_summaries):
 def _(project_summaries):
     project_sections = []
     card_style = Style.default()
+    ignore_demo = True
+    if ignore_demo:
+        project_sections.append(
+            mo.md("*Ignoring projects with 'demo' in their name*")
+        )
 
     for summary in project_summaries:
         if summary.pool_inspection.status.value != "discovered":
             continue
         if not summary.pool_inspection.pool_names:
+            continue
+        if ignore_demo and "demo" in summary.project.name.lower():
             continue
 
         cards = []
@@ -120,6 +127,11 @@ def _(project_summaries):
     )
 
     section
+    return
+
+
+@app.cell
+def _():
     return
 
 
