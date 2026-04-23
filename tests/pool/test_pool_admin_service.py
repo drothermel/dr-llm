@@ -352,7 +352,7 @@ def test_assess_pool_deletion_reports_missing_pool(
     ]
 
 
-def test_assess_pool_deletion_blocks_in_progress_pool(
+def test_assess_pool_deletion_allows_pending_rows_but_reports_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
@@ -381,11 +381,9 @@ def test_assess_pool_deletion_blocks_in_progress_pool(
         DeletePoolRequest(project_name="demo", pool_name="sample_pool")
     )
 
-    assert readiness.allowed is False
+    assert readiness.allowed is True
     assert readiness.in_progress_pending_count == 3
-    assert [violation.reason for violation in readiness.violations] == [
-        PoolDeletionBlockReason.pool_in_progress
-    ]
+    assert readiness.violations == []
 
 
 def test_pool_name_has_token_match_uses_exact_underscore_delimited_words() -> None:

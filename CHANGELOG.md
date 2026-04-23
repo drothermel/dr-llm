@@ -24,6 +24,8 @@
 
 - Redefined `dr-llm project destroy` to orchestrate pool deletion before
   destroying project resources.
+- Pool deletion no longer blocks on pending or leased rows in a pool's pending
+  table; pending-row counts are still reported in deletion readiness.
 - Project deletion now auto-starts stopped projects when needed for discovery,
   deletes pools with bounded parallelism, preserves discovered pool order in
   results, and skips Docker destroy if any pool deletion fails.

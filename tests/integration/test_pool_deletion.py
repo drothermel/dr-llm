@@ -238,6 +238,57 @@ def test_delete_pool_supports_legacy_pool_without_schema_metadata(
 
 
 @pytest.mark.integration
+def test_delete_pool_allows_pending_and_leased_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dsn = _get_dsn()
+    if not dsn:
+        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+    pool_name = f"pending_{uuid4().hex[:8]}"
+    runtime = DbRuntime(DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=2))
+    schema = PoolSchema(name=pool_name, key_columns=[KeyColumn(name="dim_a")])
+    store = PoolStore(schema, runtime)
+
+    try:
+        try:
+            store.ensure_schema()
+        except (psycopg.OperationalError, TransientPersistenceError) as exc:
+            pytest.skip(f"Postgres unavailable for pool integration tests: {exc}")
+        store.pending.insert(
+            PendingSample(
+                key_values={"dim_a": "alpha"},
+                sample_idx=0,
+                status=PendingStatus.pending,
+            )
+        )
+        store.pending.insert(
+            PendingSample(
+                key_values={"dim_a": "beta"},
+                sample_idx=1,
+                status=PendingStatus.leased,
+            )
+        )
+
+        monkeypatch.setattr(
+            admin_service,
+            "maybe_get_project",
+            lambda name: _project_for_dsn(name, dsn),
+        )
+
+        result = admin_service.delete_pool(
+            DeletePoolRequest(project_name="demo", pool_name=pool_name)
+        )
+
+        assert result.status == PoolDeletionStatus.deleted
+        assert result.pre_delete_counts[schema.pending_table] == 2
+        for table_name in _pool_table_names(pool_name):
+            assert _table_exists(dsn, table_name) is False
+    finally:
+        runtime.close()
+        _drop_tables(dsn, _pool_table_names(pool_name))
+
+
+@pytest.mark.integration
 def test_delete_pool_succeeds_when_ancillary_tables_are_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

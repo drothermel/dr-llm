@@ -288,18 +288,6 @@ def assess_pool_deletion(request: DeletePoolRequest) -> PoolDeletionReadiness:
         in_progress_pending_count = _count_in_progress_pending_rows(
             runtime, request.pool_name
         )
-        if in_progress_pending_count > 0:
-            violations.append(
-                PoolDeletionViolation(
-                    reason=PoolDeletionBlockReason.pool_in_progress,
-                    message=(
-                        f"Pool {request.pool_name!r} is still in progress and cannot "
-                        "be deleted yet."
-                    ),
-                    project_name=project.name,
-                    pool_name=request.pool_name,
-                )
-            )
         return PoolDeletionReadiness(
             request=request,
             project=project,

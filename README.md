@@ -318,8 +318,8 @@ Deletion now uses one standard primitive: pool deletion.
   underscore-delimited lowercase name tokens include `test`, `tst`, `smoke`, or `demo`
 - `dr-llm pool destroy-testish PROJECT_NAME --dry-run` previews the matched
   pools and returns the same structured result shape without deleting anything
-- direct pool deletion requires the project to be running and blocks if the
-  pool is still in progress
+- direct pool deletion requires the project to be running, but pending or
+  leased rows do not block deletion
 - legacy pools without persisted `_schema` metadata can still be deleted,
   because deletion targets the derived table names directly rather than loading
   `PoolSchema` from metadata
