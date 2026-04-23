@@ -51,7 +51,11 @@ class PiePoolCard(PoolCard):
         )
 
     def pie_chart(self) -> PieChart:
-        return PieChart(style=self.style, slices=self.pie_slices())
+        return PieChart(
+            style=self.style,
+            slices=self.pie_slices(),
+            height=None,
+        )
 
     def content(self) -> mo.Html:
         return mo.vstack(

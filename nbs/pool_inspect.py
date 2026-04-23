@@ -85,7 +85,6 @@ def _(demo_pool_inspection):
                 pool=demo_pool_inspection,
                 style=Style.default(),
                 width="20rem",
-                height=None,
             ).render(),
         ]
     )
