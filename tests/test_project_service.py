@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import gzip
 from pathlib import Path
+import threading
+import time
 from typing import IO
 
 import pytest
@@ -23,14 +25,18 @@ from dr_llm.project.errors import (
 )
 from dr_llm.project.models import (
     CreateProjectRequest,
+    DeleteProjectRequest,
     ProjectCreationBlockReason,
     ProjectCreationReadiness,
+    ProjectDeletionStatus,
     ProjectPoolInspectionReason,
     ProjectPoolInspectionStatus,
 )
+from dr_llm.pool.models import PoolDeletionResult, PoolDeletionStatus
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import (
     assess_project_creation,
+    delete_project,
     backup_project,
     create_project,
     get_project,
@@ -384,7 +390,6 @@ def test_get_project_raises_project_not_found(
     [
         ("start_project", "call_docker_start"),
         ("stop_project", "call_docker_stop"),
-        ("destroy_project", "call_docker_destroy"),
     ],
 )
 def test_direct_operations_translate_missing_container_to_project_not_found(
@@ -402,6 +407,30 @@ def test_direct_operations_translate_missing_container_to_project_not_found(
 
     with pytest.raises(ProjectNotFoundError, match="Project 'demo' not found"):
         getattr(project_service_module, function_name)("demo")
+
+
+def test_destroy_project_wrapper_translates_missing_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        project_service_module,
+        "delete_project",
+        lambda request: project_service_module.ProjectDeletionResult(
+            request=request,
+            status=project_service_module.ProjectDeletionStatus.blocked,
+            violations=[
+                project_service_module.ProjectDeletionViolation(
+                    reason=project_service_module.ProjectDeletionBlockReason.project_not_found,
+                    message="Project 'demo' not found",
+                    project_name="demo",
+                )
+            ],
+            message="Project 'demo' not found",
+        ),
+    )
+
+    with pytest.raises(ProjectNotFoundError, match="Project 'demo' not found"):
+        project_service_module.destroy_project("demo")
 
 
 def test_start_project_returns_fresh_project_metadata_after_ready(
@@ -633,6 +662,103 @@ def test_restore_project_rejects_plain_sql_files(
         restore_project("demo", backup_file)
 
 
+def test_restore_project_logs_progress_and_table_row_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    backup_file = tmp_path / "demo.sql.gz"
+    with gzip.open(backup_file, "wb") as f:
+        f.write(
+            (
+                b"SET statement_timeout = 0;\n"
+                b"COPY public.pool_alpha_samples (id) FROM stdin;\n"
+                b"1\n"
+                b"2\n"
+                b"\\.\n"
+                b"COPY public.pool_alpha_pending (id) FROM stdin;\n"
+                b"3\n"
+                b"\\.\n"
+            )
+        )
+    captured: dict[str, object] = {}
+
+    def fake_swap_in_db(
+        *,
+        sql_stream: IO[bytes],
+        container_name: str,
+        db_user: str,
+        target_db_name: str,
+    ) -> None:
+        captured["sql_bytes"] = sql_stream.read()
+        captured["container_name"] = container_name
+        captured["db_user"] = db_user
+        captured["target_db_name"] = target_db_name
+
+    monkeypatch.setattr(project_service_module, "docker_swap_in_db", fake_swap_in_db)
+    monkeypatch.setattr(project_service_module, "_BACKUP_PROGRESS_ROWS_STEP", 2)
+
+    with caplog.at_level("INFO", logger="dr_llm.project.project_service"):
+        restore_project("demo", backup_file)
+
+    assert captured["container_name"] == "dr-llm-pg-demo"
+    assert captured["db_user"] == "postgres"
+    assert captured["target_db_name"] == "dr_llm"
+    messages = [record.message for record in caplog.records]
+    assert any("Starting restore for project 'demo'" in message for message in messages)
+    assert any(
+        "started restoring table public.pool_alpha_samples" in message
+        for message in messages
+    )
+    assert any(
+        "restored 2 rows from table public.pool_alpha_samples" in message
+        for message in messages
+    )
+    assert any(
+        "restored 1 rows from table public.pool_alpha_pending" in message
+        for message in messages
+    )
+    assert any(message.endswith("progress: processed 2 rows") for message in messages)
+    assert any(
+        "Completed restore for project 'demo'" in message for message in messages
+    )
+
+
+def test_restore_project_logs_failure_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    backup_file = tmp_path / "demo.sql.gz"
+    with gzip.open(backup_file, "wb") as f:
+        f.write(b"COPY public.pool_alpha_samples (id) FROM stdin;\n1\n2\n")
+
+    def fake_swap_in_db(
+        *,
+        sql_stream: IO[bytes],
+        container_name: str,
+        db_user: str,
+        target_db_name: str,
+    ) -> None:
+        _ = (container_name, db_user, target_db_name)
+        sql_stream.read()
+        raise RuntimeError("restore failed")
+
+    monkeypatch.setattr(project_service_module, "docker_swap_in_db", fake_swap_in_db)
+
+    with (
+        caplog.at_level("INFO", logger="dr_llm.project.project_service"),
+        pytest.raises(RuntimeError, match="restore failed"),
+    ):
+        restore_project("demo", backup_file)
+
+    messages = [record.message for record in caplog.records]
+    assert any(
+        "Restore for project 'demo' failed after processing" in message
+        for message in messages
+    )
+
+
 def test_backup_project_removes_partial_file_when_streaming_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -660,3 +786,303 @@ def test_backup_project_removes_partial_file_when_streaming_fails(
         backup_project("demo", tmp_path)
 
     assert list((tmp_path / "demo").glob("*.sql.gz")) == []
+
+
+def test_backup_project_logs_progress_and_table_row_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def fake_pg_dump_stream(
+        *,
+        container_name: str,
+        db_user: str,
+        db_name: str,
+        output_stream: IO[bytes],
+    ) -> None:
+        assert container_name == "dr-llm-pg-demo"
+        assert db_user == "postgres"
+        assert db_name == "dr_llm"
+        output_stream.write(
+            (
+                b"SET statement_timeout = 0;\n"
+                b"COPY public.pool_alpha_samples (id) FROM stdin;\n"
+                b"1\n"
+                b"2\n"
+                b"\\.\n"
+                b"COPY public.pool_alpha_pending (id) FROM stdin;\n"
+                b"3\n"
+                b"\\.\n"
+            )
+        )
+
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_pg_dump_stream",
+        fake_pg_dump_stream,
+    )
+    monkeypatch.setattr(project_service_module, "_BACKUP_PROGRESS_ROWS_STEP", 2)
+
+    with caplog.at_level("INFO", logger="dr_llm.project.project_service"):
+        backup_project("demo", tmp_path)
+
+    messages = [record.message for record in caplog.records]
+    assert any("Starting backup for project 'demo'" in message for message in messages)
+    assert any(
+        "started dumping table public.pool_alpha_samples" in message
+        for message in messages
+    )
+    assert any(
+        "dumped 2 rows from table public.pool_alpha_samples" in message
+        for message in messages
+    )
+    assert any(
+        "dumped 1 rows from table public.pool_alpha_pending" in message
+        for message in messages
+    )
+    assert any(message.endswith("progress: processed 2 rows") for message in messages)
+    assert any("Completed backup for project 'demo'" in message for message in messages)
+
+
+def test_backup_project_logs_failure_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def fake_pg_dump_stream(
+        *,
+        container_name: str,
+        db_user: str,
+        db_name: str,
+        output_stream: IO[bytes],
+    ) -> None:
+        assert container_name == "dr-llm-pg-demo"
+        assert db_user == "postgres"
+        assert db_name == "dr_llm"
+        output_stream.write(b"COPY public.pool_alpha_samples (id) FROM stdin;\n1\n2\n")
+        raise RuntimeError("pg_dump failed")
+
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_pg_dump_stream",
+        fake_pg_dump_stream,
+    )
+
+    with (
+        caplog.at_level("INFO", logger="dr_llm.project.project_service"),
+        pytest.raises(RuntimeError, match="pg_dump failed"),
+    ):
+        backup_project("demo", tmp_path)
+
+    messages = [record.message for record in caplog.records]
+    assert any(
+        "Backup for project 'demo' failed after processing" in message
+        for message in messages
+    )
+
+
+def test_delete_project_destroys_running_project_with_no_pools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destroyed: list[tuple[str, str]] = []
+    project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
+
+    monkeypatch.setattr(
+        project_service_module, "maybe_get_project", lambda name: project
+    )
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: [],
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_destroy",
+        lambda container_name, volume_name: destroyed.append(
+            (container_name, volume_name)
+        ),
+    )
+
+    result = delete_project(DeleteProjectRequest(project_name="demo"))
+
+    assert result.status == ProjectDeletionStatus.deleted
+    assert result.destroyed_project_resources is True
+    assert result.pool_results == []
+    assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
+
+
+def test_delete_project_autostarts_stopped_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started: list[str] = []
+    destroyed: list[tuple[str, str]] = []
+    stopped_project = ProjectInfo(name="demo", status=ContainerStatus.STOPPED)
+    running_project = ProjectInfo(
+        name="demo", port=5500, status=ContainerStatus.RUNNING
+    )
+
+    monkeypatch.setattr(
+        project_service_module, "maybe_get_project", lambda name: stopped_project
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "start_project",
+        lambda name: started.append(name) or running_project,
+    )
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: [],
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_destroy",
+        lambda container_name, volume_name: destroyed.append(
+            (container_name, volume_name)
+        ),
+    )
+
+    result = delete_project(DeleteProjectRequest(project_name="demo"))
+
+    assert result.status == ProjectDeletionStatus.deleted
+    assert result.temporarily_started is True
+    assert started == ["demo"]
+    assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
+
+
+def test_delete_project_preserves_discovered_pool_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destroyed: list[tuple[str, str]] = []
+    project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
+    beta_completed = threading.Event()
+    gamma_completed = threading.Event()
+
+    def fake_delete_one(project_name: str, pool_name: str) -> PoolDeletionResult:
+        _ = project_name
+        if pool_name == "alpha":
+            beta_completed.wait(timeout=1)
+            gamma_completed.wait(timeout=1)
+        if pool_name == "beta":
+            beta_completed.set()
+        if pool_name == "gamma":
+            gamma_completed.set()
+        return PoolDeletionResult(
+            request=project_service_module.DeletePoolRequest(
+                project_name="demo",
+                pool_name=pool_name,
+            ),
+            status=PoolDeletionStatus.deleted,
+            deleted_table_names=[f"pool_{pool_name}_samples"],
+        )
+
+    monkeypatch.setattr(
+        project_service_module, "maybe_get_project", lambda name: project
+    )
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: ["alpha", "beta", "gamma"],
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_delete_single_pool_for_project",
+        fake_delete_one,
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_destroy",
+        lambda container_name, volume_name: destroyed.append(
+            (container_name, volume_name)
+        ),
+    )
+
+    result = delete_project(DeleteProjectRequest(project_name="demo"))
+
+    assert result.status == ProjectDeletionStatus.deleted
+    assert [pool_result.request.pool_name for pool_result in result.pool_results] == [
+        "alpha",
+        "beta",
+        "gamma",
+    ]
+    assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
+
+
+def test_delete_project_fail_fast_restores_temporary_start_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started: list[str] = []
+    stopped: list[str] = []
+    destroyed: list[tuple[str, str]] = []
+    observed_calls: list[str] = []
+    stopped_project = ProjectInfo(name="demo", status=ContainerStatus.STOPPED)
+    running_project = ProjectInfo(
+        name="demo", port=5500, status=ContainerStatus.RUNNING
+    )
+
+    def fake_delete_one(project_name: str, pool_name: str) -> PoolDeletionResult:
+        _ = project_name
+        observed_calls.append(pool_name)
+        if pool_name == "alpha":
+            return PoolDeletionResult(
+                request=project_service_module.DeletePoolRequest(
+                    project_name="demo",
+                    pool_name=pool_name,
+                ),
+                status=PoolDeletionStatus.failed,
+                message="boom",
+            )
+        time.sleep(0.02)
+        return PoolDeletionResult(
+            request=project_service_module.DeletePoolRequest(
+                project_name="demo",
+                pool_name=pool_name,
+            ),
+            status=PoolDeletionStatus.deleted,
+        )
+
+    monkeypatch.setattr(
+        project_service_module, "maybe_get_project", lambda name: stopped_project
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "start_project",
+        lambda name: started.append(name) or running_project,
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "stop_project",
+        lambda name: stopped.append(name),
+    )
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: ["alpha", "beta", "gamma"],
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_POOL_DELETE_MAX_WORKERS",
+        2,
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_delete_single_pool_for_project",
+        fake_delete_one,
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_destroy",
+        lambda container_name, volume_name: destroyed.append(
+            (container_name, volume_name)
+        ),
+    )
+
+    result = delete_project(DeleteProjectRequest(project_name="demo"))
+
+    assert result.status == ProjectDeletionStatus.failed
+    assert result.temporarily_started is True
+    assert started == ["demo"]
+    assert stopped == ["demo"]
+    assert destroyed == []
+    assert observed_calls == ["alpha", "beta"]
+    assert [pool_result.status for pool_result in result.pool_results] == [
+        PoolDeletionStatus.failed,
+        PoolDeletionStatus.deleted,
+        PoolDeletionStatus.cancelled,
+    ]

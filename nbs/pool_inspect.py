@@ -28,109 +28,113 @@ with app.setup:
         create_project as create_project_service,
         inspect_projects,
     )
-    from dr_llm.style import ColorPalette, PoolCard
+    from dr_llm.style import PiePoolCard, PoolCard, Style
 
     add_marimo_display()(ProjectInfo)
 
 
-@app.cell(hide_code=True)
-def _():
-    mo.md(r"""
-    **Goal:** Make a version of the pool card that has a pie chart with numeric labels instead of a list of numbers.  That will be the first step towards visually representing the coverage of different providers/models, datasets, etc in a given pool.  And then cards for seeing a given prompt or response or code snippet, etc.
-    """)
-    return
-
-
-@app.cell(hide_code=True)
-def _():
-    demo_pool_inspection = PoolInspection(
-        project_name="demo_project",
-        name="code_comp_demo",
-        pool_schema={
-            "name": "code_comp_demo",
-            "key_columns": [
-                {"name": "provider"},
-                {"name": "model"},
-                {"name": "reasoning_mode"},
-            ],
-        },
-        created_at=datetime(2026, 4, 21, 14, 30),
-        sample_count=1280,
-        pending_counts={
-            "pending": 36,
-            "leased": 8,
-            "promoted": 120,
-            "failed": 3,
-        },
-        status="in_progress",
-    )
-    mo.vstack(
-        [
-            mo.md("## Pool Card Demo"),
-            PoolCard(
-                pool=demo_pool_inspection,
-                palette=ColorPalette.default(),
-                width="20rem",
-            ).render_html(),
-        ]
-    )
-    return
-
-
-@app.cell(column=1, hide_code=True)
+@app.cell(column=1)
 def _(create_pool_form, create_project_form):
     _ = (create_project_form.value, create_pool_form.value)
+    project_summaries = inspect_projects()
+    return (project_summaries,)
+
+
+@app.cell(hide_code=True)
+def _(project_summaries):
     mo.vstack(
         [
             mo.md("## Docker Projects State"),
-            mo.ui.table([summary.to_row() for summary in inspect_projects()]),
+            mo.ui.table([summary.to_row() for summary in project_summaries]),
         ]
     )
     return
 
 
 @app.cell(hide_code=True)
-def _():
-    get_pool_info_form = (
-        mo.md(
-            """
-            **Selections for Pool Info**
+def _(project_summaries):
+    project_sections = []
+    card_style = Style.default()
+    ignore_demo = True
+    ignore_demo_banner = (
+        mo.md("*Ignoring projects with `demo` in the name*")
+        if ignore_demo
+        else None
+    )
 
-            {project_name}
+    for summary in project_summaries:
+        if summary.pool_inspection.status.value != "discovered":
+            continue
+        if not summary.pool_inspection.pool_names:
+            continue
+        normalized_project_name = summary.project.name.strip().lower()
+        if ignore_demo and "demo" in normalized_project_name:
+            continue
 
-            {pool_name}
-            """
+        cards = []
+        failed_pool_names: list[tuple[str, str]] = []
+        for pool_name in summary.pool_inspection.pool_names:
+            try:
+                pool_inspection = inspect_pool(
+                    PoolInspectionRequest(
+                        project_name=summary.project.name,
+                        pool_name=pool_name,
+                    )
+                )
+            except Exception as exc:
+                failed_pool_names.append(
+                    (pool_name, f"{type(exc).__name__}: {exc}")
+                )
+                continue
+
+            cards.append(
+                PiePoolCard(
+                    pool=pool_inspection,
+                    style=card_style,
+                    width="20rem",
+                ).render()
+            )
+
+        if not cards and not failed_pool_names:
+            continue
+
+        section_items = [mo.md(f"### {summary.project.name}")]
+        if cards:
+            section_items.append(
+                mo.hstack(cards, wrap=True, justify="start", gap=1)
+            )
+        if failed_pool_names:
+            section_items.append(
+                mo.md(
+                    "Could not inspect on load: "
+                    + ", ".join(
+                        f"`{pool_name}` ({error})"
+                        for pool_name, error in failed_pool_names
+                    )
+                )
+            )
+
+        project_sections.append(mo.vstack(section_items, gap=1))
+
+    section_items = [mo.md("## Running Project Pools")]
+    if ignore_demo_banner is not None:
+        section_items.append(ignore_demo_banner)
+    section = (
+        mo.vstack(
+            [*section_items, *project_sections],
+            gap=1.5,
         )
-        .batch(
-            project_name=mo.ui.text(
-                label="Project name",
-                placeholder="code_comp_v0",
-            ),
-            pool_name=mo.ui.text(
-                label="Pool name",
-                placeholder="demo_pool",
-            ),
-        )
-        .form(
-            submit_button_label="Get pool info",
+        if project_sections
+        else mo.vstack(
+            [
+                *section_items,
+                mo.md("No running projects with discovered pools."),
+            ],
+            gap=1,
         )
     )
 
-    get_pool_info_form
-    return (get_pool_info_form,)
-
-
-@app.cell(hide_code=True)
-def _(get_pool_info_form):
-    # Get Pool Info Executor
-    mo.stop(get_pool_info_form.value is None)
-    pool_inspection = inspect_pool(PoolInspectionRequest(**get_pool_info_form.value))
-    (
-        PoolCard(
-            pool=pool_inspection,
-            palette=ColorPalette.default(),
-        ).render_html(),
-    )
+    section
     return
 
 

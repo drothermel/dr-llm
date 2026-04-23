@@ -11,6 +11,8 @@ from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.models import (
     AcquireQuery,
     AcquireResult,
+    DeletePoolRequest,
+    DeletePoolsByTokenRequest,
     InsertResult,
 )
 from dr_llm.pool.pending.backend import PoolPendingBackendState
@@ -224,12 +226,12 @@ def test_insert_result_defaults() -> None:
 
 
 def test_pending_status_counts_total() -> None:
-    counts = PendingStatusCounts(pending=1, leased=2, promoted=3, failed=4)
-    assert counts.total == 10
+    counts = PendingStatusCounts(pending=1, leased=2, failed=4)
+    assert counts.total == 7
 
 
 def test_pending_status_counts_in_flight() -> None:
-    counts = PendingStatusCounts(pending=3, leased=2, promoted=10, failed=1)
+    counts = PendingStatusCounts(pending=3, leased=2, failed=1)
     assert counts.in_flight == 5
 
 
@@ -243,7 +245,6 @@ def test_pending_status_counts_from_rows() -> None:
     counts = PendingStatusCounts.from_rows(rows)
     assert counts.pending == 3
     assert counts.leased == 2
-    assert counts.promoted == 5
     assert counts.failed == 1
 
 
@@ -255,7 +256,6 @@ def test_pending_status_counts_from_rows_handles_partial_and_unknown() -> None:
     counts = PendingStatusCounts.from_rows(rows)
     assert counts.pending == 4
     assert counts.leased == 0
-    assert counts.promoted == 0
     assert counts.failed == 0
 
 
@@ -289,9 +289,14 @@ def test_pool_root_re_exports_admin_models_and_services() -> None:
     assert hasattr(pool, "AcquireQuery")
     assert hasattr(pool, "AcquireResult")
     assert hasattr(pool, "CreatePoolRequest")
+    assert hasattr(pool, "DeletePoolRequest")
+    assert hasattr(pool, "DeletePoolsByTokenRequest")
     assert hasattr(pool, "PoolInspection")
     assert hasattr(pool, "assess_pool_creation")
+    assert hasattr(pool, "assess_pool_deletion")
     assert hasattr(pool, "create_pool")
+    assert hasattr(pool, "delete_pool")
+    assert hasattr(pool, "delete_pools_by_token")
     assert hasattr(pool, "discover_pools")
     assert not hasattr(pool, "PendingSample")
     assert not hasattr(pool, "PoolDb")
@@ -306,3 +311,22 @@ def test_pending_and_db_packages_have_no_re_exports() -> None:
     assert not hasattr(pool_db, "RunStatus")
     assert not hasattr(pending, "PendingSample")
     assert not hasattr(pending, "PendingStore")
+
+
+def test_delete_pool_request_normalizes_names() -> None:
+    request = DeletePoolRequest(project_name=" demo ", pool_name=" sample_pool ")
+
+    assert request.project_name == "demo"
+    assert request.pool_name == "sample_pool"
+
+
+def test_delete_pools_by_token_request_normalizes_tokens() -> None:
+    request = DeletePoolsByTokenRequest(
+        project_name=" demo ",
+        match_tokens=[" Test ", "smoke", "", "TST"],
+        dry_run=True,
+    )
+
+    assert request.project_name == "demo"
+    assert request.match_tokens == ["test", "smoke", "tst"]
+    assert request.dry_run is True

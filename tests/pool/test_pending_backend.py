@@ -270,7 +270,7 @@ def test_backend_fail_warns_when_lease_is_stale(
 
 def test_backend_snapshot_exposes_pool_specific_state() -> None:
     store = _FakeStore()
-    store.pending.status_counts_value = PendingStatusCounts(promoted=2, failed=1)
+    store.pending.status_counts_value = PendingStatusCounts(pending=2, failed=1)
     backend = PoolPendingBackend(
         cast(PoolStore, store),
         config=PoolPendingBackendConfig(
@@ -281,7 +281,7 @@ def test_backend_snapshot_exposes_pool_specific_state() -> None:
 
     snapshot = backend.snapshot()
 
-    assert snapshot.status_counts.promoted == 2
+    assert snapshot.status_counts.pending == 2
     assert snapshot.status_counts.failed == 1
     assert snapshot.key_filter == _eq_filter(model="m1")
     assert snapshot.max_retries == 3

@@ -11,7 +11,7 @@ from dr_llm.pool.reader import PoolProgress, _validate_pool_name
 def test_pool_progress_in_flight_delegates_to_pending_counts() -> None:
     progress = PoolProgress(
         samples_total=10,
-        pending_counts=PendingStatusCounts(pending=3, leased=2, promoted=10, failed=1),
+        pending_counts=PendingStatusCounts(pending=3, leased=2, failed=1),
     )
     assert progress.in_flight == 5
     assert progress.is_complete is False
@@ -20,7 +20,7 @@ def test_pool_progress_in_flight_delegates_to_pending_counts() -> None:
 def test_pool_progress_is_complete_when_no_in_flight() -> None:
     progress = PoolProgress(
         samples_total=10,
-        pending_counts=PendingStatusCounts(pending=0, leased=0, promoted=10, failed=2),
+        pending_counts=PendingStatusCounts(pending=0, leased=0, failed=2),
     )
     assert progress.in_flight == 0
     assert progress.is_complete is True
@@ -31,7 +31,7 @@ def test_pool_progress_computed_fields_appear_in_model_dump() -> None:
     survive model_dump / JSON serialization."""
     progress = PoolProgress(
         samples_total=42,
-        pending_counts=PendingStatusCounts(pending=1, leased=2, promoted=42, failed=0),
+        pending_counts=PendingStatusCounts(pending=1, leased=2, failed=0),
     )
     dumped = progress.model_dump()
     assert dumped["samples_total"] == 42

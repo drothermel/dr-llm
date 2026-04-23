@@ -4,14 +4,16 @@ from marimo_utils.style import (
     ColorPalette,
     DataItem,
     DateStamp,
-    HtmlRenderable,
     IconStyle,
     LabeledList,
     LayoutToken,
     MetaStamp,
     PaletteToneName,
+    PieChart,
+    PieSlice,
     ProjectStamp,
     SpacingScale,
+    Style,
     TextStyle,
     Title,
     TonePalette,
@@ -20,6 +22,7 @@ from marimo_utils.style import (
 )
 
 from dr_llm.style.components import PendingDataItems
+from dr_llm.style.pie_pool_card import PiePoolCard
 from dr_llm.style.pool_card import PoolCard
 
 __all__ = [
@@ -28,16 +31,19 @@ __all__ = [
     "ColorPalette",
     "DataItem",
     "DateStamp",
-    "HtmlRenderable",
     "IconStyle",
     "LabeledList",
     "LayoutToken",
     "MetaStamp",
     "PaletteToneName",
     "PendingDataItems",
+    "PieChart",
+    "PiePoolCard",
+    "PieSlice",
     "PoolCard",
     "ProjectStamp",
     "SpacingScale",
+    "Style",
     "TextStyle",
     "Title",
     "TonePalette",

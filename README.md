@@ -298,10 +298,45 @@ dr-llm project create NAME
 dr-llm project list
 dr-llm project use NAME
 dr-llm project start|stop NAME
+dr-llm pool destroy PROJECT_NAME POOL_NAME --yes-really-delete-everything
+dr-llm pool destroy-testish PROJECT_NAME --yes-really-delete-everything
+dr-llm pool destroy-testish PROJECT_NAME --dry-run
 dr-llm project backup NAME
 dr-llm project restore NAME BACKUP_PATH  # BACKUP_PATH must be .sql.gz
 dr-llm project destroy NAME --yes-really-delete-everything
 ```
+
+### Deleting pools and projects
+
+Deletion now uses one standard primitive: pool deletion.
+
+- `dr-llm pool destroy PROJECT_NAME POOL_NAME --yes-really-delete-everything`
+  deletes the fixed pool table set for that pool name: `samples`, `claims`,
+  `pending`, `metadata`, and `call_stats`.
+- `dr-llm pool destroy-testish PROJECT_NAME --yes-really-delete-everything`
+  discovers pools in that project and deletes only the ones whose
+  underscore-delimited lowercase name tokens include `test`, `tst`, `smoke`, or `demo`
+- `dr-llm pool destroy-testish PROJECT_NAME --dry-run` previews the matched
+  pools and returns the same structured result shape without deleting anything
+- direct pool deletion requires the project to be running, but pending or
+  leased rows do not block deletion
+- legacy pools without persisted `_schema` metadata can still be deleted,
+  because deletion targets the derived table names directly rather than loading
+  `PoolSchema` from metadata
+
+`dr-llm project destroy` is now an orchestrator over pool deletion rather than a
+blind Docker destroy.
+
+- if the project is stopped, it is started temporarily for pool discovery and deletion
+- discovered pools are deleted with bounded parallelism, but result ordering is
+  deterministic and follows pool discovery order rather than completion order
+- if any pool deletion fails, project container and volume deletion are skipped
+- if the project had to be started temporarily and deletion fails, it is stopped
+  again to restore the original state
+
+Both destroy commands now emit structured JSON results. For project deletion,
+the payload includes `discovered_pool_names`, ordered `pool_results`,
+`temporarily_started`, and `destroyed_project_resources`.
 
 ## Configuration
 

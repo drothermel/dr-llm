@@ -1,6 +1,6 @@
 [project]
 name = "dr-llm"
-version = "2.2.0"
+version = "2.3.0"
 description = "Provider-agnostic single-query LLM client with PostgreSQL recording and catalog storage."
 readme = "README.md"
 keywords = ["llm", "postgres", "ai", "catalog", "storage"]
@@ -31,7 +31,7 @@ dependencies = [
     "sqlalchemy>=2.0.49",
     "pydantic-settings>=2.13.1",
     "marimo[recommended]>=0.23.2",
-    "marimo-utils>=0.2.0",
+    "marimo-utils==0.5.0",
 ]
 
 [project.optional-dependencies]
@@ -43,7 +43,7 @@ notebooks = [
 Homepage = "https://github.com/drothermel/dr-llm"
 Repository = "https://github.com/drothermel/dr-llm"
 Issues = "https://github.com/drothermel/dr-llm/issues"
-Changelog = "https://github.com/drothermel/dr-llm/releases"
+Changelog = "https://github.com/drothermel/dr-llm/blob/main/CHANGELOG.md"
 
 [project.scripts]
 dr-llm = "dr_llm.cli:app"

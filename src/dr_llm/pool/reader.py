@@ -34,10 +34,13 @@ class PoolProgress(BaseModel):
     """Snapshot of pool fill progress.
 
     ``samples_total`` is the count of rows in the pool's samples table
-    (i.e. promoted samples). ``pending_counts`` breaks down the in-flight
-    queue by lifecycle status. The ``in_flight`` and ``is_complete``
-    properties are exposed as pydantic ``computed_field``s so they appear
-    in :meth:`model_dump` output.
+    (i.e. finalized samples). ``pending_counts`` covers the remaining queue
+    buckets reported on cards and progress surfaces: ``pending``, ``leased``,
+    and ``failed``. Promoted queue rows remain inspectable directly on the
+    pending table but are excluded here because they already contribute to
+    ``samples_total``. The ``in_flight`` and ``is_complete`` properties are
+    exposed as pydantic ``computed_field``s so they appear in
+    :meth:`model_dump` output.
     """
 
     model_config = ConfigDict(frozen=True)

@@ -1,19 +1,34 @@
 from __future__ import annotations
 
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import gzip
 import logging
 import socket
 from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
+import re
+from time import perf_counter
+from typing import Final, IO, cast
 
 from dr_llm.datetime_utils import UTC, normalize_utc
 from dr_llm.errors import TransientPersistenceError
+from dr_llm.pool.models import (
+    DeletePoolRequest,
+    PoolDeletionResult,
+    PoolDeletionStatus,
+)
 from dr_llm.project.models import (
     CreateProjectRequest,
+    DeleteProjectRequest,
     ProjectCreationBlockReason,
     ProjectCreationReadiness,
     ProjectCreationViolation,
+    ProjectDeletionBlockReason,
+    ProjectDeletionReadiness,
+    ProjectDeletionResult,
+    ProjectDeletionStatus,
+    ProjectDeletionViolation,
     ProjectInspectionSummary,
     ProjectPoolInspection,
     ProjectPoolInspectionReason,
@@ -41,6 +56,7 @@ from dr_llm.project.docker_psql import (
     docker_swap_in_db,
     validate_pg_identifier,
 )
+from dr_llm.project.docker_runner import BinaryStream
 from dr_llm.project.errors import (
     DockerContainerConflictError,
     DockerContainerNotFoundError,
@@ -56,9 +72,197 @@ DOCKER_IMAGE = "postgres:16"
 DEFAULT_BACKUP_DIR = Path.home() / ".dr-llm" / "backups"
 BASE_PORT = 5500
 PORT_PROBE_TIMEOUT_SECONDS = 0.05
+_POOL_DELETE_MAX_WORKERS: Final[int] = 2
+_BACKUP_PROGRESS_ROWS_STEP: Final[int] = 20_000
+_COPY_FROM_STDIN_RE: Final[re.Pattern[bytes]] = re.compile(
+    rb'^COPY\s+(?P<table>(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)(?:\.(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*))?)\s+\(.*\)\s+FROM stdin;$'
+)
 
 validate_pg_identifier(ProjectInfo.db_name, "database name")
 logger = logging.getLogger(__name__)
+
+
+class _BackupProgressWriter:
+    def __init__(
+        self,
+        *,
+        project_name: str,
+        destination: Path,
+        sink: BinaryStream,
+    ) -> None:
+        self.project_name = project_name
+        self.destination = destination
+        self._sink = sink
+        self._tracker = _SqlCopyProgressTracker(
+            project_name=project_name,
+            operation="backup",
+            action_verb="dumping",
+            completion_verb="dumped",
+        )
+
+    @property
+    def bytes_processed(self) -> int:
+        return self._tracker.bytes_processed
+
+    @property
+    def rows_processed(self) -> int:
+        return self._tracker.rows_processed
+
+    def write(self, data: bytes) -> int:
+        written = self._sink.write(data)
+        self._tracker.process_bytes(data)
+        return written
+
+    def flush(self) -> None:
+        self._sink.flush()
+
+    def finalize(self) -> None:
+        self._tracker.finalize()
+
+
+class _RestoreProgressReader:
+    def __init__(
+        self,
+        *,
+        project_name: str,
+        source: BinaryStream,
+    ) -> None:
+        self.project_name = project_name
+        self._source = source
+        self._tracker = _SqlCopyProgressTracker(
+            project_name=project_name,
+            operation="restore",
+            action_verb="restoring",
+            completion_verb="restored",
+        )
+
+    @property
+    def bytes_processed(self) -> int:
+        return self._tracker.bytes_processed
+
+    @property
+    def rows_processed(self) -> int:
+        return self._tracker.rows_processed
+
+    def read(self, size: int = -1) -> bytes:
+        data = self._source.read(size)
+        if data:
+            self._tracker.process_bytes(data)
+        return data
+
+    def close(self) -> None:
+        self._source.close()
+
+    def finalize(self) -> None:
+        self._tracker.finalize()
+
+
+class _SqlCopyProgressTracker:
+    def __init__(
+        self,
+        *,
+        project_name: str,
+        operation: str,
+        action_verb: str,
+        completion_verb: str,
+    ) -> None:
+        self.project_name = project_name
+        self.operation = operation
+        self.action_verb = action_verb
+        self.completion_verb = completion_verb
+        self._bytes_processed = 0
+        self._rows_processed = 0
+        self._next_rows_log = _BACKUP_PROGRESS_ROWS_STEP
+        self._line_buffer = bytearray()
+        self._active_copy_table: str | None = None
+        self._active_copy_rows = 0
+
+    @property
+    def bytes_processed(self) -> int:
+        return self._bytes_processed
+
+    @property
+    def rows_processed(self) -> int:
+        return self._rows_processed
+
+    def process_bytes(self, data: bytes) -> None:
+        self._bytes_processed += len(data)
+        self._track_dump_lines(data)
+
+    def finalize(self) -> None:
+        if self._line_buffer:
+            self._process_dump_line(bytes(self._line_buffer))
+            self._line_buffer.clear()
+        if self._active_copy_table is not None:
+            self._log_completed_copy_table()
+
+    def _track_dump_lines(self, data: bytes) -> None:
+        self._line_buffer.extend(data)
+        while True:
+            newline_index = self._line_buffer.find(b"\n")
+            if newline_index < 0:
+                return
+            line = bytes(self._line_buffer[:newline_index])
+            del self._line_buffer[: newline_index + 1]
+            self._process_dump_line(line.rstrip(b"\r"))
+
+    def _process_dump_line(self, line: bytes) -> None:
+        if self._active_copy_table is None:
+            table_name = _parse_copy_table_name(line)
+            if table_name is None:
+                return
+            self._active_copy_table = table_name
+            self._active_copy_rows = 0
+            logger.info(
+                "%s for project %r started %s table %s",
+                self.operation.capitalize(),
+                self.project_name,
+                self.action_verb,
+                table_name,
+            )
+            return
+
+        if line == b"\\.":
+            self._log_completed_copy_table()
+            self._active_copy_table = None
+            self._active_copy_rows = 0
+            return
+
+        self._rows_processed += 1
+        self._active_copy_rows += 1
+        self._log_row_progress()
+
+    def _log_row_progress(self) -> None:
+        while self._rows_processed >= self._next_rows_log:
+            logger.info(
+                "%s for project %r progress: processed %s rows",
+                self.operation.capitalize(),
+                self.project_name,
+                _format_count(self._next_rows_log),
+            )
+            self._next_rows_log += _BACKUP_PROGRESS_ROWS_STEP
+
+    def _log_completed_copy_table(self) -> None:
+        assert self._active_copy_table is not None
+        logger.info(
+            "%s for project %r %s %s rows from table %s",
+            self.operation.capitalize(),
+            self.project_name,
+            self.completion_verb,
+            _format_count(self._active_copy_rows),
+            self._active_copy_table,
+        )
+
+
+def _parse_copy_table_name(line: bytes) -> str | None:
+    match = _COPY_FROM_STDIN_RE.match(line)
+    if match is None:
+        return None
+    return match.group("table").decode("utf-8")
+
+
+def _format_count(value: int) -> str:
+    return f"{value:,}"
 
 
 def _port_has_listener(port: int) -> bool:
@@ -196,6 +400,123 @@ def create_project(request: CreateProjectRequest) -> ProjectInfo:
     project = _create_container_with_port_retry(name, claimed_ports)
     status = _wait_ready_or_destroy(project)
     return project.model_copy(update={"status": status})
+
+
+def assess_project_deletion(request: DeleteProjectRequest) -> ProjectDeletionReadiness:
+    project = maybe_get_project(request.project_name)
+    if project is None:
+        return ProjectDeletionReadiness(
+            request=request,
+            violations=[
+                ProjectDeletionViolation(
+                    reason=ProjectDeletionBlockReason.project_not_found,
+                    message=f"Project {request.project_name!r} not found",
+                    project_name=request.project_name,
+                )
+            ],
+        )
+    return ProjectDeletionReadiness(request=request, project=project)
+
+
+def delete_project(request: DeleteProjectRequest) -> ProjectDeletionResult:
+    readiness = assess_project_deletion(request)
+    if not readiness.allowed:
+        return ProjectDeletionResult(
+            request=request,
+            project=readiness.project,
+            status=ProjectDeletionStatus.blocked,
+            violations=readiness.violations,
+            message=readiness.blocked_message,
+        )
+
+    assert readiness.project is not None
+    project = readiness.project
+    temporarily_started = False
+    running_project = project
+    discovered_pool_names: list[str] = []
+    pool_results: list[PoolDeletionResult] = []
+    destroyed_project_resources = False
+    failure_message: str | None = None
+    violations: list[ProjectDeletionViolation] = []
+
+    try:
+        if not project.running:
+            running_project = start_project(request.project_name)
+            temporarily_started = True
+        if running_project.dsn is None:
+            violations.append(
+                ProjectDeletionViolation(
+                    reason=ProjectDeletionBlockReason.project_missing_dsn,
+                    message=f"Project {running_project.name!r} has no DSN.",
+                    project_name=running_project.name,
+                )
+            )
+            failure_message = violations[0].message
+            return ProjectDeletionResult(
+                request=request,
+                project=running_project,
+                status=ProjectDeletionStatus.blocked,
+                discovered_pool_names=discovered_pool_names,
+                pool_results=pool_results,
+                temporarily_started=temporarily_started,
+                destroyed_project_resources=False,
+                violations=violations,
+                message=failure_message,
+            )
+
+        from dr_llm.pool.admin_service import discover_pools
+
+        discovered_pool_names = discover_pools(running_project.dsn)
+        pool_results = _delete_pools_for_project(
+            request.project_name,
+            discovered_pool_names,
+        )
+        if any(result.status != PoolDeletionStatus.deleted for result in pool_results):
+            failure_message = _project_delete_failure_message(pool_results)
+        else:
+            call_docker_destroy(
+                running_project.container_name,
+                running_project.volume_name,
+            )
+            destroyed_project_resources = True
+            return ProjectDeletionResult(
+                request=request,
+                project=running_project,
+                status=ProjectDeletionStatus.deleted,
+                discovered_pool_names=discovered_pool_names,
+                pool_results=pool_results,
+                temporarily_started=temporarily_started,
+                destroyed_project_resources=True,
+                message=(
+                    f"Project {request.project_name!r} and all discovered pools were deleted."
+                ),
+            )
+    except Exception as exc:
+        failure_message = str(exc)
+
+    stop_failure_message: str | None = None
+    if temporarily_started and not destroyed_project_resources:
+        try:
+            stop_project(request.project_name)
+        except Exception as exc:
+            stop_failure_message = str(exc)
+
+    if stop_failure_message is not None:
+        failure_message = (
+            f"{failure_message or 'Project deletion failed.'} "
+            f"Failed to restore the original stopped state: {stop_failure_message}"
+        )
+
+    return ProjectDeletionResult(
+        request=request,
+        project=running_project,
+        status=ProjectDeletionStatus.failed,
+        discovered_pool_names=discovered_pool_names,
+        pool_results=pool_results,
+        temporarily_started=temporarily_started,
+        destroyed_project_resources=False,
+        message=failure_message or "Project deletion failed.",
+    )
 
 
 def _collect_claimed_ports() -> set[int]:
@@ -342,13 +663,20 @@ def stop_project(name: str) -> None:
 
 
 def destroy_project(name: str) -> None:
-    try:
-        call_docker_destroy(
-            ProjectInfo.container_name_for(name),
-            ProjectInfo.volume_name_for(name),
-        )
-    except DockerContainerNotFoundError as exc:
-        raise ProjectNotFoundError(f"Project '{name}' not found") from exc
+    result = delete_project(DeleteProjectRequest(project_name=name))
+    if result.status == ProjectDeletionStatus.deleted:
+        return
+    violation = next(
+        (
+            violation
+            for violation in result.violations
+            if violation.reason == ProjectDeletionBlockReason.project_not_found
+        ),
+        None,
+    )
+    if violation is not None:
+        raise ProjectNotFoundError(violation.message)
+    raise ProjectError(result.message or "Project deletion failed.")
 
 
 def backup_project(name: str, output_dir: Path | None = None) -> Path:
@@ -357,16 +685,26 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
 
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     backup_file = backup_dir / f"{name}_{timestamp}.sql.gz"
+    started_at = perf_counter()
+
+    logger.info("Starting backup for project %r to %s", name, backup_file)
+    progress_stream: _BackupProgressWriter | None = None
 
     try:
         with gzip.open(backup_file, "wb") as backup_stream:
+            progress_stream = _BackupProgressWriter(
+                project_name=name,
+                destination=backup_file,
+                sink=backup_stream,
+            )
             try:
                 call_docker_pg_dump_stream(
                     container_name=ProjectInfo.container_name_for(name),
                     db_user=ProjectInfo.db_user,
                     db_name=ProjectInfo.db_name,
-                    output_stream=backup_stream,
+                    output_stream=cast(IO[bytes], progress_stream),
                 )
+                progress_stream.finalize()
             except DockerContainerNotFoundError as exc:
                 raise ProjectNotFoundError(f"Project '{name}' not found") from exc
             except DockerContainerNotRunningError as exc:
@@ -374,8 +712,29 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
                     f"Project '{name}' is not running. Start it first."
                 ) from exc
     except Exception:
+        logger.exception(
+            "Backup for project %r failed after processing %s dump bytes and %s rows",
+            name,
+            _format_count(progress_stream.bytes_processed)
+            if progress_stream is not None
+            else "0",
+            _format_count(progress_stream.rows_processed)
+            if progress_stream is not None
+            else "0",
+        )
         backup_file.unlink(missing_ok=True)
         raise
+
+    elapsed_seconds = perf_counter() - started_at
+    logger.info(
+        "Completed backup for project %r to %s in %.2fs (%s dump bytes, %s rows, %s compressed bytes)",
+        name,
+        backup_file,
+        elapsed_seconds,
+        _format_count(progress_stream.bytes_processed),
+        _format_count(progress_stream.rows_processed),
+        _format_count(backup_file.stat().st_size),
+    )
 
     return backup_file
 
@@ -386,17 +745,140 @@ def restore_project(name: str, backup_file: Path) -> None:
             "Restore only supports gzip-compressed SQL backups (.sql.gz)."
         )
 
-    with gzip.open(backup_file, "rb") as sql_stream:
-        try:
-            docker_swap_in_db(
-                sql_stream=sql_stream,
-                container_name=ProjectInfo.container_name_for(name),
-                db_user=ProjectInfo.db_user,
-                target_db_name=ProjectInfo.db_name,
+    started_at = perf_counter()
+    logger.info("Starting restore for project %r from %s", name, backup_file)
+    progress_stream: _RestoreProgressReader | None = None
+
+    try:
+        with gzip.open(backup_file, "rb") as sql_stream:
+            progress_stream = _RestoreProgressReader(
+                project_name=name,
+                source=sql_stream,
             )
-        except DockerContainerNotFoundError as exc:
-            raise ProjectNotFoundError(f"Project '{name}' not found") from exc
-        except DockerContainerNotRunningError as exc:
-            raise ProjectError(
-                f"Project '{name}' is not running. Start it first."
-            ) from exc
+            try:
+                docker_swap_in_db(
+                    sql_stream=cast(IO[bytes], progress_stream),
+                    container_name=ProjectInfo.container_name_for(name),
+                    db_user=ProjectInfo.db_user,
+                    target_db_name=ProjectInfo.db_name,
+                )
+                progress_stream.finalize()
+            except DockerContainerNotFoundError as exc:
+                raise ProjectNotFoundError(f"Project '{name}' not found") from exc
+            except DockerContainerNotRunningError as exc:
+                raise ProjectError(
+                    f"Project '{name}' is not running. Start it first."
+                ) from exc
+    except Exception:
+        logger.exception(
+            "Restore for project %r failed after processing %s SQL bytes and %s rows",
+            name,
+            _format_count(progress_stream.bytes_processed)
+            if progress_stream is not None
+            else "0",
+            _format_count(progress_stream.rows_processed)
+            if progress_stream is not None
+            else "0",
+        )
+        raise
+
+    elapsed_seconds = perf_counter() - started_at
+    logger.info(
+        "Completed restore for project %r from %s in %.2fs (%s SQL bytes, %s rows, %s compressed bytes)",
+        name,
+        backup_file,
+        elapsed_seconds,
+        _format_count(progress_stream.bytes_processed),
+        _format_count(progress_stream.rows_processed),
+        _format_count(backup_file.stat().st_size),
+    )
+
+
+def _delete_pools_for_project(
+    project_name: str,
+    pool_names: list[str],
+) -> list[PoolDeletionResult]:
+    if not pool_names:
+        return []
+
+    max_workers = max(1, min(_POOL_DELETE_MAX_WORKERS, len(pool_names)))
+    submitted_index = 0
+    failure_seen = False
+    results_by_index: dict[int, PoolDeletionResult] = {}
+    futures: dict[Future[PoolDeletionResult], int] = {}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        while submitted_index < max_workers:
+            future = executor.submit(
+                _delete_single_pool_for_project,
+                project_name,
+                pool_names[submitted_index],
+            )
+            futures[future] = submitted_index
+            submitted_index += 1
+
+        while futures:
+            done, _ = wait(futures.keys(), return_when=FIRST_COMPLETED)
+            for future in done:
+                index = futures.pop(future)
+                result = future.result()
+                results_by_index[index] = result
+                if result.status != PoolDeletionStatus.deleted:
+                    failure_seen = True
+
+            if failure_seen:
+                while submitted_index < len(pool_names):
+                    pool_name = pool_names[submitted_index]
+                    results_by_index[submitted_index] = PoolDeletionResult(
+                        request=DeletePoolRequest(
+                            project_name=project_name,
+                            pool_name=pool_name,
+                        ),
+                        status=PoolDeletionStatus.cancelled,
+                        message=(
+                            "Pool deletion was not started because an earlier pool "
+                            "deletion failed."
+                        ),
+                    )
+                    submitted_index += 1
+                continue
+
+            while submitted_index < len(pool_names) and len(futures) < max_workers:
+                future = executor.submit(
+                    _delete_single_pool_for_project,
+                    project_name,
+                    pool_names[submitted_index],
+                )
+                futures[future] = submitted_index
+                submitted_index += 1
+
+    return [results_by_index[index] for index in range(len(pool_names))]
+
+
+def _delete_single_pool_for_project(
+    project_name: str,
+    pool_name: str,
+) -> PoolDeletionResult:
+    from dr_llm.pool.admin_service import delete_pool
+
+    return delete_pool(
+        DeletePoolRequest(project_name=project_name, pool_name=pool_name)
+    )
+
+
+def _project_delete_failure_message(pool_results: list[PoolDeletionResult]) -> str:
+    first_failure = next(
+        (
+            result
+            for result in pool_results
+            if result.status != PoolDeletionStatus.deleted
+        ),
+        None,
+    )
+    if first_failure is None:
+        return "Project deletion failed."
+    return (
+        f"Project deletion stopped after pool {first_failure.request.pool_name!r} "
+        f"reported status {first_failure.status.value}: "
+        f"{first_failure.message or 'no additional detail'}"
+    )
