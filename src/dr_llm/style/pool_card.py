@@ -7,17 +7,19 @@ from dr_widget.inline import ActiveHtml
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.pool.models import PoolInspection
-from dr_llm.style.components import PendingDataItems
-from marimo_utils.style import (
+from dr_llm.style.components import AxesLabel, AxisBadge, PendingDataItems
+from dr_llm.style.theme import (
+    PaletteToneName,
+    Style,
+    badge_variant_for_tone,
+    width_to_tailwind,
+)
+from marimo_utils.ui import (
     Badge,
     Card,
     DataItem,
     DateStamp,
-    LabeledList,
-    PaletteToneName,
     ProjectStamp,
-    Style,
-    Title,
 )
 
 
@@ -40,57 +42,32 @@ class PoolCard(BaseModel):
             return PaletteToneName.WARNING
         return PaletteToneName.NEUTRAL
 
-    def title(self) -> Title:
-        return Title(
-            style=self.style,
-            drop_text=f"{norm_str(self.card_type)} Card",
-            text=norm_str(self.pool.name),
-        )
+    def title_text(self) -> str:
+        return norm_str(self.pool.name)
+
+    def description_text(self) -> str:
+        return f"Project: {self.pool.project_name}"
 
     def project_stamp(self) -> ProjectStamp:
         return ProjectStamp(
-            style=self.style,
             project_name=self.pool.project_name,
         )
 
     def created_stamp(self) -> DateStamp:
         return DateStamp(
-            style=self.style,
             value=self.pool.created_at,
         )
 
     def status_badge(self) -> Badge:
         return Badge(
-            style=self.style,
             label=self.pool.status.value.replace("_", " "),
-            tone=self.status_tone_name(),
+            variant=badge_variant_for_tone(self.status_tone_name()),
         )
 
-    def header(self) -> mo.Html:
-        return mo.vstack(
-            [
-                mo.hstack(
-                    [
-                        self.status_badge().render(),
-                        self.project_stamp().render(),
-                        self.created_stamp().render(),
-                    ],
-                    justify="start",
-                    align="center",
-                    wrap=True,
-                    gap=0.4,
-                ),
-                self.axes_list().render(),
-            ],
-            gap=0,
-        )
-
-    def axes_list(self) -> LabeledList:
-        return LabeledList(
-            style=self.style,
-            section_label="Axes",
+    def axes_list(self) -> AxesLabel:
+        return AxesLabel(
             items=[
-                Badge(style=self.style, label=column.name).render()
+                AxisBadge(label=column.name).render()
                 for column in self.pool.pool_schema.key_columns
             ],
         )
@@ -103,24 +80,35 @@ class PoolCard(BaseModel):
 
     def samples_data_item(self) -> DataItem:
         return DataItem(
-            style=self.style,
             label="Samples",
             value=f"{self.pool.sample_count:,}",
-            value_tone=PaletteToneName.SUCCESS,
         )
 
     def content(self) -> mo.Html:
         return mo.vstack(
-            [self.samples_data_item().render(), self.pending_data_items().render()],
-            gap=0,
+            [
+                mo.hstack(
+                    [
+                        self.status_badge().render(),
+                        self.created_stamp().render(),
+                    ],
+                    justify="start",
+                    align="center",
+                    wrap=True,
+                    gap=0.4,
+                ),
+                self.axes_list().render(),
+                self.samples_data_item().render(),
+                self.pending_data_items().render(),
+            ],
+            gap=0.75,
         )
 
     def render(self) -> mo.Html | ActiveHtml:
         return Card(
-            style=self.style,
-            width=self.width,
-            title=self.title().render(),
-            header=self.header(),
+            width=width_to_tailwind(self.width),
+            title=self.title_text(),
+            description=self.description_text(),
             content=self.content(),
         ).render()
 

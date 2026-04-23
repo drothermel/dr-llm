@@ -1,40 +1,32 @@
-from marimo_utils.style import (
+from marimo_utils.ui import (
     Badge,
+    BadgeVariant,
     Card,
-    ColorPalette,
+    CardDescription,
+    CardTitle,
     DataItem,
     DateStamp,
-    IconStyle,
     LabeledList,
-    LayoutToken,
-    MetaStamp,
-    PaletteToneName,
     PieChart,
     PieSlice,
     ProjectStamp,
-    SpacingScale,
-    Style,
-    TextStyle,
-    Title,
-    TonePalette,
-    Typography,
-    css,
+    bootstrap_tailwind,
 )
 
 from dr_llm.style.components import PendingDataItems
 from dr_llm.style.pie_pool_card import PiePoolCard
 from dr_llm.style.pool_card import PoolCard
+from dr_llm.style.theme import PaletteToneName, Style
 
 __all__ = [
     "Badge",
+    "BadgeVariant",
     "Card",
-    "ColorPalette",
+    "CardDescription",
+    "CardTitle",
     "DataItem",
     "DateStamp",
-    "IconStyle",
     "LabeledList",
-    "LayoutToken",
-    "MetaStamp",
     "PaletteToneName",
     "PendingDataItems",
     "PieChart",
@@ -42,11 +34,6 @@ __all__ = [
     "PieSlice",
     "PoolCard",
     "ProjectStamp",
-    "SpacingScale",
     "Style",
-    "TextStyle",
-    "Title",
-    "TonePalette",
-    "Typography",
-    "css",
+    "bootstrap_tailwind",
 ]
