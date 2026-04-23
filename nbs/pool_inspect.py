@@ -130,11 +130,6 @@ def _(project_summaries):
     return
 
 
-@app.cell
-def _():
-    return
-
-
 @app.cell(column=2, hide_code=True)
 def _():
     create_project_form = (

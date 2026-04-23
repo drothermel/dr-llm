@@ -299,6 +299,8 @@ dr-llm project list
 dr-llm project use NAME
 dr-llm project start|stop NAME
 dr-llm pool destroy PROJECT_NAME POOL_NAME --yes-really-delete-everything
+dr-llm pool destroy-testish PROJECT_NAME --yes-really-delete-everything
+dr-llm pool destroy-testish PROJECT_NAME --dry-run
 dr-llm project backup NAME
 dr-llm project restore NAME BACKUP_PATH  # BACKUP_PATH must be .sql.gz
 dr-llm project destroy NAME --yes-really-delete-everything
@@ -311,6 +313,11 @@ Deletion now uses one standard primitive: pool deletion.
 - `dr-llm pool destroy PROJECT_NAME POOL_NAME --yes-really-delete-everything`
   deletes the fixed pool table set for that pool name: `samples`, `claims`,
   `pending`, `metadata`, and `call_stats`.
+- `dr-llm pool destroy-testish PROJECT_NAME --yes-really-delete-everything`
+  discovers pools in that project and deletes only the ones whose
+  underscore-delimited lowercase name tokens include `test`, `tst`, `smoke`, or `demo`
+- `dr-llm pool destroy-testish PROJECT_NAME --dry-run` previews the matched
+  pools and returns the same structured result shape without deleting anything
 - direct pool deletion requires the project to be running and blocks if the
   pool is still in progress
 - legacy pools without persisted `_schema` metadata can still be deleted,

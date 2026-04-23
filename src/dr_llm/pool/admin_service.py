@@ -13,6 +13,9 @@ from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.models import (
     CreatePoolRequest,
     DeletePoolRequest,
+    DeletePoolsByTokenRequest,
+    DeletePoolsByTokenResult,
+    DeletePoolsByTokenStatus,
     PoolCreationBlockReason,
     PoolCreationReadiness,
     PoolCreationViolation,
@@ -48,6 +51,9 @@ _POOL_TABLE_SUFFIXES: Final[tuple[str, ...]] = (
     "call_stats",
 )
 _IN_PROGRESS_PENDING_STATUSES: Final[tuple[str, ...]] = ("pending", "leased")
+_DEFAULT_TESTISH_TOKENS: Final[frozenset[str]] = frozenset(
+    {"test", "tst", "smoke", "demo"}
+)
 
 
 def discover_pools(dsn: str) -> list[str]:
@@ -379,6 +385,84 @@ def delete_pool(request: DeletePoolRequest) -> PoolDeletionResult:
         runtime.close()
 
 
+def delete_pools_by_token(
+    request: DeletePoolsByTokenRequest,
+) -> DeletePoolsByTokenResult:
+    project = maybe_get_project(request.project_name)
+    if project is None:
+        return DeletePoolsByTokenResult(
+            request=request,
+            status=DeletePoolsByTokenStatus.blocked,
+            dry_run=request.dry_run,
+            message=f"Project {request.project_name!r} not found",
+        )
+    if not project.running or project.dsn is None:
+        return DeletePoolsByTokenResult(
+            request=request,
+            project=project,
+            status=DeletePoolsByTokenStatus.blocked,
+            dry_run=request.dry_run,
+            message=(
+                f"Project {project.name!r} must be running before deleting matching pools."
+            ),
+        )
+
+    discovered_pool_names = discover_pools(project.dsn)
+    matched_pool_names = [
+        pool_name
+        for pool_name in discovered_pool_names
+        if pool_name_has_token_match(pool_name, request.match_tokens)
+    ]
+    if request.dry_run:
+        return DeletePoolsByTokenResult(
+            request=request,
+            project=project,
+            status=DeletePoolsByTokenStatus.completed,
+            discovered_pool_names=discovered_pool_names,
+            matched_pool_names=matched_pool_names,
+            dry_run=True,
+            message=(
+                "No matching pools found."
+                if not matched_pool_names
+                else f"Dry run: would delete {len(matched_pool_names)} matching pools."
+            ),
+        )
+    pool_results = [
+        delete_pool(
+            DeletePoolRequest(project_name=request.project_name, pool_name=pool_name)
+        )
+        for pool_name in matched_pool_names
+    ]
+    if any(not result.success for result in pool_results):
+        failed_pool_names = [
+            result.request.pool_name for result in pool_results if not result.success
+        ]
+        return DeletePoolsByTokenResult(
+            request=request,
+            project=project,
+            status=DeletePoolsByTokenStatus.failed,
+            discovered_pool_names=discovered_pool_names,
+            matched_pool_names=matched_pool_names,
+            pool_results=pool_results,
+            dry_run=False,
+            message="Failed to delete matching pools: " + ", ".join(failed_pool_names),
+        )
+    return DeletePoolsByTokenResult(
+        request=request,
+        project=project,
+        status=DeletePoolsByTokenStatus.completed,
+        discovered_pool_names=discovered_pool_names,
+        matched_pool_names=matched_pool_names,
+        pool_results=pool_results,
+        dry_run=False,
+        message=(
+            "No matching pools found."
+            if not matched_pool_names
+            else f"Deleted {len(matched_pool_names)} matching pools."
+        ),
+    )
+
+
 def _inspect_pool_for_project(project: ProjectInfo, pool_name: str) -> PoolInspection:
     if project.dsn is None:
         raise ProjectError(f"Project {project.name!r} has no DSN; start it first.")
@@ -443,6 +527,18 @@ def _pool_delete_request_violations(
 
 def _pool_table_names(pool_name: str) -> list[str]:
     return [f"pool_{pool_name}_{suffix}" for suffix in _POOL_TABLE_SUFFIXES]
+
+
+def pool_name_tokens(pool_name: str) -> list[str]:
+    return [token.lower() for token in pool_name.split("_") if token]
+
+
+def pool_name_has_token_match(
+    pool_name: str,
+    match_tokens: list[str] | None = None,
+) -> bool:
+    token_set = set(match_tokens or _DEFAULT_TESTISH_TOKENS)
+    return any(token in token_set for token in pool_name_tokens(pool_name))
 
 
 def _validated_pool_table_names(pool_name: str) -> list[str]:

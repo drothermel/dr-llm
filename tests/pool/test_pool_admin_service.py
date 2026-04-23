@@ -11,9 +11,12 @@ from dr_llm.pool.errors import PoolError
 from dr_llm.pool.models import (
     CreatePoolRequest,
     DeletePoolRequest,
+    DeletePoolsByTokenRequest,
     PoolCreationBlockReason,
     PoolCreationReadiness,
     PoolDeletionBlockReason,
+    PoolDeletionResult,
+    PoolDeletionStatus,
     PoolInspection,
     PoolInspectionRequest,
     PoolInspectionStatus,
@@ -383,3 +386,99 @@ def test_assess_pool_deletion_blocks_in_progress_pool(
     assert [violation.reason for violation in readiness.violations] == [
         PoolDeletionBlockReason.pool_in_progress
     ]
+
+
+def test_pool_name_has_token_match_uses_exact_underscore_delimited_words() -> None:
+    assert admin_service.pool_name_has_token_match("smoke_eval")
+    assert admin_service.pool_name_has_token_match("demo_tst_case")
+    assert admin_service.pool_name_has_token_match("alpha_demo_run")
+    assert admin_service.pool_name_has_token_match("full_test_run")
+    assert not admin_service.pool_name_has_token_match("contest_pool")
+    assert not admin_service.pool_name_has_token_match("smoketest_pool")
+    assert not admin_service.pool_name_has_token_match("demographic_pool")
+    assert not admin_service.pool_name_has_token_match("attest_case")
+
+
+def test_delete_pools_by_token_matches_only_exact_words_in_discovery_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
+    deleted: list[str] = []
+
+    def fake_delete_pool(request: DeletePoolRequest) -> PoolDeletionResult:
+        deleted.append(request.pool_name)
+        return PoolDeletionResult(
+            request=request,
+            status=PoolDeletionStatus.deleted,
+        )
+
+    monkeypatch.setattr(admin_service, "maybe_get_project", lambda name: project)
+    monkeypatch.setattr(
+        admin_service,
+        "discover_pools",
+        lambda dsn: [
+            "alpha_test_run",
+            "contest_pool",
+            "smoke_eval",
+            "demo_tst_case",
+            "alpha_demo_run",
+            "smoketest_pool",
+        ],
+    )
+    monkeypatch.setattr(admin_service, "delete_pool", fake_delete_pool)
+
+    result = admin_service.delete_pools_by_token(
+        DeletePoolsByTokenRequest(
+            project_name="demo",
+            match_tokens=["test", "tst", "smoke", "demo"],
+        )
+    )
+
+    assert result.success is True
+    assert result.matched_pool_names == [
+        "alpha_test_run",
+        "smoke_eval",
+        "demo_tst_case",
+        "alpha_demo_run",
+    ]
+    assert deleted == result.matched_pool_names
+
+
+def test_delete_pools_by_token_dry_run_reports_matches_without_deleting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
+    deleted: list[str] = []
+
+    def fake_delete_pool(request: DeletePoolRequest) -> PoolDeletionResult:
+        deleted.append(request.pool_name)
+        return PoolDeletionResult(
+            request=request,
+            status=PoolDeletionStatus.deleted,
+        )
+
+    monkeypatch.setattr(admin_service, "maybe_get_project", lambda name: project)
+    monkeypatch.setattr(
+        admin_service,
+        "discover_pools",
+        lambda dsn: ["alpha_test_run", "contest_pool", "smoke_eval", "alpha_demo_run"],
+    )
+    monkeypatch.setattr(admin_service, "delete_pool", fake_delete_pool)
+
+    result = admin_service.delete_pools_by_token(
+        DeletePoolsByTokenRequest(
+            project_name="demo",
+            match_tokens=["test", "tst", "smoke", "demo"],
+            dry_run=True,
+        )
+    )
+
+    assert result.success is True
+    assert result.dry_run is True
+    assert result.matched_pool_names == [
+        "alpha_test_run",
+        "smoke_eval",
+        "alpha_demo_run",
+    ]
+    assert result.pool_results == []
+    assert deleted == []

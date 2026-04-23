@@ -7,6 +7,12 @@
 - Added structured pool deletion APIs and models:
   `assess_pool_deletion(...)`, `delete_pool(...)`, `DeletePoolRequest`,
   readiness models, violations, statuses, and results.
+- Added a `dr-llm pool destroy-testish PROJECT_NAME --yes-really-delete-everything`
+  convenience command that discovers pools in a project and deletes only the
+  ones whose underscore-delimited lowercase name tokens include `test`, `tst`,
+  `smoke`, or `demo`.
+- Added `--dry-run` support for `dr-llm pool destroy-testish` so matching pools
+  can be previewed without deletion.
 - Added structured project deletion APIs and models:
   `assess_project_deletion(...)`, `delete_project(...)`, `DeleteProjectRequest`,
   readiness models, violations, statuses, and results.

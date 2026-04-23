@@ -12,6 +12,7 @@ from dr_llm.pool.models import (
     AcquireQuery,
     AcquireResult,
     DeletePoolRequest,
+    DeletePoolsByTokenRequest,
     InsertResult,
 )
 from dr_llm.pool.pending.backend import PoolPendingBackendState
@@ -289,11 +290,13 @@ def test_pool_root_re_exports_admin_models_and_services() -> None:
     assert hasattr(pool, "AcquireResult")
     assert hasattr(pool, "CreatePoolRequest")
     assert hasattr(pool, "DeletePoolRequest")
+    assert hasattr(pool, "DeletePoolsByTokenRequest")
     assert hasattr(pool, "PoolInspection")
     assert hasattr(pool, "assess_pool_creation")
     assert hasattr(pool, "assess_pool_deletion")
     assert hasattr(pool, "create_pool")
     assert hasattr(pool, "delete_pool")
+    assert hasattr(pool, "delete_pools_by_token")
     assert hasattr(pool, "discover_pools")
     assert not hasattr(pool, "PendingSample")
     assert not hasattr(pool, "PoolDb")
@@ -315,3 +318,15 @@ def test_delete_pool_request_normalizes_names() -> None:
 
     assert request.project_name == "demo"
     assert request.pool_name == "sample_pool"
+
+
+def test_delete_pools_by_token_request_normalizes_tokens() -> None:
+    request = DeletePoolsByTokenRequest(
+        project_name=" demo ",
+        match_tokens=[" Test ", "smoke", "", "TST"],
+        dry_run=True,
+    )
+
+    assert request.project_name == "demo"
+    assert request.match_tokens == ["test", "smoke", "tst"]
+    assert request.dry_run is True

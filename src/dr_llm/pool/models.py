@@ -281,3 +281,45 @@ class PoolDeletionResult(BaseModel):
     @property
     def success(self) -> bool:
         return self.status == PoolDeletionStatus.deleted
+
+
+class DeletePoolsByTokenRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    project_name: str
+    match_tokens: list[str] = Field(default_factory=list)
+    dry_run: bool = False
+
+    @field_validator("project_name")
+    @classmethod
+    def _normalize_project_name(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("match_tokens")
+    @classmethod
+    def _normalize_match_tokens(cls, value: list[str]) -> list[str]:
+        return [token.strip().lower() for token in value if token.strip()]
+
+
+class DeletePoolsByTokenStatus(StrEnum):
+    completed = "completed"
+    blocked = "blocked"
+    failed = "failed"
+
+
+class DeletePoolsByTokenResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    request: DeletePoolsByTokenRequest
+    project: Any | None = None
+    status: DeletePoolsByTokenStatus
+    discovered_pool_names: list[str] = Field(default_factory=list)
+    matched_pool_names: list[str] = Field(default_factory=list)
+    pool_results: list[PoolDeletionResult] = Field(default_factory=list)
+    dry_run: bool = False
+    message: str | None = None
+
+    @computed_field
+    @property
+    def success(self) -> bool:
+        return self.status == DeletePoolsByTokenStatus.completed
