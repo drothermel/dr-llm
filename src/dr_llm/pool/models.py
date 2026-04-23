@@ -10,7 +10,6 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 from dr_llm.pool.db.schema import PoolSchema, _VALID_NAME_RE
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.project.project_info import ProjectInfo
 
 
 class InsertResult(BaseModel):
@@ -184,7 +183,7 @@ class PoolCreationReadiness(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: CreatePoolRequest
-    project: ProjectInfo | None = None
+    project: Any | None = None
     existing_pools: list[PoolInspection] = Field(default_factory=list)
     violations: list[PoolCreationViolation] = Field(default_factory=list)
 
@@ -199,3 +198,86 @@ class PoolCreationReadiness(BaseModel):
         if self.allowed:
             return None
         return "\n".join(violation.message for violation in self.violations)
+
+
+class DeletePoolRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    project_name: str
+    pool_name: str
+
+    @field_validator("project_name", "pool_name")
+    @classmethod
+    def _normalize_names(cls, value: str) -> str:
+        return value.strip()
+
+    @computed_field
+    @property
+    def pool_name_is_valid(self) -> bool:
+        return bool(_VALID_NAME_RE.match(self.pool_name))
+
+
+class PoolDeletionBlockReason(StrEnum):
+    invalid_pool_name = "invalid_pool_name"
+    project_not_found = "project_not_found"
+    project_not_running = "project_not_running"
+    pool_not_found = "pool_not_found"
+    pool_in_progress = "pool_in_progress"
+
+
+class PoolDeletionViolation(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    reason: PoolDeletionBlockReason
+    message: str
+    project_name: str | None = None
+    pool_name: str | None = None
+
+
+class PoolDeletionReadiness(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    request: DeletePoolRequest
+    project: Any | None = None
+    existing_table_names: list[str] = Field(default_factory=list)
+    in_progress_pending_count: int = 0
+    violations: list[PoolDeletionViolation] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def allowed(self) -> bool:
+        return not self.violations
+
+    @computed_field
+    @property
+    def blocked_message(self) -> str | None:
+        if self.allowed:
+            return None
+        return "\n".join(violation.message for violation in self.violations)
+
+
+class PoolDeletionStatus(StrEnum):
+    deleted = "deleted"
+    blocked = "blocked"
+    failed = "failed"
+    cancelled = "cancelled"
+
+
+class PoolDeletionResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    request: DeletePoolRequest
+    project: Any | None = None
+    status: PoolDeletionStatus
+    existing_table_names: list[str] = Field(default_factory=list)
+    deleted_table_names: list[str] = Field(default_factory=list)
+    missing_table_names: list[str] = Field(default_factory=list)
+    remaining_table_names: list[str] = Field(default_factory=list)
+    pre_delete_counts: dict[str, int] = Field(default_factory=dict)
+    violations: list[PoolDeletionViolation] = Field(default_factory=list)
+    message: str | None = None
+
+    @computed_field
+    @property
+    def success(self) -> bool:
+        return self.status == PoolDeletionStatus.deleted

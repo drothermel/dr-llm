@@ -33,17 +33,22 @@ with app.setup:
     add_marimo_display()(ProjectInfo)
 
 
-@app.cell(column=1, hide_code=True)
+@app.cell(column=1)
 def _(create_pool_form, create_project_form):
     _ = (create_project_form.value, create_pool_form.value)
     project_summaries = inspect_projects()
+    return (project_summaries,)
+
+
+@app.cell(hide_code=True)
+def _(project_summaries):
     mo.vstack(
         [
             mo.md("## Docker Projects State"),
             mo.ui.table([summary.to_row() for summary in project_summaries]),
         ]
     )
-    return (project_summaries,)
+    return
 
 
 @app.cell(hide_code=True)

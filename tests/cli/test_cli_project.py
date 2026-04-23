@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,12 @@ import dr_llm.cli.project as project_cli
 from dr_llm.cli import app
 from dr_llm.project.docker_project_metadata import ContainerStatus
 from dr_llm.project.errors import ProjectError
-from dr_llm.project.models import CreateProjectRequest
+from dr_llm.project.models import (
+    CreateProjectRequest,
+    DeleteProjectRequest,
+    ProjectDeletionResult,
+    ProjectDeletionStatus,
+)
 from dr_llm.project.project_info import ProjectInfo
 
 runner = CliRunner()
@@ -55,10 +61,15 @@ def test_project_destroy_invokes_service(
 ) -> None:
     destroyed: list[str] = []
 
-    def fake_destroy_project(name: str) -> None:
-        destroyed.append(name)
+    def fake_delete_project(request: DeleteProjectRequest) -> ProjectDeletionResult:
+        destroyed.append(request.project_name)
+        return ProjectDeletionResult(
+            request=request,
+            status=ProjectDeletionStatus.deleted,
+            destroyed_project_resources=True,
+        )
 
-    monkeypatch.setattr(project_cli, "destroy_project", fake_destroy_project)
+    monkeypatch.setattr(project_cli, "delete_project", fake_delete_project)
 
     result = runner.invoke(
         app,
@@ -67,10 +78,10 @@ def test_project_destroy_invokes_service(
 
     assert result.exit_code == 0
     assert destroyed == ["demo"]
-    assert (
-        result.stdout.strip()
-        == "Project 'demo' destroyed (container + volume removed)."
-    )
+    payload = json.loads(result.stdout)
+    assert payload["request"]["project_name"] == "demo"
+    assert payload["status"] == "deleted"
+    assert payload["destroyed_project_resources"] is True
 
 
 def test_project_backup_invokes_service(

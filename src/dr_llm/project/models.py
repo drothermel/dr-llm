@@ -3,10 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 import re
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
-
-from dr_llm.project.project_info import ProjectInfo
 
 _PROJECT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -45,7 +44,7 @@ class ProjectCreationReadiness(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: CreateProjectRequest
-    existing_projects: list[ProjectInfo] = Field(default_factory=list)
+    existing_projects: list[Any] = Field(default_factory=list)
     recent_project_names: list[str] = Field(default_factory=list)
     violations: list[ProjectCreationViolation] = Field(default_factory=list)
 
@@ -60,6 +59,75 @@ class ProjectCreationReadiness(BaseModel):
         if self.allowed:
             return None
         return "\n".join(violation.message for violation in self.violations)
+
+
+class DeleteProjectRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    project_name: str
+
+    @field_validator("project_name")
+    @classmethod
+    def _normalize_project_name(cls, value: str) -> str:
+        return value.strip()
+
+
+class ProjectDeletionBlockReason(StrEnum):
+    project_not_found = "project_not_found"
+    project_missing_dsn = "project_missing_dsn"
+
+
+class ProjectDeletionViolation(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    reason: ProjectDeletionBlockReason
+    message: str
+    project_name: str | None = None
+
+
+class ProjectDeletionReadiness(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    request: DeleteProjectRequest
+    project: Any | None = None
+    violations: list[ProjectDeletionViolation] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def allowed(self) -> bool:
+        return not self.violations
+
+    @computed_field
+    @property
+    def blocked_message(self) -> str | None:
+        if self.allowed:
+            return None
+        return "\n".join(violation.message for violation in self.violations)
+
+
+class ProjectDeletionStatus(StrEnum):
+    deleted = "deleted"
+    blocked = "blocked"
+    failed = "failed"
+
+
+class ProjectDeletionResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    request: DeleteProjectRequest
+    project: Any | None = None
+    status: ProjectDeletionStatus
+    discovered_pool_names: list[str] = Field(default_factory=list)
+    pool_results: list[Any] = Field(default_factory=list)
+    temporarily_started: bool = False
+    destroyed_project_resources: bool = False
+    violations: list[ProjectDeletionViolation] = Field(default_factory=list)
+    message: str | None = None
+
+    @computed_field
+    @property
+    def success(self) -> bool:
+        return self.status == ProjectDeletionStatus.deleted
 
 
 class ProjectPoolInspectionStatus(StrEnum):
@@ -93,7 +161,7 @@ class ProjectPoolInspection(BaseModel):
 class ProjectInspectionSummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    project: ProjectInfo
+    project: Any
     pool_inspection: ProjectPoolInspection
 
     @staticmethod

@@ -244,6 +244,12 @@ where `PoolStore.ensure_schema()` persists it under the reserved key
 `PoolSchemaNotPersistedError` on `open()`; use
 `PoolReader.from_runtime(runtime, schema=...)` to inspect them with an
 explicit schema, or re-run `ensure_schema()` once to backfill the row.
+For a manual backfill, construct the known schema explicitly, for example
+`PoolSchema.from_axis_names(pool_name, ["prompt_template_id", "data_sample_id", "llm_config_id"])`,
+then run `PoolStore(schema, runtime).ensure_schema()`. Outcome: the pool's
+tables and indexes remain unchanged, and the missing `_schema` metadata row is
+upserted so future `PoolReader.open(...)` and `inspect_pool(...)` calls work
+normally without an explicit schema.
 
 ### Migrating existing pools to `call_stats`
 
@@ -298,10 +304,38 @@ dr-llm project create NAME
 dr-llm project list
 dr-llm project use NAME
 dr-llm project start|stop NAME
+dr-llm pool destroy PROJECT_NAME POOL_NAME --yes-really-delete-everything
 dr-llm project backup NAME
 dr-llm project restore NAME BACKUP_PATH  # BACKUP_PATH must be .sql.gz
 dr-llm project destroy NAME --yes-really-delete-everything
 ```
+
+### Deleting pools and projects
+
+Deletion now uses one standard primitive: pool deletion.
+
+- `dr-llm pool destroy PROJECT_NAME POOL_NAME --yes-really-delete-everything`
+  deletes the fixed pool table set for that pool name: `samples`, `claims`,
+  `pending`, `metadata`, and `call_stats`.
+- direct pool deletion requires the project to be running and blocks if the
+  pool is still in progress
+- legacy pools without persisted `_schema` metadata can still be deleted,
+  because deletion targets the derived table names directly rather than loading
+  `PoolSchema` from metadata
+
+`dr-llm project destroy` is now an orchestrator over pool deletion rather than a
+blind Docker destroy.
+
+- if the project is stopped, it is started temporarily for pool discovery and deletion
+- discovered pools are deleted with bounded parallelism, but result ordering is
+  deterministic and follows pool discovery order rather than completion order
+- if any pool deletion fails, project container and volume deletion are skipped
+- if the project had to be started temporarily and deletion fails, it is stopped
+  again to restore the original state
+
+Both destroy commands now emit structured JSON results. For project deletion,
+the payload includes `discovered_pool_names`, ordered `pool_results`,
+`temporarily_started`, and `destroyed_project_resources`.
 
 ## Configuration
 

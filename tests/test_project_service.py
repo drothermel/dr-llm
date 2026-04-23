@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 from pathlib import Path
+import time
 from typing import IO
 
 import pytest
@@ -23,14 +24,18 @@ from dr_llm.project.errors import (
 )
 from dr_llm.project.models import (
     CreateProjectRequest,
+    DeleteProjectRequest,
     ProjectCreationBlockReason,
     ProjectCreationReadiness,
+    ProjectDeletionStatus,
     ProjectPoolInspectionReason,
     ProjectPoolInspectionStatus,
 )
+from dr_llm.pool.models import PoolDeletionResult, PoolDeletionStatus
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import (
     assess_project_creation,
+    delete_project,
     backup_project,
     create_project,
     get_project,
@@ -384,7 +389,6 @@ def test_get_project_raises_project_not_found(
     [
         ("start_project", "call_docker_start"),
         ("stop_project", "call_docker_stop"),
-        ("destroy_project", "call_docker_destroy"),
     ],
 )
 def test_direct_operations_translate_missing_container_to_project_not_found(
@@ -402,6 +406,30 @@ def test_direct_operations_translate_missing_container_to_project_not_found(
 
     with pytest.raises(ProjectNotFoundError, match="Project 'demo' not found"):
         getattr(project_service_module, function_name)("demo")
+
+
+def test_destroy_project_wrapper_translates_missing_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        project_service_module,
+        "delete_project",
+        lambda request: project_service_module.ProjectDeletionResult(
+            request=request,
+            status=project_service_module.ProjectDeletionStatus.blocked,
+            violations=[
+                project_service_module.ProjectDeletionViolation(
+                    reason=project_service_module.ProjectDeletionBlockReason.project_not_found,
+                    message="Project 'demo' not found",
+                    project_name="demo",
+                )
+            ],
+            message="Project 'demo' not found",
+        ),
+    )
+
+    with pytest.raises(ProjectNotFoundError, match="Project 'demo' not found"):
+        project_service_module.destroy_project("demo")
 
 
 def test_start_project_returns_fresh_project_metadata_after_ready(
@@ -660,3 +688,205 @@ def test_backup_project_removes_partial_file_when_streaming_fails(
         backup_project("demo", tmp_path)
 
     assert list((tmp_path / "demo").glob("*.sql.gz")) == []
+
+
+def test_delete_project_destroys_running_project_with_no_pools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destroyed: list[tuple[str, str]] = []
+    project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
+
+    monkeypatch.setattr(
+        project_service_module, "maybe_get_project", lambda name: project
+    )
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: [],
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_destroy",
+        lambda container_name, volume_name: destroyed.append(
+            (container_name, volume_name)
+        ),
+    )
+
+    result = delete_project(DeleteProjectRequest(project_name="demo"))
+
+    assert result.status == ProjectDeletionStatus.deleted
+    assert result.destroyed_project_resources is True
+    assert result.pool_results == []
+    assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
+
+
+def test_delete_project_autostarts_stopped_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started: list[str] = []
+    destroyed: list[tuple[str, str]] = []
+    stopped_project = ProjectInfo(name="demo", status=ContainerStatus.STOPPED)
+    running_project = ProjectInfo(
+        name="demo", port=5500, status=ContainerStatus.RUNNING
+    )
+
+    monkeypatch.setattr(
+        project_service_module, "maybe_get_project", lambda name: stopped_project
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "start_project",
+        lambda name: started.append(name) or running_project,
+    )
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: [],
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_destroy",
+        lambda container_name, volume_name: destroyed.append(
+            (container_name, volume_name)
+        ),
+    )
+
+    result = delete_project(DeleteProjectRequest(project_name="demo"))
+
+    assert result.status == ProjectDeletionStatus.deleted
+    assert result.temporarily_started is True
+    assert started == ["demo"]
+    assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
+
+
+def test_delete_project_preserves_discovered_pool_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destroyed: list[tuple[str, str]] = []
+    project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
+
+    def fake_delete_one(project_name: str, pool_name: str) -> PoolDeletionResult:
+        _ = project_name
+        if pool_name == "alpha":
+            time.sleep(0.03)
+        if pool_name == "beta":
+            time.sleep(0.01)
+        return PoolDeletionResult(
+            request=project_service_module.DeletePoolRequest(
+                project_name="demo",
+                pool_name=pool_name,
+            ),
+            status=PoolDeletionStatus.deleted,
+            deleted_table_names=[f"pool_{pool_name}_samples"],
+        )
+
+    monkeypatch.setattr(
+        project_service_module, "maybe_get_project", lambda name: project
+    )
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: ["alpha", "beta", "gamma"],
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_delete_single_pool_for_project",
+        fake_delete_one,
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_destroy",
+        lambda container_name, volume_name: destroyed.append(
+            (container_name, volume_name)
+        ),
+    )
+
+    result = delete_project(DeleteProjectRequest(project_name="demo"))
+
+    assert result.status == ProjectDeletionStatus.deleted
+    assert [pool_result.request.pool_name for pool_result in result.pool_results] == [
+        "alpha",
+        "beta",
+        "gamma",
+    ]
+    assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
+
+
+def test_delete_project_fail_fast_restores_temporary_start_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started: list[str] = []
+    stopped: list[str] = []
+    destroyed: list[tuple[str, str]] = []
+    observed_calls: list[str] = []
+    stopped_project = ProjectInfo(name="demo", status=ContainerStatus.STOPPED)
+    running_project = ProjectInfo(
+        name="demo", port=5500, status=ContainerStatus.RUNNING
+    )
+
+    def fake_delete_one(project_name: str, pool_name: str) -> PoolDeletionResult:
+        _ = project_name
+        observed_calls.append(pool_name)
+        if pool_name == "alpha":
+            return PoolDeletionResult(
+                request=project_service_module.DeletePoolRequest(
+                    project_name="demo",
+                    pool_name=pool_name,
+                ),
+                status=PoolDeletionStatus.failed,
+                message="boom",
+            )
+        time.sleep(0.02)
+        return PoolDeletionResult(
+            request=project_service_module.DeletePoolRequest(
+                project_name="demo",
+                pool_name=pool_name,
+            ),
+            status=PoolDeletionStatus.deleted,
+        )
+
+    monkeypatch.setattr(
+        project_service_module, "maybe_get_project", lambda name: stopped_project
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "start_project",
+        lambda name: started.append(name) or running_project,
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "stop_project",
+        lambda name: stopped.append(name),
+    )
+    monkeypatch.setattr(
+        "dr_llm.pool.admin_service.discover_pools",
+        lambda dsn: ["alpha", "beta", "gamma"],
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_POOL_DELETE_MAX_WORKERS",
+        2,
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_delete_single_pool_for_project",
+        fake_delete_one,
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_destroy",
+        lambda container_name, volume_name: destroyed.append(
+            (container_name, volume_name)
+        ),
+    )
+
+    result = delete_project(DeleteProjectRequest(project_name="demo"))
+
+    assert result.status == ProjectDeletionStatus.failed
+    assert result.temporarily_started is True
+    assert started == ["demo"]
+    assert stopped == ["demo"]
+    assert destroyed == []
+    assert observed_calls == ["alpha", "beta"]
+    assert [pool_result.status for pool_result in result.pool_results] == [
+        PoolDeletionStatus.failed,
+        PoolDeletionStatus.deleted,
+        PoolDeletionStatus.cancelled,
+    ]

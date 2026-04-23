@@ -1,19 +1,32 @@
 from __future__ import annotations
 
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import gzip
 import logging
 import socket
 from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Final
 
 from dr_llm.datetime_utils import UTC, normalize_utc
 from dr_llm.errors import TransientPersistenceError
+from dr_llm.pool.models import (
+    DeletePoolRequest,
+    PoolDeletionResult,
+    PoolDeletionStatus,
+)
 from dr_llm.project.models import (
     CreateProjectRequest,
+    DeleteProjectRequest,
     ProjectCreationBlockReason,
     ProjectCreationReadiness,
     ProjectCreationViolation,
+    ProjectDeletionBlockReason,
+    ProjectDeletionReadiness,
+    ProjectDeletionResult,
+    ProjectDeletionStatus,
+    ProjectDeletionViolation,
     ProjectInspectionSummary,
     ProjectPoolInspection,
     ProjectPoolInspectionReason,
@@ -56,6 +69,7 @@ DOCKER_IMAGE = "postgres:16"
 DEFAULT_BACKUP_DIR = Path.home() / ".dr-llm" / "backups"
 BASE_PORT = 5500
 PORT_PROBE_TIMEOUT_SECONDS = 0.05
+_POOL_DELETE_MAX_WORKERS: Final[int] = 2
 
 validate_pg_identifier(ProjectInfo.db_name, "database name")
 logger = logging.getLogger(__name__)
@@ -196,6 +210,123 @@ def create_project(request: CreateProjectRequest) -> ProjectInfo:
     project = _create_container_with_port_retry(name, claimed_ports)
     status = _wait_ready_or_destroy(project)
     return project.model_copy(update={"status": status})
+
+
+def assess_project_deletion(request: DeleteProjectRequest) -> ProjectDeletionReadiness:
+    project = maybe_get_project(request.project_name)
+    if project is None:
+        return ProjectDeletionReadiness(
+            request=request,
+            violations=[
+                ProjectDeletionViolation(
+                    reason=ProjectDeletionBlockReason.project_not_found,
+                    message=f"Project {request.project_name!r} not found",
+                    project_name=request.project_name,
+                )
+            ],
+        )
+    return ProjectDeletionReadiness(request=request, project=project)
+
+
+def delete_project(request: DeleteProjectRequest) -> ProjectDeletionResult:
+    readiness = assess_project_deletion(request)
+    if not readiness.allowed:
+        return ProjectDeletionResult(
+            request=request,
+            project=readiness.project,
+            status=ProjectDeletionStatus.blocked,
+            violations=readiness.violations,
+            message=readiness.blocked_message,
+        )
+
+    assert readiness.project is not None
+    project = readiness.project
+    temporarily_started = False
+    running_project = project
+    discovered_pool_names: list[str] = []
+    pool_results: list[PoolDeletionResult] = []
+    destroyed_project_resources = False
+    failure_message: str | None = None
+    violations: list[ProjectDeletionViolation] = []
+
+    try:
+        if not project.running:
+            running_project = start_project(request.project_name)
+            temporarily_started = True
+        if running_project.dsn is None:
+            violations.append(
+                ProjectDeletionViolation(
+                    reason=ProjectDeletionBlockReason.project_missing_dsn,
+                    message=f"Project {running_project.name!r} has no DSN.",
+                    project_name=running_project.name,
+                )
+            )
+            failure_message = violations[0].message
+            return ProjectDeletionResult(
+                request=request,
+                project=running_project,
+                status=ProjectDeletionStatus.blocked,
+                discovered_pool_names=discovered_pool_names,
+                pool_results=pool_results,
+                temporarily_started=temporarily_started,
+                destroyed_project_resources=False,
+                violations=violations,
+                message=failure_message,
+            )
+
+        from dr_llm.pool.admin_service import discover_pools
+
+        discovered_pool_names = discover_pools(running_project.dsn)
+        pool_results = _delete_pools_for_project(
+            request.project_name,
+            discovered_pool_names,
+        )
+        if any(result.status != PoolDeletionStatus.deleted for result in pool_results):
+            failure_message = _project_delete_failure_message(pool_results)
+        else:
+            call_docker_destroy(
+                running_project.container_name,
+                running_project.volume_name,
+            )
+            destroyed_project_resources = True
+            return ProjectDeletionResult(
+                request=request,
+                project=running_project,
+                status=ProjectDeletionStatus.deleted,
+                discovered_pool_names=discovered_pool_names,
+                pool_results=pool_results,
+                temporarily_started=temporarily_started,
+                destroyed_project_resources=True,
+                message=(
+                    f"Project {request.project_name!r} and all discovered pools were deleted."
+                ),
+            )
+    except Exception as exc:
+        failure_message = str(exc)
+
+    stop_failure_message: str | None = None
+    if temporarily_started and not destroyed_project_resources:
+        try:
+            stop_project(request.project_name)
+        except Exception as exc:
+            stop_failure_message = str(exc)
+
+    if stop_failure_message is not None:
+        failure_message = (
+            f"{failure_message or 'Project deletion failed.'} "
+            f"Failed to restore the original stopped state: {stop_failure_message}"
+        )
+
+    return ProjectDeletionResult(
+        request=request,
+        project=running_project,
+        status=ProjectDeletionStatus.failed,
+        discovered_pool_names=discovered_pool_names,
+        pool_results=pool_results,
+        temporarily_started=temporarily_started,
+        destroyed_project_resources=False,
+        message=failure_message or "Project deletion failed.",
+    )
 
 
 def _collect_claimed_ports() -> set[int]:
@@ -342,13 +473,20 @@ def stop_project(name: str) -> None:
 
 
 def destroy_project(name: str) -> None:
-    try:
-        call_docker_destroy(
-            ProjectInfo.container_name_for(name),
-            ProjectInfo.volume_name_for(name),
-        )
-    except DockerContainerNotFoundError as exc:
-        raise ProjectNotFoundError(f"Project '{name}' not found") from exc
+    result = delete_project(DeleteProjectRequest(project_name=name))
+    if result.status == ProjectDeletionStatus.deleted:
+        return
+    violation = next(
+        (
+            violation
+            for violation in result.violations
+            if violation.reason == ProjectDeletionBlockReason.project_not_found
+        ),
+        None,
+    )
+    if violation is not None:
+        raise ProjectNotFoundError(violation.message)
+    raise ProjectError(result.message or "Project deletion failed.")
 
 
 def backup_project(name: str, output_dir: Path | None = None) -> Path:
@@ -400,3 +538,93 @@ def restore_project(name: str, backup_file: Path) -> None:
             raise ProjectError(
                 f"Project '{name}' is not running. Start it first."
             ) from exc
+
+
+def _delete_pools_for_project(
+    project_name: str,
+    pool_names: list[str],
+) -> list[PoolDeletionResult]:
+    if not pool_names:
+        return []
+
+    max_workers = max(1, min(_POOL_DELETE_MAX_WORKERS, len(pool_names)))
+    submitted_index = 0
+    failure_seen = False
+    results_by_index: dict[int, PoolDeletionResult] = {}
+    futures: dict[Future[PoolDeletionResult], int] = {}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        while submitted_index < max_workers:
+            future = executor.submit(
+                _delete_single_pool_for_project,
+                project_name,
+                pool_names[submitted_index],
+            )
+            futures[future] = submitted_index
+            submitted_index += 1
+
+        while futures:
+            done, _ = wait(futures.keys(), return_when=FIRST_COMPLETED)
+            for future in done:
+                index = futures.pop(future)
+                result = future.result()
+                results_by_index[index] = result
+                if result.status != PoolDeletionStatus.deleted:
+                    failure_seen = True
+
+            if failure_seen:
+                while submitted_index < len(pool_names):
+                    pool_name = pool_names[submitted_index]
+                    results_by_index[submitted_index] = PoolDeletionResult(
+                        request=DeletePoolRequest(
+                            project_name=project_name,
+                            pool_name=pool_name,
+                        ),
+                        status=PoolDeletionStatus.cancelled,
+                        message=(
+                            "Pool deletion was not started because an earlier pool "
+                            "deletion failed."
+                        ),
+                    )
+                    submitted_index += 1
+                continue
+
+            while submitted_index < len(pool_names) and len(futures) < max_workers:
+                future = executor.submit(
+                    _delete_single_pool_for_project,
+                    project_name,
+                    pool_names[submitted_index],
+                )
+                futures[future] = submitted_index
+                submitted_index += 1
+
+    return [results_by_index[index] for index in range(len(pool_names))]
+
+
+def _delete_single_pool_for_project(
+    project_name: str,
+    pool_name: str,
+) -> PoolDeletionResult:
+    from dr_llm.pool.admin_service import delete_pool
+
+    return delete_pool(
+        DeletePoolRequest(project_name=project_name, pool_name=pool_name)
+    )
+
+
+def _project_delete_failure_message(pool_results: list[PoolDeletionResult]) -> str:
+    first_failure = next(
+        (
+            result
+            for result in pool_results
+            if result.status != PoolDeletionStatus.deleted
+        ),
+        None,
+    )
+    if first_failure is None:
+        return "Project deletion failed."
+    return (
+        f"Project deletion stopped after pool {first_failure.request.pool_name!r} "
+        f"reported status {first_failure.status.value}: "
+        f"{first_failure.message or 'no additional detail'}"
+    )

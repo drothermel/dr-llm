@@ -10,8 +10,10 @@ from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolError
 from dr_llm.pool.models import (
     CreatePoolRequest,
+    DeletePoolRequest,
     PoolCreationBlockReason,
     PoolCreationReadiness,
+    PoolDeletionBlockReason,
     PoolInspection,
     PoolInspectionRequest,
     PoolInspectionStatus,
@@ -297,3 +299,87 @@ def test_create_pool_raises_pool_error_for_blocked_readiness(
 
     with pytest.raises(PoolError, match="already exists"):
         admin_service.create_pool(request)
+
+
+def test_assess_pool_deletion_reports_project_not_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        admin_service,
+        "maybe_get_project",
+        lambda name: ProjectInfo(name=name, status=ContainerStatus.STOPPED),
+    )
+
+    readiness = admin_service.assess_pool_deletion(
+        DeletePoolRequest(project_name="demo", pool_name="sample_pool")
+    )
+
+    assert readiness.allowed is False
+    assert [violation.reason for violation in readiness.violations] == [
+        PoolDeletionBlockReason.project_not_running
+    ]
+
+
+def test_assess_pool_deletion_reports_missing_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
+    monkeypatch.setattr(admin_service, "maybe_get_project", lambda name: project)
+    monkeypatch.setattr(admin_service, "_existing_pool_table_names", lambda *args: [])
+    monkeypatch.setattr(
+        admin_service, "_count_in_progress_pending_rows", lambda *args: 0
+    )
+
+    class FakeRuntime:
+        def __init__(self, config: object) -> None:
+            _ = config
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(admin_service, "DbRuntime", FakeRuntime)
+
+    readiness = admin_service.assess_pool_deletion(
+        DeletePoolRequest(project_name="demo", pool_name="sample_pool")
+    )
+
+    assert readiness.allowed is False
+    assert [violation.reason for violation in readiness.violations] == [
+        PoolDeletionBlockReason.pool_not_found
+    ]
+
+
+def test_assess_pool_deletion_blocks_in_progress_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
+    monkeypatch.setattr(admin_service, "maybe_get_project", lambda name: project)
+    monkeypatch.setattr(
+        admin_service,
+        "_existing_pool_table_names",
+        lambda *args: ["pool_sample_pool_samples", "pool_sample_pool_pending"],
+    )
+    monkeypatch.setattr(
+        admin_service,
+        "_count_in_progress_pending_rows",
+        lambda *args: 3,
+    )
+
+    class FakeRuntime:
+        def __init__(self, config: object) -> None:
+            _ = config
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(admin_service, "DbRuntime", FakeRuntime)
+
+    readiness = admin_service.assess_pool_deletion(
+        DeletePoolRequest(project_name="demo", pool_name="sample_pool")
+    )
+
+    assert readiness.allowed is False
+    assert readiness.in_progress_pending_count == 3
+    assert [violation.reason for violation in readiness.violations] == [
+        PoolDeletionBlockReason.pool_in_progress
+    ]

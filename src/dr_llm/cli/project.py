@@ -8,11 +8,11 @@ from pydantic import ValidationError
 
 from dr_llm.cli.common import handle_cli_errors
 from dr_llm.project.errors import ProjectError
-from dr_llm.project.models import CreateProjectRequest
+from dr_llm.project.models import CreateProjectRequest, DeleteProjectRequest
 from dr_llm.project.project_service import (
     backup_project,
     create_project,
-    destroy_project,
+    delete_project,
     get_project,
     list_projects,
     restore_project,
@@ -111,11 +111,19 @@ def project_destroy(
             abort=True,
         )
 
-    destroy_project(name)
-    typer.secho(
-        f"Project '{name}' destroyed (container + volume removed).",
-        fg=typer.colors.RED,
+    result = delete_project(DeleteProjectRequest(project_name=name))
+    typer.echo(
+        json.dumps(
+            result.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_computed_fields=True,
+            ),
+            indent=2,
+        )
     )
+    if not result.success:
+        raise typer.Exit(1)
 
 
 @project_app.command("backup")
