@@ -9,7 +9,16 @@ with app.setup:
 
     import pandas as pd
     import marimo as mo
-    from sqlalchemy import Column, DateTime, Float, Integer, MetaData, Table, Text, select
+    from sqlalchemy import (
+        Column,
+        DateTime,
+        Float,
+        Integer,
+        MetaData,
+        Table,
+        Text,
+        select,
+    )
 
     from marimo_utils import add_marimo_display
     from dr_llm.pool.admin_service import (
@@ -20,7 +29,10 @@ with app.setup:
     from dr_llm.pool.db.runtime import DbConfig, DbRuntime
     from dr_llm.pool.models import CreatePoolRequest, PoolInspectionRequest
     from dr_llm.pool.pending.pending_status import PendingStatus
-    from dr_llm.pool.reader import PoolReader, _load_schema_from_db as load_schema_from_db
+    from dr_llm.pool.reader import (
+        PoolReader,
+        _load_schema_from_db as load_schema_from_db,
+    )
     from dr_llm.project.models import CreateProjectRequest
     from dr_llm.project.project_info import ProjectInfo
     from dr_llm.project.project_service import (
@@ -47,6 +59,7 @@ def _():
     def is_demo_project(project_name: str) -> bool:
         return "demo" in project_name.strip().lower()
 
+
     def pool_rows_from_summaries(
         project_summaries: Sequence[object],
     ) -> list[dict[str, str]]:
@@ -70,6 +83,7 @@ def _():
                 )
         return rows
 
+
     def compact_json(value: object) -> str:
         if value is None:
             return ""
@@ -82,12 +96,14 @@ def _():
             separators=(",", ":"),
         )
 
+
     def metadata_category(key: str) -> str:
         if key.startswith("_"):
             return "internal"
         if "/" in key:
             return key.split("/", 1)[0]
         return "unprefixed"
+
 
     def render_question_frame(question: str, frame: pd.DataFrame) -> mo.Html:
         return mo.vstack(
@@ -98,8 +114,10 @@ def _():
             gap=0.75,
         )
 
+
     def empty_frame(columns: Sequence[str]) -> pd.DataFrame:
         return pd.DataFrame(columns=list(columns))
+
 
     def build_claims_table(table_name: str) -> Table:
         return Table(
@@ -113,6 +131,7 @@ def _():
             Column("claim_idx", Integer),
             Column("claimed_at", DateTime(timezone=True)),
         )
+
 
     def build_call_stats_table(table_name: str) -> Table:
         return Table(
@@ -130,6 +149,7 @@ def _():
             Column("created_at", DateTime(timezone=True)),
         )
 
+
     def sort_frame(
         frame: pd.DataFrame,
         *,
@@ -143,6 +163,7 @@ def _():
             ascending=ascending,
             kind="stable",
         ).reset_index(drop=True)
+
 
     def build_pool_drilldown_frames(
         *,
@@ -245,7 +266,9 @@ def _():
                     "payload_json": compact_json(pending.payload),
                     "metadata_json": compact_json(pending.metadata),
                     "fail_reason": pending.metadata.get("fail_reason", ""),
-                    "llm_config_json": compact_json(pending.payload.get("llm_config")),
+                    "llm_config_json": compact_json(
+                        pending.payload.get("llm_config")
+                    ),
                     "prompt_json": compact_json(pending.payload.get("prompt")),
                 }
                 for pending in all_pending
@@ -306,8 +329,20 @@ def _():
                 else:
                     pending_frame = sort_frame(
                         pending_frame,
-                        by=["status", "priority", "created_at", *key_columns, "sample_idx"],
-                        ascending=[True, False, True, *([True] * len(key_columns)), True],
+                        by=[
+                            "status",
+                            "priority",
+                            "created_at",
+                            *key_columns,
+                            "sample_idx",
+                        ],
+                        ascending=[
+                            True,
+                            False,
+                            True,
+                            *([True] * len(key_columns)),
+                            True,
+                        ],
                     )
 
                 failure_frame = pd.DataFrame.from_records(pending_rows)
@@ -378,20 +413,30 @@ def _():
             claims_table = build_claims_table(schema.claims_table)
             call_stats_table = build_call_stats_table(schema.call_stats_table)
             with runtime.connect() as conn:
-                claim_rows = conn.execute(
-                    select(claims_table).order_by(
-                        claims_table.c.claimed_at.desc(),
-                        claims_table.c.claim_idx.asc(),
+                claim_rows = (
+                    conn.execute(
+                        select(claims_table).order_by(
+                            claims_table.c.claimed_at.desc(),
+                            claims_table.c.claim_idx.asc(),
+                        )
                     )
-                ).mappings().all()
-                call_stats_rows = conn.execute(
-                    select(call_stats_table).order_by(
-                        call_stats_table.c.created_at.desc(),
-                        call_stats_table.c.sample_id.asc(),
+                    .mappings()
+                    .all()
+                )
+                call_stats_rows = (
+                    conn.execute(
+                        select(call_stats_table).order_by(
+                            call_stats_table.c.created_at.desc(),
+                            call_stats_table.c.sample_id.asc(),
+                        )
                     )
-                ).mappings().all()
+                    .mappings()
+                    .all()
+                )
 
-            claims_frame = pd.DataFrame.from_records([dict(row) for row in claim_rows])
+            claims_frame = pd.DataFrame.from_records(
+                [dict(row) for row in claim_rows]
+            )
             claim_columns = [
                 "claim_id",
                 "run_id",
@@ -633,30 +678,25 @@ def _():
     return (create_pool_form,)
 
 
-@app.cell(hide_code=True)
-def _(create_pool_form):
-    mo.stop(create_pool_form.value is None)
-
-    create_pool_request = CreatePoolRequest.from_csv(**create_pool_form.value)
-    create_pool_readiness = assess_pool_creation(
-        create_pool_request,
-        max_pools_per_project=5,
-    )
-    if not create_pool_readiness.allowed:
-        assert create_pool_readiness.blocked_message is not None
-        raise ValueError(create_pool_readiness.blocked_message)
-
-    create_pool_service(create_pool_request)
-    return
-
-
-@app.cell
+@app.cell(column=3, hide_code=True)
 def _(pool_rows_from_summaries, project_summaries):
     pool_rows = pool_rows_from_summaries(project_summaries)
     return (pool_rows,)
 
 
-@app.cell(column=3, hide_code=True)
+@app.cell(hide_code=True)
+def _(build_pool_drilldown_frames, pool_selector):
+    mo.stop(pool_selector is None or pool_selector.value is None)
+
+    selected_project_name, selected_pool_name = pool_selector.value.split(":", 1)
+    selected_pool_data = build_pool_drilldown_frames(
+        project_name=selected_project_name,
+        pool_name=selected_pool_name,
+    )
+    return (selected_pool_data,)
+
+
+@app.cell(hide_code=True)
 def _(pool_rows):
     pool_selector = None
     if not pool_rows:
@@ -668,9 +708,7 @@ def _(pool_rows):
             gap=0.75,
         )
     else:
-        pool_options = {
-            row["pool_label"]: row["pool_key"] for row in pool_rows
-        }
+        pool_options = {row["pool_label"]: row["pool_key"] for row in pool_rows}
         default_label = pool_rows[0]["pool_label"]
         pool_selector = mo.ui.dropdown(
             options=pool_options,
@@ -693,21 +731,11 @@ def _(pool_rows):
     return (pool_selector,)
 
 
-@app.cell
-def _(build_pool_drilldown_frames, pool_selector):
-    mo.stop(pool_selector is None or pool_selector.value is None)
-
-    selected_project_name, selected_pool_name = pool_selector.value.split(":", 1)
-    selected_pool_data = build_pool_drilldown_frames(
-        project_name=selected_project_name,
-        pool_name=selected_pool_name,
-    )
-    return (selected_pool_data,)
-
-
 @app.cell(hide_code=True)
 def _(selected_pool_data):
-    mo.md(f"**Selected:** `{selected_pool_data['pool_label']}`")
+    mo.md(f"""
+    **Selected:** `{selected_pool_data["pool_label"]}`
+    """)
     return
 
 
@@ -774,12 +802,28 @@ def _(render_question_frame, selected_pool_data):
     return
 
 
+@app.cell(column=4, hide_code=True)
+def _():
+    mo.md(r"""
+    (leave space)
+    """)
+    return
+
+
 @app.cell(hide_code=True)
-def _(render_question_frame, selected_pool_data):
-    render_question_frame(
-        "How has this pool been consumed?",
-        selected_pool_data["claims_frame"],
+def _(create_pool_form):
+    mo.stop(create_pool_form.value is None)
+
+    create_pool_request = CreatePoolRequest.from_csv(**create_pool_form.value)
+    create_pool_readiness = assess_pool_creation(
+        create_pool_request,
+        max_pools_per_project=5,
     )
+    if not create_pool_readiness.allowed:
+        assert create_pool_readiness.blocked_message is not None
+        raise ValueError(create_pool_readiness.blocked_message)
+
+    create_pool_service(create_pool_request)
     return
 
 
