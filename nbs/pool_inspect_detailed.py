@@ -35,7 +35,7 @@ with app.setup:
         ChartColor,
         DataItem,
         HeatmapChart,
-        HistogramChart,
+        HistogramCard,
         LabeledList,
         LineChart,
         LineSeries,
@@ -45,6 +45,8 @@ with app.setup:
         ScatterChart,
         ScatterSeries,
         ViolinPlotCard,
+        compute_gini,
+        skew_label,
     )
     from dr_llm.pool.admin_service import inspect_pool
     from dr_llm.pool.db.runtime import DbConfig, DbRuntime
@@ -924,83 +926,121 @@ def _(
             "call_stats_frame": call_stats_frame,
         }
 
-    def build_health_cards(data: dict[str, Any]) -> list[object]:
-        inspection = data["pool_inspection"]
-        call_stats_frame: pd.DataFrame = data["call_stats_frame"]
-
-        pie_pool_card = PoolSimpleStatsPieCard(
+    def make_pool_health_pie_card(inspection: Any) -> PoolSimpleStatsPieCard:
+        return PoolSimpleStatsPieCard(
             pool=inspection,
             width="20rem",
         )
 
-        cards: list[object] = [pie_pool_card]
+    def make_pool_finish_reason_card(
+        call_stats_frame: pd.DataFrame,
+    ) -> Card | None:
+        if "finish_reason" not in call_stats_frame.columns:
+            return None
+        finish_counts = value_counts(
+            call_stats_frame["finish_reason"].astype("string").str.lower()
+        )
+        return Card(
+            title="Finish reasons",
+            description="Distribution of finish_reason",
+            content=PieChart(
+                slices=[
+                    PieSlice(label=lab, value=cnt)
+                    for lab, cnt in finish_counts
+                ],
+                height=220,
+                show_legend=True,
+            ),
+            width="w-80",
+        )
+
+    def make_pool_cost_distribution_plot(
+        call_stats_frame: pd.DataFrame,
+        column: str = "total_cost_usd",
+    ) -> BoxPlotCard | None:
+        if column not in call_stats_frame.columns:
+            return None
+        cost_series = scaled_series(call_stats_frame, column, 1.0)
+        cost_range = range_line(
+            cost_series, "**True Range:** ${lo:,.4f} - ${hi:,.4f}"
+        )
+        return BoxPlotCard(
+            column=column,
+            data=call_stats_frame,
+            label="Cost",
+            title="Cost distribution",
+            description=f"p1 · q1 · median · q3 · p99 ($)\n{cost_range}",
+            tick_format="$.4f",
+            y_label="Cost (USD)",
+        )
+
+    def make_pool_cost_shape_plot(
+        call_stats_frame: pd.DataFrame,
+        column: str = "total_cost_usd",
+    ) -> ViolinPlotCard | None:
+        if column not in call_stats_frame.columns:
+            return None
+        cost_series = scaled_series(call_stats_frame, column, 1.0)
+        cost_range = range_line(
+            cost_series, "**True Range:** ${lo:,.4f} - ${hi:,.4f}"
+        )
         shape_primary = "KDE on p1-p99 bulk; <=2k sampled points"
+        return ViolinPlotCard(
+            column=column,
+            data=call_stats_frame,
+            label="Cost",
+            title="Cost shape",
+            description=f"{shape_primary}\n{cost_range}",
+            clip_fences=QuantileFences.P1_P99,
+            tick_format="$.4f",
+            y_label="Cost (USD)",
+        )
 
-        if "total_cost_usd" in call_stats_frame.columns:
-            cost_series = scaled_series(call_stats_frame, "total_cost_usd", 1.0)
-            cost_range = range_line(
-                cost_series, "**True Range:** ${lo:,.4f} - ${hi:,.4f}"
-            )
-            cards.append(
-                BoxPlotCard(
-                    column="total_cost_usd",
-                    data=call_stats_frame,
-                    label="Cost",
-                    title="Cost distribution",
-                    description=f"p1 · q1 · median · q3 · p99 ($)\n{cost_range}",
-                    tick_format="$.4f",
-                    y_label="Cost (USD)",
-                )
-            )
-            cards.append(
-                ViolinPlotCard(
-                    column="total_cost_usd",
-                    data=call_stats_frame,
-                    label="Cost",
-                    title="Cost shape",
-                    description=f"{shape_primary}\n{cost_range}",
-                    clip_fences=QuantileFences.P1_P99,
-                    tick_format="$.4f",
-                    y_label="Cost (USD)",
-                )
-            )
+    def make_pool_latency_distribution_plot(
+        call_stats_frame: pd.DataFrame,
+        column: str = "latency_ms",
+    ) -> BoxPlotCard | None:
+        if column not in call_stats_frame.columns:
+            return None
+        latency_scale = 0.001
+        latency_series = scaled_series(call_stats_frame, column, latency_scale)
+        latency_range = range_line(
+            latency_series, "**True Range:** {lo:,.2f} - {hi:,.2f}s"
+        )
+        return BoxPlotCard(
+            column=column,
+            data=call_stats_frame,
+            label="Latency",
+            title="Latency distribution",
+            description=f"p1 · q1 · median · q3 · p99 (s)\n{latency_range}",
+            value_scale=latency_scale,
+            tick_format=".2f",
+            y_label="Latency (s)",
+        )
 
-        if "latency_ms" in call_stats_frame.columns:
-            latency_scale = 0.001
-            latency_series = scaled_series(
-                call_stats_frame, "latency_ms", latency_scale
-            )
-            latency_range = range_line(
-                latency_series, "**True Range:** {lo:,.2f} - {hi:,.2f}s"
-            )
-            cards.append(
-                BoxPlotCard(
-                    column="latency_ms",
-                    data=call_stats_frame,
-                    label="Latency",
-                    title="Latency distribution",
-                    description=(
-                        f"p1 · q1 · median · q3 · p99 (s)\n{latency_range}"
-                    ),
-                    value_scale=latency_scale,
-                    tick_format=".2f",
-                    y_label="Latency (s)",
-                )
-            )
-            cards.append(
-                ViolinPlotCard(
-                    column="latency_ms",
-                    data=call_stats_frame,
-                    label="Latency",
-                    title="Latency shape",
-                    description=f"{shape_primary}\n{latency_range}",
-                    clip_fences=QuantileFences.P1_P99,
-                    value_scale=latency_scale,
-                    tick_format=".2f",
-                    y_label="Latency (s)",
-                )
-            )
-        return cards
+    def make_pool_latency_shape_plot(
+        call_stats_frame: pd.DataFrame,
+        column: str = "latency_ms",
+    ) -> ViolinPlotCard | None:
+        if column not in call_stats_frame.columns:
+            return None
+        latency_scale = 0.001
+        latency_series = scaled_series(call_stats_frame, column, latency_scale)
+        latency_range = range_line(
+            latency_series, "**True Range:** {lo:,.2f} - {hi:,.2f}s"
+        )
+        shape_primary = "KDE on p1-p99 bulk; <=2k sampled points"
+        return ViolinPlotCard(
+            column=column,
+            data=call_stats_frame,
+            label="Latency",
+            title="Latency shape",
+            description=f"{shape_primary}\n{latency_range}",
+            clip_fences=QuantileFences.P1_P99,
+            value_scale=latency_scale,
+            tick_format=".2f",
+            y_label="Latency (s)",
+        )
 
     mo.stop(selected_pool is None)
 
@@ -1017,7 +1057,66 @@ def _(
 
     _body = None
     if health_data is not None:
-        _body = wrap_cards(build_health_cards(health_data))
+        inspection = health_data["pool_inspection"]
+        call_stats_frame: pd.DataFrame = health_data["call_stats_frame"]
+
+        pool_pie = make_pool_health_pie_card(inspection)
+        finish_reasons = make_pool_finish_reason_card(call_stats_frame)
+        cost_distribution = make_pool_cost_distribution_plot(call_stats_frame)
+        cost_shape = make_pool_cost_shape_plot(call_stats_frame)
+        latency_distribution = make_pool_latency_distribution_plot(
+            call_stats_frame
+        )
+        latency_shape = make_pool_latency_shape_plot(call_stats_frame)
+
+        left_column = mo.vstack(
+            [
+                card.render()
+                for card in [pool_pie, finish_reasons]
+                if card is not None
+            ],
+            gap=0.75,
+            align="stretch",
+        )
+        cost_row_cards = [
+            card for card in [cost_distribution, cost_shape] if card is not None
+        ]
+        cost_row = None
+        if cost_row_cards:
+            cost_row = mo.hstack(
+                [card.render() for card in cost_row_cards],
+                gap=0.75,
+                align="start",
+            )
+        latency_row_cards = [
+            card
+            for card in [latency_distribution, latency_shape]
+            if card is not None
+        ]
+        latency_row = None
+        if latency_row_cards:
+            latency_row = mo.hstack(
+                [card.render() for card in latency_row_cards],
+                gap=0.75,
+                align="start",
+            )
+        right_column = None
+        right_column_rows = [
+            row for row in [cost_row, latency_row] if row is not None
+        ]
+        if right_column_rows:
+            right_column = mo.vstack(
+                right_column_rows,
+                gap=0.75,
+                align="stretch",
+            )
+
+        _body = mo.hstack(
+            [column for column in [left_column, right_column] if column is not None],
+            gap=0.75,
+            align="start",
+            justify="start",
+        )
 
     render_section("Pool health", health_run_button, _body)
     return
@@ -1074,96 +1173,6 @@ def _(
             ),
         }
 
-    def clean_counts(counts: Sequence[int]) -> list[int]:
-        return [int(c) for c in counts if c is not None and int(c) > 0]
-
-
-    def compute_lorenz_points(
-        counts: Sequence[int],
-    ) -> tuple[list[float], list[float]]:
-        cleaned = clean_counts(counts)
-        n = len(cleaned)
-        total = sum(cleaned)
-        if n == 0 or total == 0:
-            return [0.0, 1.0], [0.0, 1.0]
-        sorted_desc = sorted(cleaned, reverse=True)
-        xs: list[float] = [0.0]
-        ys: list[float] = [0.0]
-        cumulative = 0
-        for i, count in enumerate(sorted_desc, start=1):
-            cumulative += count
-            xs.append(i / n)
-            ys.append(cumulative / total)
-        return xs, ys
-
-
-    def compute_gini(counts: Sequence[int]) -> float:
-        cleaned = clean_counts(counts)
-        n = len(cleaned)
-        if n <= 1:
-            return 0.0
-        total = sum(cleaned)
-        if total == 0:
-            return 0.0
-        sorted_asc = sorted(cleaned)
-        weighted = sum((i + 1) * c for i, c in enumerate(sorted_asc))
-        return (2.0 * weighted) / (n * total) - (n + 1.0) / n
-
-
-    def describe_skew(gini: float) -> str:
-        if gini < 0.1:
-            return "near-even"
-        if gini < 0.3:
-            return "mild skew"
-        if gini < 0.5:
-            return "moderate skew"
-        if gini < 0.7:
-            return "high skew"
-        return "dominated"
-
-
-    def build_lorenz_card(
-        *,
-        title: str,
-        description: str,
-        counts: Sequence[int],
-        width: str = "w-80",
-    ) -> Card:
-        xs, ys = compute_lorenz_points(counts)
-        n_values = len(clean_counts(counts))
-        if n_values <= 1:
-            skew_tag = "n/a"
-        else:
-            gini = compute_gini(counts)
-            skew_tag = f"Gini {gini:.2f} · {describe_skew(gini)}"
-        return Card(
-            title=title,
-            description=f"{description} · {skew_tag}",
-            content=LineChart(
-                series=[
-                    LineSeries(
-                        label="even",
-                        x=[0.0, 1.0],
-                        y=[0.0, 1.0],
-                        color=ChartColor.ONE,
-                        dash="dash",
-                    ),
-                    LineSeries(
-                        label="observed",
-                        x=list(xs),
-                        y=list(ys),
-                        color=ChartColor.TWO,
-                    ),
-                ],
-                height=220,
-                x_label="Fraction of values (sorted desc)",
-                y_label="Cumulative share of samples",
-                x_range=(0.0, 1.0),
-            ),
-            width=width,
-        )
-
-
     def per_key_count_series(
         coverage_frame: pd.DataFrame,
         key_column: str,
@@ -1175,7 +1184,7 @@ def _(
         )
 
 
-    def build_per_key_lorenz_cards(
+    def build_per_key_coverage_cards(
         *,
         coverage_frame: pd.DataFrame,
         key_columns: Sequence[str],
@@ -1185,14 +1194,21 @@ def _(
         cards: list[object] = []
         for key_column in key_columns:
             per_key = per_key_count_series(coverage_frame, key_column)
+            counts = [int(v) for v in per_key.tolist() if int(v) > 0]
+            gini = compute_gini(counts)
+            description = (
+                f"{len(counts)} ids · {int(sum(counts)):,} samples · "
+                f"Gini {gini:.2f} · {skew_label(gini)}"
+            )
             cards.append(
-                build_lorenz_card(
-                    title=f"{key_column} — coverage skew",
-                    description=(
-                        f"{len(per_key)} distinct values · "
-                        f"{int(per_key.sum()):,} samples"
-                    ),
-                    counts=[int(v) for v in per_key.tolist()],
+                HistogramCard(
+                    data=counts,
+                    column=key_column,
+                    title=f"{key_column} — sample coverage",
+                    description=description,
+                    color=ChartColor.TWO,
+                    x_label="Samples per id",
+                    y_label="Number of ids",
                 )
             )
         return cards
@@ -1282,11 +1298,11 @@ def _(
                     width="w-96",
                 )
 
-        lorenz_cards = build_per_key_lorenz_cards(
+        per_key_cards = build_per_key_coverage_cards(
             coverage_frame=coverage_frame,
             key_columns=key_columns,
         )
-        return [distribution_card, heatmap_card, *lorenz_cards]
+        return [distribution_card, heatmap_card, *per_key_cards]
 
 
     mo.stop(selected_pool is None)
@@ -1370,18 +1386,16 @@ def _(
             ],
         )
 
-        timeline_card = Card(
+        timeline_card = HistogramCard(
+            data=ts_to_unix(sample_frame, "created_at"),
+            column="created_at",
             title="Creation timeline",
             description="Histogram of sample.created_at (unix seconds)",
-            content=HistogramChart(
-                values=ts_to_unix(sample_frame, "created_at"),
-                color=ChartColor.TWO,
-                nbins=24,
-                height=220,
-                x_label="Unix seconds",
-                y_label="Samples",
-            ),
-            width="w-80",
+            color=ChartColor.TWO,
+            binning="continuous",
+            nbins=24,
+            x_label="Unix seconds",
+            y_label="Samples",
         )
 
         run_counts = value_counts(sample_frame["source_run_id"])[:10]
@@ -1506,24 +1520,14 @@ def _(
             width="w-80",
         )
 
-        priority_card = Card(
+        priority_card = HistogramCard(
+            data=pending_frame,
+            column="priority",
             title="Priority distribution",
             description="Counts by priority value",
-            content=HistogramChart(
-                values=[
-                    float(p)
-                    for p in pd.to_numeric(
-                        pending_frame["priority"], errors="coerce"
-                    )
-                    .dropna()
-                    .tolist()
-                ],
-                color=ChartColor.FOUR,
-                height=220,
-                x_label="Priority",
-                y_label="Count",
-            ),
-            width="w-80",
+            color=ChartColor.FOUR,
+            x_label="Priority",
+            y_label="Count",
         )
 
         attempt_counts = value_counts(pending_frame["attempt_count"])
@@ -1644,38 +1648,26 @@ def _(
             width="w-96",
         )
 
-        attempts_card = Card(
+        attempts_card = HistogramCard(
+            data=failure_frame,
+            column="attempt_count",
             title="Attempts before fail",
             description="Distribution of attempt_count for failed items",
-            content=HistogramChart(
-                values=[
-                    float(v)
-                    for v in pd.to_numeric(
-                        failure_frame["attempt_count"], errors="coerce"
-                    )
-                    .dropna()
-                    .tolist()
-                ],
-                color=ChartColor.ONE,
-                height=220,
-                x_label="attempt_count",
-                y_label="Count",
-            ),
-            width="w-80",
+            color=ChartColor.ONE,
+            x_label="attempt_count",
+            y_label="Count",
         )
 
-        timeline_card = Card(
+        timeline_card = HistogramCard(
+            data=ts_to_unix(failure_frame, "created_at"),
+            column="created_at",
             title="Failures over time",
             description="Histogram of created_at (unix seconds)",
-            content=HistogramChart(
-                values=ts_to_unix(failure_frame, "created_at"),
-                color=ChartColor.ONE,
-                nbins=24,
-                height=220,
-                x_label="Unix seconds",
-                y_label="Failures",
-            ),
-            width="w-80",
+            color=ChartColor.ONE,
+            binning="continuous",
+            nbins=24,
+            x_label="Unix seconds",
+            y_label="Failures",
         )
 
         return [summary, reasons_card, attempts_card, timeline_card]
@@ -2009,45 +2001,57 @@ def _(
         cs: pd.DataFrame = data["call_stats_frame"]
         total = len(cs)
         if total == 0:
-            return [stat_card("Call stats", [("Rows", "0")])]
+            return [stat_card("Token distribution", [("Rows", "0")])]
 
-        latency_vals = (
-            pd.to_numeric(cs["latency_ms"], errors="coerce").dropna().tolist()
-        )
-        cost_vals = (
-            pd.to_numeric(cs["total_cost_usd"], errors="coerce").dropna().tolist()
-        )
-        total_tokens_vals = (
-            pd.to_numeric(cs["total_tokens"], errors="coerce").dropna().tolist()
-        )
+        def scaled_series(column: str) -> pd.Series:
+            return pd.to_numeric(cs[column], errors="coerce").dropna()
 
-        latency_card = Card(
-            title="Latency distribution",
-            description="Per-call latency_ms",
-            content=HistogramChart(
-                values=[float(v) for v in latency_vals],
-                color=ChartColor.TWO,
-                nbins=30,
-                height=220,
-                x_label="latency_ms",
-                y_label="Calls",
-            ),
-            width="w-80",
-        )
+        def range_line(series: pd.Series) -> str:
+            return f"**True Range:** {float(series.min()):,.0f} - {float(series.max()):,.0f}"
 
-        cost_card = Card(
-            title="Cost distribution",
-            description="Per-call total_cost_usd",
-            content=HistogramChart(
-                values=[float(v) for v in cost_vals],
-                color=ChartColor.FOUR,
-                nbins=30,
-                height=220,
-                x_label="USD",
-                y_label="Calls",
-            ),
-            width="w-80",
-        )
+        def add_token_distribution_cards(
+            cards: list[object],
+            *,
+            column: str,
+            label: str,
+        ) -> None:
+            if column not in cs.columns:
+                return
+
+            series = scaled_series(column)
+            if series.empty:
+                return
+
+            token_range = range_line(series)
+            cards.append(
+                BoxPlotCard(
+                    column=column,
+                    data=cs,
+                    label=label,
+                    title=f"{label} distribution",
+                    description=(
+                        "p1 · q1 · median · q3 · p99 (tokens)\n"
+                        f"{token_range}"
+                    ),
+                    tick_format=".0f",
+                    y_label=f"{label} tokens",
+                )
+            )
+            cards.append(
+                ViolinPlotCard(
+                    column=column,
+                    data=cs,
+                    label=label,
+                    title=f"{label} shape",
+                    description=(
+                        "KDE on p1-p99 bulk; <=2k sampled points\n"
+                        f"{token_range}"
+                    ),
+                    clip_fences=QuantileFences.P1_P99,
+                    tick_format=".0f",
+                    y_label=f"{label} tokens",
+                )
+            )
 
         prompt_mean = pd.to_numeric(cs["prompt_tokens"], errors="coerce").mean()
         completion_mean = pd.to_numeric(
@@ -2087,22 +2091,23 @@ def _(
             ),
             width="w-80",
         )
-
-        finish_counts = value_counts(cs["finish_reason"])
-        finish_card = Card(
-            title="Finish reasons",
-            description="Distribution of finish_reason",
-            content=PieChart(
-                slices=[
-                    PieSlice(label=lab, value=cnt) for lab, cnt in finish_counts
-                ],
-                height=220,
-                show_legend=True,
-            ),
-            width="w-80",
+        cards: list[object] = [token_card]
+        add_token_distribution_cards(
+            cards,
+            column="prompt_tokens",
+            label="Prompt",
         )
-
-        return [latency_card, cost_card, token_card, finish_card]
+        add_token_distribution_cards(
+            cards,
+            column="completion_tokens",
+            label="Completion",
+        )
+        add_token_distribution_cards(
+            cards,
+            column="reasoning_tokens",
+            label="Reasoning",
+        )
+        return cards
 
     mo.stop(selected_pool is None)
 
@@ -2122,14 +2127,14 @@ def _(
     _body = None
     if call_stats_data is not None:
         _body = render_card_section(
-            "What are the per-sample generation stats?",
+            "What is the token distribution?",
             build_call_stats_cards(call_stats_data),
             call_stats_data["call_stats_frame"],
             include_title=False,
         )
 
     render_section(
-        "What are the per-sample generation stats?",
+        "What is the token distribution?",
         call_stats_run_button,
         _body,
     )
@@ -2169,65 +2174,21 @@ def _(
         if cs.empty or "created_at" not in cs.columns:
             return [stat_card("Trends", [("Calls", "0")])]
 
-        sorted_cs = cs.copy()
-        sorted_cs["_ts"] = pd.to_datetime(
-            sorted_cs["created_at"], utc=True, errors="coerce"
-        )
-        sorted_cs = sorted_cs.dropna(subset=["_ts"]).sort_values("_ts")
-        if sorted_cs.empty:
-            return [stat_card("Trends", [("Calls", "0")])]
-
-        x = [float(ts.timestamp()) for ts in sorted_cs["_ts"]]
-        cost_series = pd.to_numeric(
-            sorted_cs["total_cost_usd"], errors="coerce"
-        ).fillna(0.0)
-        cumulative_cost = cost_series.cumsum().tolist()
-        latency = (
-            pd.to_numeric(sorted_cs["latency_ms"], errors="coerce")
-            .fillna(0.0)
-            .tolist()
-        )
-        tokens = pd.to_numeric(sorted_cs["total_tokens"], errors="coerce").fillna(
-            0.0
-        )
-        window = min(20, max(1, len(tokens)))
-        rolling_tokens = (
-            tokens.rolling(window=window, min_periods=1).mean().tolist()
-        )
-
         cumulative_cost_card = Card(
             title="Cumulative cost",
-            description="USD over time",
-            content=LineChart(
-                series=[LineSeries(label="cost", x=x, y=cumulative_cost)],
-                height=220,
-                x_label="Unix seconds",
-                y_label="USD",
-            ),
+            description="Would show cumulative USD over time. Plot temporarily disabled while we fix notebook performance for large pools.",
             width="w-96",
         )
 
         latency_trend_card = Card(
             title="Latency over time",
-            description="Per-call latency_ms",
-            content=ScatterChart(
-                series=[ScatterSeries(label="latency_ms", x=x, y=latency)],
-                height=220,
-                x_label="Unix seconds",
-                y_label="latency_ms",
-            ),
+            description="Would show per-call latency_ms over time. Plot temporarily disabled while we fix notebook performance for large pools.",
             width="w-96",
         )
 
         tokens_card = Card(
             title="Tokens over time",
-            description="Rolling mean (window=20) of total_tokens",
-            content=LineChart(
-                series=[LineSeries(label="total_tokens", x=x, y=rolling_tokens)],
-                height=220,
-                x_label="Unix seconds",
-                y_label="total_tokens",
-            ),
+            description="Would show the rolling mean (window=20) of total_tokens over time. Plot temporarily disabled while we fix notebook performance for large pools.",
             width="w-96",
         )
 
@@ -2306,32 +2267,28 @@ def _(
         sample_ts = ts_to_unix(sample_frame, "created_at")
         claim_ts = ts_to_unix(claims_frame, "claimed_at")
 
-        samples_card = Card(
+        samples_card = HistogramCard(
+            data=sample_ts,
+            column="created_at",
             title="Samples per bucket",
             description=f"Histogram of {len(sample_ts)} sample timestamps",
-            content=HistogramChart(
-                values=sample_ts,
-                color=ChartColor.TWO,
-                nbins=24,
-                height=220,
-                x_label="Unix seconds",
-                y_label="Samples",
-            ),
-            width="w-80",
+            color=ChartColor.TWO,
+            binning="continuous",
+            nbins=24,
+            x_label="Unix seconds",
+            y_label="Samples",
         )
 
-        claims_card = Card(
+        claims_card = HistogramCard(
+            data=claim_ts,
+            column="claimed_at",
             title="Claims per bucket",
             description=f"Histogram of {len(claim_ts)} claim timestamps",
-            content=HistogramChart(
-                values=claim_ts,
-                color=ChartColor.FOUR,
-                nbins=24,
-                height=220,
-                x_label="Unix seconds",
-                y_label="Claims",
-            ),
-            width="w-80",
+            color=ChartColor.FOUR,
+            binning="continuous",
+            nbins=24,
+            x_label="Unix seconds",
+            y_label="Claims",
         )
 
         worker_counts: list[tuple[str, int]] = []
