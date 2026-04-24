@@ -278,7 +278,6 @@ def test_acquire_basic(pool_store: PoolStore) -> None:
     assert result.samples[0].payload == {"data": "primary"}
     assert result.samples[0].source_run_id == "seed-run"
     assert result.samples[0].metadata == {"kind": "primary"}
-    assert result.samples[0].status.value == "active"
 
 
 @pytest.mark.integration

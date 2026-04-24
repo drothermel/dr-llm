@@ -1,6 +1,6 @@
 [project]
 name = "dr-llm"
-version = "2.3.0"
+version = "2.3.1"
 description = "Provider-agnostic single-query LLM client with PostgreSQL recording and catalog storage."
 readme = "README.md"
 keywords = ["llm", "postgres", "ai", "catalog", "storage"]
@@ -32,7 +32,7 @@ dependencies = [
     "pydantic-settings>=2.13.1",
     "marimo[recommended]>=0.23.2",
     "pandas>=3.0.2",
-    "marimo-utils==0.6.0",
+    "marimo-utils==0.7.0",
 ]
 
 [project.optional-dependencies]
@@ -82,4 +82,4 @@ extra-paths = ["scripts"]
 [tool.ty.src]
 respect-ignore-files = true
 include = ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py"]
-exclude = ["nbs/**/*.py", "src/dr_llm/style/"]
+exclude = ["nbs/**/*.py", "src/dr_llm/ui/"]

@@ -18,7 +18,7 @@ from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
-from dr_llm.pool.pool_sample import PoolSample, SampleStatus
+from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import SCHEMA_METADATA_KEY, PoolStore
 from dr_llm.pool.reader import PoolReader
 
@@ -188,14 +188,6 @@ def test_samples_list_with_key_filter(reader_runtime: DbRuntime) -> None:
     assert all(s.key_values["dim_a"] == "alpha" for s in alpha)
     # 3 originally seeded + 1 promoted from pending
     assert len(alpha) == 4
-
-
-@pytest.mark.integration
-def test_samples_list_with_status_filter(reader_runtime: DbRuntime) -> None:
-    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    active = reader.samples_list(status=SampleStatus.active)
-    assert all(s.status == SampleStatus.active for s in active)
-    assert len(active) == 6  # all seeded samples are active
 
 
 @pytest.mark.integration

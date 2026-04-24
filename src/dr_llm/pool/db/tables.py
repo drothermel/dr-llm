@@ -62,7 +62,6 @@ class PoolTables:
             self.samples.c.payload_json,
             self.samples.c.source_run_id,
             self.samples.c.metadata_json,
-            self.samples.c.status,
             self.samples.c.created_at,
         ]
 
@@ -108,7 +107,6 @@ class PoolTables:
                 nullable=False,
                 server_default=text("'{}'::jsonb"),
             ),
-            Column("status", Text, nullable=False, server_default=text("'active'")),
             Column(
                 "created_at",
                 TIMESTAMP(timezone=True),

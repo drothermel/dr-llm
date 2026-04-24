@@ -1,17 +1,38 @@
 from __future__ import annotations
 
-from typing import Literal
-
 import marimo as mo
-from pydantic import computed_field
+from dr_widget.inline import ActiveHtml
+from pydantic import BaseModel, ConfigDict, computed_field
 
-from dr_llm.style.pool_card import PoolCard
-from marimo_utils.ui import ChartColor, PieChart, PieSlice
+from dr_llm.pool.models import PoolInspection
+from dr_llm.ui.components import AxesLabel, AxisBadge
+from dr_llm.ui.theme import width_to_tailwind
+from marimo_utils.ui import Card, ChartColor, PieChart, PieSlice
 
 
-class PiePoolCard(PoolCard):
-    card_type: Literal["Pie Pool"] = "Pie Pool"
+def _titleize(value: str) -> str:
+    return value.replace("_", " ").title()
+
+
+class PoolSimpleStatsPieCard(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    pool: PoolInspection
     width: str = "20rem"
+
+    def title_text(self) -> str:
+        return _titleize(self.pool.name)
+
+    def description_text(self) -> str:
+        return f"Project: {self.pool.project_name}"
+
+    def axes_list(self) -> AxesLabel:
+        return AxesLabel(
+            items=[
+                AxisBadge(label=column.name).render()
+                for column in self.pool.pool_schema.key_columns
+            ],
+        )
 
     def divider(self) -> mo.Html:
         return mo.Html("<div class='w-full border-t border-border'></div>")
@@ -61,5 +82,13 @@ class PiePoolCard(PoolCard):
             gap=0.75,
         )
 
+    def render(self) -> mo.Html | ActiveHtml:
+        return Card(
+            width=width_to_tailwind(self.width),
+            title=self.title_text(),
+            description=self.description_text(),
+            content=self.content(),
+        ).render()
 
-__all__ = ["PiePoolCard"]
+
+__all__ = ["PoolSimpleStatsPieCard"]

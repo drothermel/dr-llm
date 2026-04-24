@@ -314,7 +314,7 @@ wheels = [
 
 [[package]]
 name = "dr-llm"
-version = "2.3.0"
+version = "2.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -355,7 +355,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "marimo", marker = "extra == 'notebooks'", specifier = ">=0.23.1" },
     { name = "marimo", extras = ["recommended"], specifier = ">=0.23.2" },
-    { name = "marimo-utils", specifier = "==0.6.0" },
+    { name = "marimo-utils", specifier = "==0.7.0" },
     { name = "pandas", specifier = ">=3.0.2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.10" },
     { name = "psycopg-pool", specifier = ">=3.2.6" },
@@ -933,20 +933,21 @@ recommended = [
 
 [[package]]
 name = "marimo-utils"
-version = "0.6.0"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anywidget" },
     { name = "dr-widget" },
     { name = "marimo", extra = ["recommended"] },
     { name = "mohtml" },
+    { name = "pandas" },
     { name = "plotly" },
     { name = "pydantic" },
     { name = "python-lucide" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/37/a3/7a8706f4de5430899b33011a19c0f2f5fb86a9c2924fb5df843943a512ca/marimo_utils-0.6.0.tar.gz", hash = "sha256:112d4b23f75f5023a9ebcd81caed83a36a6566f6ec89fe48f0c10b49ec690a59", size = 132944 }
+sdist = { url = "https://files.pythonhosted.org/packages/8f/ca/b9914c2c839f66a1e63f2ee07cb195db0a08269f11a862477e2f754d609b/marimo_utils-0.7.0.tar.gz", hash = "sha256:df04390f6cc5165aa4976296b3cc1c7b295667c7ab27ec9b2c47adf01b536d35", size = 156350 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c5/52/5697c2bd1199e712fa150e4902bc8ed7a7321e317e4c014cde3d6ba43196/marimo_utils-0.6.0-py3-none-any.whl", hash = "sha256:2cbf6d2918415e9bbc1000da56cc24934a9a9192f2015264f7f6ed1a5becebdc", size = 26836 },
+    { url = "https://files.pythonhosted.org/packages/8a/18/22191333ad07af7b6e1866341746203ac29c7f6956d686d57fa8060162d9/marimo_utils-0.7.0-py3-none-any.whl", hash = "sha256:63b1532f3dce3578b63d2d81a45352a176ba52469090280d52e12f860180ac42", size = 38794 },
 ]
 
 [[package]]

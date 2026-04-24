@@ -18,7 +18,7 @@ from dr_llm.pool.models import (
 from dr_llm.pool.pending.backend import PoolPendingBackendState
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts
-from dr_llm.pool.pool_sample import PoolSample, SampleStatus
+from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.workers import WorkerSnapshot
 from pydantic import ValidationError
 
@@ -36,7 +36,6 @@ def test_pool_sample_defaults() -> None:
     assert s.sample_id  # auto-generated
     assert s.sample_idx is None
     assert s.payload == {}
-    assert s.status == SampleStatus.active
 
 
 def test_acquire_result_deficit() -> None:
@@ -66,7 +65,6 @@ def test_pool_sample_to_db_insert_row_splats_key_values() -> None:
         payload={"score": 0.9},
         source_run_id="run-1",
         metadata={"source": "test"},
-        status=SampleStatus.superseded,
     )
 
     row = sample.to_db_insert_row()
@@ -79,7 +77,6 @@ def test_pool_sample_to_db_insert_row_splats_key_values() -> None:
         "payload_json",
         "source_run_id",
         "metadata_json",
-        "status",
     }
     assert row["sample_id"] == "sample-1"
     assert row["sample_idx"] == 7
@@ -88,7 +85,6 @@ def test_pool_sample_to_db_insert_row_splats_key_values() -> None:
     assert row["payload_json"] == {"score": 0.9}
     assert row["source_run_id"] == "run-1"
     assert row["metadata_json"] == {"source": "test"}
-    assert row["status"] == SampleStatus.superseded.value
 
 
 def test_pool_sample_to_db_insert_row_json_serializes_nested_values() -> None:
@@ -119,7 +115,6 @@ def test_pool_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
             "payload_json": {"score": 0.9},
             "source_run_id": "run-1",
             "metadata_json": {"source": "test"},
-            "status": "superseded",
             "created_at": created_at,
         },
     )
@@ -128,7 +123,6 @@ def test_pool_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
     assert sample.key_values == {"dim_a": "alpha", "dim_b": 3}
     assert sample.payload == {"score": 0.9}
     assert sample.metadata == {"source": "test"}
-    assert sample.status == SampleStatus.superseded
     assert sample.created_at == created_at
 
 

@@ -27,7 +27,7 @@ from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.metadata_store import MetadataStore
 from dr_llm.pool.models import AcquireQuery, AcquireResult, CoverageRow, InsertResult
 from dr_llm.pool.pending.store import PendingStore
-from dr_llm.pool.pool_sample import PoolSample, SampleStatus
+from dr_llm.pool.pool_sample import PoolSample
 
 SCHEMA_METADATA_KEY = "_schema"
 """Reserved metadata key under which ``ensure_schema`` persists the pool's
@@ -262,7 +262,6 @@ class PoolStore:
             )
             .where(
                 key_filter_clause(self.schema, samples_table, query.key_values),
-                samples_table.c.status == SampleStatus.active,
                 self._unclaimed_predicate(query.run_id),
             )
             .order_by(
@@ -330,7 +329,6 @@ class PoolStore:
         validate_key_values(self.schema, key_values)
         stmt = select(func.count()).where(
             key_filter_clause(self.schema, self._tables.samples, key_values),
-            self._tables.samples.c.status == SampleStatus.active,
             self._unclaimed_predicate(run_id),
         )
         with self._runtime.connect() as conn:
@@ -380,20 +378,18 @@ class PoolStore:
         self,
         *,
         key_filter: PoolKeyFilter | None = None,
-        status: SampleStatus | Iterable[SampleStatus] | None = None,
     ) -> list[PoolSample]:
         """Load all samples, optionally filtered by partial key match.
 
         Materializes the full result set in memory; for pools with 100k+ rows
         prefer ``iter_samples`` to stream in chunks.
         """
-        return list(self.iter_samples(key_filter=key_filter, status=status))
+        return list(self.iter_samples(key_filter=key_filter))
 
     def iter_samples(
         self,
         *,
         key_filter: PoolKeyFilter | None = None,
-        status: SampleStatus | Iterable[SampleStatus] | None = None,
         chunk_size: int = 1000,
     ) -> Iterator[PoolSample]:
         """Stream samples in chunks via server-side cursoring.
@@ -403,21 +399,12 @@ class PoolStore:
         for pools far larger than memory. The underlying connection is held
         open for the lifetime of the iterator — fully consume or close it
         promptly.
-
-        ``status`` accepts a single ``SampleStatus`` or any iterable of them;
-        when ``None`` (the default) samples in any status are returned.
         """
-        base_predicates: list[ColumnElement[bool]] = []
-        if status is not None:
-            statuses = _normalize_status_filter(status)
-            base_predicates.append(self._tables.samples.c.status.in_(statuses))
-
         rows = stream_select_rows(
             self._runtime,
             self.schema,
             self._tables.samples,
             self._tables.sample_select_columns(),
-            base_predicates=base_predicates,
             order_by=[self._tables.samples.c.sample_idx.asc()],
             key_filter=key_filter,
             chunk_size=chunk_size,
@@ -426,12 +413,3 @@ class PoolStore:
             yield PoolSample.from_db_row(self.schema, row)
 
     _AUTO_IDX_INSERT_RETRIES = 3
-
-
-def _normalize_status_filter(
-    status: SampleStatus | Iterable[SampleStatus],
-) -> frozenset[SampleStatus]:
-    """Accept a single SampleStatus or any iterable; return a frozenset."""
-    if isinstance(status, SampleStatus):
-        return frozenset({status})
-    return frozenset(status)
