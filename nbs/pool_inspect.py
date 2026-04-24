@@ -17,7 +17,7 @@ with app.setup:
         create_project as create_project_service,
         inspect_projects,
     )
-    from dr_llm.style import PiePoolCard, Style, bootstrap_tailwind
+    from dr_llm.style import PoolSimpleStatsPieCard, bootstrap_tailwind, wrap_cards
 
     IGNORE_DEMO_PROJECTS = True
 
@@ -49,7 +49,6 @@ def _(project_summaries):
 @app.cell(hide_code=True)
 def _(project_summaries):
     project_sections = {}
-    card_style = Style.default()
     ignore_demo_banner = (
         mo.md("*Ignoring projects with `demo` in the name*")
         if IGNORE_DEMO_PROJECTS
@@ -76,17 +75,14 @@ def _(project_summaries):
                     )
                 )
             except Exception as exc:
-                failed_pool_names.append(
-                    (pool_name, f"{type(exc).__name__}: {exc}")
-                )
+                failed_pool_names.append((pool_name, f"{type(exc).__name__}: {exc}"))
                 continue
 
             cards.append(
-                PiePoolCard(
+                PoolSimpleStatsPieCard(
                     pool=pool_inspection,
-                    style=card_style,
                     width="20rem",
-                ).render()
+                )
             )
 
         if not cards and not failed_pool_names:
@@ -94,9 +90,7 @@ def _(project_summaries):
 
         section_items = [mo.md(f"### {summary.project.name}")]
         if cards:
-            section_items.append(
-                mo.hstack(cards, wrap=True, justify="start", gap=1)
-            )
+            section_items.append(wrap_cards(cards))
         if failed_pool_names:
             section_items.append(
                 mo.md(

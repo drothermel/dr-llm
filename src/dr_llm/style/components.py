@@ -7,10 +7,8 @@ from dr_widget.inline import ActiveHtml
 from mohtml import div, span  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
-from dr_llm.pool.models import PendingStatusCounts
 from dr_llm.style._rendering import auto_render, html_block
-from dr_llm.style.theme import Style
-from marimo_utils.ui import Badge, BadgeVariant, DataItem
+from marimo_utils.ui import Badge, BadgeVariant
 
 
 class AxisBadge(BaseModel):
@@ -56,24 +54,4 @@ class AxesLabel(BaseModel):
         )
 
 
-class PendingDataItems(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    pending_counts: PendingStatusCounts
-    style: Style
-
-    def items(self) -> list[DataItem]:
-        pending_counts_model = type(self.pending_counts)
-        return [
-            DataItem(
-                label=field_name.title(),
-                value=str(getattr(self.pending_counts, field_name)),
-            )
-            for field_name in pending_counts_model.model_fields
-        ]
-
-    def render(self) -> mo.Html:
-        return mo.vstack([item.render() for item in self.items()], gap=0)
-
-
-__all__ = ["AxesLabel", "AxisBadge", "PendingDataItems"]
+__all__ = ["AxesLabel", "AxisBadge"]

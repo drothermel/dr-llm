@@ -8,7 +8,7 @@ with app.setup:
     import hashlib
     import json
     import math
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from datetime import datetime
     from typing import Any
 
@@ -25,7 +25,6 @@ with app.setup:
         select,
     )
 
-    from marimo_utils.ui._rendering import html_block
     from marimo_utils.ui import (
         Badge,
         BadgeVariant,
@@ -56,7 +55,7 @@ with app.setup:
         maybe_get_project,
         inspect_projects,
     )
-    from dr_llm.style import PiePoolCard, Style, bootstrap_tailwind
+    from dr_llm.style import PoolSimpleStatsPieCard, bootstrap_tailwind, wrap_cards
 
     TARGET_PROJECT_NAMES = (
         "nl_latents",
@@ -495,42 +494,39 @@ def _():
 
         return claims_frame, call_stats_frame
 
-    def build_health_data(
+    CacheGetter = Callable[[], dict[str, Any]]
+    CacheSetter = Callable[[Callable[[dict[str, Any]], dict[str, Any]]], None]
+
+    def _cache_put(set_cache: CacheSetter, **updates: Any) -> None:
+        set_cache(lambda c: {**c, **updates})
+
+    def ensure_pool_inspection(
         *,
         project_name: str,
         pool_name: str,
-    ) -> dict[str, Any]:
-        pool_inspection = load_pool_inspection(
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
+    ) -> Any:
+        cache = get_cache()
+        if "pool_inspection" in cache:
+            return cache["pool_inspection"]
+        inspection = load_pool_inspection(
             project_name=project_name,
             pool_name=pool_name,
         )
-        with pool_reader_context(
-            project_name=project_name,
-            pool_name=pool_name,
-        ) as (runtime, schema, reader, key_columns):
-            sample_frame = load_sample_frame(
-                reader=reader,
-                key_columns=key_columns,
-            )
-            claims_frame, call_stats_frame = load_claims_and_call_stats_frames(
-                runtime=runtime,
-                schema=schema,
-            )
+        _cache_put(set_cache, pool_inspection=inspection)
+        return inspection
 
-        return {
-            "pool_label": f"{project_name} / {pool_name}",
-            "pool_inspection": pool_inspection,
-            "key_columns": key_columns,
-            "sample_frame": sample_frame,
-            "claims_frame": claims_frame,
-            "call_stats_frame": call_stats_frame,
-        }
-
-    def build_coverage_data(
+    def ensure_sample_frame(
         *,
         project_name: str,
         pool_name: str,
-    ) -> dict[str, Any]:
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
+    ) -> tuple[pd.DataFrame, list[str]]:
+        cache = get_cache()
+        if "sample_frame" in cache and "key_columns" in cache:
+            return cache["sample_frame"], cache["key_columns"]
         with pool_reader_context(
             project_name=project_name,
             pool_name=pool_name,
@@ -539,7 +535,125 @@ def _():
                 reader=reader,
                 key_columns=key_columns,
             )
+            kc = list(key_columns)
+        _cache_put(set_cache, sample_frame=sample_frame, key_columns=kc)
+        return sample_frame, kc
 
+    def ensure_pending_frames(
+        *,
+        project_name: str,
+        pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
+    ) -> tuple[dict[str, pd.DataFrame], list[str]]:
+        cache = get_cache()
+        if "pending_frames" in cache and "key_columns" in cache:
+            return cache["pending_frames"], cache["key_columns"]
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (_, _, reader, key_columns):
+            pending_frames = load_pending_frames(
+                reader=reader,
+                key_columns=key_columns,
+            )
+            kc = list(key_columns)
+        _cache_put(set_cache, pending_frames=pending_frames, key_columns=kc)
+        return pending_frames, kc
+
+    def ensure_metadata_frame(
+        *,
+        project_name: str,
+        pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
+    ) -> tuple[pd.DataFrame, list[str]]:
+        cache = get_cache()
+        if "metadata_frame" in cache and "key_columns" in cache:
+            return cache["metadata_frame"], cache["key_columns"]
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (_, _, reader, key_columns):
+            metadata_frame = load_metadata_frame(reader=reader)
+            kc = list(key_columns)
+        _cache_put(set_cache, metadata_frame=metadata_frame, key_columns=kc)
+        return metadata_frame, kc
+
+    def ensure_claims_and_call_stats(
+        *,
+        project_name: str,
+        pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+        cache = get_cache()
+        if (
+            "claims_frame" in cache
+            and "call_stats_frame" in cache
+            and "key_columns" in cache
+        ):
+            return (
+                cache["claims_frame"],
+                cache["call_stats_frame"],
+                cache["key_columns"],
+            )
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (runtime, schema, _, key_columns):
+            claims_frame, call_stats_frame = load_claims_and_call_stats_frames(
+                runtime=runtime,
+                schema=schema,
+            )
+            kc = list(key_columns)
+        _cache_put(
+            set_cache,
+            claims_frame=claims_frame,
+            call_stats_frame=call_stats_frame,
+            key_columns=kc,
+        )
+        return claims_frame, call_stats_frame, kc
+
+    def build_health_data(
+        *,
+        project_name: str,
+        pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
+    ) -> dict[str, Any]:
+        pool_inspection = ensure_pool_inspection(
+            project_name=project_name,
+            pool_name=pool_name,
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
+        _, call_stats_frame, key_columns = ensure_claims_and_call_stats(
+            project_name=project_name,
+            pool_name=pool_name,
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
+        return {
+            "pool_label": f"{project_name} / {pool_name}",
+            "pool_inspection": pool_inspection,
+            "key_columns": key_columns,
+            "call_stats_frame": call_stats_frame,
+        }
+
+    def build_coverage_data(
+        *,
+        project_name: str,
+        pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
+    ) -> dict[str, Any]:
+        sample_frame, key_columns = ensure_sample_frame(
+            project_name=project_name,
+            pool_name=pool_name,
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
         return {
             "key_columns": key_columns,
             "coverage_frame": build_coverage_frame(
@@ -552,16 +666,15 @@ def _():
         *,
         project_name: str,
         pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
     ) -> dict[str, Any]:
-        with pool_reader_context(
+        sample_frame, key_columns = ensure_sample_frame(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (_, _, reader, key_columns):
-            sample_frame = load_sample_frame(
-                reader=reader,
-                key_columns=key_columns,
-            )
-
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
         return {
             "key_columns": key_columns,
             "sample_frame": sample_frame,
@@ -571,16 +684,15 @@ def _():
         *,
         project_name: str,
         pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
     ) -> dict[str, Any]:
-        with pool_reader_context(
+        pending_frames, key_columns = ensure_pending_frames(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (_, _, reader, key_columns):
-            pending_frames = load_pending_frames(
-                reader=reader,
-                key_columns=key_columns,
-            )
-
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
         return {
             "key_columns": key_columns,
             "pending_frame": pending_frames["pending_frame"],
@@ -590,16 +702,15 @@ def _():
         *,
         project_name: str,
         pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
     ) -> dict[str, Any]:
-        with pool_reader_context(
+        pending_frames, key_columns = ensure_pending_frames(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (_, _, reader, key_columns):
-            pending_frames = load_pending_frames(
-                reader=reader,
-                key_columns=key_columns,
-            )
-
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
         return {
             "key_columns": key_columns,
             "failure_frame": pending_frames["failure_frame"],
@@ -609,16 +720,15 @@ def _():
         *,
         project_name: str,
         pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
     ) -> dict[str, Any]:
-        with pool_reader_context(
+        pending_frames, key_columns = ensure_pending_frames(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (_, _, reader, key_columns):
-            pending_frames = load_pending_frames(
-                reader=reader,
-                key_columns=key_columns,
-            )
-
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
         return {
             "key_columns": key_columns,
             "provenance_frame": pending_frames["provenance_frame"],
@@ -628,13 +738,15 @@ def _():
         *,
         project_name: str,
         pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
     ) -> dict[str, Any]:
-        with pool_reader_context(
+        metadata_frame, key_columns = ensure_metadata_frame(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (_, _, reader, key_columns):
-            metadata_frame = load_metadata_frame(reader=reader)
-
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
         return {
             "key_columns": key_columns,
             "metadata_frame": metadata_frame,
@@ -644,16 +756,15 @@ def _():
         *,
         project_name: str,
         pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
     ) -> dict[str, Any]:
-        with pool_reader_context(
+        _, call_stats_frame, key_columns = ensure_claims_and_call_stats(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (runtime, schema, _, key_columns):
-            _, call_stats_frame = load_claims_and_call_stats_frames(
-                runtime=runtime,
-                schema=schema,
-            )
-
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
         return {
             "key_columns": key_columns,
             "call_stats_frame": call_stats_frame,
@@ -663,66 +774,49 @@ def _():
         *,
         project_name: str,
         pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
     ) -> dict[str, Any]:
         return build_call_stats_data(
             project_name=project_name,
             pool_name=pool_name,
+            get_cache=get_cache,
+            set_cache=set_cache,
         )
 
     def build_throughput_data(
         *,
         project_name: str,
         pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
     ) -> dict[str, Any]:
-        with pool_reader_context(
+        sample_frame, key_columns = ensure_sample_frame(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (runtime, schema, reader, key_columns):
-            sample_frame = load_sample_frame(
-                reader=reader,
-                key_columns=key_columns,
-            )
-            claims_frame, _ = load_claims_and_call_stats_frames(
-                runtime=runtime,
-                schema=schema,
-            )
-
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
+        claims_frame, _, _ = ensure_claims_and_call_stats(
+            project_name=project_name,
+            pool_name=pool_name,
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
         return {
             "key_columns": key_columns,
             "sample_frame": sample_frame,
             "claims_frame": claims_frame,
         }
 
-    def tailwind_grid(
-        items: Sequence[Any],
-        cols: str = "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3",
-    ) -> object:
-        parts: list[str] = []
-        for item in items:
-            if item is None:
-                continue
-            rendered = item.render() if hasattr(item, "render") else item
-            if hasattr(rendered, "text"):
-                parts.append(rendered.text)
-            elif hasattr(rendered, "html"):
-                parts.append(rendered.html)
-            elif hasattr(rendered, "_repr_html_"):
-                parts.append(rendered._repr_html_())
-            else:
-                parts.append(str(rendered))
-        inner = "".join(parts)
-        return html_block(f'<div class="grid {cols} gap-4 mb-4">{inner}</div>')
-
     def render_card_section(
         question: str,
         cards: Sequence[Any],
         frame: pd.DataFrame | None = None,
         *,
-        cols: str | None = None,
         include_title: bool = True,
     ) -> mo.Html:
-        grid = tailwind_grid(cards, cols=cols) if cols else tailwind_grid(cards)
-        items: list[object] = [grid]
+        items: list[object] = [wrap_cards(cards)]
         if include_title:
             items.insert(0, mo.md(f"### {question}"))
         if frame is not None:
@@ -845,38 +939,11 @@ def _():
 
     def build_health_cards(data: dict[str, Any]) -> list[object]:
         inspection = data["pool_inspection"]
-        sample_frame: pd.DataFrame = data["sample_frame"]
-        claims_frame: pd.DataFrame = data["claims_frame"]
         call_stats_frame: pd.DataFrame = data["call_stats_frame"]
 
-        pie_pool_card = PiePoolCard(
+        pie_pool_card = PoolSimpleStatsPieCard(
             pool=inspection,
-            style=Style.default(),
             width="20rem",
-        )
-
-        latest_sample_ts = None
-        if not sample_frame.empty and "created_at" in sample_frame.columns:
-            latest_sample_ts = pd.to_datetime(
-                sample_frame["created_at"], errors="coerce"
-            ).max()
-        latest_claim_ts = None
-        if not claims_frame.empty and "claimed_at" in claims_frame.columns:
-            latest_claim_ts = pd.to_datetime(
-                claims_frame["claimed_at"], errors="coerce"
-            ).max()
-        active_workers = 0
-        if not claims_frame.empty and "consumer_tag" in claims_frame.columns:
-            active_workers = int(claims_frame["consumer_tag"].dropna().nunique())
-
-        activity_card = _stat_card(
-            "Last activity",
-            [
-                ("Latest sample", _fmt_ts(latest_sample_ts)),
-                ("Latest claim", _fmt_ts(latest_claim_ts)),
-                ("Workers seen", _fmt_int(active_workers)),
-                ("Claim rows", _fmt_int(len(claims_frame))),
-            ],
         )
 
         total_cost = 0.0
@@ -907,7 +974,7 @@ def _():
             ],
         )
 
-        return [pie_pool_card, activity_card, cost_card]
+        return [pie_pool_card, cost_card]
 
     def build_coverage_cards(data: dict[str, Any]) -> list[object]:
         coverage_frame: pd.DataFrame = data["coverage_frame"]
@@ -1625,7 +1692,6 @@ def _():
         pool_rows_from_summaries,
         render_card_section,
         render_section,
-        tailwind_grid,
     )
 
 
@@ -1693,9 +1759,16 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _(selected_pool, set_section_results):
+def _():
+    get_raw_frames, set_raw_frames = mo.state({})
+    return get_raw_frames, set_raw_frames
+
+
+@app.cell(hide_code=True)
+def _(selected_pool, set_raw_frames, set_section_results):
     _ = selected_pool
     set_section_results({})
+    set_raw_frames({})
     return
 
 
@@ -1738,12 +1811,13 @@ def _(selected_pool):
 def _(
     build_health_cards,
     build_health_data,
+    get_raw_frames,
     get_section_results,
     health_run_button,
     render_section,
     selected_pool,
+    set_raw_frames,
     set_section_results,
-    tailwind_grid,
 ):
     mo.stop(selected_pool is None)
 
@@ -1753,15 +1827,14 @@ def _(
         health_data = build_health_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
+            get_cache=get_raw_frames,
+            set_cache=set_raw_frames,
         )
         set_section_results(lambda results: {**results, "health": health_data})
 
     _body = None
     if health_data is not None:
-        _body = tailwind_grid(
-            build_health_cards(health_data),
-            cols="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
-        )
+        _body = wrap_cards(build_health_cards(health_data))
 
     render_section("Pool health", health_run_button, _body)
     return
@@ -1772,10 +1845,12 @@ def _(
     build_coverage_cards,
     build_coverage_data,
     coverage_run_button,
+    get_raw_frames,
     get_section_results,
     render_card_section,
     render_section,
     selected_pool,
+    set_raw_frames,
     set_section_results,
 ):
     mo.stop(selected_pool is None)
@@ -1786,6 +1861,8 @@ def _(
         coverage_data = build_coverage_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
+            get_cache=get_raw_frames,
+            set_cache=set_raw_frames,
         )
         set_section_results(lambda results: {**results, "coverage": coverage_data})
 
@@ -1810,11 +1887,13 @@ def _(
 def _(
     build_sample_cards,
     build_sample_data,
+    get_raw_frames,
     get_section_results,
     render_card_section,
     render_section,
     sample_run_button,
     selected_pool,
+    set_raw_frames,
     set_section_results,
 ):
     mo.stop(selected_pool is None)
@@ -1825,6 +1904,8 @@ def _(
         sample_data = build_sample_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
+            get_cache=get_raw_frames,
+            set_cache=set_raw_frames,
         )
         set_section_results(lambda results: {**results, "sample": sample_data})
 
@@ -1849,11 +1930,13 @@ def _(
 def _(
     build_pending_cards,
     build_pending_data,
+    get_raw_frames,
     get_section_results,
     pending_run_button,
     render_card_section,
     render_section,
     selected_pool,
+    set_raw_frames,
     set_section_results,
 ):
     mo.stop(selected_pool is None)
@@ -1864,6 +1947,8 @@ def _(
         pending_data = build_pending_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
+            get_cache=get_raw_frames,
+            set_cache=set_raw_frames,
         )
         set_section_results(lambda results: {**results, "pending": pending_data})
 
@@ -1889,10 +1974,12 @@ def _(
     build_failure_cards,
     build_failure_data,
     failure_run_button,
+    get_raw_frames,
     get_section_results,
     render_card_section,
     render_section,
     selected_pool,
+    set_raw_frames,
     set_section_results,
 ):
     mo.stop(selected_pool is None)
@@ -1903,6 +1990,8 @@ def _(
         failure_data = build_failure_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
+            get_cache=get_raw_frames,
+            set_cache=set_raw_frames,
         )
         set_section_results(lambda results: {**results, "failure": failure_data})
 
@@ -1927,11 +2016,13 @@ def _(
 def _(
     build_provenance_cards,
     build_provenance_data,
+    get_raw_frames,
     get_section_results,
     provenance_run_button,
     render_card_section,
     render_section,
     selected_pool,
+    set_raw_frames,
     set_section_results,
 ):
     mo.stop(selected_pool is None)
@@ -1942,6 +2033,8 @@ def _(
         provenance_data = build_provenance_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
+            get_cache=get_raw_frames,
+            set_cache=set_raw_frames,
         )
         set_section_results(lambda results: {**results, "provenance": provenance_data})
 
@@ -1966,11 +2059,13 @@ def _(
 def _(
     build_metadata_cards,
     build_metadata_data,
+    get_raw_frames,
     get_section_results,
     metadata_run_button,
     render_card_section,
     render_section,
     selected_pool,
+    set_raw_frames,
     set_section_results,
 ):
     mo.stop(selected_pool is None)
@@ -1981,6 +2076,8 @@ def _(
         metadata_data = build_metadata_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
+            get_cache=get_raw_frames,
+            set_cache=set_raw_frames,
         )
         set_section_results(lambda results: {**results, "metadata": metadata_data})
 
@@ -2006,10 +2103,12 @@ def _(
     build_call_stats_cards,
     build_call_stats_data,
     call_stats_run_button,
+    get_raw_frames,
     get_section_results,
     render_card_section,
     render_section,
     selected_pool,
+    set_raw_frames,
     set_section_results,
 ):
     mo.stop(selected_pool is None)
@@ -2020,6 +2119,8 @@ def _(
         call_stats_data = build_call_stats_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
+            get_cache=get_raw_frames,
+            set_cache=set_raw_frames,
         )
         set_section_results(lambda results: {**results, "call_stats": call_stats_data})
 
@@ -2044,10 +2145,12 @@ def _(
 def _(
     build_trend_cards,
     build_trend_data,
+    get_raw_frames,
     get_section_results,
     render_card_section,
     render_section,
     selected_pool,
+    set_raw_frames,
     set_section_results,
     trend_run_button,
 ):
@@ -2059,6 +2162,8 @@ def _(
         trend_data = build_trend_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
+            get_cache=get_raw_frames,
+            set_cache=set_raw_frames,
         )
         set_section_results(lambda results: {**results, "trend": trend_data})
 
@@ -2083,10 +2188,12 @@ def _(
 def _(
     build_throughput_cards,
     build_throughput_data,
+    get_raw_frames,
     get_section_results,
     render_card_section,
     render_section,
     selected_pool,
+    set_raw_frames,
     set_section_results,
     throughput_run_button,
 ):
@@ -2098,6 +2205,8 @@ def _(
         throughput_data = build_throughput_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
+            get_cache=get_raw_frames,
+            set_cache=set_raw_frames,
         )
         set_section_results(lambda results: {**results, "throughput": throughput_data})
 
