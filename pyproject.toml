@@ -82,7 +82,7 @@ extra-paths = ["scripts"]
 [tool.ty.src]
 respect-ignore-files = true
 include = ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py"]
-exclude = ["nbs/**/*.py", "src/dr_llm/style/"]
+exclude = ["nbs/**/*.py", "src/dr_llm/ui/"]
 
 [tool.uv.sources]
 marimo-utils = { path = "../marimo_utils", editable = true }

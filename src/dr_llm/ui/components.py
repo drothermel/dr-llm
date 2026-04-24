@@ -7,7 +7,7 @@ from dr_widget.inline import ActiveHtml
 from mohtml import div, span  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
-from dr_llm.style._rendering import auto_render, html_block
+from dr_llm.ui._rendering import auto_render, html_block
 from marimo_utils.ui import Badge, BadgeVariant
 
 

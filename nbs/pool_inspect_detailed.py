@@ -30,6 +30,7 @@ with app.setup:
         BadgeVariant,
         BarChart,
         BarItem,
+        BoxPlotCard,
         Card,
         ChartColor,
         DataItem,
@@ -42,6 +43,7 @@ with app.setup:
         PieSlice,
         ScatterChart,
         ScatterSeries,
+        ViolinPlotCard,
     )
     from dr_llm.pool.admin_service import inspect_pool
     from dr_llm.pool.db.runtime import DbConfig, DbRuntime
@@ -55,7 +57,7 @@ with app.setup:
         maybe_get_project,
         inspect_projects,
     )
-    from dr_llm.style import PoolSimpleStatsPieCard, bootstrap_tailwind, wrap_cards
+    from dr_llm.ui import PoolSimpleStatsPieCard, bootstrap_tailwind, wrap_cards
 
     TARGET_PROJECT_NAMES = (
         "nl_latents",
@@ -219,7 +221,6 @@ def _():
                     for column_name in key_columns
                 },
                 "sample_idx": sample.sample_idx,
-                "status": sample.status.value,
                 "source_run_id": sample.source_run_id,
                 "created_at": sample.created_at,
                 "payload_json": compact_json(sample.payload),
@@ -232,7 +233,6 @@ def _():
             "sample_id",
             *key_columns,
             "sample_idx",
-            "status",
             "source_run_id",
             "created_at",
             "payload_json",
@@ -948,33 +948,39 @@ def _():
 
         total_cost = 0.0
         mean_cost: float | None = None
-        median_latency: float | None = None
-        if not call_stats_frame.empty:
-            if "total_cost_usd" in call_stats_frame.columns:
-                costs = pd.to_numeric(
-                    call_stats_frame["total_cost_usd"], errors="coerce"
-                )
-                total_cost = float(costs.sum())
-                mean_cost = float(costs.mean()) if len(costs.dropna()) else None
-            if "latency_ms" in call_stats_frame.columns:
-                median_latency = _percentile(
-                    pd.to_numeric(call_stats_frame["latency_ms"], errors="coerce")
-                    .dropna()
-                    .tolist(),
-                    0.5,
-                )
+        if not call_stats_frame.empty and "total_cost_usd" in call_stats_frame.columns:
+            costs = pd.to_numeric(call_stats_frame["total_cost_usd"], errors="coerce")
+            total_cost = float(costs.sum())
+            mean_cost = float(costs.mean()) if len(costs.dropna()) else None
 
         cost_card = _stat_card(
             "Cost so far",
             [
                 ("Total cost", _fmt_cost(total_cost)),
                 ("Mean / call", _fmt_cost(mean_cost)),
-                ("Median latency", _fmt_ms(median_latency)),
                 ("Call rows", _fmt_int(len(call_stats_frame))),
             ],
         )
 
-        return [pie_pool_card, cost_card]
+        cards: list[object] = [pie_pool_card, cost_card]
+        if "latency_ms" in call_stats_frame.columns:
+            cards.append(
+                BoxPlotCard(
+                    column="latency_ms",
+                    data=call_stats_frame,
+                    title="Latency distribution",
+                    description="p1 · q1 · median · q3 · p99 (ms)",
+                )
+            )
+            cards.append(
+                ViolinPlotCard(
+                    column="latency_ms",
+                    data=call_stats_frame,
+                    title="Latency shape",
+                    description="KDE clipped to data range; ≤2k sampled points",
+                )
+            )
+        return cards
 
     def build_coverage_cards(data: dict[str, Any]) -> list[object]:
         coverage_frame: pd.DataFrame = data["coverage_frame"]
@@ -991,6 +997,9 @@ def _():
         counts = coverage_frame["count"].astype(int)
         total_samples = int(counts.sum())
         populated_cells = int((counts > 0).sum())
+        max_count = int(counts.max())
+        min_count = int(counts.min())
+        counts_vary = max_count != min_count
 
         coverage_frame = coverage_frame.copy()
         if key_columns:
@@ -1001,42 +1010,47 @@ def _():
                 )
 
             coverage_frame["_label"] = coverage_frame.apply(_label_row, axis=1)
+        else:
+            coverage_frame["_label"] = [f"cell {i}" for i in range(len(coverage_frame))]
+
+        summary_items = [
+            ("Populated cells", _fmt_int(populated_cells)),
+            ("Total samples", _fmt_int(total_samples)),
+            ("Max / cell", _fmt_int(max_count)),
+            ("Min / cell", _fmt_int(min_count)),
+            ("Median / cell", _fmt_float(float(counts.median()), ".1f")),
+        ]
+        if counts_vary and key_columns:
             top_row = coverage_frame.sort_values("count", ascending=False).iloc[0]
             top_label = str(top_row["_label"])
             top_count = int(top_row["count"])
-        else:
-            coverage_frame["_label"] = [f"cell {i}" for i in range(len(coverage_frame))]
-            top_label, top_count = "—", 0
+            summary_items.append(
+                ("Top cell", _truncate(f"{top_label} ({top_count})", 40))
+            )
 
-        summary = _stat_card(
-            "Coverage summary",
-            [
-                ("Populated cells", _fmt_int(populated_cells)),
-                ("Total samples", _fmt_int(total_samples)),
-                ("Max / cell", _fmt_int(int(counts.max()))),
-                ("Min / cell", _fmt_int(int(counts.min()))),
-                ("Median / cell", _fmt_float(float(counts.median()), ".1f")),
-                ("Top cell", _truncate(f"{top_label} ({top_count})", 40)),
-            ],
-        )
+        summary = _stat_card("Coverage summary", summary_items)
 
-        top_rows = coverage_frame.sort_values("count", ascending=False).head(15)
-        bar_items = [
-            BarItem(label=_truncate(str(row["_label"]), 30), value=int(row["count"]))
-            for _, row in top_rows.iterrows()
-        ]
-        distribution_card = Card(
-            title="Per-cell counts",
-            description=f"Top {len(bar_items)} cells by sample count",
-            content=BarChart(
-                items=bar_items,
-                height=220,
-                orientation="h",
-                x_label="Count",
-                y_label="Cell",
-            ),
-            width="w-96",
-        )
+        distribution_card = None
+        if counts_vary:
+            top_rows = coverage_frame.sort_values("count", ascending=False).head(15)
+            bar_items = [
+                BarItem(
+                    label=_truncate(str(row["_label"]), 30), value=int(row["count"])
+                )
+                for _, row in top_rows.iterrows()
+            ]
+            distribution_card = Card(
+                title="Per-cell counts",
+                description=f"Top {len(bar_items)} cells by sample count",
+                content=BarChart(
+                    items=bar_items,
+                    height=220,
+                    orientation="h",
+                    x_label="Count",
+                    y_label="Cell",
+                ),
+                width="w-96",
+            )
 
         heatmap_card = None
         if len(key_columns) == 2:
@@ -1091,18 +1105,6 @@ def _():
             ],
         )
 
-        status_counts = _value_counts(sample_frame["status"])
-        status_card = Card(
-            title="Status split",
-            description="Distribution of sample.status",
-            content=PieChart(
-                slices=[PieSlice(label=lab, value=cnt) for lab, cnt in status_counts],
-                height=220,
-                show_legend=True,
-            ),
-            width="w-80",
-        )
-
         ts_values = _ts_to_unix(sample_frame, "created_at")
         timeline_card = Card(
             title="Creation timeline",
@@ -1135,7 +1137,7 @@ def _():
             width="w-96",
         )
 
-        return [summary, status_card, timeline_card, runs_card]
+        return [summary, timeline_card, runs_card]
 
     def build_pending_cards(data: dict[str, Any]) -> list[object]:
         pending_frame: pd.DataFrame = data["pending_frame"]

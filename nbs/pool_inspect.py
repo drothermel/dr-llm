@@ -17,7 +17,7 @@ with app.setup:
         create_project as create_project_service,
         inspect_projects,
     )
-    from dr_llm.style import PoolSimpleStatsPieCard, bootstrap_tailwind, wrap_cards
+    from dr_llm.ui import PoolSimpleStatsPieCard, bootstrap_tailwind, wrap_cards
 
     IGNORE_DEMO_PROJECTS = True
 

@@ -5,8 +5,8 @@ from dr_widget.inline import ActiveHtml
 from pydantic import BaseModel, ConfigDict, computed_field
 
 from dr_llm.pool.models import PoolInspection
-from dr_llm.style.components import AxesLabel, AxisBadge
-from dr_llm.style.theme import width_to_tailwind
+from dr_llm.ui.components import AxesLabel, AxisBadge
+from dr_llm.ui.theme import width_to_tailwind
 from marimo_utils.ui import Card, ChartColor, PieChart, PieSlice
 
 

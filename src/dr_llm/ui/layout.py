@@ -5,7 +5,7 @@ from typing import Any
 
 import marimo as mo
 
-from dr_llm.style._rendering import auto_render
+from dr_llm.ui._rendering import auto_render
 
 
 def wrap_cards(cards: Sequence[Any]) -> mo.Html:

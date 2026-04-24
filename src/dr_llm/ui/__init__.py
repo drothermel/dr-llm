@@ -13,8 +13,8 @@ from marimo_utils.ui import (
     bootstrap_tailwind,
 )
 
-from dr_llm.style.layout import wrap_cards
-from dr_llm.style.pool_simple_stats_pie_card import PoolSimpleStatsPieCard
+from dr_llm.ui.layout import wrap_cards
+from dr_llm.ui.pool_simple_stats_pie_card import PoolSimpleStatsPieCard
 
 __all__ = [
     "Badge",

@@ -940,6 +940,7 @@ dependencies = [
     { name = "dr-widget" },
     { name = "marimo", extra = ["recommended"] },
     { name = "mohtml" },
+    { name = "pandas" },
     { name = "plotly" },
     { name = "pydantic" },
     { name = "python-lucide" },
@@ -951,6 +952,7 @@ requires-dist = [
     { name = "dr-widget", specifier = "==0.2.0" },
     { name = "marimo", extras = ["recommended"], specifier = ">=0.19.4" },
     { name = "mohtml", specifier = ">=0.1.11" },
+    { name = "pandas", specifier = ">=2.0" },
     { name = "plotly", specifier = ">=6.7.0" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "python-lucide", specifier = ">=0.2.24" },
@@ -959,6 +961,8 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "playwright", specifier = ">=1.58.0" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-xdist", specifier = ">=3.6" },
     { name = "ruff", specifier = ">=0.14.13" },
     { name = "ty", specifier = ">=0.0.13" },
 ]
