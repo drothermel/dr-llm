@@ -44,7 +44,7 @@ with app.setup:
         QuantileFences,
         ScatterChart,
         ScatterSeries,
-        ValueCountsCard,
+        FrequencyBarCard,
         ViolinPlotCard,
         compute_gini,
         skew_label,
@@ -61,7 +61,7 @@ with app.setup:
         maybe_get_project,
         inspect_projects,
     )
-    from dr_llm.ui import PoolSimpleStatsPieCard, bootstrap_tailwind, wrap_cards
+    from dr_llm.ui import PoolSimpleStatsPieCard, bootstrap_tailwind
 
     TARGET_PROJECT_NAMES = (
         "nl_latents",
@@ -597,22 +597,6 @@ def _():
         ensure_pool_inspection,
         ensure_sample_frame,
     )
-
-
-@app.function(hide_code=True)
-def render_card_section(
-    question: str,
-    cards: Sequence[Any],
-    frame: pd.DataFrame | None = None,
-    *,
-    include_title: bool = True,
-) -> mo.Html:
-    items: list[object] = [wrap_cards(cards)]
-    if include_title:
-        items.insert(0, mo.md(f"### {question}"))
-    if frame is not None:
-        items.append(mo.accordion({"Show dataframe": frame}))
-    return mo.vstack(items, gap=0.5)
 
 
 @app.function(hide_code=True)
@@ -1174,20 +1158,107 @@ def _(
         )
 
 
-    # Keys with at most this many distinct ids render as a labeled per-id bar
-    # chart (ValueCountsCard); above this, as a count-of-counts histogram.
-    COVERAGE_LABELED_BAR_MAX_IDS = 30
+    def make_labeled_coverage_frame(
+        coverage_frame: pd.DataFrame,
+        key_columns: Sequence[str],
+    ) -> pd.DataFrame:
+        labeled_frame = coverage_frame.copy()
+        if key_columns:
+
+            def label_row(row: pd.Series) -> str:
+                return " · ".join(
+                    str(row[col]) if pd.notna(row[col]) else "—"
+                    for col in key_columns
+                )
+
+            labeled_frame["_label"] = labeled_frame.apply(label_row, axis=1)
+        else:
+            labeled_frame["_label"] = [
+                f"cell {i}" for i in range(len(labeled_frame))
+            ]
+        return labeled_frame
 
 
-    def build_per_key_coverage_cards(
+    def make_coverage_distribution_card(
+        coverage_frame: pd.DataFrame,
+    ) -> Card | None:
+        if coverage_frame.empty or "count" not in coverage_frame.columns:
+            return None
+
+        counts = coverage_frame["count"].astype(int)
+        counts_vary = int(counts.max()) != int(counts.min())
+        if not counts_vary:
+            return None
+
+        top_rows = coverage_frame.sort_values("count", ascending=False).head(15)
+        bar_items = [
+            BarItem(
+                label=truncate(str(row["_label"]), 30),
+                value=int(row["count"]),
+            )
+            for _, row in top_rows.iterrows()
+        ]
+        return Card(
+            title="Per-cell counts",
+            description=f"Top {len(bar_items)} cells by sample count",
+            content=BarChart(
+                items=bar_items,
+                height=220,
+                orientation="h",
+                x_label="Count",
+                y_label="Cell",
+            ),
+            width="w-96",
+        )
+
+
+    def make_coverage_heatmap_card(
+        coverage_frame: pd.DataFrame,
+        key_columns: Sequence[str],
+    ) -> Card | None:
+        if len(key_columns) != 2:
+            return None
+
+        x_col, y_col = key_columns
+        x_vals = [str(v) if pd.notna(v) else "—" for v in coverage_frame[x_col]]
+        y_vals = [str(v) if pd.notna(v) else "—" for v in coverage_frame[y_col]]
+        x_labels = sorted(set(x_vals))
+        y_labels = sorted(set(y_vals))
+        if not (0 < len(x_labels) <= 20 and 0 < len(y_labels) <= 20):
+            return None
+
+        z: list[list[float]] = [[0.0 for _ in x_labels] for _ in y_labels]
+        for x, y, count in zip(
+            x_vals, y_vals, coverage_frame["count"].astype(int).tolist()
+        ):
+            zi = y_labels.index(y)
+            zj = x_labels.index(x)
+            z[zi][zj] = float(count)
+        return Card(
+            title="Cross-axis heatmap",
+            description=f"{y_col} × {x_col}",
+            content=HeatmapChart(
+                z=z,
+                x_labels=x_labels,
+                y_labels=y_labels,
+                color=ChartColor.TWO,
+                height=260,
+                x_label=x_col,
+                y_label=y_col,
+            ),
+            width="w-96",
+        )
+
+
+    def make_per_key_coverage_cards(
         *,
         coverage_frame: pd.DataFrame,
         key_columns: Sequence[str],
     ) -> list[object]:
         if coverage_frame.empty or not key_columns:
             return []
-        cards: list[object] = []
-        for key_column in key_columns:
+        _cards: list[object] = []
+        for index, key_column in enumerate(key_columns):
             per_key = per_key_count_series(coverage_frame, key_column)
             positive = per_key[per_key > 0]
             counts = [int(v) for v in positive.tolist()]
@@ -1197,22 +1268,8 @@ def _(
                 f"Gini {gini:.2f} · {skew_label(gini)}"
             )
             title = f"Coverage: {key_column}"
-            if len(counts) <= COVERAGE_LABELED_BAR_MAX_IDS:
-                cards.append(
-                    ValueCountsCard(
-                        data=positive,
-                        column=key_column,
-                        title=title,
-                        description=description,
-                        color=ChartColor.TWO,
-                        top_n=COVERAGE_LABELED_BAR_MAX_IDS,
-                        x_label="Samples",
-                        y_label=key_column,
-                        width="w-[32rem]",
-                    )
-                )
-            else:
-                cards.append(
+            if index < 2:
+                _cards.append(
                     HistogramCard(
                         data=counts,
                         column=key_column,
@@ -1223,98 +1280,21 @@ def _(
                         y_label="Number of ids",
                     )
                 )
-        return cards
-
-
-    def build_coverage_cards(data: dict[str, Any]) -> list[object]:
-        coverage_frame: pd.DataFrame = data["coverage_frame"]
-        key_columns: list[str] = list(data["key_columns"])
-
-        if coverage_frame.empty or "count" not in coverage_frame.columns:
-            return []
-
-        counts = coverage_frame["count"].astype(int)
-        counts_vary = int(counts.max()) != int(counts.min())
-
-        coverage_frame = coverage_frame.copy()
-        if key_columns:
-
-            def label_row(row: pd.Series) -> str:
-                return " · ".join(
-                    str(row[col]) if pd.notna(row[col]) else "—"
-                    for col in key_columns
-                )
-
-            coverage_frame["_label"] = coverage_frame.apply(label_row, axis=1)
-        else:
-            coverage_frame["_label"] = [
-                f"cell {i}" for i in range(len(coverage_frame))
-            ]
-
-        distribution_card = None
-        if counts_vary:
-            top_rows = coverage_frame.sort_values("count", ascending=False).head(
-                15
-            )
-            bar_items = [
-                BarItem(
-                    label=truncate(str(row["_label"]), 30),
-                    value=int(row["count"]),
-                )
-                for _, row in top_rows.iterrows()
-            ]
-            distribution_card = Card(
-                title="Per-cell counts",
-                description=f"Top {len(bar_items)} cells by sample count",
-                content=BarChart(
-                    items=bar_items,
-                    height=220,
-                    orientation="h",
-                    x_label="Count",
-                    y_label="Cell",
-                ),
-                width="w-96",
-            )
-
-        heatmap_card = None
-        if len(key_columns) == 2:
-            x_col, y_col = key_columns
-            x_vals = [
-                str(v) if pd.notna(v) else "—" for v in coverage_frame[x_col]
-            ]
-            y_vals = [
-                str(v) if pd.notna(v) else "—" for v in coverage_frame[y_col]
-            ]
-            x_labels = sorted(set(x_vals))
-            y_labels = sorted(set(y_vals))
-            if 0 < len(x_labels) <= 20 and 0 < len(y_labels) <= 20:
-                z: list[list[float]] = [[0.0 for _ in x_labels] for _ in y_labels]
-                for x, y, count in zip(
-                    x_vals, y_vals, coverage_frame["count"].astype(int).tolist()
-                ):
-                    zi = y_labels.index(y)
-                    zj = x_labels.index(x)
-                    z[zi][zj] = float(count)
-                heatmap_card = Card(
-                    title="Cross-axis heatmap",
-                    description=f"{y_col} × {x_col}",
-                    content=HeatmapChart(
-                        z=z,
-                        x_labels=x_labels,
-                        y_labels=y_labels,
+            else:
+                _cards.append(
+                    FrequencyBarCard(
+                        data=positive,
+                        column=key_column,
+                        title=title,
+                        description=description,
                         color=ChartColor.TWO,
-                        height=260,
-                        x_label=x_col,
-                        y_label=y_col,
-                    ),
-                    width="w-96",
+                        top_n=30,
+                        x_label="Samples",
+                        y_label=key_column,
+                        width="w-[500px]",
+                    )
                 )
-
-        per_key_cards = build_per_key_coverage_cards(
-            coverage_frame=coverage_frame,
-            key_columns=key_columns,
-        )
-        return [distribution_card, heatmap_card, *per_key_cards]
+        return _cards
 
 
     mo.stop(selected_pool is None)
@@ -1330,14 +1310,46 @@ def _(
         )
         set_section_results(lambda results: {**results, "coverage": coverage_data})
 
-    _body = None
-    if coverage_data is not None:
-        _body = render_card_section(
+    mo.stop(
+        coverage_data is None,
+        render_section(
             "How is this pool distributed across key cells?",
-            build_coverage_cards(coverage_data),
-            coverage_data["coverage_frame"],
-            include_title=False,
+            coverage_run_button,
+        ),
+    )
+
+    coverage_frame: pd.DataFrame = coverage_data["coverage_frame"]
+    key_columns: list[str] = list(coverage_data["key_columns"])
+    labeled_coverage_frame = make_labeled_coverage_frame(
+        coverage_frame,
+        key_columns,
+    )
+    distribution_card = make_coverage_distribution_card(labeled_coverage_frame)
+    heatmap_card = make_coverage_heatmap_card(
+        labeled_coverage_frame,
+        key_columns,
+    )
+    per_key_cards = make_per_key_coverage_cards(
+        coverage_frame=labeled_coverage_frame,
+        key_columns=key_columns,
+    )
+    rendered_cards = [
+        card.render()
+        for card in [distribution_card, heatmap_card, *per_key_cards]
+        if card is not None
+    ]
+    body_items: list[object] = []
+    if rendered_cards:
+        body_items.append(
+            mo.hstack(
+                rendered_cards,
+                wrap=True,
+                align="start",
+                justify="start",
+            )
         )
+    body_items.append(mo.accordion({"Show dataframe": coverage_frame}))
+    _body = mo.vstack(body_items)
 
     render_section(
         "How is this pool distributed across key cells?",
@@ -1376,59 +1388,27 @@ def _(
         }
 
 
-    def build_sample_cards(data: dict[str, Any]) -> list[object]:
-        sample_frame: pd.DataFrame = data["sample_frame"]
-        total = len(sample_frame)
-        if total == 0:
-            return [stat_card("Sample summary", [("Total", "0")])]
-
-        unique_runs = int(sample_frame["source_run_id"].dropna().nunique())
+    def make_sample_timeline_card(sample_frame: pd.DataFrame) -> HistogramCard:
         created_series = pd.to_datetime(
             sample_frame["created_at"], errors="coerce"
         )
         earliest = created_series.min()
         latest = created_series.max()
-
-        summary = stat_card(
-            "Sample summary",
-            [
-                ("Total", fmt_int(total)),
-                ("Unique runs", fmt_int(unique_runs)),
-                ("Earliest", fmt_ts(earliest)),
-                ("Latest", fmt_ts(latest)),
-            ],
-        )
-
-        timeline_card = HistogramCard(
+        return HistogramCard(
             data=ts_to_unix(sample_frame, "created_at"),
             column="created_at",
             title="Creation timeline",
-            description="Histogram of sample.created_at (unix seconds)",
+            description=(
+                "Histogram of sample.created_at (unix seconds). "
+                f"\n**Earliest:** {fmt_ts(earliest)}. "
+                f"\n**Latest:** {fmt_ts(latest)}."
+            ),
             color=ChartColor.TWO,
             binning="continuous",
             nbins=24,
             x_label="Unix seconds",
             y_label="Samples",
         )
-
-        run_counts = value_counts(sample_frame["source_run_id"])[:10]
-        runs_card = Card(
-            title="Top source runs",
-            description=f"Top {len(run_counts)} runs by sample count",
-            content=BarChart(
-                items=[
-                    BarItem(label=truncate(lab, 24), value=cnt)
-                    for lab, cnt in run_counts
-                ],
-                height=220,
-                orientation="h",
-                x_label="Samples",
-                y_label="Run",
-            ),
-            width="w-96",
-        )
-
-        return [summary, timeline_card, runs_card]
 
 
     mo.stop(selected_pool is None)
@@ -1444,14 +1424,23 @@ def _(
         )
         set_section_results(lambda results: {**results, "sample": sample_data})
 
-    _body = None
-    if sample_data is not None:
-        _body = render_card_section(
+    mo.stop(
+        sample_data is None,
+        render_section(
             "What finalized samples are currently in the pool?",
-            build_sample_cards(sample_data),
-            sample_data["sample_frame"],
-            include_title=False,
-        )
+            sample_run_button,
+        ),
+    )
+
+    _sample_frame: pd.DataFrame = sample_data["sample_frame"]
+    _timeline_card = make_sample_timeline_card(_sample_frame)
+    _rendered_cards = [_timeline_card.render()]
+    _body = mo.vstack(
+        [
+            mo.hstack(_rendered_cards, wrap=True, align="start"),
+            mo.accordion({"Show dataframe": _sample_frame}),
+        ]
+    )
 
     render_section(
         "What finalized samples are currently in the pool?",
@@ -1490,12 +1479,10 @@ def _(
         }
 
 
-    def build_pending_cards(data: dict[str, Any]) -> list[object]:
-        pending_frame: pd.DataFrame = data["pending_frame"]
+    def make_pending_summary_card(pending_frame: pd.DataFrame) -> Card:
         total = len(pending_frame)
         if total == 0:
-            return [stat_card("Pending summary", [("Total", "0")])]
-
+            return stat_card("Pending summary", [("Total", "0")])
         pending_count = int(
             (pending_frame["status"] == PendingStatus.pending.value).sum()
         )
@@ -1510,7 +1497,7 @@ def _(
         )
         stale = int(((expires < now) & expires.notna()).sum())
 
-        summary = stat_card(
+        return stat_card(
             "Pending summary",
             [
                 ("Total open", fmt_int(total)),
@@ -1521,7 +1508,15 @@ def _(
             ],
         )
 
-        status_card = Card(
+
+    def make_pending_status_card(pending_frame: pd.DataFrame) -> Card:
+        pending_count = int(
+            (pending_frame["status"] == PendingStatus.pending.value).sum()
+        )
+        leased_count = int(
+            (pending_frame["status"] == PendingStatus.leased.value).sum()
+        )
+        return Card(
             title="Status split",
             description="Pending vs leased",
             content=PieChart(
@@ -1535,7 +1530,11 @@ def _(
             width="w-80",
         )
 
-        priority_card = HistogramCard(
+
+    def make_pending_priority_card(
+        pending_frame: pd.DataFrame,
+    ) -> HistogramCard:
+        return HistogramCard(
             data=pending_frame,
             column="priority",
             title="Priority distribution",
@@ -1545,8 +1544,10 @@ def _(
             y_label="Count",
         )
 
+
+    def make_pending_retries_card(pending_frame: pd.DataFrame) -> Card:
         attempt_counts = value_counts(pending_frame["attempt_count"])
-        retries_card = Card(
+        return Card(
             title="Retry pressure",
             description="Pending items by attempt_count",
             content=BarChart(
@@ -1560,8 +1561,6 @@ def _(
             ),
             width="w-80",
         )
-
-        return [summary, status_card, priority_card, retries_card]
 
 
     mo.stop(selected_pool is None)
@@ -1577,14 +1576,34 @@ def _(
         )
         set_section_results(lambda results: {**results, "pending": pending_data})
 
-    _body = None
-    if pending_data is not None:
-        _body = render_card_section(
+    mo.stop(
+        pending_data is None,
+        render_section(
             "What pending work exists right now?",
-            build_pending_cards(pending_data),
-            pending_data["pending_frame"],
-            include_title=False,
-        )
+            pending_run_button,
+        ),
+    )
+
+    _pending_frame: pd.DataFrame = pending_data["pending_frame"]
+    _summary_card = make_pending_summary_card(_pending_frame)
+    _status_card = make_pending_status_card(_pending_frame)
+    _priority_card = make_pending_priority_card(_pending_frame)
+    _retries_card = make_pending_retries_card(_pending_frame)
+    _rendered_cards = [
+        card.render()
+        for card in [
+            _summary_card,
+            _status_card,
+            _priority_card,
+            _retries_card,
+        ]
+    ]
+    _body = mo.vstack(
+        [
+            mo.hstack(_rendered_cards, wrap=True, align="start"),
+            mo.accordion({"Show dataframe": _pending_frame}),
+        ]
+    )
 
     render_section(
         "What pending work exists right now?",
@@ -1623,12 +1642,10 @@ def _(
         }
 
 
-    def build_failure_cards(data: dict[str, Any]) -> list[object]:
-        failure_frame: pd.DataFrame = data["failure_frame"]
+    def make_failure_summary_card(failure_frame: pd.DataFrame) -> Card:
         total = len(failure_frame)
         if total == 0:
-            return [stat_card("Failure summary", [("Total", "0")])]
-
+            return stat_card("Failure summary", [("Total", "0")])
         unique_reasons = int(failure_frame["fail_reason"].dropna().nunique())
         max_attempts_value = pd.to_numeric(
             failure_frame["attempt_count"], errors="coerce"
@@ -1638,7 +1655,7 @@ def _(
         )
         latest = pd.to_datetime(failure_frame["created_at"], errors="coerce").max()
 
-        summary = stat_card(
+        return stat_card(
             "Failure summary",
             [
                 ("Total failed", fmt_int(total)),
@@ -1648,8 +1665,10 @@ def _(
             ],
         )
 
+
+    def make_failure_reasons_card(failure_frame: pd.DataFrame) -> Card:
         reason_counts = value_counts(failure_frame["fail_reason"])[:10]
-        reasons_card = Card(
+        return Card(
             title="Top failure reasons",
             description=f"Top {len(reason_counts)} fail_reason values",
             content=BarChart(
@@ -1665,7 +1684,11 @@ def _(
             width="w-96",
         )
 
-        attempts_card = HistogramCard(
+
+    def make_failure_attempts_card(
+        failure_frame: pd.DataFrame,
+    ) -> HistogramCard:
+        return HistogramCard(
             data=failure_frame,
             column="attempt_count",
             title="Attempts before fail",
@@ -1675,7 +1698,11 @@ def _(
             y_label="Count",
         )
 
-        timeline_card = HistogramCard(
+
+    def make_failure_timeline_card(
+        failure_frame: pd.DataFrame,
+    ) -> HistogramCard:
+        return HistogramCard(
             data=ts_to_unix(failure_frame, "created_at"),
             column="created_at",
             title="Failures over time",
@@ -1686,8 +1713,6 @@ def _(
             x_label="Unix seconds",
             y_label="Failures",
         )
-
-        return [summary, reasons_card, attempts_card, timeline_card]
 
 
     mo.stop(selected_pool is None)
@@ -1703,14 +1728,34 @@ def _(
         )
         set_section_results(lambda results: {**results, "failure": failure_data})
 
-    _body = None
-    if failure_data is not None:
-        _body = render_card_section(
+    mo.stop(
+        failure_data is None,
+        render_section(
             "What failures have happened?",
-            build_failure_cards(failure_data),
-            failure_data["failure_frame"],
-            include_title=False,
-        )
+            failure_run_button,
+        ),
+    )
+
+    _failure_frame: pd.DataFrame = failure_data["failure_frame"]
+    _summary_card = make_failure_summary_card(_failure_frame)
+    _reasons_card = make_failure_reasons_card(_failure_frame)
+    _attempts_card = make_failure_attempts_card(_failure_frame)
+    _timeline_card = make_failure_timeline_card(_failure_frame)
+    _rendered_cards = [
+        card.render()
+        for card in [
+            _summary_card,
+            _reasons_card,
+            _attempts_card,
+            _timeline_card,
+        ]
+    ]
+    _body = mo.vstack(
+        [
+            mo.hstack(_rendered_cards, wrap=True, align="start", justify="start"),
+            mo.accordion({"Show dataframe": _failure_frame}),
+        ]
+    )
 
     render_section(
         "What failures have happened?",
@@ -1753,19 +1798,17 @@ def _(
         }
 
 
-    def build_provenance_cards(data: dict[str, Any]) -> list[object]:
-        provenance_frame: pd.DataFrame = data["provenance_frame"]
+    def make_provenance_summary_card(provenance_frame: pd.DataFrame) -> Card:
         total = len(provenance_frame)
         if total == 0:
-            return [stat_card("Provenance", [("Rows", "0")])]
-
+            return stat_card("Provenance", [("Rows", "0")])
         unique_runs = int(provenance_frame["source_run_id"].dropna().nunique())
         unique_configs = int(
             provenance_frame["llm_config_json"].dropna().nunique()
         )
         unique_prompts = int(provenance_frame["prompt_json"].dropna().nunique())
 
-        summary = stat_card(
+        return stat_card(
             "Provenance summary",
             [
                 ("Rows", fmt_int(total)),
@@ -1775,8 +1818,10 @@ def _(
             ],
         )
 
+
+    def make_provenance_runs_card(provenance_frame: pd.DataFrame) -> Card:
         run_counts = value_counts(provenance_frame["source_run_id"])[:10]
-        runs_card = Card(
+        return Card(
             title="Samples per source run",
             description=f"Top {len(run_counts)} runs",
             content=BarChart(
@@ -1791,62 +1836,6 @@ def _(
             ),
             width="w-96",
         )
-
-        config_fingerprints = sorted(
-            {
-                hash_short(c)
-                for c in provenance_frame["llm_config_json"]
-                .dropna()
-                .astype(str)
-                .tolist()
-                if c
-            }
-        )
-        config_card = Card(
-            title="LLM config diversity",
-            description="Short hashes of distinct llm_config payloads",
-            content=LabeledList(
-                label="Configs",
-                items=(
-                    [
-                        Badge(label=fp, variant=BadgeVariant.SECONDARY)
-                        for fp in config_fingerprints[:30]
-                    ]
-                    if config_fingerprints
-                    else [Badge(label="(none)", variant=BadgeVariant.OUTLINE)]
-                ),
-            ).render(),
-            width="w-80",
-        )
-
-        prompt_fingerprints = sorted(
-            {
-                hash_short(p)
-                for p in provenance_frame["prompt_json"]
-                .dropna()
-                .astype(str)
-                .tolist()
-                if p
-            }
-        )
-        prompt_card = Card(
-            title="Prompt diversity",
-            description="Short hashes of distinct prompt payloads",
-            content=LabeledList(
-                label="Prompts",
-                items=(
-                    [
-                        Badge(label=fp, variant=BadgeVariant.SECONDARY)
-                        for fp in prompt_fingerprints[:30]
-                    ]
-                    if prompt_fingerprints
-                    else [Badge(label="(none)", variant=BadgeVariant.OUTLINE)]
-                ),
-            ).render(),
-            width="w-80",
-        )
-
-        return [summary, runs_card, config_card, prompt_card]
 
 
     mo.stop(selected_pool is None)
@@ -1864,14 +1853,24 @@ def _(
             lambda results: {**results, "provenance": provenance_data}
         )
 
-    _body = None
-    if provenance_data is not None:
-        _body = render_card_section(
+    mo.stop(
+        provenance_data is None,
+        render_section(
             "What seed or fill provenance defines this pool?",
-            build_provenance_cards(provenance_data),
-            provenance_data["provenance_frame"],
-            include_title=False,
-        )
+            provenance_run_button,
+        ),
+    )
+
+    _provenance_frame: pd.DataFrame = provenance_data["provenance_frame"]
+    _summary_card = make_provenance_summary_card(_provenance_frame)
+    _runs_card = make_provenance_runs_card(_provenance_frame)
+    _rendered_cards = [card.render() for card in [_summary_card, _runs_card]]
+    _body = mo.vstack(
+        [
+            mo.hstack(_rendered_cards, wrap=True, align="start", justify="start"),
+            mo.accordion({"Show dataframe": _provenance_frame}),
+        ]
+    )
 
     render_section(
         "What seed or fill provenance defines this pool?",
@@ -1910,18 +1909,16 @@ def _(
         }
 
 
-    def build_metadata_cards(data: dict[str, Any]) -> list[object]:
-        metadata_frame: pd.DataFrame = data["metadata_frame"]
+    def make_metadata_summary_card(metadata_frame: pd.DataFrame) -> Card:
         total = len(metadata_frame)
         if total == 0:
-            return [stat_card("Metadata", [("Keys", "0")])]
-
+            return stat_card("Metadata", [("Keys", "0")])
         categories = metadata_frame["category"].dropna().astype(str)
         unique_categories = int(categories.nunique())
         internal_count = int((categories == "internal").sum())
         user_count = total - internal_count
 
-        summary = stat_card(
+        return stat_card(
             "Metadata summary",
             [
                 ("Keys", fmt_int(total)),
@@ -1931,8 +1928,10 @@ def _(
             ],
         )
 
+
+    def make_metadata_category_card(metadata_frame: pd.DataFrame) -> Card:
         category_counts = value_counts(metadata_frame["category"])
-        category_card = Card(
+        return Card(
             title="Category split",
             description="Metadata keys grouped by category",
             content=PieChart(
@@ -1943,8 +1942,6 @@ def _(
             ),
             width="w-80",
         )
-
-        return [summary, category_card]
 
 
     mo.stop(selected_pool is None)
@@ -1960,14 +1957,26 @@ def _(
         )
         set_section_results(lambda results: {**results, "metadata": metadata_data})
 
-    _body = None
-    if metadata_data is not None:
-        _body = render_card_section(
+    mo.stop(
+        metadata_data is None,
+        render_section(
             "What metadata is attached to this pool?",
-            build_metadata_cards(metadata_data),
-            metadata_data["metadata_frame"],
-            include_title=False,
-        )
+            metadata_run_button,
+        ),
+    )
+
+    _metadata_frame: pd.DataFrame = metadata_data["metadata_frame"]
+    _summary_card = make_metadata_summary_card(_metadata_frame)
+    _category_card = make_metadata_category_card(_metadata_frame)
+    _rendered_cards = [card.render() for card in [_summary_card, _category_card]]
+    _body = mo.vstack(
+        [
+            mo.hstack(_rendered_cards, wrap=True, align="start"),
+            mo.accordion({"Show dataframe": _metadata_frame}),
+        ],
+        align="start",
+        justify="start",
+    )
 
     render_section(
         "What metadata is attached to this pool?",
@@ -1994,7 +2003,7 @@ def _(
         get_cache,
         set_cache,
     ) -> dict[str, Any]:
-        _, call_stats_frame, key_columns = ensure_claims_and_call_stats(
+        _, _call_stats_frame, key_columns = ensure_claims_and_call_stats(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,
@@ -2002,64 +2011,11 @@ def _(
         )
         return {
             "key_columns": key_columns,
-            "call_stats_frame": call_stats_frame,
+            "call_stats_frame": _call_stats_frame,
         }
 
 
-    def build_call_stats_cards(data: dict[str, Any]) -> list[object]:
-        cs: pd.DataFrame = data["call_stats_frame"]
-        total = len(cs)
-        if total == 0:
-            return [stat_card("Token distribution", [("Rows", "0")])]
-
-        def scaled_series(column: str) -> pd.Series:
-            return pd.to_numeric(cs[column], errors="coerce").dropna()
-
-        def range_line(series: pd.Series) -> str:
-            return f"**True Range:** {float(series.min()):,.0f} - {float(series.max()):,.0f}"
-
-        def add_token_distribution_cards(
-            cards: list[object],
-            *,
-            column: str,
-            label: str,
-        ) -> None:
-            if column not in cs.columns:
-                return
-
-            series = scaled_series(column)
-            if series.empty:
-                return
-
-            token_range = range_line(series)
-            cards.append(
-                BoxPlotCard(
-                    column=column,
-                    data=cs,
-                    label=label,
-                    title=f"{label} distribution",
-                    description=(
-                        f"p1 · q1 · median · q3 · p99 (tokens)\n{token_range}"
-                    ),
-                    tick_format=".0f",
-                    y_label=f"{label} tokens",
-                )
-            )
-            cards.append(
-                ViolinPlotCard(
-                    column=column,
-                    data=cs,
-                    label=label,
-                    title=f"{label} shape",
-                    description=(
-                        f"KDE on p1-p99 bulk; <=2k sampled points\n{token_range}"
-                    ),
-                    clip_fences=QuantileFences.P1_P99,
-                    tick_format=".0f",
-                    y_label=f"{label} tokens",
-                )
-            )
-
+    def make_token_mix_card(cs: pd.DataFrame) -> Card:
         prompt_mean = pd.to_numeric(cs["prompt_tokens"], errors="coerce").mean()
         completion_mean = pd.to_numeric(
             cs["completion_tokens"], errors="coerce"
@@ -2067,7 +2023,7 @@ def _(
         reasoning_mean = pd.to_numeric(
             cs["reasoning_tokens"], errors="coerce"
         ).mean()
-        token_card = Card(
+        return Card(
             title="Token mix (mean)",
             description="Mean tokens per call across prompt / completion / reasoning",
             content=BarChart(
@@ -2098,23 +2054,42 @@ def _(
             ),
             width="w-80",
         )
-        cards: list[object] = [token_card]
-        add_token_distribution_cards(
-            cards,
-            column="prompt_tokens",
-            label="Prompt",
+
+
+    def make_token_distribution_pair(
+        cs: pd.DataFrame,
+        *,
+        column: str,
+        label: str,
+    ) -> tuple[BoxPlotCard | None, ViolinPlotCard | None]:
+        if column not in cs.columns:
+            return None, None
+
+        series = pd.to_numeric(cs[column], errors="coerce").dropna()
+        if series.empty:
+            return None, None
+
+        token_range = f"**True Range:** {float(series.min()):,.0f} - {float(series.max()):,.0f}"
+        distribution_card = BoxPlotCard(
+            column=column,
+            data=cs,
+            label=label,
+            title=f"{label} distribution",
+            description=f"p1 · q1 · median · q3 · p99 (tokens)\n{token_range}",
+            tick_format=".0f",
+            y_label=f"{label} tokens",
         )
-        add_token_distribution_cards(
-            cards,
-            column="completion_tokens",
-            label="Completion",
+        shape_card = ViolinPlotCard(
+            column=column,
+            data=cs,
+            label=label,
+            title=f"{label} shape",
+            description=f"KDE on p1-p99 bulk; <=2k sampled points\n{token_range}",
+            clip_fences=QuantileFences.P1_P99,
+            tick_format=".0f",
+            y_label=f"{label} tokens",
         )
-        add_token_distribution_cards(
-            cards,
-            column="reasoning_tokens",
-            label="Reasoning",
-        )
-        return cards
+        return distribution_card, shape_card
 
 
     mo.stop(selected_pool is None)
@@ -2132,14 +2107,65 @@ def _(
             lambda results: {**results, "call_stats": call_stats_data}
         )
 
-    _body = None
-    if call_stats_data is not None:
-        _body = render_card_section(
+    mo.stop(
+        call_stats_data is None,
+        render_section(
             "What is the token distribution?",
-            build_call_stats_cards(call_stats_data),
-            call_stats_data["call_stats_frame"],
-            include_title=False,
+            call_stats_run_button,
+        ),
+    )
+
+    _call_stats_frame: pd.DataFrame = call_stats_data["call_stats_frame"]
+    total = len(_call_stats_frame)
+    if total == 0:
+        _cards = [stat_card("Token distribution", [("Rows", "0")])]
+    else:
+        _token_mix_card = make_token_mix_card(_call_stats_frame)
+        _prompt_distribution_card, _prompt_shape_card = (
+            make_token_distribution_pair(
+                _call_stats_frame,
+                column="prompt_tokens",
+                label="Prompt",
+            )
         )
+        _completion_distribution_card, _completion_shape_card = (
+            make_token_distribution_pair(
+                _call_stats_frame,
+                column="completion_tokens",
+                label="Completion",
+            )
+        )
+        _reasoning_distribution_card, _reasoning_shape_card = (
+            make_token_distribution_pair(
+                _call_stats_frame,
+                column="reasoning_tokens",
+                label="Reasoning",
+            )
+        )
+        _cards = [
+            card
+            for card in [
+                _token_mix_card,
+                _prompt_distribution_card,
+                _prompt_shape_card,
+                _completion_distribution_card,
+                _completion_shape_card,
+                _reasoning_distribution_card,
+                _reasoning_shape_card,
+            ]
+            if card is not None
+        ]
+
+    _rendered_cards = [card.render() for card in _cards]
+    _body = mo.vstack(
+        [
+            _rendered_cards[0],
+            mo.hstack(
+                _rendered_cards[1:], wrap=True, align="start", justify="start"
+            ),
+            mo.accordion({"Show dataframe": _call_stats_frame}),
+        ],
+    )
 
     render_section(
         "What is the token distribution?",
@@ -2166,7 +2192,7 @@ def _(
         get_cache,
         set_cache,
     ) -> dict[str, Any]:
-        _, call_stats_frame, key_columns = ensure_claims_and_call_stats(
+        _, _call_stats_frame, key_columns = ensure_claims_and_call_stats(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,
@@ -2174,34 +2200,32 @@ def _(
         )
         return {
             "key_columns": key_columns,
-            "call_stats_frame": call_stats_frame,
+            "call_stats_frame": _call_stats_frame,
         }
 
 
-    def build_trend_cards(data: dict[str, Any]) -> list[object]:
-        cs: pd.DataFrame = data["call_stats_frame"]
-        if cs.empty or "created_at" not in cs.columns:
-            return [stat_card("Trends", [("Calls", "0")])]
-
-        cumulative_cost_card = Card(
+    def make_cumulative_cost_card() -> Card:
+        return Card(
             title="Cumulative cost",
             description="Would show cumulative USD over time. Plot temporarily disabled while we fix notebook performance for large pools.",
             width="w-96",
         )
 
-        latency_trend_card = Card(
+
+    def make_latency_trend_card() -> Card:
+        return Card(
             title="Latency over time",
             description="Would show per-call latency_ms over time. Plot temporarily disabled while we fix notebook performance for large pools.",
             width="w-96",
         )
 
-        tokens_card = Card(
+
+    def make_tokens_trend_card() -> Card:
+        return Card(
             title="Tokens over time",
             description="Would show the rolling mean (window=20) of total_tokens over time. Plot temporarily disabled while we fix notebook performance for large pools.",
             width="w-96",
         )
-
-        return [cumulative_cost_card, latency_trend_card, tokens_card]
 
 
     mo.stop(selected_pool is None)
@@ -2217,14 +2241,30 @@ def _(
         )
         set_section_results(lambda results: {**results, "trend": trend_data})
 
-    _body = None
-    if trend_data is not None:
-        _body = render_card_section(
+    mo.stop(
+        trend_data is None,
+        render_section(
             "What are the cost and latency trends over time?",
-            build_trend_cards(trend_data),
-            trend_data["call_stats_frame"],
-            include_title=False,
-        )
+            trend_run_button,
+        ),
+    )
+
+    _trend_frame: pd.DataFrame = trend_data["call_stats_frame"]
+    if _trend_frame.empty or "created_at" not in _trend_frame.columns:
+        _cards = [stat_card("Trends", [("Calls", "0")])]
+    else:
+        _cumulative_cost_card = make_cumulative_cost_card()
+        _latency_trend_card = make_latency_trend_card()
+        _tokens_card = make_tokens_trend_card()
+        _cards = [_cumulative_cost_card, _latency_trend_card, _tokens_card]
+
+    _rendered_cards = [card.render() for card in _cards]
+    _body = mo.vstack(
+        [
+            mo.hstack(_rendered_cards, wrap=True, align="start", justify="start"),
+            mo.accordion({"Show dataframe": _trend_frame}),
+        ]
+    )
 
     render_section(
         "What are the cost and latency trends over time?",
@@ -2252,13 +2292,13 @@ def _(
         get_cache,
         set_cache,
     ) -> dict[str, Any]:
-        sample_frame, key_columns = ensure_sample_frame(
+        _sample_frame, key_columns = ensure_sample_frame(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,
             set_cache=set_cache,
         )
-        claims_frame, _, _ = ensure_claims_and_call_stats(
+        _claims_frame, _, _ = ensure_claims_and_call_stats(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,
@@ -2266,19 +2306,16 @@ def _(
         )
         return {
             "key_columns": key_columns,
-            "sample_frame": sample_frame,
-            "claims_frame": claims_frame,
+            "sample_frame": _sample_frame,
+            "claims_frame": _claims_frame,
         }
 
 
-    def build_throughput_cards(data: dict[str, Any]) -> list[object]:
-        sample_frame: pd.DataFrame = data["sample_frame"]
-        claims_frame: pd.DataFrame = data["claims_frame"]
-
+    def make_samples_throughput_card(
+        sample_frame: pd.DataFrame,
+    ) -> HistogramCard:
         sample_ts = ts_to_unix(sample_frame, "created_at")
-        claim_ts = ts_to_unix(claims_frame, "claimed_at")
-
-        samples_card = HistogramCard(
+        return HistogramCard(
             data=sample_ts,
             column="created_at",
             title="Samples per bucket",
@@ -2290,7 +2327,12 @@ def _(
             y_label="Samples",
         )
 
-        claims_card = HistogramCard(
+
+    def make_claims_throughput_card(
+        claims_frame: pd.DataFrame,
+    ) -> HistogramCard:
+        claim_ts = ts_to_unix(claims_frame, "claimed_at")
+        return HistogramCard(
             data=claim_ts,
             column="claimed_at",
             title="Claims per bucket",
@@ -2302,10 +2344,12 @@ def _(
             y_label="Claims",
         )
 
+
+    def make_workers_throughput_card(claims_frame: pd.DataFrame) -> Card:
         worker_counts: list[tuple[str, int]] = []
         if not claims_frame.empty and "consumer_tag" in claims_frame.columns:
             worker_counts = value_counts(claims_frame["consumer_tag"])[:10]
-        workers_card = Card(
+        return Card(
             title="Workers by activity",
             description=f"Top {len(worker_counts)} consumer_tag values",
             content=BarChart(
@@ -2320,8 +2364,6 @@ def _(
             ),
             width="w-96",
         )
-
-        return [samples_card, claims_card, workers_card]
 
 
     mo.stop(selected_pool is None)
@@ -2339,14 +2381,28 @@ def _(
             lambda results: {**results, "throughput": throughput_data}
         )
 
-    _body = None
-    if throughput_data is not None:
-        _body = render_card_section(
+    mo.stop(
+        throughput_data is None,
+        render_section(
             "What does recent activity and throughput look like?",
-            build_throughput_cards(throughput_data),
-            throughput_data["claims_frame"],
-            include_title=False,
-        )
+            throughput_run_button,
+        ),
+    )
+
+    _sample_frame: pd.DataFrame = throughput_data["sample_frame"]
+    _claims_frame: pd.DataFrame = throughput_data["claims_frame"]
+    _samples_card = make_samples_throughput_card(_sample_frame)
+    _claims_card = make_claims_throughput_card(_claims_frame)
+    _workers_card = make_workers_throughput_card(_claims_frame)
+    _rendered_cards = [
+        card.render() for card in [_samples_card, _claims_card, _workers_card]
+    ]
+    _body = mo.vstack(
+        [
+            mo.hstack(_rendered_cards, wrap=True, align="start", justify="start"),
+            mo.accordion({"Show dataframe": _claims_frame}),
+        ]
+    )
 
     render_section(
         "What does recent activity and throughput look like?",
