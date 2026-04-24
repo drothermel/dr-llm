@@ -44,6 +44,7 @@ with app.setup:
         QuantileFences,
         ScatterChart,
         ScatterSeries,
+        ValueCountsCard,
         ViolinPlotCard,
         compute_gini,
         skew_label,
@@ -625,7 +626,7 @@ def render_section(
         items.append(mo.md("Press `Run` to load this section."))
     else:
         items.append(body)
-    return mo.vstack(items, gap=0.5)
+    return mo.vstack(items)
 
 
 @app.function(hide_code=True)
@@ -764,6 +765,7 @@ def _(project_summaries):
                 )
         return rows
 
+
     target_project_names = {
         project_name.strip().lower() for project_name in TARGET_PROJECT_NAMES
     }
@@ -889,16 +891,16 @@ def _(
     set_raw_frames,
     set_section_results,
 ):
-    def scaled_series(
-        frame: pd.DataFrame, column: str, scale: float
-    ) -> pd.Series:
+    def scaled_series(frame: pd.DataFrame, column: str, scale: float) -> pd.Series:
         values = pd.to_numeric(frame[column], errors="coerce").dropna()
         if scale != 1.0:
             values = values * scale
         return values
 
+
     def range_line(series: pd.Series, template: str) -> str:
         return template.format(lo=float(series.min()), hi=float(series.max()))
+
 
     def build_health_data(
         *,
@@ -926,11 +928,13 @@ def _(
             "call_stats_frame": call_stats_frame,
         }
 
+
     def make_pool_health_pie_card(inspection: Any) -> PoolSimpleStatsPieCard:
         return PoolSimpleStatsPieCard(
             pool=inspection,
             width="20rem",
         )
+
 
     def make_pool_finish_reason_card(
         call_stats_frame: pd.DataFrame,
@@ -945,14 +949,14 @@ def _(
             description="Distribution of finish_reason",
             content=PieChart(
                 slices=[
-                    PieSlice(label=lab, value=cnt)
-                    for lab, cnt in finish_counts
+                    PieSlice(label=lab, value=cnt) for lab, cnt in finish_counts
                 ],
                 height=220,
                 show_legend=True,
             ),
             width="w-80",
         )
+
 
     def make_pool_cost_distribution_plot(
         call_stats_frame: pd.DataFrame,
@@ -973,6 +977,7 @@ def _(
             tick_format="$.4f",
             y_label="Cost (USD)",
         )
+
 
     def make_pool_cost_shape_plot(
         call_stats_frame: pd.DataFrame,
@@ -996,6 +1001,7 @@ def _(
             y_label="Cost (USD)",
         )
 
+
     def make_pool_latency_distribution_plot(
         call_stats_frame: pd.DataFrame,
         column: str = "latency_ms",
@@ -1017,6 +1023,7 @@ def _(
             tick_format=".2f",
             y_label="Latency (s)",
         )
+
 
     def make_pool_latency_shape_plot(
         call_stats_frame: pd.DataFrame,
@@ -1042,6 +1049,7 @@ def _(
             y_label="Latency (s)",
         )
 
+
     mo.stop(selected_pool is None)
 
     _section_results = get_section_results()
@@ -1055,68 +1063,48 @@ def _(
         )
         set_section_results(lambda results: {**results, "health": health_data})
 
-    _body = None
-    if health_data is not None:
-        inspection = health_data["pool_inspection"]
-        call_stats_frame: pd.DataFrame = health_data["call_stats_frame"]
+    mo.stop(
+        health_data is None,
+        render_section("Pool health", health_run_button),
+    )
 
-        pool_pie = make_pool_health_pie_card(inspection)
-        finish_reasons = make_pool_finish_reason_card(call_stats_frame)
-        cost_distribution = make_pool_cost_distribution_plot(call_stats_frame)
-        cost_shape = make_pool_cost_shape_plot(call_stats_frame)
-        latency_distribution = make_pool_latency_distribution_plot(
-            call_stats_frame
-        )
-        latency_shape = make_pool_latency_shape_plot(call_stats_frame)
+    inspection = health_data["pool_inspection"]
+    call_stats_frame: pd.DataFrame = health_data["call_stats_frame"]
 
-        left_column = mo.vstack(
-            [
-                card.render()
-                for card in [pool_pie, finish_reasons]
-                if card is not None
-            ],
-            gap=0.75,
-            align="stretch",
-        )
-        cost_row_cards = [
-            card for card in [cost_distribution, cost_shape] if card is not None
-        ]
-        cost_row = None
-        if cost_row_cards:
-            cost_row = mo.hstack(
-                [card.render() for card in cost_row_cards],
-                gap=0.75,
-                align="start",
-            )
-        latency_row_cards = [
-            card
-            for card in [latency_distribution, latency_shape]
-            if card is not None
-        ]
-        latency_row = None
-        if latency_row_cards:
-            latency_row = mo.hstack(
-                [card.render() for card in latency_row_cards],
-                gap=0.75,
-                align="start",
-            )
-        right_column = None
-        right_column_rows = [
-            row for row in [cost_row, latency_row] if row is not None
-        ]
-        if right_column_rows:
-            right_column = mo.vstack(
-                right_column_rows,
-                gap=0.75,
-                align="stretch",
-            )
+    pool_pie = make_pool_health_pie_card(inspection)
+    finish_reasons = make_pool_finish_reason_card(call_stats_frame)
+    cost_distribution = make_pool_cost_distribution_plot(call_stats_frame)
+    cost_shape = make_pool_cost_shape_plot(call_stats_frame)
+    latency_distribution = make_pool_latency_distribution_plot(call_stats_frame)
+    latency_shape = make_pool_latency_shape_plot(call_stats_frame)
 
-        _body = mo.hstack(
-            [column for column in [left_column, right_column] if column is not None],
-            gap=0.75,
-            align="start",
-            justify="start",
-        )
+    _body = mo.hstack(
+        [
+            mo.vstack(
+                [
+                    pool_pie.render(),
+                    finish_reasons.render(),
+                ],
+            ),
+            mo.vstack(
+                [
+                    mo.hstack(
+                        [
+                            cost_distribution.render(),
+                            cost_shape.render(),
+                        ],
+                    ),
+                    mo.hstack(
+                        [
+                            latency_distribution.render(),
+                            latency_shape.render(),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+        align="start",
+    )
 
     render_section("Pool health", health_run_button, _body)
     return
@@ -1152,6 +1140,7 @@ def _(
             kind="stable",
         ).reset_index(drop=True)
 
+
     def build_coverage_data(
         *,
         project_name: str,
@@ -1173,6 +1162,7 @@ def _(
             ),
         }
 
+
     def per_key_count_series(
         coverage_frame: pd.DataFrame,
         key_column: str,
@@ -1182,6 +1172,11 @@ def _(
             .sum()
             .sort_values(ascending=False)
         )
+
+
+    # Keys with at most this many distinct ids render as a labeled per-id bar
+    # chart (ValueCountsCard); above this, as a count-of-counts histogram.
+    COVERAGE_LABELED_BAR_MAX_IDS = 30
 
 
     def build_per_key_coverage_cards(
@@ -1194,23 +1189,40 @@ def _(
         cards: list[object] = []
         for key_column in key_columns:
             per_key = per_key_count_series(coverage_frame, key_column)
-            counts = [int(v) for v in per_key.tolist() if int(v) > 0]
+            positive = per_key[per_key > 0]
+            counts = [int(v) for v in positive.tolist()]
             gini = compute_gini(counts)
             description = (
-                f"{len(counts)} ids · {int(sum(counts)):,} samples · "
+                f"{len(counts)} ids · {int(sum(counts)):,} samples\n"
                 f"Gini {gini:.2f} · {skew_label(gini)}"
             )
-            cards.append(
-                HistogramCard(
-                    data=counts,
-                    column=key_column,
-                    title=f"{key_column} — sample coverage",
-                    description=description,
-                    color=ChartColor.TWO,
-                    x_label="Samples per id",
-                    y_label="Number of ids",
+            title = f"Coverage: {key_column}"
+            if len(counts) <= COVERAGE_LABELED_BAR_MAX_IDS:
+                cards.append(
+                    ValueCountsCard(
+                        data=positive,
+                        column=key_column,
+                        title=title,
+                        description=description,
+                        color=ChartColor.TWO,
+                        top_n=COVERAGE_LABELED_BAR_MAX_IDS,
+                        x_label="Samples",
+                        y_label=key_column,
+                        width="w-[32rem]",
+                    )
                 )
-            )
+            else:
+                cards.append(
+                    HistogramCard(
+                        data=counts,
+                        column=key_column,
+                        title=title,
+                        description=description,
+                        color=ChartColor.TWO,
+                        x_label="Samples per id",
+                        y_label="Number of ids",
+                    )
+                )
         return cards
 
 
@@ -1363,6 +1375,7 @@ def _(
             "sample_frame": sample_frame,
         }
 
+
     def build_sample_cards(data: dict[str, Any]) -> list[object]:
         sample_frame: pd.DataFrame = data["sample_frame"]
         total = len(sample_frame)
@@ -1416,6 +1429,7 @@ def _(
         )
 
         return [summary, timeline_card, runs_card]
+
 
     mo.stop(selected_pool is None)
 
@@ -1474,6 +1488,7 @@ def _(
             "key_columns": key_columns,
             "pending_frame": pending_frames["pending_frame"],
         }
+
 
     def build_pending_cards(data: dict[str, Any]) -> list[object]:
         pending_frame: pd.DataFrame = data["pending_frame"]
@@ -1548,6 +1563,7 @@ def _(
 
         return [summary, status_card, priority_card, retries_card]
 
+
     mo.stop(selected_pool is None)
 
     _section_results = get_section_results()
@@ -1605,6 +1621,7 @@ def _(
             "key_columns": key_columns,
             "failure_frame": pending_frames["failure_frame"],
         }
+
 
     def build_failure_cards(data: dict[str, Any]) -> list[object]:
         failure_frame: pd.DataFrame = data["failure_frame"]
@@ -1672,6 +1689,7 @@ def _(
 
         return [summary, reasons_card, attempts_card, timeline_card]
 
+
     mo.stop(selected_pool is None)
 
     _section_results = get_section_results()
@@ -1715,6 +1733,7 @@ def _(
     def hash_short(s: str, n: int = 6) -> str:
         return hashlib.sha1(s.encode("utf-8")).hexdigest()[:n]
 
+
     def build_provenance_data(
         *,
         project_name: str,
@@ -1732,6 +1751,7 @@ def _(
             "key_columns": key_columns,
             "provenance_frame": pending_frames["provenance_frame"],
         }
+
 
     def build_provenance_cards(data: dict[str, Any]) -> list[object]:
         provenance_frame: pd.DataFrame = data["provenance_frame"]
@@ -1828,6 +1848,7 @@ def _(
 
         return [summary, runs_card, config_card, prompt_card]
 
+
     mo.stop(selected_pool is None)
 
     _section_results = get_section_results()
@@ -1888,6 +1909,7 @@ def _(
             "metadata_frame": metadata_frame,
         }
 
+
     def build_metadata_cards(data: dict[str, Any]) -> list[object]:
         metadata_frame: pd.DataFrame = data["metadata_frame"]
         total = len(metadata_frame)
@@ -1918,26 +1940,12 @@ def _(
                     PieSlice(label=lab, value=cnt) for lab, cnt in category_counts
                 ],
                 height=220,
-                show_legend=True,
             ),
             width="w-80",
         )
 
-        key_items = [
-            DataItem(
-                label=truncate(str(row["key"]), 28),
-                value=truncate(str(row["value_json"]), 40),
-            ).render()
-            for _, row in metadata_frame.head(30).iterrows()
-        ]
-        keys_card = Card(
-            title="Keys & values",
-            description=f"First {min(30, total)} entries",
-            content=mo.vstack(key_items, gap=0.15),
-            width="w-96",
-        )
+        return [summary, category_card]
 
-        return [summary, category_card, keys_card]
 
     mo.stop(selected_pool is None)
 
@@ -1997,6 +2005,7 @@ def _(
             "call_stats_frame": call_stats_frame,
         }
 
+
     def build_call_stats_cards(data: dict[str, Any]) -> list[object]:
         cs: pd.DataFrame = data["call_stats_frame"]
         total = len(cs)
@@ -2030,8 +2039,7 @@ def _(
                     label=label,
                     title=f"{label} distribution",
                     description=(
-                        "p1 · q1 · median · q3 · p99 (tokens)\n"
-                        f"{token_range}"
+                        f"p1 · q1 · median · q3 · p99 (tokens)\n{token_range}"
                     ),
                     tick_format=".0f",
                     y_label=f"{label} tokens",
@@ -2044,8 +2052,7 @@ def _(
                     label=label,
                     title=f"{label} shape",
                     description=(
-                        "KDE on p1-p99 bulk; <=2k sampled points\n"
-                        f"{token_range}"
+                        f"KDE on p1-p99 bulk; <=2k sampled points\n{token_range}"
                     ),
                     clip_fences=QuantileFences.P1_P99,
                     tick_format=".0f",
@@ -2109,6 +2116,7 @@ def _(
         )
         return cards
 
+
     mo.stop(selected_pool is None)
 
     _section_results = get_section_results()
@@ -2169,6 +2177,7 @@ def _(
             "call_stats_frame": call_stats_frame,
         }
 
+
     def build_trend_cards(data: dict[str, Any]) -> list[object]:
         cs: pd.DataFrame = data["call_stats_frame"]
         if cs.empty or "created_at" not in cs.columns:
@@ -2193,6 +2202,7 @@ def _(
         )
 
         return [cumulative_cost_card, latency_trend_card, tokens_card]
+
 
     mo.stop(selected_pool is None)
 
@@ -2260,6 +2270,7 @@ def _(
             "claims_frame": claims_frame,
         }
 
+
     def build_throughput_cards(data: dict[str, Any]) -> list[object]:
         sample_frame: pd.DataFrame = data["sample_frame"]
         claims_frame: pd.DataFrame = data["claims_frame"]
@@ -2311,6 +2322,7 @@ def _(
         )
 
         return [samples_card, claims_card, workers_card]
+
 
     mo.stop(selected_pool is None)
 
