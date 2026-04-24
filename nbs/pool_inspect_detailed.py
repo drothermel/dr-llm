@@ -4,12 +4,13 @@ __generated_with = "0.23.2"
 app = marimo.App(width="columns")
 
 with app.setup:
+    from contextlib import contextmanager
     import hashlib
     import json
     import math
-    from typing import Any
     from collections.abc import Sequence
     from datetime import datetime
+    from typing import Any
 
     import marimo as mo
     import pandas as pd
@@ -171,21 +172,15 @@ def _():
         ).reset_index(drop=True)
 
 
-    def build_pool_drilldown_frames(
+    @contextmanager
+    def pool_reader_context(
         *,
         project_name: str,
         pool_name: str,
-    ) -> dict[str, Any]:
+    ):
         project = maybe_get_project(project_name)
         if project is None or project.dsn is None:
             raise ValueError(f"Project {project_name!r} is not available")
-
-        pool_inspection = inspect_pool(
-            PoolInspectionRequest(
-                project_name=project_name,
-                pool_name=pool_name,
-            )
-        )
 
         runtime = DbRuntime(
             DbConfig(
@@ -197,310 +192,524 @@ def _():
             schema = load_schema_from_db(runtime, pool_name)
             reader = PoolReader.from_runtime(runtime, schema=schema)
             key_columns = list(schema.key_column_names)
-
-            samples = reader.samples_list()
-            all_pending = reader.pending_list(
-                status=[
-                    PendingStatus.pending,
-                    PendingStatus.leased,
-                    PendingStatus.promoted,
-                    PendingStatus.failed,
-                ]
-            )
-            metadata_entries = reader.metadata_prefix("")
-
-            sample_rows = [
-                {
-                    "sample_id": sample.sample_id,
-                    **{
-                        column_name: sample.key_values.get(column_name)
-                        for column_name in key_columns
-                    },
-                    "sample_idx": sample.sample_idx,
-                    "status": sample.status.value,
-                    "source_run_id": sample.source_run_id,
-                    "created_at": sample.created_at,
-                    "payload_json": compact_json(sample.payload),
-                    "metadata_json": compact_json(sample.metadata),
-                }
-                for sample in samples
-            ]
-            sample_frame = pd.DataFrame.from_records(sample_rows)
-            sample_columns = [
-                "sample_id",
-                *key_columns,
-                "sample_idx",
-                "status",
-                "source_run_id",
-                "created_at",
-                "payload_json",
-                "metadata_json",
-            ]
-            if sample_frame.empty:
-                sample_frame = empty_frame(sample_columns)
-            else:
-                sample_frame = sample_frame.loc[:, sample_columns]
-                sample_frame = sort_frame(
-                    sample_frame,
-                    by=[*key_columns, "sample_idx", "created_at"],
-                    ascending=[*([True] * len(key_columns)), True, True],
-                )
-
-            if sample_frame.empty:
-                coverage_frame = empty_frame([*key_columns, "count"])
-            else:
-                coverage_frame = (
-                    sample_frame.loc[:, key_columns]
-                    .value_counts(dropna=False)
-                    .rename("count")
-                    .reset_index()
-                )
-                coverage_frame = sort_frame(
-                    coverage_frame,
-                    by=["count", *key_columns],
-                    ascending=[False, *([True] * len(key_columns))],
-                )
-
-            pending_rows = [
-                {
-                    "pending_id": pending.pending_id,
-                    **{
-                        column_name: pending.key_values.get(column_name)
-                        for column_name in key_columns
-                    },
-                    "sample_idx": pending.sample_idx,
-                    "priority": pending.priority,
-                    "status": pending.status.value,
-                    "worker_id": pending.worker_id,
-                    "lease_expires_at": pending.lease_expires_at,
-                    "attempt_count": pending.attempt_count,
-                    "source_run_id": pending.source_run_id,
-                    "created_at": pending.created_at,
-                    "payload_json": compact_json(pending.payload),
-                    "metadata_json": compact_json(pending.metadata),
-                    "fail_reason": pending.metadata.get("fail_reason", ""),
-                    "llm_config_json": compact_json(
-                        pending.payload.get("llm_config")
-                    ),
-                    "prompt_json": compact_json(pending.payload.get("prompt")),
-                }
-                for pending in all_pending
-            ]
-            pending_frame = pd.DataFrame.from_records(pending_rows)
-            pending_columns = [
-                "pending_id",
-                *key_columns,
-                "sample_idx",
-                "priority",
-                "status",
-                "worker_id",
-                "lease_expires_at",
-                "attempt_count",
-                "source_run_id",
-                "created_at",
-                "payload_json",
-                "metadata_json",
-            ]
-            if pending_frame.empty:
-                pending_frame = empty_frame(pending_columns)
-                failure_frame = empty_frame(
-                    [
-                        "pending_id",
-                        *key_columns,
-                        "sample_idx",
-                        "attempt_count",
-                        "created_at",
-                        "fail_reason",
-                        "payload_json",
-                        "metadata_json",
-                    ]
-                )
-                provenance_frame = empty_frame(
-                    [
-                        *key_columns,
-                        "sample_idx",
-                        "status",
-                        "priority",
-                        "attempt_count",
-                        "source_run_id",
-                        "created_at",
-                        "llm_config_json",
-                        "prompt_json",
-                        "payload_json",
-                        "metadata_json",
-                    ]
-                )
-            else:
-                pending_frame = pending_frame.loc[:, pending_columns]
-                pending_frame = pending_frame.loc[
-                    pending_frame["status"].isin(
-                        [PendingStatus.pending.value, PendingStatus.leased.value]
-                    )
-                ]
-                if pending_frame.empty:
-                    pending_frame = empty_frame(pending_columns)
-                else:
-                    pending_frame = sort_frame(
-                        pending_frame,
-                        by=[
-                            "status",
-                            "priority",
-                            "created_at",
-                            *key_columns,
-                            "sample_idx",
-                        ],
-                        ascending=[
-                            True,
-                            False,
-                            True,
-                            *([True] * len(key_columns)),
-                            True,
-                        ],
-                    )
-
-                failure_frame = pd.DataFrame.from_records(pending_rows)
-                failure_frame = failure_frame.loc[
-                    failure_frame["status"] == PendingStatus.failed.value
-                ]
-                failure_columns = [
-                    "pending_id",
-                    *key_columns,
-                    "sample_idx",
-                    "attempt_count",
-                    "created_at",
-                    "fail_reason",
-                    "payload_json",
-                    "metadata_json",
-                ]
-                if failure_frame.empty:
-                    failure_frame = empty_frame(failure_columns)
-                else:
-                    failure_frame = failure_frame.loc[:, failure_columns]
-                    failure_frame = sort_frame(
-                        failure_frame,
-                        by=["created_at", *key_columns, "sample_idx"],
-                        ascending=[False, *([True] * len(key_columns)), True],
-                    )
-
-                provenance_frame = pd.DataFrame.from_records(pending_rows)
-                provenance_columns = [
-                    *key_columns,
-                    "sample_idx",
-                    "status",
-                    "priority",
-                    "attempt_count",
-                    "source_run_id",
-                    "created_at",
-                    "llm_config_json",
-                    "prompt_json",
-                    "payload_json",
-                    "metadata_json",
-                ]
-                provenance_frame = provenance_frame.loc[:, provenance_columns]
-                provenance_frame = sort_frame(
-                    provenance_frame,
-                    by=[*key_columns, "sample_idx", "created_at"],
-                    ascending=[*([True] * len(key_columns)), True, True],
-                )
-
-            metadata_rows = [
-                {
-                    "key": key,
-                    "category": metadata_category(key),
-                    "value_json": compact_json(value),
-                }
-                for key, value in metadata_entries.items()
-            ]
-            metadata_frame = pd.DataFrame.from_records(metadata_rows)
-            metadata_columns = ["key", "category", "value_json"]
-            if metadata_frame.empty:
-                metadata_frame = empty_frame(metadata_columns)
-            else:
-                metadata_frame = metadata_frame.loc[:, metadata_columns]
-                metadata_frame = sort_frame(
-                    metadata_frame,
-                    by=["category", "key"],
-                    ascending=[True, True],
-                )
-
-            claims_table = build_claims_table(schema.claims_table)
-            call_stats_table = build_call_stats_table(schema.call_stats_table)
-            with runtime.connect() as conn:
-                claim_rows = (
-                    conn.execute(
-                        select(claims_table).order_by(
-                            claims_table.c.claimed_at.desc(),
-                            claims_table.c.claim_idx.asc(),
-                        )
-                    )
-                    .mappings()
-                    .all()
-                )
-                call_stats_rows = (
-                    conn.execute(
-                        select(call_stats_table).order_by(
-                            call_stats_table.c.created_at.desc(),
-                            call_stats_table.c.sample_id.asc(),
-                        )
-                    )
-                    .mappings()
-                    .all()
-                )
-
-            claims_frame = pd.DataFrame.from_records(
-                [dict(row) for row in claim_rows]
-            )
-            claim_columns = [
-                "claim_id",
-                "run_id",
-                "request_id",
-                "consumer_tag",
-                "sample_id",
-                "claim_idx",
-                "claimed_at",
-            ]
-            if claims_frame.empty:
-                claims_frame = empty_frame(claim_columns)
-            else:
-                claims_frame = claims_frame.loc[:, claim_columns]
-
-            call_stats_frame = pd.DataFrame.from_records(
-                [dict(row) for row in call_stats_rows]
-            )
-            call_stats_columns = [
-                "sample_id",
-                "latency_ms",
-                "total_cost_usd",
-                "prompt_tokens",
-                "completion_tokens",
-                "reasoning_tokens",
-                "total_tokens",
-                "attempt_count",
-                "finish_reason",
-                "created_at",
-            ]
-            if call_stats_frame.empty:
-                call_stats_frame = empty_frame(call_stats_columns)
-            else:
-                call_stats_frame = call_stats_frame.loc[:, call_stats_columns]
-
-            return {
-                "project_name": project_name,
-                "pool_name": pool_name,
-                "pool_label": f"{project_name} / {pool_name}",
-                "pool_inspection": pool_inspection,
-                "key_columns": key_columns,
-                "coverage_frame": coverage_frame,
-                "sample_frame": sample_frame,
-                "pending_frame": pending_frame,
-                "failure_frame": failure_frame,
-                "provenance_frame": provenance_frame,
-                "metadata_frame": metadata_frame,
-                "call_stats_frame": call_stats_frame,
-                "claims_frame": claims_frame,
-            }
+            yield runtime, schema, reader, key_columns
         finally:
             runtime.close()
+
+
+    def load_pool_inspection(
+        *,
+        project_name: str,
+        pool_name: str,
+    ) -> Any:
+        return inspect_pool(
+            PoolInspectionRequest(
+                project_name=project_name,
+                pool_name=pool_name,
+            )
+        )
+
+
+    def load_sample_frame(
+        *,
+        reader: PoolReader,
+        key_columns: Sequence[str],
+    ) -> pd.DataFrame:
+        samples = reader.samples_list()
+        sample_rows = [
+            {
+                "sample_id": sample.sample_id,
+                **{
+                    column_name: sample.key_values.get(column_name)
+                    for column_name in key_columns
+                },
+                "sample_idx": sample.sample_idx,
+                "status": sample.status.value,
+                "source_run_id": sample.source_run_id,
+                "created_at": sample.created_at,
+                "payload_json": compact_json(sample.payload),
+                "metadata_json": compact_json(sample.metadata),
+            }
+            for sample in samples
+        ]
+        sample_frame = pd.DataFrame.from_records(sample_rows)
+        sample_columns = [
+            "sample_id",
+            *key_columns,
+            "sample_idx",
+            "status",
+            "source_run_id",
+            "created_at",
+            "payload_json",
+            "metadata_json",
+        ]
+        if sample_frame.empty:
+            return empty_frame(sample_columns)
+
+        sample_frame = sample_frame.loc[:, sample_columns]
+        return sort_frame(
+            sample_frame,
+            by=[*key_columns, "sample_idx", "created_at"],
+            ascending=[*([True] * len(key_columns)), True, True],
+        )
+
+
+    def build_coverage_frame(
+        *,
+        sample_frame: pd.DataFrame,
+        key_columns: Sequence[str],
+    ) -> pd.DataFrame:
+        if sample_frame.empty:
+            return empty_frame([*key_columns, "count"])
+
+        coverage_frame = (
+            sample_frame.loc[:, key_columns]
+            .value_counts(dropna=False)
+            .rename("count")
+            .reset_index()
+        )
+        return sort_frame(
+            coverage_frame,
+            by=["count", *key_columns],
+            ascending=[False, *([True] * len(key_columns))],
+        )
+
+
+    def load_pending_frames(
+        *,
+        reader: PoolReader,
+        key_columns: Sequence[str],
+    ) -> dict[str, pd.DataFrame]:
+        all_pending = reader.pending_list(
+            status=[
+                PendingStatus.pending,
+                PendingStatus.leased,
+                PendingStatus.promoted,
+                PendingStatus.failed,
+            ]
+        )
+
+        pending_rows = [
+            {
+                "pending_id": pending.pending_id,
+                **{
+                    column_name: pending.key_values.get(column_name)
+                    for column_name in key_columns
+                },
+                "sample_idx": pending.sample_idx,
+                "priority": pending.priority,
+                "status": pending.status.value,
+                "worker_id": pending.worker_id,
+                "lease_expires_at": pending.lease_expires_at,
+                "attempt_count": pending.attempt_count,
+                "source_run_id": pending.source_run_id,
+                "created_at": pending.created_at,
+                "payload_json": compact_json(pending.payload),
+                "metadata_json": compact_json(pending.metadata),
+                "fail_reason": pending.metadata.get("fail_reason", ""),
+                "llm_config_json": compact_json(pending.payload.get("llm_config")),
+                "prompt_json": compact_json(pending.payload.get("prompt")),
+            }
+            for pending in all_pending
+        ]
+        pending_columns = [
+            "pending_id",
+            *key_columns,
+            "sample_idx",
+            "priority",
+            "status",
+            "worker_id",
+            "lease_expires_at",
+            "attempt_count",
+            "source_run_id",
+            "created_at",
+            "payload_json",
+            "metadata_json",
+        ]
+        failure_columns = [
+            "pending_id",
+            *key_columns,
+            "sample_idx",
+            "attempt_count",
+            "created_at",
+            "fail_reason",
+            "payload_json",
+            "metadata_json",
+        ]
+        provenance_columns = [
+            *key_columns,
+            "sample_idx",
+            "status",
+            "priority",
+            "attempt_count",
+            "source_run_id",
+            "created_at",
+            "llm_config_json",
+            "prompt_json",
+            "payload_json",
+            "metadata_json",
+        ]
+
+        pending_frame = pd.DataFrame.from_records(pending_rows)
+        if pending_frame.empty:
+            return {
+                "pending_frame": empty_frame(pending_columns),
+                "failure_frame": empty_frame(failure_columns),
+                "provenance_frame": empty_frame(provenance_columns),
+            }
+
+        pending_frame = pending_frame.loc[:, pending_columns]
+        pending_frame = pending_frame.loc[
+            pending_frame["status"].isin(
+                [PendingStatus.pending.value, PendingStatus.leased.value]
+            )
+        ]
+        if pending_frame.empty:
+            pending_frame = empty_frame(pending_columns)
+        else:
+            pending_frame = sort_frame(
+                pending_frame,
+                by=[
+                    "status",
+                    "priority",
+                    "created_at",
+                    *key_columns,
+                    "sample_idx",
+                ],
+                ascending=[
+                    True,
+                    False,
+                    True,
+                    *([True] * len(key_columns)),
+                    True,
+                ],
+            )
+
+        failure_frame = pd.DataFrame.from_records(pending_rows)
+        failure_frame = failure_frame.loc[
+            failure_frame["status"] == PendingStatus.failed.value
+        ]
+        if failure_frame.empty:
+            failure_frame = empty_frame(failure_columns)
+        else:
+            failure_frame = failure_frame.loc[:, failure_columns]
+            failure_frame = sort_frame(
+                failure_frame,
+                by=["created_at", *key_columns, "sample_idx"],
+                ascending=[False, *([True] * len(key_columns)), True],
+            )
+
+        provenance_frame = pd.DataFrame.from_records(pending_rows)
+        provenance_frame = provenance_frame.loc[:, provenance_columns]
+        provenance_frame = sort_frame(
+            provenance_frame,
+            by=[*key_columns, "sample_idx", "created_at"],
+            ascending=[*([True] * len(key_columns)), True, True],
+        )
+
+        return {
+            "pending_frame": pending_frame,
+            "failure_frame": failure_frame,
+            "provenance_frame": provenance_frame,
+        }
+
+
+    def load_metadata_frame(*, reader: PoolReader) -> pd.DataFrame:
+        metadata_entries = reader.metadata_prefix("")
+        metadata_rows = [
+            {
+                "key": key,
+                "category": metadata_category(key),
+                "value_json": compact_json(value),
+            }
+            for key, value in metadata_entries.items()
+        ]
+        metadata_frame = pd.DataFrame.from_records(metadata_rows)
+        metadata_columns = ["key", "category", "value_json"]
+        if metadata_frame.empty:
+            return empty_frame(metadata_columns)
+
+        metadata_frame = metadata_frame.loc[:, metadata_columns]
+        return sort_frame(
+            metadata_frame,
+            by=["category", "key"],
+            ascending=[True, True],
+        )
+
+
+    def load_claims_and_call_stats_frames(
+        *,
+        runtime: DbRuntime,
+        schema: Any,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        claims_table = build_claims_table(schema.claims_table)
+        call_stats_table = build_call_stats_table(schema.call_stats_table)
+        with runtime.connect() as conn:
+            claim_rows = (
+                conn.execute(
+                    select(claims_table).order_by(
+                        claims_table.c.claimed_at.desc(),
+                        claims_table.c.claim_idx.asc(),
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            call_stats_rows = (
+                conn.execute(
+                    select(call_stats_table).order_by(
+                        call_stats_table.c.created_at.desc(),
+                        call_stats_table.c.sample_id.asc(),
+                    )
+                )
+                .mappings()
+                .all()
+            )
+
+        claims_frame = pd.DataFrame.from_records([dict(row) for row in claim_rows])
+        claim_columns = [
+            "claim_id",
+            "run_id",
+            "request_id",
+            "consumer_tag",
+            "sample_id",
+            "claim_idx",
+            "claimed_at",
+        ]
+        if claims_frame.empty:
+            claims_frame = empty_frame(claim_columns)
+        else:
+            claims_frame = claims_frame.loc[:, claim_columns]
+
+        call_stats_frame = pd.DataFrame.from_records(
+            [dict(row) for row in call_stats_rows]
+        )
+        call_stats_columns = [
+            "sample_id",
+            "latency_ms",
+            "total_cost_usd",
+            "prompt_tokens",
+            "completion_tokens",
+            "reasoning_tokens",
+            "total_tokens",
+            "attempt_count",
+            "finish_reason",
+            "created_at",
+        ]
+        if call_stats_frame.empty:
+            call_stats_frame = empty_frame(call_stats_columns)
+        else:
+            call_stats_frame = call_stats_frame.loc[:, call_stats_columns]
+
+        return claims_frame, call_stats_frame
+
+
+    def build_health_data(
+        *,
+        project_name: str,
+        pool_name: str,
+    ) -> dict[str, Any]:
+        pool_inspection = load_pool_inspection(
+            project_name=project_name,
+            pool_name=pool_name,
+        )
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (runtime, schema, reader, key_columns):
+            sample_frame = load_sample_frame(
+                reader=reader,
+                key_columns=key_columns,
+            )
+            claims_frame, call_stats_frame = load_claims_and_call_stats_frames(
+                runtime=runtime,
+                schema=schema,
+            )
+
+        return {
+            "pool_label": f"{project_name} / {pool_name}",
+            "pool_inspection": pool_inspection,
+            "key_columns": key_columns,
+            "sample_frame": sample_frame,
+            "claims_frame": claims_frame,
+            "call_stats_frame": call_stats_frame,
+        }
+
+
+    def build_coverage_data(
+        *,
+        project_name: str,
+        pool_name: str,
+    ) -> dict[str, Any]:
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (_, _, reader, key_columns):
+            sample_frame = load_sample_frame(
+                reader=reader,
+                key_columns=key_columns,
+            )
+
+        return {
+            "key_columns": key_columns,
+            "coverage_frame": build_coverage_frame(
+                sample_frame=sample_frame,
+                key_columns=key_columns,
+            ),
+        }
+
+
+    def build_sample_data(
+        *,
+        project_name: str,
+        pool_name: str,
+    ) -> dict[str, Any]:
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (_, _, reader, key_columns):
+            sample_frame = load_sample_frame(
+                reader=reader,
+                key_columns=key_columns,
+            )
+
+        return {
+            "key_columns": key_columns,
+            "sample_frame": sample_frame,
+        }
+
+
+    def build_pending_data(
+        *,
+        project_name: str,
+        pool_name: str,
+    ) -> dict[str, Any]:
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (_, _, reader, key_columns):
+            pending_frames = load_pending_frames(
+                reader=reader,
+                key_columns=key_columns,
+            )
+
+        return {
+            "key_columns": key_columns,
+            "pending_frame": pending_frames["pending_frame"],
+        }
+
+
+    def build_failure_data(
+        *,
+        project_name: str,
+        pool_name: str,
+    ) -> dict[str, Any]:
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (_, _, reader, key_columns):
+            pending_frames = load_pending_frames(
+                reader=reader,
+                key_columns=key_columns,
+            )
+
+        return {
+            "key_columns": key_columns,
+            "failure_frame": pending_frames["failure_frame"],
+        }
+
+
+    def build_provenance_data(
+        *,
+        project_name: str,
+        pool_name: str,
+    ) -> dict[str, Any]:
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (_, _, reader, key_columns):
+            pending_frames = load_pending_frames(
+                reader=reader,
+                key_columns=key_columns,
+            )
+
+        return {
+            "key_columns": key_columns,
+            "provenance_frame": pending_frames["provenance_frame"],
+        }
+
+
+    def build_metadata_data(
+        *,
+        project_name: str,
+        pool_name: str,
+    ) -> dict[str, Any]:
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (_, _, reader, key_columns):
+            metadata_frame = load_metadata_frame(reader=reader)
+
+        return {
+            "key_columns": key_columns,
+            "metadata_frame": metadata_frame,
+        }
+
+
+    def build_call_stats_data(
+        *,
+        project_name: str,
+        pool_name: str,
+    ) -> dict[str, Any]:
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (runtime, schema, _, key_columns):
+            _, call_stats_frame = load_claims_and_call_stats_frames(
+                runtime=runtime,
+                schema=schema,
+            )
+
+        return {
+            "key_columns": key_columns,
+            "call_stats_frame": call_stats_frame,
+        }
+
+
+    def build_trend_data(
+        *,
+        project_name: str,
+        pool_name: str,
+    ) -> dict[str, Any]:
+        return build_call_stats_data(
+            project_name=project_name,
+            pool_name=pool_name,
+        )
+
+
+    def build_throughput_data(
+        *,
+        project_name: str,
+        pool_name: str,
+    ) -> dict[str, Any]:
+        with pool_reader_context(
+            project_name=project_name,
+            pool_name=pool_name,
+        ) as (runtime, schema, reader, key_columns):
+            sample_frame = load_sample_frame(
+                reader=reader,
+                key_columns=key_columns,
+            )
+            claims_frame, _ = load_claims_and_call_stats_frames(
+                runtime=runtime,
+                schema=schema,
+            )
+
+        return {
+            "key_columns": key_columns,
+            "sample_frame": sample_frame,
+            "claims_frame": claims_frame,
+        }
 
 
     def tailwind_grid(
@@ -523,11 +732,27 @@ def _():
         frame: pd.DataFrame | None = None,
         *,
         cols: str | None = None,
+        include_title: bool = True,
     ) -> mo.Html:
         grid = tailwind_grid(cards, cols=cols) if cols else tailwind_grid(cards)
-        items: list[object] = [mo.md(f"### {question}"), grid]
+        items: list[object] = [grid]
+        if include_title:
+            items.insert(0, mo.md(f"### {question}"))
         if frame is not None:
             items.append(mo.accordion({"Show dataframe": frame}))
+        return mo.vstack(items, gap=0.5)
+
+
+    def render_section(
+        title: str,
+        run_button: object,
+        body: object | None = None,
+    ) -> mo.Html:
+        items: list[object] = [mo.md(f"### {title}"), run_button]
+        if body is None:
+            items.append(mo.md("Press `Run` to load this section."))
+        else:
+            items.append(body)
         return mo.vstack(items, gap=0.5)
 
 
@@ -1486,18 +1711,28 @@ def _():
 
     return (
         build_call_stats_cards,
+        build_call_stats_data,
         build_coverage_cards,
+        build_coverage_data,
         build_failure_cards,
+        build_failure_data,
         build_health_cards,
+        build_health_data,
         build_metadata_cards,
+        build_metadata_data,
         build_pending_cards,
-        build_pool_drilldown_frames,
+        build_pending_data,
         build_provenance_cards,
+        build_provenance_data,
         build_sample_cards,
+        build_sample_data,
         build_throughput_cards,
+        build_throughput_data,
         build_trend_cards,
+        build_trend_data,
         pool_rows_from_summaries,
         render_card_section,
+        render_section,
         tailwind_grid,
     )
 
@@ -1522,15 +1757,11 @@ def _(pool_rows_from_summaries, project_summaries):
 
 
 @app.cell(hide_code=True)
-def _(build_pool_drilldown_frames, pool_selector):
-    mo.stop(pool_selector is None or pool_selector.value is None)
-
-    selected_pool = json.loads(pool_selector.value)
-    selected_pool_data = build_pool_drilldown_frames(
-        project_name=selected_pool["project_name"],
-        pool_name=selected_pool["pool_name"],
-    )
-    return (selected_pool_data,)
+def _(pool_selector):
+    selected_pool = None
+    if pool_selector is not None and pool_selector.value is not None:
+        selected_pool = json.loads(pool_selector.value)
+    return (selected_pool,)
 
 
 @app.cell(hide_code=True)
@@ -1572,114 +1803,439 @@ def _(pool_rows):
 
 
 @app.cell(hide_code=True)
-def _(selected_pool_data):
+def _(selected_pool):
+    mo.stop(selected_pool is None)
     mo.md(f"""
-    **Selected:** `{selected_pool_data["pool_label"]}`
+    **Selected:** `{selected_pool["project_name"]} / {selected_pool["pool_name"]}`
     """)
     return
 
 
-@app.cell(hide_code=True)
-def _(build_health_cards, selected_pool_data, tailwind_grid):
-    mo.vstack(
-        [
-            mo.md("### Pool health"),
-            tailwind_grid(
-                build_health_cards(selected_pool_data),
-                cols="grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
-            ),
-        ],
-        gap=0.5,
+@app.cell
+def _():
+    get_section_results, set_section_results = mo.state({})
+    return get_section_results, set_section_results
+
+
+@app.cell
+def _(selected_pool, set_section_results):
+    _ = selected_pool
+    set_section_results({})
+    return
+
+
+@app.cell
+def _():
+    health_run_button = mo.ui.run_button(label="Run", kind="success")
+    coverage_run_button = mo.ui.run_button(label="Run", kind="success")
+    sample_run_button = mo.ui.run_button(label="Run", kind="success")
+    pending_run_button = mo.ui.run_button(label="Run", kind="success")
+    failure_run_button = mo.ui.run_button(label="Run", kind="success")
+    provenance_run_button = mo.ui.run_button(label="Run", kind="success")
+    metadata_run_button = mo.ui.run_button(label="Run", kind="success")
+    call_stats_run_button = mo.ui.run_button(label="Run", kind="success")
+    trend_run_button = mo.ui.run_button(label="Run", kind="success")
+    throughput_run_button = mo.ui.run_button(label="Run", kind="success")
+    return (
+        call_stats_run_button,
+        coverage_run_button,
+        failure_run_button,
+        health_run_button,
+        metadata_run_button,
+        pending_run_button,
+        provenance_run_button,
+        sample_run_button,
+        throughput_run_button,
+        trend_run_button,
     )
+
+
+@app.cell(hide_code=True)
+def _(
+    build_health_cards,
+    build_health_data,
+    get_section_results,
+    health_run_button,
+    render_section,
+    selected_pool,
+    set_section_results,
+    tailwind_grid,
+):
+    mo.stop(selected_pool is None)
+
+    _section_results = get_section_results()
+    health_data = _section_results.get("health")
+    if health_run_button.value:
+        health_data = build_health_data(
+            project_name=selected_pool["project_name"],
+            pool_name=selected_pool["pool_name"],
+        )
+        set_section_results(lambda results: {**results, "health": health_data})
+
+    _body = None
+    if health_data is not None:
+        _body = tailwind_grid(
+            build_health_cards(health_data),
+            cols="grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
+        )
+
+    render_section("Pool health", health_run_button, _body)
     return
 
 
 @app.cell(hide_code=True)
-def _(build_coverage_cards, render_card_section, selected_pool_data):
-    render_card_section(
+def _(
+    build_coverage_cards,
+    build_coverage_data,
+    coverage_run_button,
+    get_section_results,
+    render_card_section,
+    render_section,
+    selected_pool,
+    set_section_results,
+):
+    mo.stop(selected_pool is None)
+
+    _section_results = get_section_results()
+    coverage_data = _section_results.get("coverage")
+    if coverage_run_button.value:
+        coverage_data = build_coverage_data(
+            project_name=selected_pool["project_name"],
+            pool_name=selected_pool["pool_name"],
+        )
+        set_section_results(lambda results: {**results, "coverage": coverage_data})
+
+    _body = None
+    if coverage_data is not None:
+        _body = render_card_section(
+            "How is this pool distributed across key cells?",
+            build_coverage_cards(coverage_data),
+            coverage_data["coverage_frame"],
+            include_title=False,
+        )
+
+    render_section(
         "How is this pool distributed across key cells?",
-        build_coverage_cards(selected_pool_data),
-        selected_pool_data["coverage_frame"],
+        coverage_run_button,
+        _body,
     )
     return
 
 
 @app.cell(hide_code=True)
-def _(build_sample_cards, render_card_section, selected_pool_data):
-    render_card_section(
+def _(
+    build_sample_cards,
+    build_sample_data,
+    get_section_results,
+    render_card_section,
+    render_section,
+    sample_run_button,
+    selected_pool,
+    set_section_results,
+):
+    mo.stop(selected_pool is None)
+
+    _section_results = get_section_results()
+    sample_data = _section_results.get("sample")
+    if sample_run_button.value:
+        sample_data = build_sample_data(
+            project_name=selected_pool["project_name"],
+            pool_name=selected_pool["pool_name"],
+        )
+        set_section_results(lambda results: {**results, "sample": sample_data})
+
+    _body = None
+    if sample_data is not None:
+        _body = render_card_section(
+            "What finalized samples are currently in the pool?",
+            build_sample_cards(sample_data),
+            sample_data["sample_frame"],
+            include_title=False,
+        )
+
+    render_section(
         "What finalized samples are currently in the pool?",
-        build_sample_cards(selected_pool_data),
-        selected_pool_data["sample_frame"],
+        sample_run_button,
+        _body,
     )
     return
 
 
 @app.cell(hide_code=True)
-def _(build_pending_cards, render_card_section, selected_pool_data):
-    render_card_section(
+def _(
+    build_pending_cards,
+    build_pending_data,
+    get_section_results,
+    pending_run_button,
+    render_card_section,
+    render_section,
+    selected_pool,
+    set_section_results,
+):
+    mo.stop(selected_pool is None)
+
+    _section_results = get_section_results()
+    pending_data = _section_results.get("pending")
+    if pending_run_button.value:
+        pending_data = build_pending_data(
+            project_name=selected_pool["project_name"],
+            pool_name=selected_pool["pool_name"],
+        )
+        set_section_results(lambda results: {**results, "pending": pending_data})
+
+    _body = None
+    if pending_data is not None:
+        _body = render_card_section(
+            "What pending work exists right now?",
+            build_pending_cards(pending_data),
+            pending_data["pending_frame"],
+            include_title=False,
+        )
+
+    render_section(
         "What pending work exists right now?",
-        build_pending_cards(selected_pool_data),
-        selected_pool_data["pending_frame"],
+        pending_run_button,
+        _body,
     )
     return
 
 
 @app.cell(hide_code=True)
-def _(build_failure_cards, render_card_section, selected_pool_data):
-    render_card_section(
+def _(
+    build_failure_cards,
+    build_failure_data,
+    failure_run_button,
+    get_section_results,
+    render_card_section,
+    render_section,
+    selected_pool,
+    set_section_results,
+):
+    mo.stop(selected_pool is None)
+
+    _section_results = get_section_results()
+    failure_data = _section_results.get("failure")
+    if failure_run_button.value:
+        failure_data = build_failure_data(
+            project_name=selected_pool["project_name"],
+            pool_name=selected_pool["pool_name"],
+        )
+        set_section_results(lambda results: {**results, "failure": failure_data})
+
+    _body = None
+    if failure_data is not None:
+        _body = render_card_section(
+            "What failures have happened?",
+            build_failure_cards(failure_data),
+            failure_data["failure_frame"],
+            include_title=False,
+        )
+
+    render_section(
         "What failures have happened?",
-        build_failure_cards(selected_pool_data),
-        selected_pool_data["failure_frame"],
+        failure_run_button,
+        _body,
     )
     return
 
 
 @app.cell(hide_code=True)
-def _(build_provenance_cards, render_card_section, selected_pool_data):
-    render_card_section(
+def _(
+    build_provenance_cards,
+    build_provenance_data,
+    get_section_results,
+    provenance_run_button,
+    render_card_section,
+    render_section,
+    selected_pool,
+    set_section_results,
+):
+    mo.stop(selected_pool is None)
+
+    _section_results = get_section_results()
+    provenance_data = _section_results.get("provenance")
+    if provenance_run_button.value:
+        provenance_data = build_provenance_data(
+            project_name=selected_pool["project_name"],
+            pool_name=selected_pool["pool_name"],
+        )
+        set_section_results(
+            lambda results: {**results, "provenance": provenance_data}
+        )
+
+    _body = None
+    if provenance_data is not None:
+        _body = render_card_section(
+            "What seed or fill provenance defines this pool?",
+            build_provenance_cards(provenance_data),
+            provenance_data["provenance_frame"],
+            include_title=False,
+        )
+
+    render_section(
         "What seed or fill provenance defines this pool?",
-        build_provenance_cards(selected_pool_data),
-        selected_pool_data["provenance_frame"],
+        provenance_run_button,
+        _body,
     )
     return
 
 
 @app.cell(hide_code=True)
-def _(build_metadata_cards, render_card_section, selected_pool_data):
-    render_card_section(
+def _(
+    build_metadata_cards,
+    build_metadata_data,
+    get_section_results,
+    metadata_run_button,
+    render_card_section,
+    render_section,
+    selected_pool,
+    set_section_results,
+):
+    mo.stop(selected_pool is None)
+
+    _section_results = get_section_results()
+    metadata_data = _section_results.get("metadata")
+    if metadata_run_button.value:
+        metadata_data = build_metadata_data(
+            project_name=selected_pool["project_name"],
+            pool_name=selected_pool["pool_name"],
+        )
+        set_section_results(lambda results: {**results, "metadata": metadata_data})
+
+    _body = None
+    if metadata_data is not None:
+        _body = render_card_section(
+            "What metadata is attached to this pool?",
+            build_metadata_cards(metadata_data),
+            metadata_data["metadata_frame"],
+            include_title=False,
+        )
+
+    render_section(
         "What metadata is attached to this pool?",
-        build_metadata_cards(selected_pool_data),
-        selected_pool_data["metadata_frame"],
+        metadata_run_button,
+        _body,
     )
     return
 
 
 @app.cell(hide_code=True)
-def _(build_call_stats_cards, render_card_section, selected_pool_data):
-    render_card_section(
+def _(
+    build_call_stats_cards,
+    build_call_stats_data,
+    call_stats_run_button,
+    get_section_results,
+    render_card_section,
+    render_section,
+    selected_pool,
+    set_section_results,
+):
+    mo.stop(selected_pool is None)
+
+    _section_results = get_section_results()
+    call_stats_data = _section_results.get("call_stats")
+    if call_stats_run_button.value:
+        call_stats_data = build_call_stats_data(
+            project_name=selected_pool["project_name"],
+            pool_name=selected_pool["pool_name"],
+        )
+        set_section_results(
+            lambda results: {**results, "call_stats": call_stats_data}
+        )
+
+    _body = None
+    if call_stats_data is not None:
+        _body = render_card_section(
+            "What are the per-sample generation stats?",
+            build_call_stats_cards(call_stats_data),
+            call_stats_data["call_stats_frame"],
+            include_title=False,
+        )
+
+    render_section(
         "What are the per-sample generation stats?",
-        build_call_stats_cards(selected_pool_data),
-        selected_pool_data["call_stats_frame"],
+        call_stats_run_button,
+        _body,
     )
     return
 
 
 @app.cell(hide_code=True)
-def _(build_trend_cards, render_card_section, selected_pool_data):
-    render_card_section(
+def _(
+    build_trend_cards,
+    build_trend_data,
+    get_section_results,
+    render_card_section,
+    render_section,
+    selected_pool,
+    set_section_results,
+    trend_run_button,
+):
+    mo.stop(selected_pool is None)
+
+    _section_results = get_section_results()
+    trend_data = _section_results.get("trend")
+    if trend_run_button.value:
+        trend_data = build_trend_data(
+            project_name=selected_pool["project_name"],
+            pool_name=selected_pool["pool_name"],
+        )
+        set_section_results(lambda results: {**results, "trend": trend_data})
+
+    _body = None
+    if trend_data is not None:
+        _body = render_card_section(
+            "What are the cost and latency trends over time?",
+            build_trend_cards(trend_data),
+            trend_data["call_stats_frame"],
+            include_title=False,
+        )
+
+    render_section(
         "What are the cost and latency trends over time?",
-        build_trend_cards(selected_pool_data),
-        selected_pool_data["call_stats_frame"],
+        trend_run_button,
+        _body,
     )
     return
 
 
 @app.cell(hide_code=True)
-def _(build_throughput_cards, render_card_section, selected_pool_data):
-    render_card_section(
+def _(
+    build_throughput_cards,
+    build_throughput_data,
+    get_section_results,
+    render_card_section,
+    render_section,
+    selected_pool,
+    set_section_results,
+    throughput_run_button,
+):
+    mo.stop(selected_pool is None)
+
+    _section_results = get_section_results()
+    throughput_data = _section_results.get("throughput")
+    if throughput_run_button.value:
+        throughput_data = build_throughput_data(
+            project_name=selected_pool["project_name"],
+            pool_name=selected_pool["pool_name"],
+        )
+        set_section_results(
+            lambda results: {**results, "throughput": throughput_data}
+        )
+
+    _body = None
+    if throughput_data is not None:
+        _body = render_card_section(
+            "What does recent activity and throughput look like?",
+            build_throughput_cards(throughput_data),
+            throughput_data["claims_frame"],
+            include_title=False,
+        )
+
+    render_section(
         "What does recent activity and throughput look like?",
-        build_throughput_cards(selected_pool_data),
-        selected_pool_data["claims_frame"],
+        throughput_run_button,
+        _body,
     )
     return
 
