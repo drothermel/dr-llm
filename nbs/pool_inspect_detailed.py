@@ -1987,16 +1987,6 @@ def _(
     set_raw_frames,
     set_section_results,
 ):
-    def percentile(values: Sequence[float], p: float) -> float | None:
-        cleaned = [
-            v
-            for v in values
-            if v is not None and not (isinstance(v, float) and math.isnan(v))
-        ]
-        if not cleaned:
-            return None
-        return float(pd.Series(cleaned).quantile(p))
-
     def build_call_stats_data(
         *,
         project_name: str,
@@ -2029,30 +2019,6 @@ def _(
         )
         total_tokens_vals = (
             pd.to_numeric(cs["total_tokens"], errors="coerce").dropna().tolist()
-        )
-
-        total_cost = float(sum(cost_vals)) if cost_vals else 0.0
-        mean_latency = (
-            float(sum(latency_vals) / len(latency_vals)) if latency_vals else None
-        )
-        p50 = percentile(latency_vals, 0.5)
-        p95 = percentile(latency_vals, 0.95)
-        mean_total_tokens = (
-            float(sum(total_tokens_vals) / len(total_tokens_vals))
-            if total_tokens_vals
-            else None
-        )
-
-        summary = stat_card(
-            "Generation totals",
-            [
-                ("Calls", fmt_int(total)),
-                ("Total cost", fmt_cost(total_cost)),
-                ("Mean latency", fmt_ms(mean_latency)),
-                ("p50 latency", fmt_ms(p50)),
-                ("p95 latency", fmt_ms(p95)),
-                ("Mean tokens", fmt_float(mean_total_tokens, ",.0f")),
-            ],
         )
 
         latency_card = Card(
@@ -2136,7 +2102,7 @@ def _(
             width="w-80",
         )
 
-        return [summary, latency_card, cost_card, token_card, finish_card]
+        return [latency_card, cost_card, token_card, finish_card]
 
     mo.stop(selected_pool is None)
 
