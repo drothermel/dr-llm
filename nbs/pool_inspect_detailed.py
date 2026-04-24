@@ -1776,7 +1776,7 @@ def _(
     set_section_results,
 ):
     def hash_short(s: str, n: int = 6) -> str:
-        return hashlib.sha1(s.encode("utf-8")).hexdigest()[:n]
+        return hashlib.sha256(s.encode("utf-8")).hexdigest()[:n]
 
 
     def build_provenance_data(

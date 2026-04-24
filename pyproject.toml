@@ -1,6 +1,6 @@
 [project]
 name = "dr-llm"
-version = "2.3.0"
+version = "2.3.1"
 description = "Provider-agnostic single-query LLM client with PostgreSQL recording and catalog storage."
 readme = "README.md"
 keywords = ["llm", "postgres", "ai", "catalog", "storage"]

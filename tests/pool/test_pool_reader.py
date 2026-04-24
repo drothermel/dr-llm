@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
+
 import pytest
 
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
-from dr_llm.pool.reader import PoolProgress, _validate_pool_name
+from dr_llm.pool.reader import PoolProgress, PoolReader, _validate_pool_name
 
 
 def test_pool_progress_in_flight_delegates_to_pending_counts() -> None:
@@ -78,3 +80,30 @@ def test_validate_pool_name_accepts_valid(name: str) -> None:
 def test_validate_pool_name_rejects_invalid(name: str) -> None:
     with pytest.raises(ValueError, match="pool_name must be"):
         _validate_pool_name(name)
+
+
+def test_samples_warns_and_ignores_legacy_status_argument() -> None:
+    reader = PoolReader.__new__(PoolReader)
+    store = Mock()
+    expected = iter(["sample"])
+    store.iter_samples.return_value = expected
+    reader._store = store
+
+    with pytest.deprecated_call(match="status argument is ignored and will be removed"):
+        result = reader.samples(status="active")
+
+    assert result is expected
+    store.iter_samples.assert_called_once_with(key_filter=None)
+
+
+def test_samples_list_warns_and_ignores_legacy_status_argument() -> None:
+    reader = PoolReader.__new__(PoolReader)
+    store = Mock()
+    store.bulk_load.return_value = ["sample"]
+    reader._store = store
+
+    with pytest.deprecated_call(match="status argument is ignored and will be removed"):
+        result = reader.samples_list(status="active")
+
+    assert result == ["sample"]
+    store.bulk_load.assert_called_once_with(key_filter=None)

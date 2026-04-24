@@ -4,6 +4,8 @@ __generated_with = "0.23.2"
 app = marimo.App(width="columns")
 
 with app.setup:
+    import logging
+
     import marimo as mo
     from dr_llm.pool.admin_service import (
         assess_pool_creation,
@@ -20,6 +22,7 @@ with app.setup:
     from dr_llm.ui import PoolSimpleStatsPieCard, bootstrap_tailwind, wrap_cards
 
     IGNORE_DEMO_PROJECTS = True
+    logger = logging.getLogger(__name__)
 
 
 @app.cell
@@ -75,7 +78,12 @@ def _(project_summaries):
                     )
                 )
             except Exception as exc:
-                failed_pool_names.append((pool_name, f"{type(exc).__name__}: {exc}"))
+                logger.exception(
+                    "Failed to inspect pool %s for project %s",
+                    pool_name,
+                    summary.project.name,
+                )
+                failed_pool_names.append((pool_name, "inspection failed"))
                 continue
 
             cards.append(

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from typing import Any
+import warnings
 
 import psycopg
 from pydantic import BaseModel, ConfigDict, computed_field
@@ -28,6 +29,16 @@ from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import SCHEMA_METADATA_KEY, PoolStore
 from dr_llm.project.errors import ProjectNotFoundError
 from dr_llm.project.project_service import maybe_get_project
+
+
+def _warn_ignored_status_argument() -> None:
+    warnings.warn(
+        "PoolReader.samples(status=...) and samples_list(status=...) are "
+        "deprecated; the status argument is ignored and will be removed in a "
+        "future release.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
 
 
 class PoolProgress(BaseModel):
@@ -197,20 +208,26 @@ class PoolReader:
         self,
         *,
         key_filter: PoolKeyFilter | None = None,
+        status: Any = None,
     ) -> Iterator[PoolSample]:
         """Stream samples; see :meth:`PoolStore.iter_samples` for filter semantics.
 
         Holds a connection for the iterator's lifetime — fully consume it
         or prefer :meth:`samples_list`.
         """
+        if status is not None:
+            _warn_ignored_status_argument()
         return self._store.iter_samples(key_filter=key_filter)
 
     def samples_list(
         self,
         *,
         key_filter: PoolKeyFilter | None = None,
+        status: Any = None,
     ) -> list[PoolSample]:
         """Eagerly materialize samples into a list."""
+        if status is not None:
+            _warn_ignored_status_argument()
         return self._store.bulk_load(key_filter=key_filter)
 
     def pending(
