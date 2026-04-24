@@ -32,7 +32,7 @@ dependencies = [
     "pydantic-settings>=2.13.1",
     "marimo[recommended]>=0.23.2",
     "pandas>=3.0.2",
-    "marimo-utils==0.6.0",
+    "marimo-utils",
 ]
 
 [project.optional-dependencies]
@@ -83,3 +83,6 @@ extra-paths = ["scripts"]
 respect-ignore-files = true
 include = ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py"]
 exclude = ["nbs/**/*.py", "src/dr_llm/style/"]
+
+[tool.uv.sources]
+marimo-utils = { path = "../marimo_utils", editable = true }

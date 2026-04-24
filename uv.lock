@@ -355,7 +355,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "marimo", marker = "extra == 'notebooks'", specifier = ">=0.23.1" },
     { name = "marimo", extras = ["recommended"], specifier = ">=0.23.2" },
-    { name = "marimo-utils", specifier = "==0.6.0" },
+    { name = "marimo-utils", editable = "../marimo_utils" },
     { name = "pandas", specifier = ">=3.0.2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.10" },
     { name = "psycopg-pool", specifier = ">=3.2.6" },
@@ -933,8 +933,8 @@ recommended = [
 
 [[package]]
 name = "marimo-utils"
-version = "0.6.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.7.0"
+source = { editable = "../marimo_utils" }
 dependencies = [
     { name = "anywidget" },
     { name = "dr-widget" },
@@ -944,9 +944,23 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-lucide" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/37/a3/7a8706f4de5430899b33011a19c0f2f5fb86a9c2924fb5df843943a512ca/marimo_utils-0.6.0.tar.gz", hash = "sha256:112d4b23f75f5023a9ebcd81caed83a36a6566f6ec89fe48f0c10b49ec690a59", size = 132944 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c5/52/5697c2bd1199e712fa150e4902bc8ed7a7321e317e4c014cde3d6ba43196/marimo_utils-0.6.0-py3-none-any.whl", hash = "sha256:2cbf6d2918415e9bbc1000da56cc24934a9a9192f2015264f7f6ed1a5becebdc", size = 26836 },
+
+[package.metadata]
+requires-dist = [
+    { name = "anywidget", specifier = ">=0.9" },
+    { name = "dr-widget", specifier = "==0.2.0" },
+    { name = "marimo", extras = ["recommended"], specifier = ">=0.19.4" },
+    { name = "mohtml", specifier = ">=0.1.11" },
+    { name = "plotly", specifier = ">=6.7.0" },
+    { name = "pydantic", specifier = ">=2.12.5" },
+    { name = "python-lucide", specifier = ">=0.2.24" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "playwright", specifier = ">=1.58.0" },
+    { name = "ruff", specifier = ">=0.14.13" },
+    { name = "ty", specifier = ">=0.0.13" },
 ]
 
 [[package]]
