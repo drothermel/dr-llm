@@ -14,6 +14,8 @@ from dr_llm.pool.models import (
     DeletePoolRequest,
     DeletePoolsByTokenRequest,
     InsertResult,
+    PoolInspection,
+    PoolInspectionStatus,
 )
 from dr_llm.pool.pending.backend import PoolPendingBackendState
 from dr_llm.pool.pending.pending_sample import PendingSample
@@ -227,6 +229,83 @@ def test_pending_status_counts_total() -> None:
 def test_pending_status_counts_in_flight() -> None:
     counts = PendingStatusCounts(pending=3, leased=2, failed=1)
     assert counts.in_flight == 5
+
+
+def test_key_column_to_df_serializes_enum_value() -> None:
+    frame = KeyColumn(name="dim_b", type=ColumnType.integer).to_df()
+
+    assert frame.to_dict("records") == [
+        {
+            "key_column_name": "dim_b",
+            "key_column_type": "integer",
+        }
+    ]
+
+
+def test_pool_schema_to_df_uses_key_column_rows() -> None:
+    frame = _TEST_SCHEMA.to_df()
+
+    assert frame.to_dict("records") == [
+        {
+            "pool_name": "modeltest",
+            "key_columns": "dim_a:text, dim_b:integer",
+            "key_column_count": 2,
+            "samples_table": "pool_modeltest_samples",
+            "claims_table": "pool_modeltest_claims",
+            "pending_table": "pool_modeltest_pending",
+            "metadata_table": "pool_modeltest_metadata",
+            "call_stats_table": "pool_modeltest_call_stats",
+        }
+    ]
+
+
+def test_pending_status_counts_to_df_includes_derived_counts() -> None:
+    frame = PendingStatusCounts(pending=3, leased=2, failed=1).to_df()
+
+    assert frame.to_dict("records") == [
+        {
+            "pending": 3,
+            "leased": 2,
+            "failed": 1,
+            "pending_total": 6,
+            "in_flight": 5,
+        }
+    ]
+
+
+def test_pool_inspection_to_df_combines_nested_model_rows() -> None:
+    created_at = datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC)
+    inspection = PoolInspection(
+        project_name="demo",
+        name="modeltest",
+        pool_schema=_TEST_SCHEMA,
+        created_at=created_at,
+        sample_count=42,
+        pending_counts=PendingStatusCounts(pending=3, leased=2, failed=1),
+        status=PoolInspectionStatus.in_progress,
+    )
+
+    assert inspection.to_df().to_dict("records") == [
+        {
+            "project_name": "demo",
+            "pool_name": "modeltest",
+            "status": "in_progress",
+            "created_at": created_at,
+            "sample_count": 42,
+            "pending": 3,
+            "leased": 2,
+            "failed": 1,
+            "pending_total": 6,
+            "in_flight": 5,
+            "key_columns": "dim_a:text, dim_b:integer",
+            "key_column_count": 2,
+            "samples_table": "pool_modeltest_samples",
+            "claims_table": "pool_modeltest_claims",
+            "pending_table": "pool_modeltest_pending",
+            "metadata_table": "pool_modeltest_metadata",
+            "call_stats_table": "pool_modeltest_call_stats",
+        }
+    ]
 
 
 def test_pending_status_counts_from_rows() -> None:

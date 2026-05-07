@@ -6,8 +6,10 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
+from dr_llm.dataframes import single_df_row
 from dr_llm.pool.db.schema import PoolSchema, _VALID_NAME_RE
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample
@@ -153,6 +155,29 @@ class PoolInspection(BaseModel):
     @property
     def in_flight(self) -> int:
         return self.pending_counts.in_flight
+
+    def to_df(self) -> pd.DataFrame:
+        schema_row = single_df_row(self.pool_schema.to_df(), source="PoolSchema")
+        pending_row = single_df_row(
+            self.pending_counts.to_df(),
+            source="PendingStatusCounts",
+        )
+        schema_fields = {
+            key: value for key, value in schema_row.items() if key != "pool_name"
+        }
+        return pd.DataFrame.from_records(
+            [
+                {
+                    "project_name": self.project_name,
+                    "pool_name": self.name,
+                    "status": self.status.value,
+                    "created_at": self.created_at,
+                    "sample_count": self.sample_count,
+                    **pending_row,
+                    **schema_fields,
+                }
+            ]
+        )
 
 
 class PoolCreationBlockReason(StrEnum):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from enum import StrEnum
 
+import pandas as pd
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -40,6 +41,16 @@ class KeyColumn(BaseModel):
             )
             raise ValueError(msg)
         return v
+
+    def to_df(self) -> pd.DataFrame:
+        return pd.DataFrame.from_records(
+            [
+                {
+                    "key_column_name": self.name,
+                    "key_column_type": self.type.value,
+                }
+            ]
+        )
 
 
 class PoolSchema(BaseModel):
@@ -109,3 +120,28 @@ class PoolSchema(BaseModel):
     @property
     def key_column_names(self) -> list[str]:
         return [kc.name for kc in self.key_columns]
+
+    def to_df(self) -> pd.DataFrame:
+        from dr_llm.dataframes import single_df_row
+
+        key_column_rows = [
+            single_df_row(key_column.to_df(), source="KeyColumn")
+            for key_column in self.key_columns
+        ]
+        return pd.DataFrame.from_records(
+            [
+                {
+                    "pool_name": self.name,
+                    "key_columns": ", ".join(
+                        f"{row['key_column_name']}:{row['key_column_type']}"
+                        for row in key_column_rows
+                    ),
+                    "key_column_count": len(key_column_rows),
+                    "samples_table": self.samples_table,
+                    "claims_table": self.claims_table,
+                    "pending_table": self.pending_table,
+                    "metadata_table": self.metadata_table,
+                    "call_stats_table": self.call_stats_table,
+                }
+            ]
+        )

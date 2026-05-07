@@ -4,6 +4,7 @@ from collections.abc import Iterable, Mapping
 from enum import StrEnum
 from typing import Any
 
+import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
 
@@ -53,6 +54,19 @@ class PendingStatusCounts(BaseModel):
     def in_flight(self) -> int:
         """Samples not yet in a terminal state (pending + leased)."""
         return self.pending + self.leased
+
+    def to_df(self) -> pd.DataFrame:
+        return pd.DataFrame.from_records(
+            [
+                {
+                    "pending": self.pending,
+                    "leased": self.leased,
+                    "failed": self.failed,
+                    "pending_total": self.total,
+                    "in_flight": self.in_flight,
+                }
+            ]
+        )
 
     @classmethod
     def from_rows(

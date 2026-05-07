@@ -25,7 +25,7 @@ with app.setup:
     logger = logging.getLogger(__name__)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
     bootstrap_tailwind()
     return
