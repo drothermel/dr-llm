@@ -28,6 +28,7 @@ from dr_llm.pool.models import (
     PoolInspectionRequest,
 )
 from dr_llm.pool.errors import PoolError
+from dr_llm.pool.pending.pending_status import IN_FLIGHT_STATUSES
 from dr_llm.pool.pool_store import PoolStore
 from dr_llm.pool.reader import PoolReader, _load_schema_from_db as load_schema_from_db
 from dr_llm.project.docker_psql import validate_pg_identifier
@@ -49,7 +50,9 @@ _POOL_TABLE_SUFFIXES: Final[tuple[str, ...]] = (
     "metadata",
     "call_stats",
 )
-_IN_PROGRESS_PENDING_STATUSES: Final[tuple[str, ...]] = ("pending", "leased")
+_IN_FLIGHT_STATUS_VALUES: Final[tuple[str, ...]] = tuple(
+    s.value for s in IN_FLIGHT_STATUSES
+)
 _DEFAULT_TESTISH_TOKENS: Final[frozenset[str]] = frozenset(
     {"test", "tst", "smoke", "demo"}
 )
@@ -517,11 +520,10 @@ def _count_in_progress_pending_rows(runtime: DbRuntime, pool_name: str) -> int:
     if pending_table not in existing_table_names:
         return 0
     placeholders = ", ".join(
-        f":status_{idx}" for idx, _ in enumerate(_IN_PROGRESS_PENDING_STATUSES)
+        f":status_{idx}" for idx, _ in enumerate(_IN_FLIGHT_STATUS_VALUES)
     )
     params = {
-        f"status_{idx}": status
-        for idx, status in enumerate(_IN_PROGRESS_PENDING_STATUSES)
+        f"status_{idx}": status for idx, status in enumerate(_IN_FLIGHT_STATUS_VALUES)
     }
     with runtime.connect() as conn:
         return int(

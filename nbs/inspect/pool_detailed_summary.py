@@ -36,6 +36,7 @@ with app.setup:
         compute_gini,
         skew_label,
     )
+    from dr_llm.pool.dataframe_loaders import build_pool_data_frame
     from dr_llm.pool.pending.pending_status import PendingStatus
     from dr_llm.pool.reader import PoolReader
     from dr_llm.project.project_service import inspect_projects
@@ -216,7 +217,10 @@ def _():
         frame["metadata_json"] = frame["metadata_json"].map(compact_json)
 
         open_frame = frame.loc[
-            frame["status"].isin(["pending", "leased"]), pending_columns
+            frame["status"].isin(
+                [PendingStatus.pending.value, PendingStatus.leased.value]
+            ),
+            pending_columns,
         ]
         if open_frame.empty:
             open_frame = empty_frame(pending_columns)
@@ -233,7 +237,9 @@ def _():
                 ascending=[True, False, True, *([True] * len(key_columns)), True],
             )
 
-        failure_frame = frame.loc[frame["status"] == "failed", failure_columns]
+        failure_frame = frame.loc[
+            frame["status"] == PendingStatus.failed.value, failure_columns
+        ]
         if failure_frame.empty:
             failure_frame = empty_frame(failure_columns)
         else:
@@ -275,12 +281,21 @@ def _():
             return cache["pool_data"]
         with PoolReader.open(project_name, pool_name) as reader:
             key_columns = list(reader.schema.key_column_names)
-            pool_data_frame = reader.pool_data_df()
+            samples_frame = reader.samples_df()
+            pending_frame = reader.pending_df()
+            metadata_frame = reader.metadata_df()
+            call_stats_frame = reader.call_stats_df()
+            claims_frame = reader.claims_df()
+            pool_data_frame = build_pool_data_frame(
+                schema=reader.schema,
+                samples_frame=samples_frame,
+                pending_frame=pending_frame,
+                metadata_frame=metadata_frame,
+                call_stats_frame=call_stats_frame,
+            )
             sample_pool_data_frame = pool_data_frame.drop_duplicates(
                 subset=["sample_id"]
             )
-            pending_frame = reader.pending_df()
-            call_stats_frame = reader.call_stats_df()
             pool_data = {
                 "pool_inspection": reader.inspect(),
                 "key_columns": key_columns,
@@ -293,8 +308,8 @@ def _():
                     pending_frame,
                     key_columns,
                 ),
-                "metadata_frame": _metadata_frame_from_raw(reader.metadata_df()),
-                "claims_frame": reader.claims_df(),
+                "metadata_frame": _metadata_frame_from_raw(metadata_frame),
+                "claims_frame": claims_frame,
                 "call_stats_frame": call_stats_frame,
             }
         _cache_put(set_cache, pool_data=pool_data)

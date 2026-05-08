@@ -44,15 +44,16 @@ def build_pool_data_frame(
 ) -> pd.DataFrame:
     """Build a pool dataframe with prompt, result, stats, axes, and failures."""
     key_columns = schema.key_column_names
+    prepared_pending = _prepare_pending_frame(pending_frame)
     successes = _build_success_outcome_frame(
         samples_frame=samples_frame,
-        pending_frame=pending_frame,
+        prepared_pending=prepared_pending,
         call_stats_frame=call_stats_frame,
         key_columns=key_columns,
     )
     frames = [successes]
     if include_failed:
-        frames.append(_build_failure_outcome_frame(pending_frame=pending_frame))
+        frames.append(_build_failure_outcome_frame(prepared_pending=prepared_pending))
     frame = pd.concat(frames, ignore_index=True, sort=False)
     frame = _attach_axis_metadata(
         frame,
@@ -68,7 +69,7 @@ def build_pool_data_frame(
 def _build_success_outcome_frame(
     *,
     samples_frame: pd.DataFrame,
-    pending_frame: pd.DataFrame,
+    prepared_pending: pd.DataFrame,
     call_stats_frame: pd.DataFrame,
     key_columns: list[str],
 ) -> pd.DataFrame:
@@ -81,9 +82,8 @@ def _build_success_outcome_frame(
     frame["outcome"] = "success_missing_call_stats"
     frame.loc[frame["latency_ms"].notna(), "outcome"] = "success"
 
-    promoted = _prepare_pending_frame(pending_frame)
-    promoted = promoted.loc[
-        promoted["pending_status"] == PendingStatus.promoted.value
+    promoted = prepared_pending.loc[
+        prepared_pending["pending_status"] == PendingStatus.promoted.value
     ].copy()
     pending_columns = [
         column
@@ -110,14 +110,13 @@ def _build_success_outcome_frame(
 
 def _build_failure_outcome_frame(
     *,
-    pending_frame: pd.DataFrame,
+    prepared_pending: pd.DataFrame,
 ) -> pd.DataFrame:
-    pending = _prepare_pending_frame(pending_frame)
-    if pending.empty:
-        return pending
+    if prepared_pending.empty:
+        return prepared_pending
 
-    failures = pending.loc[
-        pending["pending_status"] == PendingStatus.failed.value
+    failures = prepared_pending.loc[
+        prepared_pending["pending_status"] == PendingStatus.failed.value
     ].copy()
     if failures.empty:
         return failures
