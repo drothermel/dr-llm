@@ -77,7 +77,7 @@ def _(project_summaries):
                         pool_name=pool_name,
                     )
                 )
-            except Exception as exc:
+            except Exception:
                 logger.exception(
                     "Failed to inspect pool %s for project %s",
                     pool_name,
@@ -124,7 +124,15 @@ def _(project_summaries):
         else mo.vstack(
             [
                 *section_items,
-                mo.md("No running projects with discovered pools."),
+                mo.md(
+                    """
+                    No running projects with discovered pools. Start an existing project
+                    from a terminal with `uv run dr-llm project start PROJECT_NAME`,
+                    then rerun this notebook's project inspection. To create a new
+                    project here, use the Project Creation form and then create a pool
+                    for it.
+                    """
+                ),
             ],
             gap=1,
         )
@@ -228,6 +236,14 @@ def _(create_pool_form):
         raise ValueError(create_pool_readiness.blocked_message)
 
     create_pool_service(create_pool_request)
+    return
+
+
+@app.cell(column=3, hide_code=True)
+def _():
+    mo.md(r"""
+    (leave space)
+    """)
     return
 
 
