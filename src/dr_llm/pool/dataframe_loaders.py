@@ -56,7 +56,6 @@ def build_pool_data_frame(
         frames.append(
             _build_failure_outcome_frame(
                 pending_frame=pending_frame,
-                key_columns=key_columns,
                 include_raw=True,
             )
         )
@@ -119,7 +118,6 @@ def _build_success_outcome_frame(
 def _build_failure_outcome_frame(
     *,
     pending_frame: pd.DataFrame,
-    key_columns: list[str],
     include_raw: bool,
 ) -> pd.DataFrame:
     pending = _prepare_pending_frame(pending_frame, include_raw=include_raw)

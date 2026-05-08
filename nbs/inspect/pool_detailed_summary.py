@@ -276,13 +276,17 @@ def _():
         with PoolReader.open(project_name, pool_name) as reader:
             key_columns = list(reader.schema.key_column_names)
             pool_data_frame = reader.pool_data_df()
+            sample_pool_data_frame = pool_data_frame.drop_duplicates(
+                subset=["sample_id"]
+            )
             pending_frame = reader.pending_df()
+            call_stats_frame = reader.call_stats_df()
             pool_data = {
                 "pool_inspection": reader.inspect(),
                 "key_columns": key_columns,
                 "pool_data_frame": pool_data_frame,
                 "sample_frame": _sample_frame_from_pool_data(
-                    pool_data_frame,
+                    sample_pool_data_frame,
                     key_columns,
                 ),
                 "pending_frames": _pending_frames_from_raw(
@@ -291,7 +295,7 @@ def _():
                 ),
                 "metadata_frame": _metadata_frame_from_raw(reader.metadata_df()),
                 "claims_frame": reader.claims_df(),
-                "call_stats_frame": pool_data_frame,
+                "call_stats_frame": call_stats_frame,
             }
         _cache_put(set_cache, pool_data=pool_data)
         return pool_data
