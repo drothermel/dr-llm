@@ -49,16 +49,10 @@ def build_pool_data_frame(
         pending_frame=pending_frame,
         call_stats_frame=call_stats_frame,
         key_columns=key_columns,
-        include_raw=True,
     )
     frames = [successes]
     if include_failed:
-        frames.append(
-            _build_failure_outcome_frame(
-                pending_frame=pending_frame,
-                include_raw=True,
-            )
-        )
+        frames.append(_build_failure_outcome_frame(pending_frame=pending_frame))
     frame = pd.concat(frames, ignore_index=True, sort=False)
     frame = _attach_axis_metadata(
         frame,
@@ -77,9 +71,8 @@ def _build_success_outcome_frame(
     pending_frame: pd.DataFrame,
     call_stats_frame: pd.DataFrame,
     key_columns: list[str],
-    include_raw: bool,
 ) -> pd.DataFrame:
-    samples = _prepare_samples_frame(samples_frame, include_raw=include_raw)
+    samples = _prepare_samples_frame(samples_frame)
     if samples.empty:
         return samples
 
@@ -88,7 +81,7 @@ def _build_success_outcome_frame(
     frame["outcome"] = "success_missing_call_stats"
     frame.loc[frame["latency_ms"].notna(), "outcome"] = "success"
 
-    promoted = _prepare_pending_frame(pending_frame, include_raw=include_raw)
+    promoted = _prepare_pending_frame(pending_frame)
     promoted = promoted.loc[
         promoted["pending_status"] == PendingStatus.promoted.value
     ].copy()
@@ -118,9 +111,8 @@ def _build_success_outcome_frame(
 def _build_failure_outcome_frame(
     *,
     pending_frame: pd.DataFrame,
-    include_raw: bool,
 ) -> pd.DataFrame:
-    pending = _prepare_pending_frame(pending_frame, include_raw=include_raw)
+    pending = _prepare_pending_frame(pending_frame)
     if pending.empty:
         return pending
 
@@ -135,14 +127,6 @@ def _build_failure_outcome_frame(
     failures["result_text"] = pd.NA
     for column in _CALL_STATS_COLUMNS:
         failures[column] = pd.NA
-    if not include_raw:
-        failures = failures.drop(
-            columns=[
-                column
-                for column in ["pending_payload_json", "pending_metadata_json"]
-                if column in failures.columns
-            ]
-        )
     return failures
 
 
@@ -162,12 +146,8 @@ def _drop_raw_columns(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _prepare_samples_frame(
-    samples_frame: pd.DataFrame,
-    *,
-    include_raw: bool,
-) -> pd.DataFrame:
-    frame = samples_frame.copy().rename(
+def _prepare_samples_frame(samples_frame: pd.DataFrame) -> pd.DataFrame:
+    return samples_frame.copy().rename(
         columns={
             "created_at": "sample_created_at",
             "payload_json": "result_payload_json",
@@ -175,15 +155,6 @@ def _prepare_samples_frame(
             "source_run_id": "sample_source_run_id",
         }
     )
-    if not include_raw:
-        frame = frame.drop(
-            columns=[
-                column
-                for column in ["result_payload_json", "sample_metadata_json"]
-                if column in frame.columns
-            ]
-        )
-    return frame
 
 
 def _prepare_call_stats_frame(call_stats_frame: pd.DataFrame) -> pd.DataFrame:
@@ -193,11 +164,7 @@ def _prepare_call_stats_frame(call_stats_frame: pd.DataFrame) -> pd.DataFrame:
     return frame.rename(columns={"created_at": "call_stats_created_at"})
 
 
-def _prepare_pending_frame(
-    pending_frame: pd.DataFrame,
-    *,
-    include_raw: bool,
-) -> pd.DataFrame:
+def _prepare_pending_frame(pending_frame: pd.DataFrame) -> pd.DataFrame:
     frame = pending_frame.copy().rename(
         columns={
             "status": "pending_status",
@@ -215,19 +182,6 @@ def _prepare_pending_frame(
     frame["fail_reason"] = frame["pending_metadata_json"].map(_extract_fail_reason)
     frame["prompt_messages"] = frame["pending_payload_json"].map(_extract_prompt)
     frame["prompt_text"] = frame["prompt_messages"].map(_messages_to_text)
-    if not include_raw:
-        frame = frame.drop(
-            columns=[
-                column
-                for column in [
-                    "pending_payload_json",
-                    "pending_metadata_json",
-                    "prompt_messages",
-                    "prompt_text",
-                ]
-                if column in frame.columns
-            ]
-        )
     return frame
 
 

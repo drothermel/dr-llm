@@ -11,4 +11,4 @@ def single_df_row(frame: pd.DataFrame, *, source: str) -> dict[str, Any]:
     if row_count != 1:
         err_msg = f"{source}.to_df() must produce exactly one row; got {row_count}"
         raise ValueError(err_msg)
-    return dict(frame.iloc[0].to_dict())
+    return frame.iloc[0].to_dict()
