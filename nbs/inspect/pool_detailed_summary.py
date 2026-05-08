@@ -14,17 +14,6 @@ with app.setup:
 
     import marimo as mo
     import pandas as pd
-    from sqlalchemy import (
-        Column,
-        DateTime,
-        Float,
-        Integer,
-        MetaData,
-        Table,
-        Text,
-        select,
-    )
-
     from marimo_utils.ui import (
         Badge,
         BadgeVariant,
@@ -49,18 +38,9 @@ with app.setup:
         compute_gini,
         skew_label,
     )
-    from dr_llm.pool.admin_service import inspect_pool
-    from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-    from dr_llm.pool.models import PoolInspectionRequest
     from dr_llm.pool.pending.pending_status import PendingStatus
-    from dr_llm.pool.reader import (
-        PoolReader,
-        _load_schema_from_db as load_schema_from_db,
-    )
-    from dr_llm.project.project_service import (
-        maybe_get_project,
-        inspect_projects,
-    )
+    from dr_llm.pool.reader import PoolReader
+    from dr_llm.project.project_service import inspect_projects
     from dr_llm.ui import PoolSimpleStatsPieCard, bootstrap_tailwind
 
     TARGET_PROJECT_NAMES = (
@@ -108,37 +88,6 @@ def _():
         return pd.DataFrame(columns=list(columns))
 
 
-    def build_claims_table(table_name: str) -> Table:
-        return Table(
-            table_name,
-            MetaData(),
-            Column("claim_id", Text),
-            Column("run_id", Text),
-            Column("request_id", Text),
-            Column("consumer_tag", Text),
-            Column("sample_id", Text),
-            Column("claim_idx", Integer),
-            Column("claimed_at", DateTime(timezone=True)),
-        )
-
-
-    def build_call_stats_table(table_name: str) -> Table:
-        return Table(
-            table_name,
-            MetaData(),
-            Column("sample_id", Text),
-            Column("latency_ms", Integer),
-            Column("total_cost_usd", Float),
-            Column("prompt_tokens", Integer),
-            Column("completion_tokens", Integer),
-            Column("reasoning_tokens", Integer),
-            Column("total_tokens", Integer),
-            Column("attempt_count", Integer),
-            Column("finish_reason", Text),
-            Column("created_at", DateTime(timezone=True)),
-        )
-
-
     def sort_frame(
         frame: pd.DataFrame,
         *,
@@ -160,23 +109,8 @@ def _():
         project_name: str,
         pool_name: str,
     ):
-        project = maybe_get_project(project_name)
-        if project is None or project.dsn is None:
-            raise ValueError(f"Project {project_name!r} is not available")
-
-        runtime = DbRuntime(
-            DbConfig(
-                dsn=project.dsn,
-                application_name="pool_inspect_notebook",
-            )
-        )
-        try:
-            schema = load_schema_from_db(runtime, pool_name)
-            reader = PoolReader.from_runtime(runtime, schema=schema)
-            key_columns = list(schema.key_column_names)
-            yield runtime, schema, reader, key_columns
-        finally:
-            runtime.close()
+        with PoolReader.open(project_name, pool_name) as reader:
+            yield reader, list(reader.schema.key_column_names)
 
 
     def load_pool_inspection(
@@ -184,12 +118,8 @@ def _():
         project_name: str,
         pool_name: str,
     ) -> Any:
-        return inspect_pool(
-            PoolInspectionRequest(
-                project_name=project_name,
-                pool_name=pool_name,
-            )
-        )
+        with PoolReader.open(project_name, pool_name) as reader:
+            return reader.inspect()
 
 
     def load_sample_frame(
@@ -398,69 +328,9 @@ def _():
 
     def load_claims_and_call_stats_frames(
         *,
-        runtime: DbRuntime,
-        schema: Any,
+        reader: PoolReader,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        claims_table = build_claims_table(schema.claims_table)
-        call_stats_table = build_call_stats_table(schema.call_stats_table)
-        with runtime.connect() as conn:
-            claim_rows = (
-                conn.execute(
-                    select(claims_table).order_by(
-                        claims_table.c.claimed_at.desc(),
-                        claims_table.c.claim_idx.asc(),
-                    )
-                )
-                .mappings()
-                .all()
-            )
-            call_stats_rows = (
-                conn.execute(
-                    select(call_stats_table).order_by(
-                        call_stats_table.c.created_at.desc(),
-                        call_stats_table.c.sample_id.asc(),
-                    )
-                )
-                .mappings()
-                .all()
-            )
-
-        claims_frame = pd.DataFrame.from_records([dict(row) for row in claim_rows])
-        claim_columns = [
-            "claim_id",
-            "run_id",
-            "request_id",
-            "consumer_tag",
-            "sample_id",
-            "claim_idx",
-            "claimed_at",
-        ]
-        if claims_frame.empty:
-            claims_frame = empty_frame(claim_columns)
-        else:
-            claims_frame = claims_frame.loc[:, claim_columns]
-
-        call_stats_frame = pd.DataFrame.from_records(
-            [dict(row) for row in call_stats_rows]
-        )
-        call_stats_columns = [
-            "sample_id",
-            "latency_ms",
-            "total_cost_usd",
-            "prompt_tokens",
-            "completion_tokens",
-            "reasoning_tokens",
-            "total_tokens",
-            "attempt_count",
-            "finish_reason",
-            "created_at",
-        ]
-        if call_stats_frame.empty:
-            call_stats_frame = empty_frame(call_stats_columns)
-        else:
-            call_stats_frame = call_stats_frame.loc[:, call_stats_columns]
-
-        return claims_frame, call_stats_frame
+        return reader.claims_df(), reader.call_stats_df()
 
 
     CacheGetter = Callable[[], dict[str, Any]]
@@ -502,7 +372,7 @@ def _():
         with pool_reader_context(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (_, _, reader, key_columns):
+        ) as (reader, key_columns):
             sample_frame = load_sample_frame(
                 reader=reader,
                 key_columns=key_columns,
@@ -525,7 +395,7 @@ def _():
         with pool_reader_context(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (_, _, reader, key_columns):
+        ) as (reader, key_columns):
             pending_frames = load_pending_frames(
                 reader=reader,
                 key_columns=key_columns,
@@ -548,7 +418,7 @@ def _():
         with pool_reader_context(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (_, _, reader, key_columns):
+        ) as (reader, key_columns):
             metadata_frame = load_metadata_frame(reader=reader)
             kc = list(key_columns)
         _cache_put(set_cache, metadata_frame=metadata_frame, key_columns=kc)
@@ -576,10 +446,9 @@ def _():
         with pool_reader_context(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (runtime, schema, _, key_columns):
+        ) as (reader, key_columns):
             claims_frame, call_stats_frame = load_claims_and_call_stats_frames(
-                runtime=runtime,
-                schema=schema,
+                reader=reader,
             )
             kc = list(key_columns)
         _cache_put(

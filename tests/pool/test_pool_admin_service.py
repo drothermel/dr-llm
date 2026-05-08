@@ -132,35 +132,38 @@ def test_assess_pool_creation_reports_existing_pool_limits_and_cooldown(
     }
 
 
-def test_inspect_pool_reports_reader_progress(
+def test_inspect_pool_delegates_to_reader_inspection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
     schema = PoolSchema(name="sample_pool", key_columns=[KeyColumn(name="provider")])
     closed: list[bool] = []
+    reader_args: list[tuple[object, PoolSchema, str]] = []
 
     class FakeRuntime:
         def __init__(self, config: object) -> None:
             _ = config
 
-        def connect(self) -> object:
-            class _Conn:
-                def __enter__(self) -> _Conn:
-                    return self
-
-                def __exit__(self, *exc_info: object) -> None:
-                    return None
-
-                def execute(self, stmt: object) -> SimpleNamespace:
-                    _ = stmt
-                    return SimpleNamespace(
-                        scalar_one_or_none=lambda: datetime(2024, 1, 2, tzinfo=UTC)
-                    )
-
-            return _Conn()
-
         def close(self) -> None:
             closed.append(True)
+
+    def fake_reader_from_runtime(
+        runtime: object,
+        *,
+        schema: PoolSchema,
+        project_name: str,
+    ) -> SimpleNamespace:
+        reader_args.append((runtime, schema, project_name))
+        return SimpleNamespace(
+            inspect=lambda: PoolInspection(
+                project_name=project_name,
+                name=schema.name,
+                pool_schema=schema,
+                created_at=datetime(2024, 1, 2, tzinfo=UTC),
+                sample_count=2,
+                pending_counts=PendingStatusCounts(pending=1, leased=0, failed=0),
+            )
+        )
 
     monkeypatch.setattr(admin_service, "maybe_get_project", lambda name: project)
     monkeypatch.setattr(admin_service, "DbRuntime", FakeRuntime)
@@ -168,14 +171,7 @@ def test_inspect_pool_reports_reader_progress(
         admin_service, "load_schema_from_db", lambda runtime, pool_name: schema
     )
     monkeypatch.setattr(
-        admin_service.PoolReader,
-        "from_runtime",
-        lambda runtime, schema: SimpleNamespace(
-            progress=lambda: SimpleNamespace(
-                samples_total=2,
-                pending_counts=PendingStatusCounts(pending=1, leased=0, failed=0),
-            )
-        ),
+        admin_service.PoolReader, "from_runtime", fake_reader_from_runtime
     )
 
     inspection = admin_service.inspect_pool(
@@ -183,11 +179,14 @@ def test_inspect_pool_reports_reader_progress(
     )
 
     assert inspection.name == "sample_pool"
+    assert inspection.project_name == "demo"
     assert inspection.sample_count == 2
     assert inspection.pending_counts == PendingStatusCounts(
         pending=1, leased=0, failed=0
     )
     assert inspection.created_at == datetime(2024, 1, 2, tzinfo=UTC)
+    assert reader_args[0][1] == schema
+    assert reader_args[0][2] == "demo"
     assert closed == [True]
 
 

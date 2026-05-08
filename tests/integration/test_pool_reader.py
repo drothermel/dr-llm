@@ -12,15 +12,17 @@ from psycopg import sql
 from sqlalchemy import text
 
 from dr_llm.errors import TransientPersistenceError
+from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
 from dr_llm.pool.key_filter import PoolKeyFilter
+from dr_llm.pool.models import AcquireQuery
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import SCHEMA_METADATA_KEY, PoolStore
-from dr_llm.pool.reader import PoolReader
+from dr_llm.pool.reader import PoolReader, PoolTableType
 
 _READER_SCHEMA = PoolSchema(
     name=f"itest_reader_{uuid4().hex[:8]}",
@@ -32,6 +34,7 @@ _READER_SCHEMA = PoolSchema(
 
 _READER_TABLES = (
     _READER_SCHEMA.metadata_table,
+    _READER_SCHEMA.call_stats_table,
     _READER_SCHEMA.claims_table,
     _READER_SCHEMA.pending_table,
     _READER_SCHEMA.samples_table,
@@ -57,6 +60,7 @@ def _drop_pool_tables(dsn: str, schema: PoolSchema) -> None:
     with psycopg.connect(dsn) as conn:
         for tbl in (
             schema.metadata_table,
+            schema.call_stats_table,
             schema.claims_table,
             schema.pending_table,
             schema.samples_table,
@@ -105,6 +109,41 @@ def reader_runtime() -> Generator[DbRuntime, None, None]:
                     payload={"i": i},
                 )
             )
+        claimed = store.acquire(
+            AcquireQuery(
+                run_id="reader-test-run",
+                key_values={"dim_a": "alpha", "dim_b": 1},
+                n=2,
+                consumer_tag="reader-test",
+            )
+        )
+        assert len(claimed.samples) == 2
+        store.insert_call_stats(
+            CallStats(
+                sample_id=claimed.samples[0].sample_id,
+                latency_ms=100,
+                total_cost_usd=0.01,
+                prompt_tokens=10,
+                completion_tokens=5,
+                reasoning_tokens=None,
+                total_tokens=15,
+                attempt_count=1,
+                finish_reason="stop",
+            )
+        )
+        store.insert_call_stats(
+            CallStats(
+                sample_id=claimed.samples[1].sample_id,
+                latency_ms=200,
+                total_cost_usd=0.02,
+                prompt_tokens=20,
+                completion_tokens=10,
+                reasoning_tokens=3,
+                total_tokens=33,
+                attempt_count=2,
+                finish_reason="length",
+            )
+        )
         # Pending rows: one pending, one will be promoted, one will be failed.
         store.pending.insert(
             PendingSample(
@@ -247,6 +286,125 @@ def test_progress_aggregates_correctly(reader_runtime: DbRuntime) -> None:
     assert progress.pending_counts.pending + progress.pending_counts.leased == 1
     assert progress.in_flight == 1
     assert progress.is_complete is False
+
+
+@pytest.mark.integration
+def test_inspect_uses_open_reader_runtime(reader_runtime: DbRuntime) -> None:
+    reader = PoolReader.from_runtime(
+        reader_runtime,
+        schema=_READER_SCHEMA,
+        project_name="reader_project",
+    )
+
+    inspection = reader.inspect()
+
+    assert inspection.project_name == "reader_project"
+    assert inspection.name == _READER_SCHEMA.name
+    assert inspection.sample_count == 6
+    assert inspection.pending_counts.failed == 1
+    assert inspection.created_at is not None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("table_type", "expected_columns"),
+    [
+        (
+            PoolTableType.SAMPLES,
+            [
+                "sample_id",
+                "dim_a",
+                "dim_b",
+                "sample_idx",
+                "payload_json",
+                "source_run_id",
+                "metadata_json",
+                "created_at",
+            ],
+        ),
+        (
+            PoolTableType.PENDING,
+            [
+                "pending_id",
+                "dim_a",
+                "dim_b",
+                "sample_idx",
+                "payload_json",
+                "source_run_id",
+                "metadata_json",
+                "priority",
+                "status",
+                "worker_id",
+                "lease_expires_at",
+                "attempt_count",
+                "created_at",
+            ],
+        ),
+        (
+            PoolTableType.CLAIMS,
+            [
+                "claim_id",
+                "run_id",
+                "request_id",
+                "consumer_tag",
+                "sample_id",
+                "claim_idx",
+                "claimed_at",
+            ],
+        ),
+        (
+            PoolTableType.METADATA,
+            ["pool_name", "key", "value_json", "created_at", "updated_at"],
+        ),
+        (
+            PoolTableType.CALL_STATS,
+            [
+                "sample_id",
+                "latency_ms",
+                "total_cost_usd",
+                "prompt_tokens",
+                "completion_tokens",
+                "reasoning_tokens",
+                "total_tokens",
+                "attempt_count",
+                "finish_reason",
+                "created_at",
+            ],
+        ),
+    ],
+)
+def test_load_table_df_loads_raw_pool_tables(
+    reader_runtime: DbRuntime,
+    table_type: PoolTableType,
+    expected_columns: list[str],
+) -> None:
+    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
+
+    frame = reader.load_table_df(table_type)
+
+    assert list(frame.columns) == expected_columns
+    assert not frame.empty
+
+
+@pytest.mark.integration
+def test_dataframe_wrappers_load_expected_tables(reader_runtime: DbRuntime) -> None:
+    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
+
+    assert list(reader.samples_df().columns) == list(
+        reader.load_table_df(PoolTableType.SAMPLES).columns
+    )
+    assert list(reader.pending_df().columns) == list(
+        reader.load_table_df(PoolTableType.PENDING).columns
+    )
+    assert list(reader.claims_df().columns) == list(
+        reader.load_table_df(PoolTableType.CLAIMS).columns
+    )
+    assert list(reader.metadata_df().columns) == list(
+        reader.load_table_df(PoolTableType.METADATA).columns
+    )
+    assert list(reader.call_stats_df().columns) == list(
+        reader.load_table_df(PoolTableType.CALL_STATS).columns
+    )
 
 
 @pytest.mark.integration

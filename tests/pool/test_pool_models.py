@@ -15,7 +15,6 @@ from dr_llm.pool.models import (
     DeletePoolsByTokenRequest,
     InsertResult,
     PoolInspection,
-    PoolInspectionStatus,
 )
 from dr_llm.pool.pending.backend import PoolPendingBackendState
 from dr_llm.pool.pending.pending_sample import PendingSample
@@ -282,14 +281,12 @@ def test_pool_inspection_to_df_combines_nested_model_rows() -> None:
         created_at=created_at,
         sample_count=42,
         pending_counts=PendingStatusCounts(pending=3, leased=2, failed=1),
-        status=PoolInspectionStatus.in_progress,
     )
 
     assert inspection.to_df().to_dict("records") == [
         {
             "project_name": "demo",
             "pool_name": "modeltest",
-            "status": "in_progress",
             "created_at": created_at,
             "sample_count": 42,
             "pending": 3,
@@ -365,6 +362,8 @@ def test_pool_root_re_exports_admin_models_and_services() -> None:
     assert hasattr(pool, "DeletePoolRequest")
     assert hasattr(pool, "DeletePoolsByTokenRequest")
     assert hasattr(pool, "PoolInspection")
+    assert hasattr(pool, "PoolReader")
+    assert hasattr(pool, "PoolTableType")
     assert hasattr(pool, "assess_pool_creation")
     assert hasattr(pool, "assess_pool_deletion")
     assert hasattr(pool, "create_pool")

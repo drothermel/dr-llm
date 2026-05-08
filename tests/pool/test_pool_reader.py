@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
+from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
-from dr_llm.pool.reader import PoolProgress, PoolReader, _validate_pool_name
+from dr_llm.pool.reader import (
+    PoolProgress,
+    PoolReader,
+    PoolTableType,
+    _validate_pool_name,
+)
+
+_TEST_SCHEMA = PoolSchema(
+    name="reader_unit",
+    key_columns=[
+        KeyColumn(name="dim_a"),
+        KeyColumn(name="dim_b", type=ColumnType.integer),
+    ],
+)
 
 
 def test_pool_progress_in_flight_delegates_to_pending_counts() -> None:
@@ -53,6 +67,53 @@ def test_pool_progress_is_frozen() -> None:
     )
     with pytest.raises(Exception, match="frozen"):
         progress.samples_total = 99
+
+
+def test_pool_table_type_values_are_stable() -> None:
+    assert PoolTableType.SAMPLES.value == "samples"
+    assert PoolTableType.PENDING.value == "pending"
+    assert PoolTableType.CLAIMS.value == "claims"
+    assert PoolTableType.METADATA.value == "metadata"
+    assert PoolTableType.CALL_STATS.value == "call_stats"
+
+
+def test_load_table_df_returns_empty_frame_with_expected_columns() -> None:
+    runtime = MagicMock()
+    connection = runtime.connect.return_value.__enter__.return_value
+    connection.execute.return_value.mappings.return_value.all.return_value = []
+    reader = PoolReader.from_runtime(runtime, schema=_TEST_SCHEMA)
+
+    frame = reader.load_table_df(PoolTableType.CALL_STATS)
+
+    assert frame.empty
+    assert list(frame.columns) == [
+        "sample_id",
+        "latency_ms",
+        "total_cost_usd",
+        "prompt_tokens",
+        "completion_tokens",
+        "reasoning_tokens",
+        "total_tokens",
+        "attempt_count",
+        "finish_reason",
+        "created_at",
+    ]
+
+
+def test_dataframe_convenience_methods_delegate_to_enum_loader() -> None:
+    reader = PoolReader.__new__(PoolReader)
+    reader.load_table_df = Mock(return_value="frame")
+
+    assert reader.samples_df() == "frame"
+    reader.load_table_df.assert_called_with(PoolTableType.SAMPLES)
+    assert reader.pending_df() == "frame"
+    reader.load_table_df.assert_called_with(PoolTableType.PENDING)
+    assert reader.claims_df() == "frame"
+    reader.load_table_df.assert_called_with(PoolTableType.CLAIMS)
+    assert reader.metadata_df() == "frame"
+    reader.load_table_df.assert_called_with(PoolTableType.METADATA)
+    assert reader.call_stats_df() == "frame"
+    reader.load_table_df.assert_called_with(PoolTableType.CALL_STATS)
 
 
 @pytest.mark.parametrize(

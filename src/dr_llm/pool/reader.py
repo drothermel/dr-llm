@@ -10,9 +10,11 @@ its read-side methods.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from enum import StrEnum
 from typing import Any
 import warnings
 
+import pandas as pd
 import psycopg
 from pydantic import BaseModel, ConfigDict, computed_field
 from sqlalchemy import Column, MetaData, Table, Text, select
@@ -21,8 +23,10 @@ from sqlalchemy.exc import ProgrammingError
 
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import PoolSchema, _VALID_NAME_RE
+from dr_llm.pool.db.tables import PoolTables
 from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
 from dr_llm.pool.key_filter import PoolKeyFilter
+from dr_llm.pool.models import PoolInspection
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample
@@ -68,6 +72,14 @@ class PoolProgress(BaseModel):
     @property
     def is_complete(self) -> bool:
         return self.pending_counts.in_flight == 0
+
+
+class PoolTableType(StrEnum):
+    SAMPLES = "samples"
+    PENDING = "pending"
+    CLAIMS = "claims"
+    METADATA = "metadata"
+    CALL_STATS = "call_stats"
 
 
 def _validate_pool_name(pool_name: str) -> None:
@@ -154,12 +166,15 @@ class PoolReader:
         schema: PoolSchema,
         runtime: DbRuntime,
         owns_runtime: bool,
+        project_name: str = "",
     ) -> None:
+        self.project_name = project_name
         self.schema = schema
         self.pool_name = schema.name
         self._runtime = runtime
         self._owns_runtime = owns_runtime
         self._store = PoolStore(schema, runtime)
+        self._tables = PoolTables(schema)
         self._closed = False
 
     @classmethod
@@ -190,10 +205,21 @@ class PoolReader:
         except Exception:
             runtime.close()
             raise
-        return cls(schema=schema, runtime=runtime, owns_runtime=True)
+        return cls(
+            schema=schema,
+            runtime=runtime,
+            owns_runtime=True,
+            project_name=project.name,
+        )
 
     @classmethod
-    def from_runtime(cls, runtime: DbRuntime, *, schema: PoolSchema) -> PoolReader:
+    def from_runtime(
+        cls,
+        runtime: DbRuntime,
+        *,
+        schema: PoolSchema,
+        project_name: str = "",
+    ) -> PoolReader:
         """Construct a reader from an existing runtime and explicit schema.
 
         Use this when you already have a :class:`DbRuntime` to reuse, when
@@ -202,7 +228,12 @@ class PoolReader:
         for testing. The returned reader does NOT take ownership of the
         runtime — :meth:`close` is a no-op for the runtime.
         """
-        return cls(schema=schema, runtime=runtime, owns_runtime=False)
+        return cls(
+            schema=schema,
+            runtime=runtime,
+            owns_runtime=False,
+            project_name=project_name,
+        )
 
     def samples(
         self,
@@ -270,6 +301,46 @@ class PoolReader:
             pending_counts=self._store.pending.status_counts(),
         )
 
+    def inspect(self) -> PoolInspection:
+        """Return pool inspection data using the reader's open runtime."""
+        progress = self.progress()
+        created_at = self._metadata_created_at()
+        return PoolInspection(
+            project_name=self.project_name,
+            name=self.schema.name,
+            pool_schema=self.schema,
+            created_at=created_at,
+            sample_count=progress.samples_total,
+            pending_counts=progress.pending_counts,
+        )
+
+    def load_table_df(self, table_type: PoolTableType) -> pd.DataFrame:
+        """Load a raw dynamic pool table into a dataframe."""
+        table = self._table_for_type(table_type)
+        columns = [column.name for column in table.columns]
+        stmt = select(table).order_by(*self._order_by_for_type(table_type))
+        with self._runtime.connect() as conn:
+            rows = conn.execute(stmt).mappings().all()
+        if not rows:
+            return pd.DataFrame(columns=columns)
+        frame = pd.DataFrame.from_records([dict(row) for row in rows])
+        return frame.loc[:, columns]
+
+    def samples_df(self) -> pd.DataFrame:
+        return self.load_table_df(PoolTableType.SAMPLES)
+
+    def pending_df(self) -> pd.DataFrame:
+        return self.load_table_df(PoolTableType.PENDING)
+
+    def claims_df(self) -> pd.DataFrame:
+        return self.load_table_df(PoolTableType.CLAIMS)
+
+    def metadata_df(self) -> pd.DataFrame:
+        return self.load_table_df(PoolTableType.METADATA)
+
+    def call_stats_df(self) -> pd.DataFrame:
+        return self.load_table_df(PoolTableType.CALL_STATS)
+
     def metadata_get(self, key: str) -> dict[str, Any] | None:
         """Read a single metadata value by key."""
         return self._store.metadata.get(key)
@@ -282,6 +353,50 @@ class PoolReader:
         Pass ``""`` to load every metadata entry in the pool.
         """
         return dict(self._store.metadata.iter_prefix(prefix))
+
+    def _metadata_created_at(self) -> Any:
+        stmt = select(self._tables.metadata_table.c.created_at).where(
+            self._tables.metadata_table.c.pool_name == self.schema.name,
+            self._tables.metadata_table.c.key == SCHEMA_METADATA_KEY,
+        )
+        with self._runtime.connect() as conn:
+            return conn.execute(stmt).scalar_one_or_none()
+
+    def _table_for_type(self, table_type: PoolTableType) -> Table:
+        return {
+            PoolTableType.SAMPLES: self._tables.samples,
+            PoolTableType.PENDING: self._tables.pending,
+            PoolTableType.CLAIMS: self._tables.claims,
+            PoolTableType.METADATA: self._tables.metadata_table,
+            PoolTableType.CALL_STATS: self._tables.call_stats,
+        }[table_type]
+
+    def _order_by_for_type(self, table_type: PoolTableType) -> list[Any]:
+        return {
+            PoolTableType.SAMPLES: [
+                *(column.asc() for column in self._tables.samples_key_columns),
+                self._tables.samples.c.sample_idx.asc(),
+                self._tables.samples.c.created_at.asc(),
+            ],
+            PoolTableType.PENDING: [
+                self._tables.pending.c.status.asc(),
+                self._tables.pending.c.priority.desc(),
+                self._tables.pending.c.created_at.asc(),
+                *(column.asc() for column in self._tables.pending_key_columns),
+                self._tables.pending.c.sample_idx.asc(),
+            ],
+            PoolTableType.CLAIMS: [
+                self._tables.claims.c.claimed_at.desc(),
+                self._tables.claims.c.claim_idx.asc(),
+            ],
+            PoolTableType.METADATA: [
+                self._tables.metadata_table.c.key.asc(),
+            ],
+            PoolTableType.CALL_STATS: [
+                self._tables.call_stats.c.created_at.desc(),
+                self._tables.call_stats.c.sample_id.asc(),
+            ],
+        }[table_type]
 
     def close(self) -> None:
         """Dispose the owned :class:`DbRuntime`, if any. Idempotent."""

@@ -25,6 +25,7 @@ def test_pool_tables_contains_all_tables() -> None:
     assert tables.claims.name == "pool_test_claims"
     assert tables.pending.name == "pool_test_pending"
     assert tables.metadata_table.name == "pool_test_metadata"
+    assert tables.call_stats.name == "pool_test_call_stats"
 
 
 def test_pool_tables_key_columns_appear() -> None:
@@ -78,6 +79,7 @@ def test_schema_table_names() -> None:
     assert schema.claims_table == "pool_test_claims"
     assert schema.pending_table == "pool_test_pending"
     assert schema.metadata_table == "pool_test_metadata"
+    assert schema.call_stats_table == "pool_test_call_stats"
 
 
 def test_schema_key_column_names() -> None:

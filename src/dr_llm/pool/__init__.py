@@ -29,6 +29,7 @@ from dr_llm.pool.models import (
     PoolInspection,
     PoolInspectionRequest,
 )
+from dr_llm.pool.reader import PoolReader, PoolTableType
 
 __all__ = [
     "AcquireQuery",
@@ -48,6 +49,8 @@ __all__ = [
     "PoolDeletionViolation",
     "PoolInspection",
     "PoolInspectionRequest",
+    "PoolReader",
+    "PoolTableType",
     "assess_pool_creation",
     "assess_pool_deletion",
     "create_pool",

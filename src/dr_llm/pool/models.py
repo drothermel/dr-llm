@@ -170,7 +170,6 @@ class PoolInspection(BaseModel):
                 {
                     "project_name": self.project_name,
                     "pool_name": self.name,
-                    "status": self.status.value,
                     "created_at": self.created_at,
                     "sample_count": self.sample_count,
                     **pending_row,

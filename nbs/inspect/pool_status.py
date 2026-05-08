@@ -5,28 +5,46 @@ app = marimo.App(width="columns")
 
 with app.setup:
     import marimo as mo
-    from dr_llm.pool.admin_service import inspect_pool
-    from dr_llm.pool.models import PoolInspectionRequest
+    from dr_llm.pool.reader import PoolReader
 
 
 @app.cell
 def _():
-    provider = "code_comp_v0"
-    pool = "encoder_pool_t1"
+    project_name = "code_comp_v0"
+    pool_name = "encoder_pool_t1"
+    return pool_name, project_name
 
-    pool_status = inspect_pool(
-        PoolInspectionRequest(
-            project_name=provider,
-            pool_name=pool,
-        )
+
+@app.cell(hide_code=True)
+def _(pool_name, project_name):
+    with PoolReader.open(project_name, pool_name) as reader:
+        _pool_status = reader.inspect()
+        _pool_status_df = _pool_status.to_df()
+        call_stats_df = reader.call_stats_df()
+
+    mo.vstack(
+        [
+            mo.md(f"###`[{project_name}]` **Pool:** `{pool_name}`"),
+            mo.accordion(
+                {
+                    "Pool Status": _pool_status_df.iloc[0]
+                    .rename_axis("field")
+                    .rename("value")
+                }
+            ),
+        ]
     )
-    pool_status_df = pool_status.to_df()
-    return (pool_status_df,)
+    return (call_stats_df,)
 
 
-@app.cell(column=1)
-def _(pool_status_df):
-    pool_status_df
+@app.cell(column=1, hide_code=True)
+def _(call_stats_df, pool_name):
+    mo.vstack(
+        [
+            mo.md(f"### `{pool_name}` Call Stats"),
+            call_stats_df,
+        ]
+    )
     return
 
 

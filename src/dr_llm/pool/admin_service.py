@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Final
 
-from sqlalchemy import Column, DateTime, MetaData, Table, Text, select, text
+from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from dr_llm.datetime_utils import UTC, normalize_utc
@@ -28,7 +28,7 @@ from dr_llm.pool.models import (
     PoolInspectionRequest,
 )
 from dr_llm.pool.errors import PoolError
-from dr_llm.pool.pool_store import PoolStore, SCHEMA_METADATA_KEY
+from dr_llm.pool.pool_store import PoolStore
 from dr_llm.pool.reader import PoolReader, _load_schema_from_db as load_schema_from_db
 from dr_llm.project.docker_psql import validate_pg_identifier
 from dr_llm.project.errors import ProjectError, ProjectNotFoundError
@@ -439,32 +439,14 @@ def _inspect_pool_for_project(project: ProjectInfo, pool_name: str) -> PoolInspe
     runtime = DbRuntime(DbConfig(dsn=project.dsn))
     try:
         schema = load_schema_from_db(runtime, pool_name)
-        reader = PoolReader.from_runtime(runtime, schema=schema)
-        progress = reader.progress()
-        metadata_table = Table(
-            schema.metadata_table,
-            MetaData(),
-            Column("pool_name", Text, nullable=False),
-            Column("key", Text, nullable=False),
-            Column("created_at", DateTime(timezone=True)),
+        reader = PoolReader.from_runtime(
+            runtime,
+            schema=schema,
+            project_name=project.name,
         )
-        metadata_created_at_stmt = select(metadata_table.c.created_at).where(
-            metadata_table.c.pool_name == schema.name,
-            metadata_table.c.key == SCHEMA_METADATA_KEY,
-        )
-        with runtime.connect() as conn:
-            created_at = conn.execute(metadata_created_at_stmt).scalar_one_or_none()
+        return reader.inspect()
     finally:
         runtime.close()
-
-    return PoolInspection(
-        project_name=project.name,
-        name=schema.name,
-        pool_schema=schema,
-        created_at=created_at,
-        sample_count=progress.samples_total,
-        pending_counts=progress.pending_counts,
-    )
 
 
 def _pool_delete_request_violations(
