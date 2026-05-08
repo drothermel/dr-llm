@@ -26,7 +26,6 @@ from dr_llm.pool.models import (
     PoolDeletionViolation,
     PoolInspection,
     PoolInspectionRequest,
-    PoolInspectionStatus,
 )
 from dr_llm.pool.errors import PoolError
 from dr_llm.pool.pool_store import PoolStore, SCHEMA_METADATA_KEY
@@ -139,24 +138,6 @@ def assess_pool_creation(
                 message=(
                     f"Project {project.name!r} already has {len(existing_pools)} pools; "
                     f"max_pools_per_project={max_pools_per_project}."
-                ),
-                project_name=project.name,
-                pool_name=request.pool_name,
-            )
-        )
-
-    in_progress_pools = [
-        pool.name
-        for pool in existing_pools
-        if pool.status == PoolInspectionStatus.in_progress
-    ]
-    if in_progress_pools:
-        violations.append(
-            PoolCreationViolation(
-                reason=PoolCreationBlockReason.pool_in_progress,
-                message=(
-                    "Cannot create a new pool while other pools are in progress: "
-                    + ", ".join(in_progress_pools)
                 ),
                 project_name=project.name,
                 pool_name=request.pool_name,
@@ -476,13 +457,6 @@ def _inspect_pool_for_project(project: ProjectInfo, pool_name: str) -> PoolInspe
     finally:
         runtime.close()
 
-    if progress.samples_total == 0 and progress.pending_counts.total == 0:
-        status = PoolInspectionStatus.empty
-    elif progress.pending_counts.in_flight > 0:
-        status = PoolInspectionStatus.in_progress
-    else:
-        status = PoolInspectionStatus.complete
-
     return PoolInspection(
         project_name=project.name,
         name=schema.name,
@@ -490,7 +464,6 @@ def _inspect_pool_for_project(project: ProjectInfo, pool_name: str) -> PoolInspe
         created_at=created_at,
         sample_count=progress.samples_total,
         pending_counts=progress.pending_counts,
-        status=status,
     )
 
 

@@ -28,7 +28,6 @@ from dr_llm.pool.models import (
     PoolDeletionViolation,
     PoolInspection,
     PoolInspectionRequest,
-    PoolInspectionStatus,
 )
 
 __all__ = [
@@ -49,7 +48,6 @@ __all__ = [
     "PoolDeletionViolation",
     "PoolInspection",
     "PoolInspectionRequest",
-    "PoolInspectionStatus",
     "assess_pool_creation",
     "assess_pool_deletion",
     "create_pool",

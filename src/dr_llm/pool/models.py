@@ -134,12 +134,6 @@ class CreatePoolRequest(BaseModel):
         return bool(_VALID_NAME_RE.match(self.pool_name))
 
 
-class PoolInspectionStatus(StrEnum):
-    empty = "empty"
-    in_progress = "in_progress"
-    complete = "complete"
-
-
 class PoolInspection(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -149,7 +143,6 @@ class PoolInspection(BaseModel):
     created_at: datetime | None = None
     sample_count: int = 0
     pending_counts: PendingStatusCounts = Field(default_factory=PendingStatusCounts)
-    status: PoolInspectionStatus
 
     @computed_field
     @property
@@ -170,7 +163,6 @@ class PoolCreationBlockReason(StrEnum):
     project_not_running = "project_not_running"
     pool_already_exists = "pool_already_exists"
     max_pools_reached = "max_pools_reached"
-    pool_in_progress = "pool_in_progress"
     cooldown_active = "cooldown_active"
 
 
