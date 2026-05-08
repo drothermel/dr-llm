@@ -4,7 +4,7 @@ import marimo as mo
 from dr_widget.inline import ActiveHtml
 
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
-from dr_llm.pool.models import PoolInspection, PoolInspectionStatus
+from dr_llm.pool.models import PoolInspection
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
 from dr_llm.ui import PieChart, PoolSimpleStatsPieCard
 
@@ -19,7 +19,6 @@ def demo_pool() -> PoolInspection:
         ),
         sample_count=1280,
         pending_counts=PendingStatusCounts(pending=36, leased=8, failed=3),
-        status=PoolInspectionStatus.in_progress,
     )
 
 

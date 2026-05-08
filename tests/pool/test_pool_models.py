@@ -294,6 +294,7 @@ def test_pool_root_re_exports_admin_models_and_services() -> None:
     assert hasattr(pool, "discover_pools")
     assert not hasattr(pool, "PendingSample")
     assert not hasattr(pool, "PoolDb")
+    assert not hasattr(pool, "PoolInspectionStatus")
 
 
 def test_pending_and_db_packages_have_no_re_exports() -> None:

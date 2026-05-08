@@ -19,7 +19,6 @@ from dr_llm.pool.models import (
     PoolDeletionStatus,
     PoolInspection,
     PoolInspectionRequest,
-    PoolInspectionStatus,
 )
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
 from dr_llm.project.docker_project_metadata import ContainerStatus
@@ -92,7 +91,7 @@ def test_assess_pool_creation_reports_project_not_running(
     ]
 
 
-def test_assess_pool_creation_reports_existing_pool_limits_progress_and_cooldown(
+def test_assess_pool_creation_reports_existing_pool_limits_and_cooldown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
@@ -114,11 +113,6 @@ def test_assess_pool_creation_reports_existing_pool_limits_progress_and_cooldown
             pending_counts=PendingStatusCounts(
                 pending=1 if pool_name == "alpha" else 0
             ),
-            status=(
-                PoolInspectionStatus.in_progress
-                if pool_name == "alpha"
-                else PoolInspectionStatus.complete
-            ),
         ),
     )
 
@@ -134,12 +128,11 @@ def test_assess_pool_creation_reports_existing_pool_limits_progress_and_cooldown
     assert {violation.reason for violation in readiness.violations} == {
         PoolCreationBlockReason.pool_already_exists,
         PoolCreationBlockReason.max_pools_reached,
-        PoolCreationBlockReason.pool_in_progress,
         PoolCreationBlockReason.cooldown_active,
     }
 
 
-def test_inspect_pool_derives_status_from_reader_progress(
+def test_inspect_pool_reports_reader_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
@@ -190,7 +183,10 @@ def test_inspect_pool_derives_status_from_reader_progress(
     )
 
     assert inspection.name == "sample_pool"
-    assert inspection.status == PoolInspectionStatus.in_progress
+    assert inspection.sample_count == 2
+    assert inspection.pending_counts == PendingStatusCounts(
+        pending=1, leased=0, failed=0
+    )
     assert inspection.created_at == datetime(2024, 1, 2, tzinfo=UTC)
     assert closed == [True]
 
@@ -217,7 +213,6 @@ def test_create_pool_ensures_schema_and_returns_fresh_inspection(
         created_at=None,
         sample_count=0,
         pending_counts=PendingStatusCounts(),
-        status=PoolInspectionStatus.empty,
     )
 
     class FakeRuntime:
