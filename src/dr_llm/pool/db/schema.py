@@ -136,7 +136,6 @@ class PoolSchema(BaseModel):
                         f"{row['key_column_name']}:{row['key_column_type']}"
                         for row in key_column_rows
                     ),
-                    "key_column_count": len(key_column_rows),
                     "samples_table": self.samples_table,
                     "claims_table": self.claims_table,
                     "pending_table": self.pending_table,

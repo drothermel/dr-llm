@@ -341,6 +341,25 @@ class PoolReader:
     def call_stats_df(self) -> pd.DataFrame:
         return self.load_table_df(PoolTableType.CALL_STATS)
 
+    def pool_data_df(
+        self,
+        *,
+        include_raw: bool = True,
+        include_failed: bool = True,
+    ) -> pd.DataFrame:
+        """Load prompt/result/call-stat rows with readable axes and failures."""
+        from dr_llm.pool.dataframe_loaders import build_pool_data_frame
+
+        return build_pool_data_frame(
+            schema=self.schema,
+            samples_frame=self.samples_df(),
+            pending_frame=self.pending_df(),
+            metadata_frame=self.metadata_df(),
+            call_stats_frame=self.call_stats_df(),
+            include_raw=include_raw,
+            include_failed=include_failed,
+        )
+
     def metadata_get(self, key: str) -> dict[str, Any] | None:
         """Read a single metadata value by key."""
         return self._store.metadata.get(key)

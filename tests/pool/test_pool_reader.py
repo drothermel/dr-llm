@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, Mock
 
+import pandas as pd
 import pytest
 
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
@@ -114,6 +115,65 @@ def test_dataframe_convenience_methods_delegate_to_enum_loader() -> None:
     reader.load_table_df.assert_called_with(PoolTableType.METADATA)
     assert reader.call_stats_df() == "frame"
     reader.load_table_df.assert_called_with(PoolTableType.CALL_STATS)
+
+
+def test_enriched_dataframe_methods_load_raw_frames() -> None:
+    reader = PoolReader.__new__(PoolReader)
+    reader.schema = _TEST_SCHEMA
+    empty_samples = pd.DataFrame(
+        columns=[
+            "sample_id",
+            "dim_a",
+            "dim_b",
+            "sample_idx",
+            "payload_json",
+            "source_run_id",
+            "metadata_json",
+            "created_at",
+        ]
+    )
+    empty_pending = pd.DataFrame(
+        columns=[
+            "pending_id",
+            "dim_a",
+            "dim_b",
+            "sample_idx",
+            "payload_json",
+            "source_run_id",
+            "metadata_json",
+            "priority",
+            "status",
+            "worker_id",
+            "lease_expires_at",
+            "attempt_count",
+            "created_at",
+        ]
+    )
+    empty_metadata = pd.DataFrame(columns=["pool_name", "key", "value_json"])
+    empty_call_stats = pd.DataFrame(
+        columns=[
+            "sample_id",
+            "latency_ms",
+            "total_cost_usd",
+            "prompt_tokens",
+            "completion_tokens",
+            "reasoning_tokens",
+            "total_tokens",
+            "attempt_count",
+            "finish_reason",
+            "created_at",
+        ]
+    )
+    reader.samples_df = Mock(return_value=empty_samples)
+    reader.pending_df = Mock(return_value=empty_pending)
+    reader.metadata_df = Mock(return_value=empty_metadata)
+    reader.call_stats_df = Mock(return_value=empty_call_stats)
+
+    assert reader.pool_data_df().empty
+    reader.samples_df.assert_called()
+    reader.pending_df.assert_called()
+    reader.metadata_df.assert_called()
+    reader.call_stats_df.assert_called()
 
 
 @pytest.mark.parametrize(

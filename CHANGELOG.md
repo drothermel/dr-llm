@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.2 - Unreleased
+
+### Changed
+
+- Removed the `key_column_count` field from pool schema and inspection
+  dataframe output; the formatted `key_columns` field remains.
+
 ## 2.3.0 - 2026-04-23
 
 ### Added

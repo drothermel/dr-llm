@@ -408,6 +408,37 @@ def test_dataframe_wrappers_load_expected_tables(reader_runtime: DbRuntime) -> N
 
 
 @pytest.mark.integration
+def test_pool_data_df_includes_completed_samples_call_stats_and_failures(
+    reader_runtime: DbRuntime,
+) -> None:
+    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
+
+    frame = reader.pool_data_df()
+
+    assert len(frame) == 7
+    assert {"success", "success_missing_call_stats", "failed"}.issubset(
+        set(frame["outcome"])
+    )
+    stats_rows = frame.loc[frame["latency_ms"].notna()]
+    assert len(stats_rows) == 2
+    assert {"result_text", "prompt_text"}.issubset(frame.columns)
+    failed = frame.loc[frame["outcome"] == "failed"].iloc[0]
+    assert failed["fail_reason"] == "test"
+    assert failed["dim_a"] == "beta"
+    assert failed["dim_b"] == 2
+
+
+@pytest.mark.integration
+def test_pool_data_df_can_exclude_failed_rows(reader_runtime: DbRuntime) -> None:
+    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
+
+    frame = reader.pool_data_df(include_failed=False)
+
+    assert len(frame) == 6
+    assert "failed" not in set(frame["outcome"])
+
+
+@pytest.mark.integration
 def test_metadata_get_returns_value(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
     value = reader.metadata_get("prompt_template/foo")

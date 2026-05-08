@@ -4,8 +4,6 @@ __generated_with = "0.23.2"
 app = marimo.App(width="columns")
 
 with app.setup:
-    from contextlib import contextmanager
-    import hashlib
     import json
     import math
     from collections.abc import Callable, Sequence
@@ -103,47 +101,24 @@ def _():
         ).reset_index(drop=True)
 
 
-    @contextmanager
-    def pool_reader_context(
-        *,
-        project_name: str,
-        pool_name: str,
-    ):
-        with PoolReader.open(project_name, pool_name) as reader:
-            yield reader, list(reader.schema.key_column_names)
+    def _metadata_frame_from_raw(metadata_frame: pd.DataFrame) -> pd.DataFrame:
+        metadata_columns = ["key", "category", "value_json"]
+        if metadata_frame.empty:
+            return empty_frame(metadata_columns)
+        frame = metadata_frame.copy()
+        frame["category"] = frame["key"].map(metadata_category)
+        frame["value_json"] = frame["value_json"].map(compact_json)
+        return sort_frame(
+            frame.loc[:, metadata_columns],
+            by=["category", "key"],
+            ascending=[True, True],
+        )
 
 
-    def load_pool_inspection(
-        *,
-        project_name: str,
-        pool_name: str,
-    ) -> Any:
-        with PoolReader.open(project_name, pool_name) as reader:
-            return reader.inspect()
-
-
-    def load_sample_frame(
-        *,
-        reader: PoolReader,
+    def _sample_frame_from_pool_data(
+        pool_data_frame: pd.DataFrame,
         key_columns: Sequence[str],
     ) -> pd.DataFrame:
-        samples = reader.samples_list()
-        sample_rows = [
-            {
-                "sample_id": sample.sample_id,
-                **{
-                    column_name: sample.key_values.get(column_name)
-                    for column_name in key_columns
-                },
-                "sample_idx": sample.sample_idx,
-                "source_run_id": sample.source_run_id,
-                "created_at": sample.created_at,
-                "payload_json": compact_json(sample.payload),
-                "metadata_json": compact_json(sample.metadata),
-            }
-            for sample in samples
-        ]
-        sample_frame = pd.DataFrame.from_records(sample_rows)
         sample_columns = [
             "sample_id",
             *key_columns,
@@ -153,54 +128,30 @@ def _():
             "payload_json",
             "metadata_json",
         ]
-        if sample_frame.empty:
+        if pool_data_frame.empty:
             return empty_frame(sample_columns)
-
-        sample_frame = sample_frame.loc[:, sample_columns]
+        frame = pool_data_frame.loc[pool_data_frame["sample_id"].notna()].copy()
+        if frame.empty:
+            return empty_frame(sample_columns)
+        frame["source_run_id"] = frame.get("sample_source_run_id", "")
+        frame["created_at"] = frame.get("sample_created_at", pd.NaT)
+        frame["payload_json"] = frame.get(
+            "result_payload_json", pd.Series(dtype=object)
+        ).map(compact_json)
+        frame["metadata_json"] = frame.get(
+            "sample_metadata_json", pd.Series(dtype=object)
+        ).map(compact_json)
         return sort_frame(
-            sample_frame,
+            frame.loc[:, sample_columns],
             by=[*key_columns, "sample_idx", "created_at"],
             ascending=[*([True] * len(key_columns)), True, True],
         )
 
 
-    def load_pending_frames(
-        *,
-        reader: PoolReader,
+    def _pending_frames_from_raw(
+        pending_frame: pd.DataFrame,
         key_columns: Sequence[str],
     ) -> dict[str, pd.DataFrame]:
-        all_pending = reader.pending_list(
-            status=[
-                PendingStatus.pending,
-                PendingStatus.leased,
-                PendingStatus.promoted,
-                PendingStatus.failed,
-            ]
-        )
-
-        pending_rows = [
-            {
-                "pending_id": pending.pending_id,
-                **{
-                    column_name: pending.key_values.get(column_name)
-                    for column_name in key_columns
-                },
-                "sample_idx": pending.sample_idx,
-                "priority": pending.priority,
-                "status": pending.status.value,
-                "worker_id": pending.worker_id,
-                "lease_expires_at": pending.lease_expires_at,
-                "attempt_count": pending.attempt_count,
-                "source_run_id": pending.source_run_id,
-                "created_at": pending.created_at,
-                "payload_json": compact_json(pending.payload),
-                "metadata_json": compact_json(pending.metadata),
-                "fail_reason": pending.metadata.get("fail_reason", ""),
-                "llm_config_json": compact_json(pending.payload.get("llm_config")),
-                "prompt_json": compact_json(pending.payload.get("prompt")),
-            }
-            for pending in all_pending
-        ]
         pending_columns = [
             "pending_id",
             *key_columns,
@@ -238,8 +189,6 @@ def _():
             "payload_json",
             "metadata_json",
         ]
-
-        pending_frame = pd.DataFrame.from_records(pending_rows)
         if pending_frame.empty:
             return {
                 "pending_frame": empty_frame(pending_columns),
@@ -247,17 +196,33 @@ def _():
                 "provenance_frame": empty_frame(provenance_columns),
             }
 
-        pending_frame = pending_frame.loc[:, pending_columns]
-        pending_frame = pending_frame.loc[
-            pending_frame["status"].isin(
-                [PendingStatus.pending.value, PendingStatus.leased.value]
-            )
+        frame = pending_frame.copy()
+        metadata = frame["metadata_json"].map(
+            lambda value: value if isinstance(value, dict) else {}
+        )
+        payload = frame["payload_json"].map(
+            lambda value: value if isinstance(value, dict) else {}
+        )
+        frame["fail_reason"] = metadata.map(
+            lambda value: value.get("fail_reason", "")
+        )
+        frame["llm_config_json"] = payload.map(
+            lambda value: compact_json(value.get("llm_config"))
+        )
+        frame["prompt_json"] = payload.map(
+            lambda value: compact_json(value.get("prompt"))
+        )
+        frame["payload_json"] = frame["payload_json"].map(compact_json)
+        frame["metadata_json"] = frame["metadata_json"].map(compact_json)
+
+        open_frame = frame.loc[
+            frame["status"].isin(["pending", "leased"]), pending_columns
         ]
-        if pending_frame.empty:
-            pending_frame = empty_frame(pending_columns)
+        if open_frame.empty:
+            open_frame = empty_frame(pending_columns)
         else:
-            pending_frame = sort_frame(
-                pending_frame,
+            open_frame = sort_frame(
+                open_frame,
                 by=[
                     "status",
                     "priority",
@@ -265,72 +230,29 @@ def _():
                     *key_columns,
                     "sample_idx",
                 ],
-                ascending=[
-                    True,
-                    False,
-                    True,
-                    *([True] * len(key_columns)),
-                    True,
-                ],
+                ascending=[True, False, True, *([True] * len(key_columns)), True],
             )
 
-        failure_frame = pd.DataFrame.from_records(pending_rows)
-        failure_frame = failure_frame.loc[
-            failure_frame["status"] == PendingStatus.failed.value
-        ]
+        failure_frame = frame.loc[frame["status"] == "failed", failure_columns]
         if failure_frame.empty:
             failure_frame = empty_frame(failure_columns)
         else:
-            failure_frame = failure_frame.loc[:, failure_columns]
             failure_frame = sort_frame(
                 failure_frame,
                 by=["created_at", *key_columns, "sample_idx"],
                 ascending=[False, *([True] * len(key_columns)), True],
             )
 
-        provenance_frame = pd.DataFrame.from_records(pending_rows)
-        provenance_frame = provenance_frame.loc[:, provenance_columns]
         provenance_frame = sort_frame(
-            provenance_frame,
+            frame.loc[:, provenance_columns],
             by=[*key_columns, "sample_idx", "created_at"],
             ascending=[*([True] * len(key_columns)), True, True],
         )
-
         return {
-            "pending_frame": pending_frame,
+            "pending_frame": open_frame,
             "failure_frame": failure_frame,
             "provenance_frame": provenance_frame,
         }
-
-
-    def load_metadata_frame(*, reader: PoolReader) -> pd.DataFrame:
-        metadata_entries = reader.metadata_prefix("")
-        metadata_rows = [
-            {
-                "key": key,
-                "category": metadata_category(key),
-                "value_json": compact_json(value),
-            }
-            for key, value in metadata_entries.items()
-        ]
-        metadata_frame = pd.DataFrame.from_records(metadata_rows)
-        metadata_columns = ["key", "category", "value_json"]
-        if metadata_frame.empty:
-            return empty_frame(metadata_columns)
-
-        metadata_frame = metadata_frame.loc[:, metadata_columns]
-        return sort_frame(
-            metadata_frame,
-            by=["category", "key"],
-            ascending=[True, True],
-        )
-
-
-    def load_claims_and_call_stats_frames(
-        *,
-        reader: PoolReader,
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        return reader.claims_df(), reader.call_stats_df()
 
 
     CacheGetter = Callable[[], dict[str, Any]]
@@ -341,6 +263,40 @@ def _():
         set_cache(lambda c: {**c, **updates})
 
 
+    def ensure_pool_data(
+        *,
+        project_name: str,
+        pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
+    ) -> dict[str, Any]:
+        cache = get_cache()
+        if "pool_data" in cache:
+            return cache["pool_data"]
+        with PoolReader.open(project_name, pool_name) as reader:
+            key_columns = list(reader.schema.key_column_names)
+            pool_data_frame = reader.pool_data_df()
+            pending_frame = reader.pending_df()
+            pool_data = {
+                "pool_inspection": reader.inspect(),
+                "key_columns": key_columns,
+                "pool_data_frame": pool_data_frame,
+                "sample_frame": _sample_frame_from_pool_data(
+                    pool_data_frame,
+                    key_columns,
+                ),
+                "pending_frames": _pending_frames_from_raw(
+                    pending_frame,
+                    key_columns,
+                ),
+                "metadata_frame": _metadata_frame_from_raw(reader.metadata_df()),
+                "claims_frame": reader.claims_df(),
+                "call_stats_frame": pool_data_frame,
+            }
+        _cache_put(set_cache, pool_data=pool_data)
+        return pool_data
+
+
     def ensure_pool_inspection(
         *,
         project_name: str,
@@ -348,15 +304,12 @@ def _():
         get_cache: CacheGetter,
         set_cache: CacheSetter,
     ) -> Any:
-        cache = get_cache()
-        if "pool_inspection" in cache:
-            return cache["pool_inspection"]
-        inspection = load_pool_inspection(
+        return ensure_pool_data(
             project_name=project_name,
             pool_name=pool_name,
-        )
-        _cache_put(set_cache, pool_inspection=inspection)
-        return inspection
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )["pool_inspection"]
 
 
     def ensure_sample_frame(
@@ -366,20 +319,13 @@ def _():
         get_cache: CacheGetter,
         set_cache: CacheSetter,
     ) -> tuple[pd.DataFrame, list[str]]:
-        cache = get_cache()
-        if "sample_frame" in cache and "key_columns" in cache:
-            return cache["sample_frame"], cache["key_columns"]
-        with pool_reader_context(
+        pool_data = ensure_pool_data(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (reader, key_columns):
-            sample_frame = load_sample_frame(
-                reader=reader,
-                key_columns=key_columns,
-            )
-            kc = list(key_columns)
-        _cache_put(set_cache, sample_frame=sample_frame, key_columns=kc)
-        return sample_frame, kc
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
+        return pool_data["sample_frame"], pool_data["key_columns"]
 
 
     def ensure_pending_frames(
@@ -389,20 +335,13 @@ def _():
         get_cache: CacheGetter,
         set_cache: CacheSetter,
     ) -> tuple[dict[str, pd.DataFrame], list[str]]:
-        cache = get_cache()
-        if "pending_frames" in cache and "key_columns" in cache:
-            return cache["pending_frames"], cache["key_columns"]
-        with pool_reader_context(
+        pool_data = ensure_pool_data(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (reader, key_columns):
-            pending_frames = load_pending_frames(
-                reader=reader,
-                key_columns=key_columns,
-            )
-            kc = list(key_columns)
-        _cache_put(set_cache, pending_frames=pending_frames, key_columns=kc)
-        return pending_frames, kc
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
+        return pool_data["pending_frames"], pool_data["key_columns"]
 
 
     def ensure_metadata_frame(
@@ -412,55 +351,55 @@ def _():
         get_cache: CacheGetter,
         set_cache: CacheSetter,
     ) -> tuple[pd.DataFrame, list[str]]:
-        cache = get_cache()
-        if "metadata_frame" in cache and "key_columns" in cache:
-            return cache["metadata_frame"], cache["key_columns"]
-        with pool_reader_context(
+        pool_data = ensure_pool_data(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (reader, key_columns):
-            metadata_frame = load_metadata_frame(reader=reader)
-            kc = list(key_columns)
-        _cache_put(set_cache, metadata_frame=metadata_frame, key_columns=kc)
-        return metadata_frame, kc
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
+        return pool_data["metadata_frame"], pool_data["key_columns"]
 
 
-    def ensure_claims_and_call_stats(
+    def ensure_call_stats_frame(
         *,
         project_name: str,
         pool_name: str,
         get_cache: CacheGetter,
         set_cache: CacheSetter,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
-        cache = get_cache()
-        if (
-            "claims_frame" in cache
-            and "call_stats_frame" in cache
-            and "key_columns" in cache
-        ):
-            return (
-                cache["claims_frame"],
-                cache["call_stats_frame"],
-                cache["key_columns"],
-            )
-        with pool_reader_context(
+    ) -> tuple[pd.DataFrame, list[str]]:
+        pool_data = ensure_pool_data(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (reader, key_columns):
-            claims_frame, call_stats_frame = load_claims_and_call_stats_frames(
-                reader=reader,
-            )
-            kc = list(key_columns)
-        _cache_put(
-            set_cache,
-            claims_frame=claims_frame,
-            call_stats_frame=call_stats_frame,
-            key_columns=kc,
+            get_cache=get_cache,
+            set_cache=set_cache,
         )
-        return claims_frame, call_stats_frame, kc
+        frame = pool_data["call_stats_frame"].copy()
+        if (
+            "call_stats_created_at" in frame.columns
+            and "created_at" not in frame.columns
+        ):
+            frame["created_at"] = frame["call_stats_created_at"]
+        return frame, pool_data["key_columns"]
+
+
+    def ensure_claims_frame(
+        *,
+        project_name: str,
+        pool_name: str,
+        get_cache: CacheGetter,
+        set_cache: CacheSetter,
+    ) -> tuple[pd.DataFrame, list[str]]:
+        pool_data = ensure_pool_data(
+            project_name=project_name,
+            pool_name=pool_name,
+            get_cache=get_cache,
+            set_cache=set_cache,
+        )
+        return pool_data["claims_frame"], pool_data["key_columns"]
 
     return (
-        ensure_claims_and_call_stats,
+        ensure_call_stats_frame,
+        ensure_claims_frame,
         ensure_metadata_frame,
         ensure_pending_frames,
         ensure_pool_inspection,
@@ -735,7 +674,7 @@ def _(selected_pool):
 
 @app.cell(hide_code=True)
 def _(
-    ensure_claims_and_call_stats,
+    ensure_call_stats_frame,
     ensure_pool_inspection,
     get_raw_frames,
     get_section_results,
@@ -768,7 +707,7 @@ def _(
             get_cache=get_cache,
             set_cache=set_cache,
         )
-        _, call_stats_frame, key_columns = ensure_claims_and_call_stats(
+        call_stats_frame, key_columns = ensure_call_stats_frame(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,
@@ -1644,10 +1583,6 @@ def _(
     set_raw_frames,
     set_section_results,
 ):
-    def hash_short(s: str, n: int = 6) -> str:
-        return hashlib.sha256(s.encode("utf-8")).hexdigest()[:n]
-
-
     def build_provenance_data(
         *,
         project_name: str,
@@ -1858,7 +1793,7 @@ def _(
 @app.cell(hide_code=True)
 def _(
     call_stats_run_button,
-    ensure_claims_and_call_stats,
+    ensure_call_stats_frame,
     get_raw_frames,
     get_section_results,
     selected_pool,
@@ -1872,7 +1807,7 @@ def _(
         get_cache,
         set_cache,
     ) -> dict[str, Any]:
-        _, _call_stats_frame, key_columns = ensure_claims_and_call_stats(
+        _call_stats_frame, key_columns = ensure_call_stats_frame(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,
@@ -2046,7 +1981,7 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
-    ensure_claims_and_call_stats,
+    ensure_call_stats_frame,
     get_raw_frames,
     get_section_results,
     selected_pool,
@@ -2061,7 +1996,7 @@ def _(
         get_cache,
         set_cache,
     ) -> dict[str, Any]:
-        _, _call_stats_frame, key_columns = ensure_claims_and_call_stats(
+        _call_stats_frame, key_columns = ensure_call_stats_frame(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,
@@ -2145,7 +2080,7 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
-    ensure_claims_and_call_stats,
+    ensure_claims_frame,
     ensure_sample_frame,
     get_raw_frames,
     get_section_results,
@@ -2167,7 +2102,7 @@ def _(
             get_cache=get_cache,
             set_cache=set_cache,
         )
-        _claims_frame, _, _ = ensure_claims_and_call_stats(
+        _claims_frame, _ = ensure_claims_frame(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,

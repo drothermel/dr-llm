@@ -20,7 +20,7 @@ def _(pool_name, project_name):
     with PoolReader.open(project_name, pool_name) as reader:
         _pool_status = reader.inspect()
         _pool_status_df = _pool_status.to_df()
-        call_stats_df = reader.call_stats_df()
+        pool_data_df = reader.pool_data_df()
 
     mo.vstack(
         [
@@ -34,15 +34,15 @@ def _(pool_name, project_name):
             ),
         ]
     )
-    return (call_stats_df,)
+    return (pool_data_df,)
 
 
 @app.cell(column=1, hide_code=True)
-def _(call_stats_df, pool_name):
+def _(pool_data_df, pool_name):
     mo.vstack(
         [
-            mo.md(f"### `{pool_name}` Call Stats"),
-            call_stats_df,
+            mo.md(f"### `{pool_name}` Pool Data"),
+            pool_data_df,
         ]
     )
     return

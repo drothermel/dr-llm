@@ -248,7 +248,6 @@ def test_pool_schema_to_df_uses_key_column_rows() -> None:
         {
             "pool_name": "modeltest",
             "key_columns": "dim_a:text, dim_b:integer",
-            "key_column_count": 2,
             "samples_table": "pool_modeltest_samples",
             "claims_table": "pool_modeltest_claims",
             "pending_table": "pool_modeltest_pending",
@@ -295,7 +294,6 @@ def test_pool_inspection_to_df_combines_nested_model_rows() -> None:
             "pending_total": 6,
             "in_flight": 5,
             "key_columns": "dim_a:text, dim_b:integer",
-            "key_column_count": 2,
             "samples_table": "pool_modeltest_samples",
             "claims_table": "pool_modeltest_claims",
             "pending_table": "pool_modeltest_pending",
