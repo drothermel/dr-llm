@@ -6,10 +6,11 @@ from enum import StrEnum
 from pydantic import (
     BaseModel,
     ConfigDict,
-    computed_field,
     field_validator,
     model_validator,
 )
+
+from dr_llm.pool.db.names import PoolTableType as _PoolTableType
 
 
 class ColumnType(StrEnum):
@@ -22,9 +23,15 @@ class ColumnType(StrEnum):
 _VALID_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
-class KeyColumn(BaseModel):
-    """A single key dimension in a pool schema."""
+def pool_table_name(pool_name: str, table_type: _PoolTableType) -> str:
+    return f"pool_{pool_name}_{table_type}"
 
+
+def pool_table_names(pool_name: str) -> list[str]:
+    return [pool_table_name(pool_name, table_type) for table_type in _PoolTableType]
+
+
+class KeyColumn(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
@@ -43,9 +50,7 @@ class KeyColumn(BaseModel):
 
 
 class PoolSchema(BaseModel):
-    """Consumer-declared pool schema defining key dimensions and table names."""
-
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     name: str
     key_columns: list[KeyColumn]
@@ -81,30 +86,11 @@ class PoolSchema(BaseModel):
             key_columns=[KeyColumn(name=axis_name) for axis_name in axis_names],
         )
 
-    @computed_field
-    @property
-    def samples_table(self) -> str:
-        return f"pool_{self.name}_samples"
+    def table_name(self, table_type: _PoolTableType) -> str:
+        return pool_table_name(self.name, table_type)
 
-    @computed_field
-    @property
-    def claims_table(self) -> str:
-        return f"pool_{self.name}_claims"
-
-    @computed_field
-    @property
-    def pending_table(self) -> str:
-        return f"pool_{self.name}_pending"
-
-    @computed_field
-    @property
-    def metadata_table(self) -> str:
-        return f"pool_{self.name}_metadata"
-
-    @computed_field
-    @property
-    def call_stats_table(self) -> str:
-        return f"pool_{self.name}_call_stats"
+    def table_names(self) -> list[str]:
+        return pool_table_names(self.name)
 
     @property
     def key_column_names(self) -> list[str]:

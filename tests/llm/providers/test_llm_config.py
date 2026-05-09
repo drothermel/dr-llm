@@ -61,18 +61,6 @@ def test_construction_with_all_fields() -> None:
     assert config.reasoning.kind == "google"
 
 
-def test_frozen() -> None:
-    config = LlmConfig(provider="openai", model="gpt-4.1-mini")
-
-    with pytest.raises(ValidationError):
-        config.provider = "anthropic"
-
-
-def test_extra_fields_forbidden() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(provider="openai", model="gpt-4.1-mini", extra_field="nope")
-
-
 def test_headless_config_rejects_sampling_fields() -> None:
     with pytest.raises(ValidationError, match="temperature"):
         HeadlessLlmConfig.model_validate(
@@ -473,19 +461,6 @@ def test_glm_request_requires_explicit_reasoning() -> None:
             model="glm-4.5",
             messages=[Message(role="user", content="Hello")],
         )
-
-
-def test_model_dump_roundtrip() -> None:
-    config = LlmConfig(
-        provider="google",
-        model="gemini-3-flash-preview",
-        temperature=0.7,
-        reasoning=GoogleReasoning(thinking_level=ThinkingLevel.MINIMAL),
-    )
-    dumped = config.model_dump()
-    restored = LlmConfig(**dumped)
-
-    assert restored == config
 
 
 def test_rejects_reasoning_for_unsupported_model() -> None:

@@ -117,7 +117,7 @@ def insert_keyed_samples(
     if len(rows) == 1:
         return execute_insert_count(
             runtime,
-            stmt.values(**rows[0]),
+            stmt.values(rows[0]),
             ignore_conflicts=ignore_conflicts,
         )
     return execute_insert_count(

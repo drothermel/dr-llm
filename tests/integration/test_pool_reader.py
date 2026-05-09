@@ -12,9 +12,10 @@ from psycopg import sql
 from sqlalchemy import text
 
 from dr_llm.errors import TransientPersistenceError
+from dr_llm.pool.db.names import PoolTableType
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
-from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
+from dr_llm.pool.errors import PoolNotFoundError
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
@@ -31,10 +32,11 @@ _READER_SCHEMA = PoolSchema(
 )
 
 _READER_TABLES = (
-    _READER_SCHEMA.metadata_table,
-    _READER_SCHEMA.claims_table,
-    _READER_SCHEMA.pending_table,
-    _READER_SCHEMA.samples_table,
+    _READER_SCHEMA.table_name(PoolTableType.METADATA),
+    _READER_SCHEMA.table_name(PoolTableType.CALL_STATS),
+    _READER_SCHEMA.table_name(PoolTableType.CLAIMS),
+    _READER_SCHEMA.table_name(PoolTableType.PENDING),
+    _READER_SCHEMA.table_name(PoolTableType.SAMPLES),
 )
 
 
@@ -56,10 +58,11 @@ def _get_dsn() -> str:
 def _drop_pool_tables(dsn: str, schema: PoolSchema) -> None:
     with psycopg.connect(dsn) as conn:
         for tbl in (
-            schema.metadata_table,
-            schema.claims_table,
-            schema.pending_table,
-            schema.samples_table,
+            schema.table_name(PoolTableType.METADATA),
+            schema.table_name(PoolTableType.CALL_STATS),
+            schema.table_name(PoolTableType.CLAIMS),
+            schema.table_name(PoolTableType.PENDING),
+            schema.table_name(PoolTableType.SAMPLES),
         ):
             conn.execute(
                 sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
@@ -368,50 +371,6 @@ def test_load_schema_from_db_raises_when_pool_missing() -> None:
         with pytest.raises(PoolNotFoundError):
             _load_schema_from_db(runtime, f"never_created_{uuid4().hex[:8]}")
     finally:
-        runtime.close()
-
-
-@pytest.mark.integration
-def test_load_schema_from_db_raises_when_schema_row_missing() -> None:
-    """Migration path: pool exists but _schema row is gone (pre-feature pool)."""
-    dsn = _get_dsn()
-    schema = _isolated_pool_schema()
-    runtime = DbRuntime(
-        DbConfig(
-            dsn=dsn,
-            min_pool_size=1,
-            max_pool_size=2,
-            application_name="pool_reader_tests_migration",
-        )
-    )
-    try:
-        store = PoolStore(schema, runtime)
-        store.ensure_schema()
-
-        # Simulate a pool created before the persist-schema feature.
-        with psycopg.connect(dsn) as conn:
-            conn.execute(
-                sql.SQL("DELETE FROM {} WHERE key = %s").format(
-                    sql.Identifier("public", schema.metadata_table)
-                ),
-                (SCHEMA_METADATA_KEY,),
-            )
-            conn.commit()
-
-        from dr_llm.pool.reader import _load_schema_from_db
-
-        with pytest.raises(PoolSchemaNotPersistedError):
-            _load_schema_from_db(runtime, schema.name)
-
-        # Recovery: from_runtime with explicit schema works without backfilling.
-        reader = PoolReader.from_runtime(runtime, schema=schema)
-        assert reader.schema == schema
-
-        # Re-running ensure_schema backfills the _schema row.
-        store.ensure_schema()
-        assert _load_schema_from_db(runtime, schema.name) == schema
-    finally:
-        _drop_pool_tables(dsn, schema)
         runtime.close()
 
 

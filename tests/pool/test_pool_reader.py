@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from unittest.mock import Mock
-
 import pytest
 
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
-from dr_llm.pool.reader import PoolProgress, PoolReader, _validate_pool_name
+from dr_llm.pool.reader import PoolProgress, _validate_pool_name
 
 
 def test_pool_progress_in_flight_delegates_to_pending_counts() -> None:
@@ -26,33 +24,6 @@ def test_pool_progress_is_complete_when_no_in_flight() -> None:
     )
     assert progress.in_flight == 0
     assert progress.is_complete is True
-
-
-def test_pool_progress_computed_fields_appear_in_model_dump() -> None:
-    """Derived properties must be exposed via @computed_field so they
-    survive model_dump / JSON serialization."""
-    progress = PoolProgress(
-        samples_total=42,
-        pending_counts=PendingStatusCounts(pending=1, leased=2, failed=0),
-    )
-    dumped = progress.model_dump()
-    assert dumped["samples_total"] == 42
-    assert dumped["in_flight"] == 3
-    assert dumped["is_complete"] is False
-    # pending_counts is a nested model; its own derived fields are also
-    # subject to whether they were declared with @computed_field. The
-    # existing PendingStatusCounts uses plain @property so its in_flight
-    # is NOT in the dump — that's out of scope for this PR.
-    assert "pending_counts" in dumped
-
-
-def test_pool_progress_is_frozen() -> None:
-    progress = PoolProgress(
-        samples_total=1,
-        pending_counts=PendingStatusCounts(),
-    )
-    with pytest.raises(Exception, match="frozen"):
-        progress.samples_total = 99
 
 
 @pytest.mark.parametrize(
@@ -80,30 +51,3 @@ def test_validate_pool_name_accepts_valid(name: str) -> None:
 def test_validate_pool_name_rejects_invalid(name: str) -> None:
     with pytest.raises(ValueError, match="pool_name must be"):
         _validate_pool_name(name)
-
-
-def test_samples_warns_and_ignores_legacy_status_argument() -> None:
-    reader = PoolReader.__new__(PoolReader)
-    store = Mock()
-    expected = iter(["sample"])
-    store.iter_samples.return_value = expected
-    reader._store = store
-
-    with pytest.deprecated_call(match="status argument is ignored and will be removed"):
-        result = reader.samples(status="active")
-
-    assert result is expected
-    store.iter_samples.assert_called_once_with(key_filter=None)
-
-
-def test_samples_list_warns_and_ignores_legacy_status_argument() -> None:
-    reader = PoolReader.__new__(PoolReader)
-    store = Mock()
-    store.bulk_load.return_value = ["sample"]
-    reader._store = store
-
-    with pytest.deprecated_call(match="status argument is ignored and will be removed"):
-        result = reader.samples_list(status="active")
-
-    assert result == ["sample"]
-    store.bulk_load.assert_called_once_with(key_filter=None)

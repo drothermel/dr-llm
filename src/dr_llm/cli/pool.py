@@ -6,9 +6,13 @@ import typer
 from pydantic import ValidationError
 
 from dr_llm.cli.common import handle_cli_errors
-from dr_llm.pool.admin_service import delete_pool, delete_pools_by_token
+from dr_llm.pool.admin.deletion import (
+    DeletePoolRequest,
+    DeletePoolsByTokenRequest,
+    delete_pool,
+    delete_pools_by_token,
+)
 from dr_llm.pool.errors import PoolError
-from dr_llm.pool.models import DeletePoolRequest, DeletePoolsByTokenRequest
 from dr_llm.project.errors import ProjectError
 
 pool_app = typer.Typer(help="Manage dr-llm pools")

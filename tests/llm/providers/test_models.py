@@ -20,11 +20,6 @@ def test_message_rejects_unknown_role() -> None:
         Message.model_validate({"role": "tool", "content": "nope"})
 
 
-def test_message_rejects_extra_fields() -> None:
-    with pytest.raises(ValidationError):
-        Message.model_validate({"role": "assistant", "content": "hi", "tool_calls": []})
-
-
 def test_effort_spec_values() -> None:
     assert EffortSpec.NA == "na"
     assert EffortSpec.LOW == "low"

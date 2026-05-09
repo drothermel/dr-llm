@@ -197,7 +197,7 @@ finally:
     controller.join()
 
 # 7. Acquire samples (no-replacement within a run)
-from dr_llm.pool.models import AcquireQuery
+from dr_llm.pool.acquisition import AcquireQuery
 result = store.acquire(AcquireQuery(
     run_id="eval_run_1",
     key_values={"llm_config": "gpt-4.1-mini", "prompt": "math"},
@@ -248,24 +248,23 @@ explicit schema, or re-run `ensure_schema()` once to backfill the row.
 ### Migrating existing pools to `call_stats`
 
 New pools get `pool_{name}_call_stats` automatically when `store.ensure_schema()`
-runs. Existing pools created before this change need a one-time migration.
+runs. Existing pools created before this change can create the missing table by
+opening the pool with its schema and running `ensure_schema()` once.
 
-```bash
-# inspect what the migration would do
-uv run python scripts/migrate-call-stats.py --dry-run
+```python
+from dr_llm.pool.db import DbConfig, DbRuntime, PoolSchema
+from dr_llm.pool.pool_store import PoolStore
 
-# create missing call_stats tables for all pools
-uv run python scripts/migrate-call-stats.py
-
-# create + backfill historical stats for one pool
-uv run python scripts/migrate-call-stats.py --pool my_eval --backfill
+runtime = DbRuntime(DbConfig())
+schema = PoolSchema.from_axis_names("my_eval", ["llm_config", "prompt"])
+store = PoolStore(schema, runtime)
+store.ensure_schema()
+runtime.close()
 ```
 
-Use `--backfill` when historical `pool_{name}_samples.payload_json` rows already
-contain response metrics like `latency_ms`, `usage`, `cost`, and
-`finish_reason`, and you want those copied into `call_stats`. If you only need
-the new table for future promotions, run the script without `--backfill`. Pass
-`--dsn` to target a database other than `DR_LLM_DATABASE_URL`.
+This creates any missing runtime-owned pool tables and indexes while preserving
+existing table names and rows. Historical response metrics are not backfilled
+automatically; future pending promotions write `call_stats` rows.
 
 ## CLI Reference
 

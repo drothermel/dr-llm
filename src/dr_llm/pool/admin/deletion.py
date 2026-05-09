@@ -1,213 +1,155 @@
 from __future__ import annotations
 
-import re
-from datetime import datetime, timedelta
-from typing import Final
+import logging
+from enum import StrEnum
+from typing import Any, Final
 
-from sqlalchemy import Column, DateTime, MetaData, Table, Text, select, text
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from dr_llm.datetime_utils import UTC, normalize_utc
-from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import KeyColumn, PoolSchema
-from dr_llm.pool.models import (
-    CreatePoolRequest,
-    DeletePoolRequest,
-    DeletePoolsByTokenRequest,
-    DeletePoolsByTokenResult,
-    DeletePoolsByTokenStatus,
-    PoolCreationBlockReason,
-    PoolCreationReadiness,
-    PoolCreationViolation,
-    PoolDeletionBlockReason,
-    PoolDeletionReadiness,
-    PoolDeletionResult,
-    PoolDeletionStatus,
-    PoolDeletionViolation,
-    PoolInspection,
-    PoolInspectionRequest,
-)
-from dr_llm.pool.errors import PoolError
-from dr_llm.pool.pool_store import PoolStore, SCHEMA_METADATA_KEY
-from dr_llm.pool.reader import PoolReader, _load_schema_from_db as load_schema_from_db
+from dr_llm.pool.admin.discovery import discover_pools, pool_name_has_token_match
+from dr_llm.pool.db import DbConfig, DbRuntime, PendingColumn, PoolTableType
+from dr_llm.pool.pending.pending_status import PendingStatus
+from dr_llm.pool.db.schema import _VALID_NAME_RE, pool_table_name, pool_table_names
 from dr_llm.project.docker_psql import validate_pg_identifier
-from dr_llm.project.errors import ProjectError, ProjectNotFoundError
 from dr_llm.project.project_info import ProjectInfo
-from dr_llm.project.project_service import maybe_get_project
 
-POOL_TABLE_RE = re.compile(r"^pool_(.+)_samples$")
-POOL_DISCOVERY_SQL = text(
-    "SELECT table_name FROM information_schema.tables "
-    "WHERE table_schema = 'public' "
-    r"AND table_name LIKE 'pool\_%\_samples' "
-    "ORDER BY table_name"
-)
-_POOL_TABLE_SUFFIXES: Final[tuple[str, ...]] = (
-    "samples",
-    "claims",
-    "pending",
-    "metadata",
-    "call_stats",
-)
-_IN_PROGRESS_PENDING_STATUSES: Final[tuple[str, ...]] = ("pending", "leased")
-_DEFAULT_TESTISH_TOKENS: Final[frozenset[str]] = frozenset(
-    {"test", "tst", "smoke", "demo"}
+logger = logging.getLogger(__name__)
+
+_IN_PROGRESS_PENDING_STATUSES: Final[tuple[str, ...]] = (
+    PendingStatus.pending.value,
+    PendingStatus.leased.value,
 )
 
 
-def discover_pools(dsn: str) -> list[str]:
-    runtime = DbRuntime(DbConfig(dsn=dsn))
-    try:
-        return discover_pools_from_runtime(runtime)
-    finally:
-        runtime.close()
+class DeletePoolRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    project_name: str
+    pool_name: str
+
+    @field_validator("project_name", "pool_name")
+    @classmethod
+    def _normalize_names(cls, value: str) -> str:
+        return value.strip()
+
+    @computed_field
+    @property
+    def pool_name_is_valid(self) -> bool:
+        return bool(_VALID_NAME_RE.match(self.pool_name))
 
 
-def discover_pools_from_runtime(runtime: DbRuntime) -> list[str]:
-    with runtime.connect() as conn:
-        rows = conn.execute(POOL_DISCOVERY_SQL).fetchall()
-    return [
-        match.group(1)
-        for (table_name,) in rows
-        if (match := POOL_TABLE_RE.match(table_name))
-    ]
+class PoolDeletionBlockReason(StrEnum):
+    invalid_pool_name = "invalid_pool_name"
+    project_not_found = "project_not_found"
+    project_not_running = "project_not_running"
+    pool_not_found = "pool_not_found"
 
 
-def inspect_pool(request: PoolInspectionRequest) -> PoolInspection:
-    project = maybe_get_project(request.project_name)
-    if project is None:
-        raise ProjectNotFoundError(f"Project {request.project_name!r} not found")
-    return _inspect_pool_for_project(project, request.pool_name)
+class PoolDeletionViolation(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    reason: PoolDeletionBlockReason
+    message: str
+    project_name: str | None = None
+    pool_name: str | None = None
 
 
-def assess_pool_creation(
-    request: CreatePoolRequest,
-    *,
-    max_pools_per_project: int = 5,
-    cooldown_seconds: int = 60,
-) -> PoolCreationReadiness:
-    violations = _request_violations(request)
-    project = maybe_get_project(request.project_name)
-    if project is None:
-        violations.append(
-            PoolCreationViolation(
-                reason=PoolCreationBlockReason.project_not_found,
-                message=f"Project {request.project_name!r} not found",
-                project_name=request.project_name,
-                pool_name=request.pool_name,
-            )
-        )
-        return PoolCreationReadiness(request=request, violations=violations)
+class PoolDeletionReadiness(BaseModel):
+    model_config = ConfigDict(frozen=True)
 
-    if not project.running or project.dsn is None:
-        violations.append(
-            PoolCreationViolation(
-                reason=PoolCreationBlockReason.project_not_running,
-                message=(
-                    f"Project {project.name!r} must be running before creating a pool."
-                ),
-                project_name=project.name,
-                pool_name=request.pool_name,
-            )
-        )
-        return PoolCreationReadiness(
-            request=request,
-            project=project,
-            violations=violations,
-        )
+    request: DeletePoolRequest
+    project: ProjectInfo | None = None
+    existing_table_names: list[str] = Field(default_factory=list)
+    in_progress_pending_count: int = 0
+    violations: list[PoolDeletionViolation] = Field(default_factory=list)
 
-    pool_names = discover_pools(project.dsn)
-    existing_pools = [
-        _inspect_pool_for_project(project, pool_name) for pool_name in pool_names
-    ]
+    @computed_field
+    @property
+    def allowed(self) -> bool:
+        return not self.violations
 
-    if any(pool.name == request.pool_name for pool in existing_pools):
-        violations.append(
-            PoolCreationViolation(
-                reason=PoolCreationBlockReason.pool_already_exists,
-                message=f"Pool {request.pool_name!r} already exists in project {project.name!r}.",
-                project_name=project.name,
-                pool_name=request.pool_name,
-            )
-        )
-
-    if len(existing_pools) >= max_pools_per_project:
-        violations.append(
-            PoolCreationViolation(
-                reason=PoolCreationBlockReason.max_pools_reached,
-                message=(
-                    f"Project {project.name!r} already has {len(existing_pools)} pools; "
-                    f"max_pools_per_project={max_pools_per_project}."
-                ),
-                project_name=project.name,
-                pool_name=request.pool_name,
-            )
-        )
-
-    cutoff = datetime.now(UTC) - timedelta(seconds=cooldown_seconds)
-    recent_pools = [
-        pool.name
-        for pool in existing_pools
-        if (created_at := normalize_utc(pool.created_at)) is not None
-        and created_at >= cutoff
-    ]
-    if recent_pools:
-        violations.append(
-            PoolCreationViolation(
-                reason=PoolCreationBlockReason.cooldown_active,
-                message=(
-                    "Cannot create a new pool yet; recent pools are still within the "
-                    "cooldown window: " + ", ".join(recent_pools)
-                ),
-                project_name=project.name,
-                pool_name=request.pool_name,
-            )
-        )
-
-    return PoolCreationReadiness(
-        request=request,
-        project=project,
-        existing_pools=existing_pools,
-        violations=violations,
-    )
+    @computed_field
+    @property
+    def blocked_message(self) -> str | None:
+        if self.allowed:
+            return None
+        return "\n".join(violation.message for violation in self.violations)
 
 
-def create_pool(request: CreatePoolRequest) -> PoolInspection:
-    readiness = assess_pool_creation(request)
-    if not readiness.allowed:
-        if any(
-            violation.reason == PoolCreationBlockReason.project_not_found
-            for violation in readiness.violations
-        ):
-            raise ProjectNotFoundError(f"Project {request.project_name!r} not found")
-        assert readiness.blocked_message is not None
-        if any(
-            violation.reason == PoolCreationBlockReason.project_not_running
-            for violation in readiness.violations
-        ):
-            raise ProjectError(readiness.blocked_message)
-        raise PoolError(readiness.blocked_message)
+class PoolDeletionStatus(StrEnum):
+    deleted = "deleted"
+    blocked = "blocked"
+    failed = "failed"
+    cancelled = "cancelled"
 
-    assert readiness.project is not None
-    assert readiness.project.dsn is not None
 
-    schema = PoolSchema.from_axis_names(request.pool_name, request.key_axes)
-    runtime = DbRuntime(DbConfig(dsn=readiness.project.dsn))
-    try:
-        store = PoolStore(schema, runtime)
-        store.ensure_schema()
-    finally:
-        runtime.close()
+class PoolDeletionResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
 
-    return inspect_pool(
-        PoolInspectionRequest(
-            project_name=request.project_name,
-            pool_name=request.pool_name,
-        )
-    )
+    request: DeletePoolRequest
+    project: ProjectInfo | None = None
+    status: PoolDeletionStatus
+    existing_table_names: list[str] = Field(default_factory=list)
+    deleted_table_names: list[str] = Field(default_factory=list)
+    missing_table_names: list[str] = Field(default_factory=list)
+    remaining_table_names: list[str] = Field(default_factory=list)
+    pre_delete_counts: dict[str, int] = Field(default_factory=dict)
+    violations: list[PoolDeletionViolation] = Field(default_factory=list)
+    message: str | None = None
+
+    @computed_field
+    @property
+    def success(self) -> bool:
+        return self.status == PoolDeletionStatus.deleted
+
+
+class DeletePoolsByTokenRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    project_name: str
+    match_tokens: list[str] = Field(default_factory=list)
+    dry_run: bool = False
+
+    @field_validator("project_name")
+    @classmethod
+    def _normalize_project_name(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("match_tokens")
+    @classmethod
+    def _normalize_match_tokens(cls, value: list[str]) -> list[str]:
+        return [token.strip().lower() for token in value if token.strip()]
+
+
+class DeletePoolsByTokenStatus(StrEnum):
+    completed = "completed"
+    blocked = "blocked"
+    failed = "failed"
+
+
+class DeletePoolsByTokenResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    request: DeletePoolsByTokenRequest
+    project: Any | None = None
+    status: DeletePoolsByTokenStatus
+    discovered_pool_names: list[str] = Field(default_factory=list)
+    matched_pool_names: list[str] = Field(default_factory=list)
+    pool_results: list[PoolDeletionResult] = Field(default_factory=list)
+    dry_run: bool = False
+    message: str | None = None
+
+    @computed_field
+    @property
+    def success(self) -> bool:
+        return self.status == DeletePoolsByTokenStatus.completed
 
 
 def assess_pool_deletion(request: DeletePoolRequest) -> PoolDeletionReadiness:
+    from dr_llm.project.project_service import maybe_get_project
+
     violations = _pool_delete_request_violations(request)
     project = maybe_get_project(request.project_name)
     if project is None:
@@ -340,6 +282,11 @@ def delete_pool(request: DeletePoolRequest) -> PoolDeletionResult:
             message=message,
         )
     except Exception as exc:
+        logger.exception(
+            "Pool deletion failed (project=%r, pool=%r)",
+            request.project_name,
+            request.pool_name,
+        )
         return PoolDeletionResult(
             request=request,
             project=readiness.project,
@@ -357,6 +304,8 @@ def delete_pool(request: DeletePoolRequest) -> PoolDeletionResult:
 def delete_pools_by_token(
     request: DeletePoolsByTokenRequest,
 ) -> DeletePoolsByTokenResult:
+    from dr_llm.project.project_service import maybe_get_project
+
     project = maybe_get_project(request.project_name)
     if project is None:
         return DeletePoolsByTokenResult(
@@ -432,41 +381,6 @@ def delete_pools_by_token(
     )
 
 
-def _inspect_pool_for_project(project: ProjectInfo, pool_name: str) -> PoolInspection:
-    if project.dsn is None:
-        raise ProjectError(f"Project {project.name!r} has no DSN; start it first.")
-
-    runtime = DbRuntime(DbConfig(dsn=project.dsn))
-    try:
-        schema = load_schema_from_db(runtime, pool_name)
-        reader = PoolReader.from_runtime(runtime, schema=schema)
-        progress = reader.progress()
-        metadata_table = Table(
-            schema.metadata_table,
-            MetaData(),
-            Column("pool_name", Text, nullable=False),
-            Column("key", Text, nullable=False),
-            Column("created_at", DateTime(timezone=True)),
-        )
-        metadata_created_at_stmt = select(metadata_table.c.created_at).where(
-            metadata_table.c.pool_name == schema.name,
-            metadata_table.c.key == SCHEMA_METADATA_KEY,
-        )
-        with runtime.connect() as conn:
-            created_at = conn.execute(metadata_created_at_stmt).scalar_one_or_none()
-    finally:
-        runtime.close()
-
-    return PoolInspection(
-        project_name=project.name,
-        name=schema.name,
-        pool_schema=schema,
-        created_at=created_at,
-        sample_count=progress.samples_total,
-        pending_counts=progress.pending_counts,
-    )
-
-
 def _pool_delete_request_violations(
     request: DeletePoolRequest,
 ) -> list[PoolDeletionViolation]:
@@ -487,19 +401,7 @@ def _pool_delete_request_violations(
 
 
 def _pool_table_names(pool_name: str) -> list[str]:
-    return [f"pool_{pool_name}_{suffix}" for suffix in _POOL_TABLE_SUFFIXES]
-
-
-def pool_name_tokens(pool_name: str) -> list[str]:
-    return [token.lower() for token in pool_name.split("_") if token]
-
-
-def pool_name_has_token_match(
-    pool_name: str,
-    match_tokens: list[str] | None = None,
-) -> bool:
-    token_set = set(match_tokens or _DEFAULT_TESTISH_TOKENS)
-    return any(token in token_set for token in pool_name_tokens(pool_name))
+    return pool_table_names(pool_name)
 
 
 def _validated_pool_table_names(pool_name: str) -> list[str]:
@@ -529,7 +431,7 @@ def _existing_pool_table_names(runtime: DbRuntime, pool_name: str) -> list[str]:
 
 
 def _count_in_progress_pending_rows(runtime: DbRuntime, pool_name: str) -> int:
-    pending_table = f"pool_{pool_name}_pending"
+    pending_table = pool_table_name(pool_name, PoolTableType.PENDING)
     validate_pg_identifier(pending_table, "table name")
     existing_table_names = _existing_pool_table_names(runtime, pool_name)
     if pending_table not in existing_table_names:
@@ -546,7 +448,7 @@ def _count_in_progress_pending_rows(runtime: DbRuntime, pool_name: str) -> int:
             conn.execute(
                 text(
                     f'SELECT count(*) FROM "{pending_table}" '
-                    f"WHERE status IN ({placeholders})"
+                    f"WHERE {PendingColumn.STATUS.value} IN ({placeholders})"
                 ),
                 params,
             ).scalar_one()
@@ -556,44 +458,3 @@ def _count_in_progress_pending_rows(runtime: DbRuntime, pool_name: str) -> int:
 def _table_row_count(conn: Connection, table_name: str) -> int:
     validate_pg_identifier(table_name, "table name")
     return int(conn.execute(text(f'SELECT count(*) FROM "{table_name}"')).scalar_one())
-
-
-def _request_violations(request: CreatePoolRequest) -> list[PoolCreationViolation]:
-    violations: list[PoolCreationViolation] = []
-    if not request.pool_name_is_valid:
-        violations.append(
-            PoolCreationViolation(
-                reason=PoolCreationBlockReason.invalid_pool_name,
-                message=(
-                    "pool_name must be lowercase alphanumeric with underscores, "
-                    f"starting with a letter; got {request.pool_name!r}"
-                ),
-                project_name=request.project_name,
-                pool_name=request.pool_name,
-            )
-        )
-
-    if not request.has_key_axes:
-        violations.append(
-            PoolCreationViolation(
-                reason=PoolCreationBlockReason.missing_key_axes,
-                message="At least one key axis is required",
-                project_name=request.project_name,
-                pool_name=request.pool_name,
-            )
-        )
-        return violations
-
-    for axis in request.key_axes:
-        try:
-            KeyColumn(name=axis)
-        except ValueError as exc:
-            violations.append(
-                PoolCreationViolation(
-                    reason=PoolCreationBlockReason.invalid_key_axis,
-                    message=str(exc),
-                    project_name=request.project_name,
-                    pool_name=request.pool_name,
-                )
-            )
-    return violations

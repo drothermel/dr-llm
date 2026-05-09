@@ -14,11 +14,17 @@ from psycopg import sql
 
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.call_stats import CallStats
+from dr_llm.pool.db.names import (
+    IndexNamePrefix,
+    PoolIndexName,
+    PoolTableType,
+    pool_index_name,
+)
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
 from dr_llm.pool.key_filter import PoolKeyFilter
-from dr_llm.pool.models import AcquireQuery
+from dr_llm.pool.acquisition import AcquireQuery
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
 from dr_llm.pool.pool_sample import PoolSample
@@ -34,13 +40,7 @@ _TEST_SCHEMA = PoolSchema(
     ],
 )
 
-_POOL_TABLES = (
-    _TEST_SCHEMA.call_stats_table,
-    _TEST_SCHEMA.metadata_table,
-    _TEST_SCHEMA.claims_table,
-    _TEST_SCHEMA.pending_table,
-    _TEST_SCHEMA.samples_table,
-)
+_POOL_TABLES = tuple(reversed(_TEST_SCHEMA.table_names()))
 
 
 def _eq_filter(**key_values: object) -> PoolKeyFilter:
@@ -213,7 +213,11 @@ def test_bootstrap_backfills_missing_unique_indexes() -> None:
             )
         )
 
-        index_name = f"uq_{schema.samples_table}_cell"
+        index_name = pool_index_name(
+            IndexNamePrefix.UNIQUE,
+            schema.table_name(PoolTableType.SAMPLES),
+            PoolIndexName.CELL,
+        )
         with psycopg.connect(dsn) as conn:
             conn.execute(
                 sql.SQL("DROP INDEX IF EXISTS {}").format(sql.Identifier(index_name))
@@ -237,10 +241,11 @@ def test_bootstrap_backfills_missing_unique_indexes() -> None:
     finally:
         with psycopg.connect(dsn) as conn:
             for table_name in (
-                schema.metadata_table,
-                schema.claims_table,
-                schema.pending_table,
-                schema.samples_table,
+                schema.table_name(PoolTableType.METADATA),
+                schema.table_name(PoolTableType.CALL_STATS),
+                schema.table_name(PoolTableType.CLAIMS),
+                schema.table_name(PoolTableType.PENDING),
+                schema.table_name(PoolTableType.SAMPLES),
             ):
                 conn.execute(
                     sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
@@ -1060,7 +1065,7 @@ def test_call_stats_table_created() -> None:
                 AND table_name = %s
             )
             """,
-            [_TEST_SCHEMA.call_stats_table],
+            [_TEST_SCHEMA.table_name(PoolTableType.CALL_STATS)],
         ).fetchone()
     assert row is not None
     assert row[0] is True
@@ -1097,7 +1102,11 @@ def test_insert_call_stats(pool_store: PoolStore) -> None:
                 "SELECT latency_ms, total_cost_usd, prompt_tokens, completion_tokens, "
                 "reasoning_tokens, total_tokens, attempt_count, finish_reason, COUNT(*) OVER () "
                 "FROM {} WHERE sample_id = %s"
-            ).format(sql.Identifier("public", _TEST_SCHEMA.call_stats_table)),
+            ).format(
+                sql.Identifier(
+                    "public", _TEST_SCHEMA.table_name(PoolTableType.CALL_STATS)
+                )
+            ),
             [sample_id],
         ).fetchone()
     assert row is not None
@@ -1165,7 +1174,11 @@ def test_call_stats_full_flow(pool_store: PoolStore) -> None:
                 "SELECT latency_ms, prompt_tokens, attempt_count, finish_reason, "
                 "reasoning_tokens, total_cost_usd "
                 "FROM {} WHERE sample_id = %s"
-            ).format(sql.Identifier("public", _TEST_SCHEMA.call_stats_table)),
+            ).format(
+                sql.Identifier(
+                    "public", _TEST_SCHEMA.table_name(PoolTableType.CALL_STATS)
+                )
+            ),
             [promoted.sample_id],
         ).fetchone()
     assert row is not None

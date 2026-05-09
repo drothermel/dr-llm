@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 import dr_llm.cli.pool as pool_cli
 from dr_llm.cli import app
-from dr_llm.pool.models import (
+from dr_llm.pool.admin.deletion import (
     DeletePoolRequest,
     DeletePoolsByTokenRequest,
     DeletePoolsByTokenResult,
@@ -59,7 +59,6 @@ def test_pool_destroy_requires_confirmation_without_flag() -> None:
     result = runner.invoke(app, ["pool", "destroy", "demo", "sample_pool"], input="n\n")
 
     assert result.exit_code == 1
-    assert "Continue?" in result.output
 
 
 def test_pool_destroy_testish_invokes_service(

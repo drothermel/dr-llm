@@ -4,7 +4,7 @@ import marimo as mo
 from dr_widget.inline import ActiveHtml
 
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
-from dr_llm.pool.models import PoolInspection
+from dr_llm.pool.admin.inspection import PoolInspection
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
 from dr_llm.ui import PieChart, PoolSimpleStatsPieCard
 

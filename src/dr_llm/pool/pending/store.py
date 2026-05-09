@@ -26,8 +26,14 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from dr_llm.pool.db.runtime import DbRuntime
-from dr_llm.pool.db.schema import PoolSchema
+from dr_llm.pool.db import (
+    DbRuntime,
+    PendingColumn,
+    PoolSchema,
+    PoolTables,
+    PoolTableType,
+    SampleColumn,
+)
 from dr_llm.pool.db.sql_helpers import (
     insert_keyed_samples,
     key_filter_clause,
@@ -35,8 +41,7 @@ from dr_llm.pool.db.sql_helpers import (
     stream_select_rows,
     validate_key_values,
 )
-from dr_llm.pool.db.tables import PoolTables
-from dr_llm.pool.models import InsertResult
+from dr_llm.pool.results import InsertResult
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import (
@@ -61,7 +66,7 @@ class PendingStore:
 
     @property
     def _pending(self) -> Table:
-        return self._tables.pending
+        return self._tables[PoolTableType.PENDING]
 
     def insert(self, sample: PendingSample, *, ignore_conflicts: bool = True) -> bool:
         result = self.insert_many([sample], ignore_conflicts=ignore_conflicts)
@@ -126,13 +131,15 @@ class PendingStore:
             update(p)
             .where(p.c.pending_id == locked.c.pending_id)
             .values(
-                status=PendingStatus.leased,
-                worker_id=worker_id,
-                lease_expires_at=func.now()
-                + func.make_interval(0, 0, 0, 0, 0, 0, lease_seconds),
-                attempt_count=p.c.attempt_count + 1,
+                {
+                    PendingColumn.STATUS: PendingStatus.leased,
+                    PendingColumn.WORKER_ID: worker_id,
+                    PendingColumn.LEASE_EXPIRES_AT: func.now()
+                    + func.make_interval(0, 0, 0, 0, 0, 0, lease_seconds),
+                    PendingColumn.ATTEMPT_COUNT: p.c.attempt_count + 1,
+                }
             )
-            .returning(*self._tables.pending_select_columns())
+            .returning(*self._tables.select_columns(PoolTableType.PENDING))
         )
 
         with self._runtime.begin() as conn:
@@ -208,15 +215,16 @@ class PendingStore:
             if payload is not None
             else locked.c.payload_json
         )
+        samples_table = self._tables[PoolTableType.SAMPLES]
         inserted = (
-            pg_insert(self._tables.samples)
+            pg_insert(samples_table)
             .from_select(
                 [
-                    "sample_id",
-                    "sample_idx",
-                    "payload_json",
-                    "source_run_id",
-                    "metadata_json",
+                    SampleColumn.SAMPLE_ID,
+                    SampleColumn.SAMPLE_IDX,
+                    SampleColumn.PAYLOAD_JSON,
+                    SampleColumn.SOURCE_RUN_ID,
+                    SampleColumn.METADATA_JSON,
                     *key_names,
                 ],
                 select(
@@ -229,7 +237,7 @@ class PendingStore:
                 ),
             )
             .on_conflict_do_nothing()
-            .returning(*self._tables.sample_select_columns())
+            .returning(*self._tables.select_columns(PoolTableType.SAMPLES))
             .cte("inserted")
         )
 
@@ -239,7 +247,7 @@ class PendingStore:
                 p.c.pending_id == pending_id,
                 exists(select(1).select_from(inserted)),
             )
-            .values(status=PendingStatus.promoted)
+            .values({PendingColumn.STATUS: PendingStatus.promoted})
             .returning(p.c.pending_id)
             .cte("promoted")
         )
@@ -250,7 +258,10 @@ class PendingStore:
         """Return the finalized sample row only when the promoted CTE fired."""
         return (
             select(
-                *[inserted.c[col.name] for col in self._tables.sample_select_columns()]
+                *[
+                    inserted.c[col.name]
+                    for col in self._tables.select_columns(PoolTableType.SAMPLES)
+                ]
             )
             .select_from(inserted)
             .where(exists(select(1).select_from(promoted)))
@@ -271,8 +282,12 @@ class PendingStore:
                 self._pending.c.status == PendingStatus.leased,
             )
             .values(
-                status=PendingStatus.failed,
-                metadata_json=self._pending.c.metadata_json.op("||")(metadata_patch),
+                {
+                    PendingColumn.STATUS: PendingStatus.failed,
+                    PendingColumn.METADATA_JSON: self._pending.c.metadata_json.op("||")(
+                        metadata_patch
+                    ),
+                }
             )
         )
         with self._runtime.begin() as conn:
@@ -293,9 +308,11 @@ class PendingStore:
                 self._pending.c.status == PendingStatus.leased,
             )
             .values(
-                status=PendingStatus.pending,
-                worker_id=None,
-                lease_expires_at=None,
+                {
+                    PendingColumn.STATUS: PendingStatus.pending,
+                    PendingColumn.WORKER_ID: None,
+                    PendingColumn.LEASE_EXPIRES_AT: None,
+                }
             )
         )
         with self._runtime.begin() as conn:
@@ -321,7 +338,13 @@ class PendingStore:
                 key_filter_clause(self._schema, self._pending, key_values),
                 self._pending.c.status == PendingStatus.pending,
             )
-            .values(priority=func.greatest(self._pending.c.priority, priority))
+            .values(
+                {
+                    PendingColumn.PRIORITY: func.greatest(
+                        self._pending.c.priority, priority
+                    )
+                }
+            )
         )
         with self._runtime.begin() as conn:
             result = conn.execute(stmt)
@@ -387,7 +410,7 @@ class PendingStore:
         update_one = (
             update(self._pending)
             .where(self._pending.c.pending_id == bindparam("b_pending_id"))
-            .values(priority=bindparam("b_priority"))
+            .values({PendingColumn.PRIORITY: bindparam("b_priority")})
         )
 
         rng = random.Random(seed)
@@ -441,7 +464,7 @@ class PendingStore:
             self._runtime,
             self._schema,
             self._pending,
-            self._tables.pending_select_columns(),
+            self._tables.select_columns(PoolTableType.PENDING),
             base_predicates=[self._pending.c.status.in_(statuses)],
             order_by=[
                 self._pending.c.priority.desc(),
@@ -485,11 +508,13 @@ class PendingStore:
             update(self._pending)
             .where(*predicates)
             .values(
-                status=PendingStatus.pending,
-                worker_id=None,
-                lease_expires_at=None,
-                attempt_count=0,
-                metadata_json=metadata_json,
+                {
+                    PendingColumn.STATUS: PendingStatus.pending,
+                    PendingColumn.WORKER_ID: None,
+                    PendingColumn.LEASE_EXPIRES_AT: None,
+                    PendingColumn.ATTEMPT_COUNT: 0,
+                    PendingColumn.METADATA_JSON: metadata_json,
+                }
             )
         )
         with self._runtime.begin() as conn:

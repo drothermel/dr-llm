@@ -19,8 +19,17 @@ from sqlalchemy import Column, MetaData, Table, Text, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import ProgrammingError
 
-from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import PoolSchema, _VALID_NAME_RE
+from dr_llm.pool.db import (
+    DbConfig,
+    DbRuntime,
+    MetadataColumn,
+    PoolSchema,
+    PoolTableType,
+)
+from dr_llm.pool.db.schema import (
+    _VALID_NAME_RE,
+    pool_table_name,
+)
 from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
@@ -82,7 +91,7 @@ def _load_schema_from_db(runtime: DbRuntime, pool_name: str) -> PoolSchema:
     """Load a persisted :class:`PoolSchema` from a pool's metadata table.
 
     Builds an ad-hoc :class:`Table` mirroring the fixed shape of pool
-    metadata tables (see :meth:`PoolTables._build_metadata_table`) so the
+    metadata tables (see :class:`PoolTableType.METADATA`) so the
     lookup works without already having a :class:`PoolSchema` in hand.
     Translates ``UndefinedTable`` errors into :class:`PoolNotFoundError`;
     a missing schema row into :class:`PoolSchemaNotPersistedError`.
@@ -91,11 +100,11 @@ def _load_schema_from_db(runtime: DbRuntime, pool_name: str) -> PoolSchema:
 
     ad_hoc = MetaData()
     table = Table(
-        f"pool_{pool_name}_metadata",
+        pool_table_name(pool_name, PoolTableType.METADATA),
         ad_hoc,
-        Column("pool_name", Text, nullable=False),
-        Column("key", Text, nullable=False),
-        Column("value_json", JSONB, nullable=False),
+        Column(MetadataColumn.POOL_NAME, Text, nullable=False),
+        Column(MetadataColumn.KEY, Text, nullable=False),
+        Column(MetadataColumn.VALUE_JSON, JSONB, nullable=False),
     )
     stmt = select(table.c.value_json).where(
         table.c.pool_name == pool_name,
