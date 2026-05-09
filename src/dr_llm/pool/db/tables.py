@@ -21,10 +21,13 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from dr_llm.pool.db.names import (
     CallStatsColumn,
     ClaimColumn,
+    IndexNamePrefix,
     MetadataColumn,
     PendingColumn,
+    PoolIndexName,
     PoolTableType,
     SampleColumn,
+    pool_index_name,
 )
 from dr_llm.pool.db.schema import ColumnType, PoolSchema
 
@@ -217,36 +220,43 @@ class PoolTables:
         pending_key_columns = self.key_columns(PoolTableType.PENDING)
 
         Index(
-            f"uq_{samples.name}_cell",
+            pool_index_name(IndexNamePrefix.UNIQUE, samples.name, PoolIndexName.CELL),
             *samples_key_columns,
-            samples.c.sample_idx,
+            samples.c[SampleColumn.SAMPLE_IDX],
             unique=True,
         )
         Index(
-            f"idx_{samples.name}_key",
+            pool_index_name(IndexNamePrefix.STANDARD, samples.name, PoolIndexName.KEY),
             *samples_key_columns,
         )
         Index(
-            f"uq_{claims.name}_run_sample",
-            claims.c.run_id,
-            claims.c.sample_id,
+            pool_index_name(
+                IndexNamePrefix.UNIQUE, claims.name, PoolIndexName.RUN_SAMPLE
+            ),
+            claims.c[ClaimColumn.RUN_ID],
+            claims.c[ClaimColumn.SAMPLE_ID],
             unique=True,
         )
-        Index(f"idx_{claims.name}_run", claims.c.run_id)
         Index(
-            f"uq_{pending.name}_cell",
+            pool_index_name(IndexNamePrefix.STANDARD, claims.name, PoolIndexName.RUN),
+            claims.c[ClaimColumn.RUN_ID],
+        )
+        Index(
+            pool_index_name(IndexNamePrefix.UNIQUE, pending.name, PoolIndexName.CELL),
             *pending_key_columns,
-            pending.c.sample_idx,
+            pending.c[PendingColumn.SAMPLE_IDX],
             unique=True,
         )
         Index(
-            f"idx_{pending.name}_status_priority",
-            pending.c.status,
-            pending.c.priority.desc(),
-            pending.c.created_at.asc(),
+            pool_index_name(
+                IndexNamePrefix.STANDARD, pending.name, PoolIndexName.STATUS_PRIORITY
+            ),
+            pending.c[PendingColumn.STATUS],
+            pending.c[PendingColumn.PRIORITY].desc(),
+            pending.c[PendingColumn.CREATED_AT].asc(),
         )
         Index(
-            f"idx_{pending.name}_key",
+            pool_index_name(IndexNamePrefix.STANDARD, pending.name, PoolIndexName.KEY),
             *pending_key_columns,
         )
 

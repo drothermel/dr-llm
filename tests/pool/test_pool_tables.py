@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.dialects.postgresql import JSONB
 
-from dr_llm.pool.db.names import PoolTableType
+from dr_llm.pool.db.names import (
+    IndexNamePrefix,
+    PoolIndexName,
+    PoolTableType,
+    pool_index_name,
+)
 from dr_llm.pool.db.schema import (
     ColumnType,
     KeyColumn,
@@ -59,7 +64,12 @@ def test_pool_tables_unique_index_includes_keys() -> None:
         str(index.name): [str(expr).split(".")[-1] for expr in index.expressions]
         for index in tables[PoolTableType.SAMPLES].indexes
     }
-    assert sample_indexes["uq_pool_test_samples_cell"] == [
+    index_name = pool_index_name(
+        IndexNamePrefix.UNIQUE,
+        tables[PoolTableType.SAMPLES].name,
+        PoolIndexName.CELL,
+    )
+    assert sample_indexes[index_name] == [
         "dim_a",
         "dim_b",
         "sample_idx",
@@ -151,6 +161,17 @@ def test_schema_table_names() -> None:
         "pool_test_metadata",
         "pool_test_call_stats",
     ]
+
+
+def test_pool_index_name() -> None:
+    assert (
+        pool_index_name(
+            IndexNamePrefix.UNIQUE,
+            "pool_test_samples",
+            PoolIndexName.CELL,
+        )
+        == "uq_pool_test_samples_cell"
+    )
 
 
 def test_schema_key_column_names() -> None:

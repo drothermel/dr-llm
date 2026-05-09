@@ -11,6 +11,25 @@ class PoolTableType(StrEnum):
     CALL_STATS = "call_stats"
 
 
+class IndexNamePrefix(StrEnum):
+    UNIQUE = "uq"
+    STANDARD = "idx"
+
+
+class PoolIndexName(StrEnum):
+    CELL = "cell"
+    KEY = "key"
+    RUN_SAMPLE = "run_sample"
+    RUN = "run"
+    STATUS_PRIORITY = "status_priority"
+
+
+def pool_index_name(
+    prefix: IndexNamePrefix, table_name: str, index_name: PoolIndexName
+) -> str:
+    return f"{prefix}_{table_name}_{index_name}"
+
+
 class SampleColumn(StrEnum):
     SAMPLE_ID = "sample_id"
     SAMPLE_IDX = "sample_idx"

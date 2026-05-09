@@ -14,7 +14,12 @@ from psycopg import sql
 
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.call_stats import CallStats
-from dr_llm.pool.db.names import PoolTableType
+from dr_llm.pool.db.names import (
+    IndexNamePrefix,
+    PoolIndexName,
+    PoolTableType,
+    pool_index_name,
+)
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
@@ -208,7 +213,11 @@ def test_bootstrap_backfills_missing_unique_indexes() -> None:
             )
         )
 
-        index_name = f"uq_{schema.table_name(PoolTableType.SAMPLES)}_cell"
+        index_name = pool_index_name(
+            IndexNamePrefix.UNIQUE,
+            schema.table_name(PoolTableType.SAMPLES),
+            PoolIndexName.CELL,
+        )
         with psycopg.connect(dsn) as conn:
             conn.execute(
                 sql.SQL("DROP INDEX IF EXISTS {}").format(sql.Identifier(index_name))
