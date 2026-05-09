@@ -116,20 +116,20 @@ class PoolTables:
                 SampleColumn.PAYLOAD_JSON,
                 JSONB,
                 nullable=False,
-                server_default=text(ColumnServerDefault.EMPTY_JSONB.value),
+                server_default=text(ColumnServerDefault.EMPTY_JSONB),
             ),
             Column(SampleColumn.SOURCE_RUN_ID, Text),
             Column(
                 SampleColumn.METADATA_JSON,
                 JSONB,
                 nullable=False,
-                server_default=text(ColumnServerDefault.EMPTY_JSONB.value),
+                server_default=text(ColumnServerDefault.EMPTY_JSONB),
             ),
             Column(
                 SampleColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text(ColumnServerDefault.NOW.value),
+                server_default=text(ColumnServerDefault.NOW),
             ),
         )
 
@@ -144,7 +144,7 @@ class PoolTables:
                 ClaimColumn.CONSUMER_TAG,
                 Text,
                 nullable=False,
-                server_default=text(ColumnServerDefault.EMPTY_TEXT.value),
+                server_default=text(ColumnServerDefault.EMPTY_TEXT),
             ),
             Column(ClaimColumn.SAMPLE_ID, Text, nullable=False),
             Column(ClaimColumn.CLAIM_IDX, Integer, nullable=False),
@@ -152,7 +152,7 @@ class PoolTables:
                 ClaimColumn.CLAIMED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text(ColumnServerDefault.NOW.value),
+                server_default=text(ColumnServerDefault.NOW),
             ),
         )
 
@@ -167,26 +167,26 @@ class PoolTables:
                 PendingColumn.PAYLOAD_JSON,
                 JSONB,
                 nullable=False,
-                server_default=text(ColumnServerDefault.EMPTY_JSONB.value),
+                server_default=text(ColumnServerDefault.EMPTY_JSONB),
             ),
             Column(PendingColumn.SOURCE_RUN_ID, Text),
             Column(
                 PendingColumn.METADATA_JSON,
                 JSONB,
                 nullable=False,
-                server_default=text(ColumnServerDefault.EMPTY_JSONB.value),
+                server_default=text(ColumnServerDefault.EMPTY_JSONB),
             ),
             Column(
                 PendingColumn.PRIORITY,
                 Integer,
                 nullable=False,
-                server_default=text(ColumnServerDefault.ZERO.value),
+                server_default=text(ColumnServerDefault.ZERO),
             ),
             Column(
                 PendingColumn.STATUS,
                 Text,
                 nullable=False,
-                server_default=text(ColumnServerDefault.PENDING_STATUS.value),
+                server_default=text(ColumnServerDefault.PENDING_STATUS),
             ),
             Column(PendingColumn.WORKER_ID, Text),
             Column(PendingColumn.LEASE_EXPIRES_AT, TIMESTAMP(timezone=True)),
@@ -194,13 +194,13 @@ class PoolTables:
                 PendingColumn.ATTEMPT_COUNT,
                 Integer,
                 nullable=False,
-                server_default=text(ColumnServerDefault.ZERO.value),
+                server_default=text(ColumnServerDefault.ZERO),
             ),
             Column(
                 PendingColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text(ColumnServerDefault.NOW.value),
+                server_default=text(ColumnServerDefault.NOW),
             ),
         )
 
@@ -250,13 +250,13 @@ class PoolTables:
                 MetadataColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text(ColumnServerDefault.NOW.value),
+                server_default=text(ColumnServerDefault.NOW),
             ),
             Column(
                 MetadataColumn.UPDATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text(ColumnServerDefault.NOW.value),
+                server_default=text(ColumnServerDefault.NOW),
             ),
             PrimaryKeyConstraint(MetadataColumn.POOL_NAME, MetadataColumn.KEY),
         )
@@ -276,14 +276,14 @@ class PoolTables:
                 CallStatsColumn.ATTEMPT_COUNT,
                 Integer,
                 nullable=False,
-                server_default=text(ColumnServerDefault.ONE.value),
+                server_default=text(ColumnServerDefault.ONE),
             ),
             Column(CallStatsColumn.FINISH_REASON, Text),
             Column(
                 CallStatsColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text(ColumnServerDefault.NOW.value),
+                server_default=text(ColumnServerDefault.NOW),
             ),
         )
 
