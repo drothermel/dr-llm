@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from pydantic import Field
 
-from dr_llm.pool.db.names import SampleColumn
+from dr_llm.pool.db import SampleColumn
 from dr_llm.pool.keyed_sample_base import KeyedSampleBase
 
 

@@ -3,22 +3,26 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import BaseModel
 from sqlalchemy.dialects.postgresql import JSONB
 
+from dr_llm.pool.db import ColumnType, KeyColumn, PoolSchema, PoolTableType, PoolTables
 from dr_llm.pool.db.names import (
     IndexNamePrefix,
     PoolIndexName,
-    PoolTableType,
     pool_index_name,
 )
 from dr_llm.pool.db.schema import (
-    ColumnType,
-    KeyColumn,
-    PoolSchema,
     pool_table_name,
     pool_table_names,
 )
-from dr_llm.pool.db.tables import PoolTables
+from dr_llm.pool.db.tables import (
+    CallStatsTableDef,
+    ClaimsTableDef,
+    MetadataTableDef,
+    PendingTableDef,
+    SamplesTableDef,
+)
 
 
 def _simple_schema() -> PoolSchema:
@@ -113,14 +117,39 @@ def test_pool_tables_select_columns_are_table_type_specific() -> None:
         "attempt_count",
         "created_at",
     ]
+    for table_type in (
+        PoolTableType.CLAIMS,
+        PoolTableType.METADATA,
+        PoolTableType.CALL_STATS,
+    ):
+        assert [column.name for column in tables.select_columns(table_type)] == list(
+            tables[table_type].c.keys()
+        )
 
 
 def test_pool_tables_reject_missing_table_type_helpers() -> None:
     tables = PoolTables(_simple_schema())
     with pytest.raises(ValueError, match="key columns"):
         tables.key_columns(PoolTableType.CLAIMS)
-    with pytest.raises(ValueError, match="select-column projection"):
-        tables.select_columns(PoolTableType.CLAIMS)
+
+
+def test_pool_tables_registers_pydantic_table_defs() -> None:
+    tables = PoolTables(_simple_schema())
+    expected_def_types: dict[PoolTableType, type[BaseModel]] = {
+        PoolTableType.SAMPLES: SamplesTableDef,
+        PoolTableType.CLAIMS: ClaimsTableDef,
+        PoolTableType.PENDING: PendingTableDef,
+        PoolTableType.METADATA: MetadataTableDef,
+        PoolTableType.CALL_STATS: CallStatsTableDef,
+    }
+
+    assert list(tables.defs) == list(PoolTableType)
+    for table_type, expected_type in expected_def_types.items():
+        table_def = tables.defs[table_type]
+        assert isinstance(table_def, BaseModel)
+        assert isinstance(table_def, expected_type)
+        assert table_def.table_type == table_type
+        assert tables[table_type].name == _simple_schema().table_name(table_type)
 
 
 def test_schema_name_validation() -> None:

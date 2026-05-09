@@ -14,8 +14,7 @@ from typing import Any, Self
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic_core import to_jsonable_python
 
-from dr_llm.pool.db.names import PendingColumn, SampleColumn
-from dr_llm.pool.db.schema import PoolSchema
+from dr_llm.pool.db import PendingColumn, PoolSchema, SampleColumn
 from dr_llm.pool.db.sql_helpers import key_values_from_row
 
 

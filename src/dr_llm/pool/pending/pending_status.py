@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from dr_llm.pool.db.names import PendingColumn
+from dr_llm.pool.db import PendingColumn
 
 
 class PendingStatus(StrEnum):

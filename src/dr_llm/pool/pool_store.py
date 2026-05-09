@@ -12,14 +12,15 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql.elements import ColumnElement
 
-from dr_llm.pool.db.names import (
+from dr_llm.pool.db import (
     CallStatsColumn,
     ClaimColumn,
+    DbRuntime,
+    PoolSchema,
+    PoolTables,
     PoolTableType,
     SampleColumn,
 )
-from dr_llm.pool.db.runtime import DbRuntime
-from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.sql_helpers import (
     insert_keyed_samples,
     is_constraint_error,
@@ -28,7 +29,6 @@ from dr_llm.pool.db.sql_helpers import (
     validate_key_values,
 )
 from dr_llm.pool.call_stats import CallStats
-from dr_llm.pool.db.tables import PoolTables
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.metadata_store import MetadataStore
 from dr_llm.pool.models import AcquireQuery, AcquireResult, CoverageRow, InsertResult

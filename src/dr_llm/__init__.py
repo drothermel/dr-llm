@@ -1,5 +1,4 @@
-from dr_llm.pool.db.runtime import DbConfig
-from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.db import ColumnType, DbConfig, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
 from dr_llm.pool.admin_service import (
     assess_pool_deletion,
