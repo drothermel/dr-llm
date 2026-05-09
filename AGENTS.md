@@ -2,7 +2,7 @@
 
 ## Required Quality Gate
 
-Before completing any coding task in this repository, always run:
+Before completing any library code change in this repository, always run:
 
 1. `uv run ruff format`
 2. `uv run ruff check --fix .`
@@ -12,6 +12,10 @@ Before completing any coding task in this repository, always run:
 6. `./scripts/run-tests-local.sh` (integration tests — requires Docker)
 
 Fix all issues reported by these commands before considering the task complete.
+
+For notebook-only changes under `nbs/`, do not run the full test suite unless
+the notebook change also modifies library code or testable shared behavior.
+Instead, run `uvx marimo check <notebook.py>` for each changed notebook.
 
 ## Integration Tests
 
