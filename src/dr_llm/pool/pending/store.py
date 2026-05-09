@@ -26,6 +26,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from dr_llm.pool.db.names import PendingColumn, SampleColumn
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.sql_helpers import (
@@ -126,11 +127,13 @@ class PendingStore:
             update(p)
             .where(p.c.pending_id == locked.c.pending_id)
             .values(
-                status=PendingStatus.leased,
-                worker_id=worker_id,
-                lease_expires_at=func.now()
-                + func.make_interval(0, 0, 0, 0, 0, 0, lease_seconds),
-                attempt_count=p.c.attempt_count + 1,
+                {
+                    PendingColumn.STATUS: PendingStatus.leased,
+                    PendingColumn.WORKER_ID: worker_id,
+                    PendingColumn.LEASE_EXPIRES_AT: func.now()
+                    + func.make_interval(0, 0, 0, 0, 0, 0, lease_seconds),
+                    PendingColumn.ATTEMPT_COUNT: p.c.attempt_count + 1,
+                }
             )
             .returning(*self._tables.pending_select_columns())
         )
@@ -212,11 +215,11 @@ class PendingStore:
             pg_insert(self._tables.samples)
             .from_select(
                 [
-                    "sample_id",
-                    "sample_idx",
-                    "payload_json",
-                    "source_run_id",
-                    "metadata_json",
+                    SampleColumn.SAMPLE_ID,
+                    SampleColumn.SAMPLE_IDX,
+                    SampleColumn.PAYLOAD_JSON,
+                    SampleColumn.SOURCE_RUN_ID,
+                    SampleColumn.METADATA_JSON,
                     *key_names,
                 ],
                 select(
@@ -239,7 +242,7 @@ class PendingStore:
                 p.c.pending_id == pending_id,
                 exists(select(1).select_from(inserted)),
             )
-            .values(status=PendingStatus.promoted)
+            .values({PendingColumn.STATUS: PendingStatus.promoted})
             .returning(p.c.pending_id)
             .cte("promoted")
         )
@@ -271,8 +274,12 @@ class PendingStore:
                 self._pending.c.status == PendingStatus.leased,
             )
             .values(
-                status=PendingStatus.failed,
-                metadata_json=self._pending.c.metadata_json.op("||")(metadata_patch),
+                {
+                    PendingColumn.STATUS: PendingStatus.failed,
+                    PendingColumn.METADATA_JSON: self._pending.c.metadata_json.op("||")(
+                        metadata_patch
+                    ),
+                }
             )
         )
         with self._runtime.begin() as conn:
@@ -293,9 +300,11 @@ class PendingStore:
                 self._pending.c.status == PendingStatus.leased,
             )
             .values(
-                status=PendingStatus.pending,
-                worker_id=None,
-                lease_expires_at=None,
+                {
+                    PendingColumn.STATUS: PendingStatus.pending,
+                    PendingColumn.WORKER_ID: None,
+                    PendingColumn.LEASE_EXPIRES_AT: None,
+                }
             )
         )
         with self._runtime.begin() as conn:
@@ -321,7 +330,13 @@ class PendingStore:
                 key_filter_clause(self._schema, self._pending, key_values),
                 self._pending.c.status == PendingStatus.pending,
             )
-            .values(priority=func.greatest(self._pending.c.priority, priority))
+            .values(
+                {
+                    PendingColumn.PRIORITY: func.greatest(
+                        self._pending.c.priority, priority
+                    )
+                }
+            )
         )
         with self._runtime.begin() as conn:
             result = conn.execute(stmt)
@@ -387,7 +402,7 @@ class PendingStore:
         update_one = (
             update(self._pending)
             .where(self._pending.c.pending_id == bindparam("b_pending_id"))
-            .values(priority=bindparam("b_priority"))
+            .values({PendingColumn.PRIORITY: bindparam("b_priority")})
         )
 
         rng = random.Random(seed)
@@ -485,11 +500,13 @@ class PendingStore:
             update(self._pending)
             .where(*predicates)
             .values(
-                status=PendingStatus.pending,
-                worker_id=None,
-                lease_expires_at=None,
-                attempt_count=0,
-                metadata_json=metadata_json,
+                {
+                    PendingColumn.STATUS: PendingStatus.pending,
+                    PendingColumn.WORKER_ID: None,
+                    PendingColumn.LEASE_EXPIRES_AT: None,
+                    PendingColumn.ATTEMPT_COUNT: 0,
+                    PendingColumn.METADATA_JSON: metadata_json,
+                }
             )
         )
         with self._runtime.begin() as conn:

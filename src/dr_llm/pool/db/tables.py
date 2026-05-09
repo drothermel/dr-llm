@@ -17,7 +17,15 @@ from sqlalchemy import (
 from sqlalchemy.engine import Connection
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 
-from dr_llm.pool.db.schema import ColumnType, PoolSchema, PoolTableType
+from dr_llm.pool.db.names import (
+    CallStatsColumn,
+    ClaimColumn,
+    MetadataColumn,
+    PendingColumn,
+    PoolTableType,
+    SampleColumn,
+)
+from dr_llm.pool.db.schema import ColumnType, PoolSchema
 
 
 _TYPE_MAP: dict[ColumnType, type[Any]] = {
@@ -89,26 +97,26 @@ class PoolTables:
 
     def _build_samples_table(self) -> Table:
         return Table(
-            self.schema.table_name(PoolTableType.samples),
+            self.schema.table_name(PoolTableType.SAMPLES),
             self.sa_metadata,
-            Column("sample_id", Text, primary_key=True),
+            Column(SampleColumn.SAMPLE_ID, Text, primary_key=True),
             *self._key_columns(),
-            Column("sample_idx", Integer, nullable=False),
+            Column(SampleColumn.SAMPLE_IDX, Integer, nullable=False),
             Column(
-                "payload_json",
+                SampleColumn.PAYLOAD_JSON,
                 JSONB,
                 nullable=False,
                 server_default=text("'{}'::jsonb"),
             ),
-            Column("source_run_id", Text),
+            Column(SampleColumn.SOURCE_RUN_ID, Text),
             Column(
-                "metadata_json",
+                SampleColumn.METADATA_JSON,
                 JSONB,
                 nullable=False,
                 server_default=text("'{}'::jsonb"),
             ),
             Column(
-                "created_at",
+                SampleColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
                 server_default=text("now()"),
@@ -117,16 +125,21 @@ class PoolTables:
 
     def _build_claims_table(self) -> Table:
         return Table(
-            self.schema.table_name(PoolTableType.claims),
+            self.schema.table_name(PoolTableType.CLAIMS),
             self.sa_metadata,
-            Column("claim_id", Text, primary_key=True),
-            Column("run_id", Text, nullable=False),
-            Column("request_id", Text, nullable=False),
-            Column("consumer_tag", Text, nullable=False, server_default=text("''")),
-            Column("sample_id", Text, nullable=False),
-            Column("claim_idx", Integer, nullable=False),
+            Column(ClaimColumn.CLAIM_ID, Text, primary_key=True),
+            Column(ClaimColumn.RUN_ID, Text, nullable=False),
+            Column(ClaimColumn.REQUEST_ID, Text, nullable=False),
             Column(
-                "claimed_at",
+                ClaimColumn.CONSUMER_TAG,
+                Text,
+                nullable=False,
+                server_default=text("''"),
+            ),
+            Column(ClaimColumn.SAMPLE_ID, Text, nullable=False),
+            Column(ClaimColumn.CLAIM_IDX, Integer, nullable=False),
+            Column(
+                ClaimColumn.CLAIMED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
                 server_default=text("now()"),
@@ -135,31 +148,46 @@ class PoolTables:
 
     def _build_pending_table(self) -> Table:
         return Table(
-            self.schema.table_name(PoolTableType.pending),
+            self.schema.table_name(PoolTableType.PENDING),
             self.sa_metadata,
-            Column("pending_id", Text, primary_key=True),
+            Column(PendingColumn.PENDING_ID, Text, primary_key=True),
             *self._key_columns(),
-            Column("sample_idx", Integer, nullable=False),
+            Column(PendingColumn.SAMPLE_IDX, Integer, nullable=False),
             Column(
-                "payload_json",
+                PendingColumn.PAYLOAD_JSON,
                 JSONB,
                 nullable=False,
                 server_default=text("'{}'::jsonb"),
             ),
-            Column("source_run_id", Text),
+            Column(PendingColumn.SOURCE_RUN_ID, Text),
             Column(
-                "metadata_json",
+                PendingColumn.METADATA_JSON,
                 JSONB,
                 nullable=False,
                 server_default=text("'{}'::jsonb"),
             ),
-            Column("priority", Integer, nullable=False, server_default=text("0")),
-            Column("status", Text, nullable=False, server_default=text("'pending'")),
-            Column("worker_id", Text),
-            Column("lease_expires_at", TIMESTAMP(timezone=True)),
-            Column("attempt_count", Integer, nullable=False, server_default=text("0")),
             Column(
-                "created_at",
+                PendingColumn.PRIORITY,
+                Integer,
+                nullable=False,
+                server_default=text("0"),
+            ),
+            Column(
+                PendingColumn.STATUS,
+                Text,
+                nullable=False,
+                server_default=text("'pending'"),
+            ),
+            Column(PendingColumn.WORKER_ID, Text),
+            Column(PendingColumn.LEASE_EXPIRES_AT, TIMESTAMP(timezone=True)),
+            Column(
+                PendingColumn.ATTEMPT_COUNT,
+                Integer,
+                nullable=False,
+                server_default=text("0"),
+            ),
+            Column(
+                PendingColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
                 server_default=text("now()"),
@@ -203,41 +231,46 @@ class PoolTables:
 
     def _build_metadata_table(self) -> Table:
         return Table(
-            self.schema.table_name(PoolTableType.metadata),
+            self.schema.table_name(PoolTableType.METADATA),
             self.sa_metadata,
-            Column("pool_name", Text, nullable=False),
-            Column("key", Text, nullable=False),
-            Column("value_json", JSONB, nullable=False),
+            Column(MetadataColumn.POOL_NAME, Text, nullable=False),
+            Column(MetadataColumn.KEY, Text, nullable=False),
+            Column(MetadataColumn.VALUE_JSON, JSONB, nullable=False),
             Column(
-                "created_at",
+                MetadataColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
                 server_default=text("now()"),
             ),
             Column(
-                "updated_at",
+                MetadataColumn.UPDATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
                 server_default=text("now()"),
             ),
-            PrimaryKeyConstraint("pool_name", "key"),
+            PrimaryKeyConstraint(MetadataColumn.POOL_NAME, MetadataColumn.KEY),
         )
 
     def _build_call_stats_table(self) -> Table:
         return Table(
-            self.schema.table_name(PoolTableType.call_stats),
+            self.schema.table_name(PoolTableType.CALL_STATS),
             self.sa_metadata,
-            Column("sample_id", Text, primary_key=True),
-            Column("latency_ms", Integer, nullable=False),
-            Column("total_cost_usd", Double),
-            Column("prompt_tokens", Integer, nullable=False),
-            Column("completion_tokens", Integer, nullable=False),
-            Column("reasoning_tokens", Integer),
-            Column("total_tokens", Integer, nullable=False),
-            Column("attempt_count", Integer, nullable=False, server_default=text("1")),
-            Column("finish_reason", Text),
+            Column(CallStatsColumn.SAMPLE_ID, Text, primary_key=True),
+            Column(CallStatsColumn.LATENCY_MS, Integer, nullable=False),
+            Column(CallStatsColumn.TOTAL_COST_USD, Double),
+            Column(CallStatsColumn.PROMPT_TOKENS, Integer, nullable=False),
+            Column(CallStatsColumn.COMPLETION_TOKENS, Integer, nullable=False),
+            Column(CallStatsColumn.REASONING_TOKENS, Integer),
+            Column(CallStatsColumn.TOTAL_TOKENS, Integer, nullable=False),
             Column(
-                "created_at",
+                CallStatsColumn.ATTEMPT_COUNT,
+                Integer,
+                nullable=False,
+                server_default=text("1"),
+            ),
+            Column(CallStatsColumn.FINISH_REASON, Text),
+            Column(
+                CallStatsColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
                 server_default=text("now()"),

@@ -10,6 +10,8 @@ from pydantic import (
     model_validator,
 )
 
+from dr_llm.pool.db.names import PoolTableType as _PoolTableType
+
 
 class ColumnType(StrEnum):
     text = "text"
@@ -18,23 +20,15 @@ class ColumnType(StrEnum):
     float_ = "float"
 
 
-class PoolTableType(StrEnum):
-    samples = "samples"
-    claims = "claims"
-    pending = "pending"
-    metadata = "metadata"
-    call_stats = "call_stats"
-
-
 _VALID_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
-def pool_table_name(pool_name: str, table_type: PoolTableType) -> str:
-    return f"pool_{pool_name}_{table_type.value}"
+def pool_table_name(pool_name: str, table_type: _PoolTableType) -> str:
+    return f"pool_{pool_name}_{table_type}"
 
 
 def pool_table_names(pool_name: str) -> list[str]:
-    return [pool_table_name(pool_name, table_type) for table_type in PoolTableType]
+    return [pool_table_name(pool_name, table_type) for table_type in _PoolTableType]
 
 
 class KeyColumn(BaseModel):
@@ -96,7 +90,7 @@ class PoolSchema(BaseModel):
             key_columns=[KeyColumn(name=axis_name) for axis_name in axis_names],
         )
 
-    def table_name(self, table_type: PoolTableType) -> str:
+    def table_name(self, table_type: _PoolTableType) -> str:
         return pool_table_name(self.name, table_type)
 
     def table_names(self) -> list[str]:

@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from dr_llm.pool.db.names import PendingColumn
+
 
 class PendingStatus(StrEnum):
     pending = "pending"
@@ -62,16 +64,11 @@ class PendingStatusCounts(BaseModel):
         """Build counts from grouped query rows, defaulting unknown statuses to 0."""
         by_status: dict[str, int] = {}
         for row in rows:
-            raw_status = row["status"]
+            raw_status = row[PendingColumn.STATUS]
             status_key = (
-                raw_status.value
-                if isinstance(raw_status, PendingStatus)
-                else str(raw_status)
+                raw_status if isinstance(raw_status, PendingStatus) else str(raw_status)
             )
             by_status[status_key] = int(row["cnt"])
         return cls(
-            **{
-                status.value: by_status.get(status.value, 0)
-                for status in COUNTED_PENDING_STATUSES
-            }
+            **{status: by_status.get(status, 0) for status in COUNTED_PENDING_STATUSES}
         )

@@ -14,8 +14,9 @@ from psycopg import sql
 
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.call_stats import CallStats
+from dr_llm.pool.db.names import PoolTableType
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema, PoolTableType
+from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.models import AcquireQuery
@@ -207,7 +208,7 @@ def test_bootstrap_backfills_missing_unique_indexes() -> None:
             )
         )
 
-        index_name = f"uq_{schema.table_name(PoolTableType.samples)}_cell"
+        index_name = f"uq_{schema.table_name(PoolTableType.SAMPLES)}_cell"
         with psycopg.connect(dsn) as conn:
             conn.execute(
                 sql.SQL("DROP INDEX IF EXISTS {}").format(sql.Identifier(index_name))
@@ -231,10 +232,10 @@ def test_bootstrap_backfills_missing_unique_indexes() -> None:
     finally:
         with psycopg.connect(dsn) as conn:
             for table_name in (
-                schema.table_name(PoolTableType.metadata),
-                schema.table_name(PoolTableType.claims),
-                schema.table_name(PoolTableType.pending),
-                schema.table_name(PoolTableType.samples),
+                schema.table_name(PoolTableType.METADATA),
+                schema.table_name(PoolTableType.CLAIMS),
+                schema.table_name(PoolTableType.PENDING),
+                schema.table_name(PoolTableType.SAMPLES),
             ):
                 conn.execute(
                     sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
@@ -1054,7 +1055,7 @@ def test_call_stats_table_created() -> None:
                 AND table_name = %s
             )
             """,
-            [_TEST_SCHEMA.table_name(PoolTableType.call_stats)],
+            [_TEST_SCHEMA.table_name(PoolTableType.CALL_STATS)],
         ).fetchone()
     assert row is not None
     assert row[0] is True
@@ -1093,7 +1094,7 @@ def test_insert_call_stats(pool_store: PoolStore) -> None:
                 "FROM {} WHERE sample_id = %s"
             ).format(
                 sql.Identifier(
-                    "public", _TEST_SCHEMA.table_name(PoolTableType.call_stats)
+                    "public", _TEST_SCHEMA.table_name(PoolTableType.CALL_STATS)
                 )
             ),
             [sample_id],
@@ -1165,7 +1166,7 @@ def test_call_stats_full_flow(pool_store: PoolStore) -> None:
                 "FROM {} WHERE sample_id = %s"
             ).format(
                 sql.Identifier(
-                    "public", _TEST_SCHEMA.table_name(PoolTableType.call_stats)
+                    "public", _TEST_SCHEMA.table_name(PoolTableType.CALL_STATS)
                 )
             ),
             [promoted.sample_id],

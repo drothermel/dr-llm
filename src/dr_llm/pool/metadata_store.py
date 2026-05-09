@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from dr_llm.pool.db.names import MetadataColumn
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.tables import PoolTables
@@ -33,9 +34,11 @@ class MetadataStore:
 
     def upsert(self, key: str, value: dict[str, Any]) -> None:
         stmt = pg_insert(self._tables.metadata_table).values(
-            pool_name=self._schema.name,
-            key=key,
-            value_json=value,
+            {
+                MetadataColumn.POOL_NAME: self._schema.name,
+                MetadataColumn.KEY: key,
+                MetadataColumn.VALUE_JSON: value,
+            }
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[
@@ -43,8 +46,8 @@ class MetadataStore:
                 self._tables.metadata_table.c.key,
             ],
             set_={
-                "value_json": stmt.excluded.value_json,
-                "updated_at": func.now(),
+                MetadataColumn.VALUE_JSON: stmt.excluded.value_json,
+                MetadataColumn.UPDATED_AT: func.now(),
             },
         )
         with self._runtime.begin() as conn:
@@ -79,4 +82,4 @@ class MetadataStore:
         )
         with self._runtime.connect() as conn:
             for row in conn.execute(stmt).mappings():
-                yield row["key"], row["value_json"]
+                yield row[MetadataColumn.KEY], row[MetadataColumn.VALUE_JSON]

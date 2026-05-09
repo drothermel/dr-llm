@@ -19,10 +19,10 @@ from sqlalchemy import Column, MetaData, Table, Text, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import ProgrammingError
 
+from dr_llm.pool.db.names import MetadataColumn, PoolTableType
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import (
     PoolSchema,
-    PoolTableType,
     _VALID_NAME_RE,
     pool_table_name,
 )
@@ -96,11 +96,11 @@ def _load_schema_from_db(runtime: DbRuntime, pool_name: str) -> PoolSchema:
 
     ad_hoc = MetaData()
     table = Table(
-        pool_table_name(pool_name, PoolTableType.metadata),
+        pool_table_name(pool_name, PoolTableType.METADATA),
         ad_hoc,
-        Column("pool_name", Text, nullable=False),
-        Column("key", Text, nullable=False),
-        Column("value_json", JSONB, nullable=False),
+        Column(MetadataColumn.POOL_NAME, Text, nullable=False),
+        Column(MetadataColumn.KEY, Text, nullable=False),
+        Column(MetadataColumn.VALUE_JSON, JSONB, nullable=False),
     )
     stmt = select(table.c.value_json).where(
         table.c.pool_name == pool_name,

@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.dialects.postgresql import JSONB
 
+from dr_llm.pool.db.names import PoolTableType
 from dr_llm.pool.db.schema import (
     ColumnType,
     KeyColumn,
     PoolSchema,
-    PoolTableType,
     pool_table_name,
     pool_table_names,
 )
@@ -82,19 +82,19 @@ def test_schema_empty_key_columns_rejected() -> None:
 
 def test_schema_table_names() -> None:
     schema = _simple_schema()
-    assert [table_type.value for table_type in PoolTableType] == [
+    assert list(PoolTableType) == [
         "samples",
         "claims",
         "pending",
         "metadata",
         "call_stats",
     ]
-    assert pool_table_name("test", PoolTableType.samples) == "pool_test_samples"
-    assert schema.table_name(PoolTableType.samples) == "pool_test_samples"
-    assert schema.table_name(PoolTableType.claims) == "pool_test_claims"
-    assert schema.table_name(PoolTableType.pending) == "pool_test_pending"
-    assert schema.table_name(PoolTableType.metadata) == "pool_test_metadata"
-    assert schema.table_name(PoolTableType.call_stats) == "pool_test_call_stats"
+    assert pool_table_name("test", PoolTableType.SAMPLES) == "pool_test_samples"
+    assert schema.table_name(PoolTableType.SAMPLES) == "pool_test_samples"
+    assert schema.table_name(PoolTableType.CLAIMS) == "pool_test_claims"
+    assert schema.table_name(PoolTableType.PENDING) == "pool_test_pending"
+    assert schema.table_name(PoolTableType.METADATA) == "pool_test_metadata"
+    assert schema.table_name(PoolTableType.CALL_STATS) == "pool_test_call_stats"
     assert schema.table_names() == pool_table_names("test")
     assert schema.table_names() == [
         "pool_test_samples",

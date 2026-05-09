@@ -9,10 +9,10 @@ from sqlalchemy.engine import Connection
 
 from dr_llm.datetime_utils import UTC, normalize_utc
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
+from dr_llm.pool.db.names import MetadataColumn, PendingColumn, PoolTableType
 from dr_llm.pool.db.schema import (
     KeyColumn,
     PoolSchema,
-    PoolTableType,
     pool_table_name,
     pool_table_names,
 )
@@ -41,11 +41,11 @@ from dr_llm.project.errors import ProjectError, ProjectNotFoundError
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import maybe_get_project
 
-POOL_TABLE_RE = re.compile(rf"^pool_(.+)_{re.escape(PoolTableType.samples.value)}$")
+POOL_TABLE_RE = re.compile(rf"^pool_(.+)_{re.escape(PoolTableType.SAMPLES)}$")
 POOL_DISCOVERY_SQL = text(
     "SELECT table_name FROM information_schema.tables "
     "WHERE table_schema = 'public' "
-    rf"AND table_name LIKE 'pool\_%\_{PoolTableType.samples.value}' "
+    rf"AND table_name LIKE 'pool\_%\_{PoolTableType.SAMPLES}' "
     "ORDER BY table_name"
 )
 _IN_PROGRESS_PENDING_STATUSES: Final[tuple[str, ...]] = ("pending", "leased")
@@ -441,11 +441,11 @@ def _inspect_pool_for_project(project: ProjectInfo, pool_name: str) -> PoolInspe
         reader = PoolReader.from_runtime(runtime, schema=schema)
         progress = reader.progress()
         metadata_table = Table(
-            schema.table_name(PoolTableType.metadata),
+            schema.table_name(PoolTableType.METADATA),
             MetaData(),
-            Column("pool_name", Text, nullable=False),
-            Column("key", Text, nullable=False),
-            Column("created_at", DateTime(timezone=True)),
+            Column(MetadataColumn.POOL_NAME, Text, nullable=False),
+            Column(MetadataColumn.KEY, Text, nullable=False),
+            Column(MetadataColumn.CREATED_AT, DateTime(timezone=True)),
         )
         metadata_created_at_stmt = select(metadata_table.c.created_at).where(
             metadata_table.c.pool_name == schema.name,
@@ -528,7 +528,7 @@ def _existing_pool_table_names(runtime: DbRuntime, pool_name: str) -> list[str]:
 
 
 def _count_in_progress_pending_rows(runtime: DbRuntime, pool_name: str) -> int:
-    pending_table = pool_table_name(pool_name, PoolTableType.pending)
+    pending_table = pool_table_name(pool_name, PoolTableType.PENDING)
     validate_pg_identifier(pending_table, "table name")
     existing_table_names = _existing_pool_table_names(runtime, pool_name)
     if pending_table not in existing_table_names:
@@ -545,7 +545,7 @@ def _count_in_progress_pending_rows(runtime: DbRuntime, pool_name: str) -> int:
             conn.execute(
                 text(
                     f'SELECT count(*) FROM "{pending_table}" '
-                    f"WHERE status IN ({placeholders})"
+                    f"WHERE {PendingColumn.STATUS} IN ({placeholders})"
                 ),
                 params,
             ).scalar_one()

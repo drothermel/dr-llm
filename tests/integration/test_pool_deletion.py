@@ -12,11 +12,11 @@ from psycopg import sql
 import dr_llm.pool.admin_service as admin_service
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.call_stats import CallStats
+from dr_llm.pool.db.names import PoolTableType
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import (
     KeyColumn,
     PoolSchema,
-    PoolTableType,
     pool_table_names,
 )
 from dr_llm.pool.models import AcquireQuery, DeletePoolRequest, PoolDeletionStatus
@@ -131,11 +131,11 @@ def test_delete_pool_reports_counts_for_normal_pool(
         assert result.status == PoolDeletionStatus.deleted
         assert result.deleted_table_names == _pool_table_names(pool_name)
         assert result.pre_delete_counts == {
-            schema.table_name(PoolTableType.samples): 1,
-            schema.table_name(PoolTableType.claims): 1,
-            schema.table_name(PoolTableType.pending): 1,
-            schema.table_name(PoolTableType.metadata): 2,
-            schema.table_name(PoolTableType.call_stats): 1,
+            schema.table_name(PoolTableType.SAMPLES): 1,
+            schema.table_name(PoolTableType.CLAIMS): 1,
+            schema.table_name(PoolTableType.PENDING): 1,
+            schema.table_name(PoolTableType.METADATA): 2,
+            schema.table_name(PoolTableType.CALL_STATS): 1,
         }
         for table_name in _pool_table_names(pool_name):
             assert _table_exists(dsn, table_name) is False
@@ -187,7 +187,7 @@ def test_delete_pool_allows_pending_and_leased_rows(
         )
 
         assert result.status == PoolDeletionStatus.deleted
-        assert result.pre_delete_counts[schema.table_name(PoolTableType.pending)] == 2
+        assert result.pre_delete_counts[schema.table_name(PoolTableType.PENDING)] == 2
         for table_name in _pool_table_names(pool_name):
             assert _table_exists(dsn, table_name) is False
     finally:

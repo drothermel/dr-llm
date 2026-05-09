@@ -12,8 +12,14 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql.elements import ColumnElement
 
+from dr_llm.pool.db.names import (
+    CallStatsColumn,
+    ClaimColumn,
+    PoolTableType,
+    SampleColumn,
+)
 from dr_llm.pool.db.runtime import DbRuntime
-from dr_llm.pool.db.schema import PoolSchema, PoolTableType
+from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.sql_helpers import (
     insert_keyed_samples,
     is_constraint_error,
@@ -80,21 +86,19 @@ class PoolStore:
     def insert_call_stats(self, stats: CallStats) -> None:
         """Insert a call-stats row for a promoted sample."""
         row = {
-            "sample_id": stats.sample_id,
-            "latency_ms": stats.latency_ms,
-            "total_cost_usd": stats.total_cost_usd,
-            "prompt_tokens": stats.prompt_tokens,
-            "completion_tokens": stats.completion_tokens,
-            "reasoning_tokens": stats.reasoning_tokens,
-            "total_tokens": stats.total_tokens,
-            "attempt_count": stats.attempt_count,
-            "finish_reason": stats.finish_reason,
+            CallStatsColumn.SAMPLE_ID: stats.sample_id,
+            CallStatsColumn.LATENCY_MS: stats.latency_ms,
+            CallStatsColumn.TOTAL_COST_USD: stats.total_cost_usd,
+            CallStatsColumn.PROMPT_TOKENS: stats.prompt_tokens,
+            CallStatsColumn.COMPLETION_TOKENS: stats.completion_tokens,
+            CallStatsColumn.REASONING_TOKENS: stats.reasoning_tokens,
+            CallStatsColumn.TOTAL_TOKENS: stats.total_tokens,
+            CallStatsColumn.ATTEMPT_COUNT: stats.attempt_count,
+            CallStatsColumn.FINISH_REASON: stats.finish_reason,
         }
         with self._runtime.begin() as conn:
             conn.execute(
-                pg_insert(self._tables.call_stats)
-                .values(**row)
-                .on_conflict_do_nothing()
+                pg_insert(self._tables.call_stats).values(row).on_conflict_do_nothing()
             )
 
     def insert_sample(
@@ -151,7 +155,7 @@ class PoolStore:
         base_rows: list[dict[str, Any]] = []
         for sample in samples:
             row = sample.to_db_insert_row()
-            row.pop("sample_idx", None)
+            row.pop(SampleColumn.SAMPLE_IDX, None)
             base_rows.append(row)
 
         for attempt in range(1, self._AUTO_IDX_INSERT_RETRIES + 1):
@@ -165,7 +169,7 @@ class PoolStore:
                         stmt = stmt.on_conflict_do_nothing()
                     stmt = stmt.returning(samples_table.c.sample_id)
                     result = (
-                        conn.execute(stmt.values(**rows[0]))
+                        conn.execute(stmt.values(rows[0]))
                         if len(rows) == 1
                         else conn.execute(stmt, rows)
                     )
@@ -216,7 +220,7 @@ class PoolStore:
             row = dict(base_row)
             cell_key = tuple(row[name] for name in key_names)
             cell_offsets[cell_key] = cell_offsets.get(cell_key, 0) + 1
-            row["sample_idx"] = (
+            row[SampleColumn.SAMPLE_IDX] = (
                 max_sample_idx_by_cell[cell_key] + cell_offsets[cell_key]
             )
             rows.append(row)
@@ -225,7 +229,7 @@ class PoolStore:
     def _cell_lock_id(self, cell_key: tuple[Any, ...]) -> int:
         lock_payload = json.dumps(
             {
-                "pool": self.schema.table_name(PoolTableType.samples),
+                "pool": self.schema.table_name(PoolTableType.SAMPLES),
                 "key_values": {
                     name: value
                     for name, value in zip(
@@ -274,11 +278,11 @@ class PoolStore:
         )
 
         claim_source = select(
-            func.cast(func.gen_random_uuid(), Text).label("claim_id"),
-            literal(query.run_id, type_=Text).label("run_id"),
-            literal(query.request_id, type_=Text).label("request_id"),
-            literal(query.consumer_tag, type_=Text).label("consumer_tag"),
-            locked.c.sample_id.label("sample_id"),
+            func.cast(func.gen_random_uuid(), Text).label(ClaimColumn.CLAIM_ID),
+            literal(query.run_id, type_=Text).label(ClaimColumn.RUN_ID),
+            literal(query.request_id, type_=Text).label(ClaimColumn.REQUEST_ID),
+            literal(query.consumer_tag, type_=Text).label(ClaimColumn.CONSUMER_TAG),
+            locked.c.sample_id.label(ClaimColumn.SAMPLE_ID),
             (
                 func.row_number().over(
                     order_by=[
@@ -287,19 +291,19 @@ class PoolStore:
                     ]
                 )
                 - 1
-            ).label("claim_idx"),
+            ).label(ClaimColumn.CLAIM_IDX),
         ).select_from(locked)
 
         inserted = (
             pg_insert(claims_table)
             .from_select(
                 [
-                    "claim_id",
-                    "run_id",
-                    "request_id",
-                    "consumer_tag",
-                    "sample_id",
-                    "claim_idx",
+                    ClaimColumn.CLAIM_ID,
+                    ClaimColumn.RUN_ID,
+                    ClaimColumn.REQUEST_ID,
+                    ClaimColumn.CONSUMER_TAG,
+                    ClaimColumn.SAMPLE_ID,
+                    ClaimColumn.CLAIM_IDX,
                 ],
                 claim_source,
             )
