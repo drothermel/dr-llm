@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema, PoolTableType
 from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
@@ -31,10 +31,10 @@ _READER_SCHEMA = PoolSchema(
 )
 
 _READER_TABLES = (
-    _READER_SCHEMA.metadata_table,
-    _READER_SCHEMA.claims_table,
-    _READER_SCHEMA.pending_table,
-    _READER_SCHEMA.samples_table,
+    _READER_SCHEMA.table_name(PoolTableType.metadata),
+    _READER_SCHEMA.table_name(PoolTableType.claims),
+    _READER_SCHEMA.table_name(PoolTableType.pending),
+    _READER_SCHEMA.table_name(PoolTableType.samples),
 )
 
 
@@ -56,10 +56,10 @@ def _get_dsn() -> str:
 def _drop_pool_tables(dsn: str, schema: PoolSchema) -> None:
     with psycopg.connect(dsn) as conn:
         for tbl in (
-            schema.metadata_table,
-            schema.claims_table,
-            schema.pending_table,
-            schema.samples_table,
+            schema.table_name(PoolTableType.metadata),
+            schema.table_name(PoolTableType.claims),
+            schema.table_name(PoolTableType.pending),
+            schema.table_name(PoolTableType.samples),
         ):
             conn.execute(
                 sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
@@ -392,7 +392,7 @@ def test_load_schema_from_db_raises_when_schema_row_missing() -> None:
         with psycopg.connect(dsn) as conn:
             conn.execute(
                 sql.SQL("DELETE FROM {} WHERE key = %s").format(
-                    sql.Identifier("public", schema.metadata_table)
+                    sql.Identifier("public", schema.table_name(PoolTableType.metadata))
                 ),
                 (SCHEMA_METADATA_KEY,),
             )

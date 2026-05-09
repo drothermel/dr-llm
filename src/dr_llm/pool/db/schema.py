@@ -6,7 +6,6 @@ from enum import StrEnum
 from pydantic import (
     BaseModel,
     ConfigDict,
-    computed_field,
     field_validator,
     model_validator,
 )
@@ -19,7 +18,23 @@ class ColumnType(StrEnum):
     float_ = "float"
 
 
+class PoolTableType(StrEnum):
+    samples = "samples"
+    claims = "claims"
+    pending = "pending"
+    metadata = "metadata"
+    call_stats = "call_stats"
+
+
 _VALID_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def pool_table_name(pool_name: str, table_type: PoolTableType) -> str:
+    return f"pool_{pool_name}_{table_type.value}"
+
+
+def pool_table_names(pool_name: str) -> list[str]:
+    return [pool_table_name(pool_name, table_type) for table_type in PoolTableType]
 
 
 class KeyColumn(BaseModel):
@@ -45,7 +60,7 @@ class KeyColumn(BaseModel):
 class PoolSchema(BaseModel):
     """Consumer-declared pool schema defining key dimensions and table names."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     name: str
     key_columns: list[KeyColumn]
@@ -81,30 +96,11 @@ class PoolSchema(BaseModel):
             key_columns=[KeyColumn(name=axis_name) for axis_name in axis_names],
         )
 
-    @computed_field
-    @property
-    def samples_table(self) -> str:
-        return f"pool_{self.name}_samples"
+    def table_name(self, table_type: PoolTableType) -> str:
+        return pool_table_name(self.name, table_type)
 
-    @computed_field
-    @property
-    def claims_table(self) -> str:
-        return f"pool_{self.name}_claims"
-
-    @computed_field
-    @property
-    def pending_table(self) -> str:
-        return f"pool_{self.name}_pending"
-
-    @computed_field
-    @property
-    def metadata_table(self) -> str:
-        return f"pool_{self.name}_metadata"
-
-    @computed_field
-    @property
-    def call_stats_table(self) -> str:
-        return f"pool_{self.name}_call_stats"
+    def table_names(self) -> list[str]:
+        return pool_table_names(self.name)
 
     @property
     def key_column_names(self) -> list[str]:

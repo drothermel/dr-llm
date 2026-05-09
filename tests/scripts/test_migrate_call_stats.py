@@ -15,7 +15,13 @@ from typer.testing import CliRunner
 
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.db.schema import (
+    ColumnType,
+    KeyColumn,
+    PoolSchema,
+    PoolTableType,
+    pool_table_name,
+)
 from dr_llm.pool.db.tables import PoolTables
 from dr_llm.pool.pending.pending_status import PendingStatus
 from dr_llm.pool.pool_sample import PoolSample
@@ -55,13 +61,7 @@ def _make_schema(prefix: str) -> PoolSchema:
 
 
 def _drop_tables(dsn: str, schema: PoolSchema) -> None:
-    table_names = (
-        schema.call_stats_table,
-        schema.metadata_table,
-        schema.claims_table,
-        schema.pending_table,
-        schema.samples_table,
-    )
+    table_names = tuple(reversed(schema.table_names()))
     with psycopg.connect(dsn) as conn:
         for table_name in table_names:
             conn.execute(
@@ -141,7 +141,7 @@ def _make_runtime(dsn: str, schema: PoolSchema) -> DbRuntime:
 
 
 def _create_legacy_samples_table_without_key_columns(dsn: str, pool_name: str) -> str:
-    samples_table = f"pool_{pool_name}_samples"
+    samples_table = pool_table_name(pool_name, PoolTableType.samples)
     with psycopg.connect(dsn) as conn:
         conn.execute(
             sql.SQL(
@@ -174,7 +174,8 @@ def test_migrate_call_stats_dry_run_does_not_create_table() -> None:
         _drop_tables(dsn, schema)
         runtime = _make_runtime(dsn, schema)
         _create_legacy_pool(runtime, schema)
-        assert _table_exists(dsn, schema.call_stats_table) is False
+        call_stats_table = schema.table_name(PoolTableType.call_stats)
+        assert _table_exists(dsn, call_stats_table) is False
 
         result = _RUNNER.invoke(
             _APP,
@@ -183,10 +184,8 @@ def test_migrate_call_stats_dry_run_does_not_create_table() -> None:
 
         assert result.exit_code == 0
         assert f"Processing pool: {schema.name}" in result.output
-        assert (
-            f"[dry-run] would create table {schema.call_stats_table}" in result.output
-        )
-        assert _table_exists(dsn, schema.call_stats_table) is False
+        assert f"[dry-run] would create table {call_stats_table}" in result.output
+        assert _table_exists(dsn, call_stats_table) is False
     except (psycopg.OperationalError, TransientPersistenceError) as exc:
         pytest.skip(f"Postgres unavailable for migration integration tests: {exc}")
     finally:
@@ -202,9 +201,11 @@ def test_migrate_call_stats_creates_table_when_no_key_columns_are_inferred() -> 
         pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run migration integration tests")
 
     pool_name = f"mcsk_{uuid4().hex[:8]}"
+    call_stats_table = pool_table_name(pool_name, PoolTableType.call_stats)
+    samples_table = pool_table_name(pool_name, PoolTableType.samples)
     table_names = (
-        f"pool_{pool_name}_call_stats",
-        f"pool_{pool_name}_samples",
+        call_stats_table,
+        samples_table,
     )
     try:
         _drop_table_names(dsn, table_names)
@@ -218,8 +219,8 @@ def test_migrate_call_stats_creates_table_when_no_key_columns_are_inferred() -> 
         assert result.exit_code == 0
         assert f"Processing pool: {pool_name}" in result.output
         assert f"{pool_name}: no key columns inferred" in result.output
-        assert f"[ok] table pool_{pool_name}_call_stats ensured" in result.output
-        assert _table_exists(dsn, f"pool_{pool_name}_call_stats") is True
+        assert f"[ok] table {call_stats_table} ensured" in result.output
+        assert _table_exists(dsn, call_stats_table) is True
     except (psycopg.OperationalError, TransientPersistenceError) as exc:
         pytest.skip(f"Postgres unavailable for migration integration tests: {exc}")
     finally:
@@ -272,7 +273,8 @@ def test_migrate_call_stats_backfills_existing_sample_rows() -> None:
             conn.execute(pg_insert(tables.samples).values(**sample.to_db_insert_row()))
             conn.execute(pg_insert(tables.pending).values(**pending_row))
 
-        assert _table_exists(dsn, schema.call_stats_table) is False
+        call_stats_table = schema.table_name(PoolTableType.call_stats)
+        assert _table_exists(dsn, call_stats_table) is False
 
         result = _RUNNER.invoke(
             _APP,
@@ -280,9 +282,9 @@ def test_migrate_call_stats_backfills_existing_sample_rows() -> None:
         )
 
         assert result.exit_code == 0
-        assert f"[ok] table {schema.call_stats_table} ensured" in result.output
+        assert f"[ok] table {call_stats_table} ensured" in result.output
         assert "[ok] backfilled 1 rows" in result.output
-        assert _table_exists(dsn, schema.call_stats_table) is True
+        assert _table_exists(dsn, call_stats_table) is True
 
         with psycopg.connect(dsn) as conn:
             row = conn.execute(
@@ -300,7 +302,7 @@ def test_migrate_call_stats_backfills_existing_sample_rows() -> None:
                     FROM {}
                     WHERE sample_id = %s
                     """
-                ).format(sql.Identifier("public", schema.call_stats_table)),
+                ).format(sql.Identifier("public", call_stats_table)),
                 [sample.sample_id],
             ).fetchone()
         assert row is not None

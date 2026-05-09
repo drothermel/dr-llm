@@ -22,6 +22,7 @@ from sqlalchemy import Column, Double, Integer, MetaData, Table, Text, text as s
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
+from dr_llm.pool.db.schema import PoolTableType, pool_table_name
 from dr_llm.pool.admin_service import discover_pools_from_runtime
 
 app = typer.Typer(add_completion=False)
@@ -50,22 +51,10 @@ def _validate_identifier(kind: str, value: str) -> str:
     return value
 
 
-def _samples_table_name(pool_name: str) -> str:
-    return f"pool_{pool_name}_samples"
-
-
-def _pending_table_name(pool_name: str) -> str:
-    return f"pool_{pool_name}_pending"
-
-
-def _call_stats_table_name(pool_name: str) -> str:
-    return f"pool_{pool_name}_call_stats"
-
-
 def _build_call_stats_table(pool_name: str) -> Table:
     metadata = MetaData()
     return Table(
-        _call_stats_table_name(pool_name),
+        pool_table_name(pool_name, PoolTableType.call_stats),
         metadata,
         Column("sample_id", Text, primary_key=True),
         Column("latency_ms", Integer, nullable=False),
@@ -93,7 +82,7 @@ def _ensure_call_stats_table(runtime: DbRuntime, pool_name: str) -> None:
 
 def _discover_key_columns(runtime: DbRuntime, pool_name: str) -> list[str]:
     """Infer key column names from the samples table structure."""
-    samples_table = _samples_table_name(pool_name)
+    samples_table = pool_table_name(pool_name, PoolTableType.samples)
     with runtime.connect() as conn:
         rows = conn.execute(
             sa_text(
@@ -113,9 +102,9 @@ def _backfill_pool(runtime: DbRuntime, pool_name: str, key_columns: list[str]) -
     with runtime.begin() as conn:
         preparer = conn.dialect.identifier_preparer
 
-        samples_table = _samples_table_name(pool_name)
-        pending_table = _pending_table_name(pool_name)
-        call_stats_table = _call_stats_table_name(pool_name)
+        samples_table = pool_table_name(pool_name, PoolTableType.samples)
+        pending_table = pool_table_name(pool_name, PoolTableType.pending)
+        call_stats_table = pool_table_name(pool_name, PoolTableType.call_stats)
 
         quoted_sample_id = preparer.quote_identifier("sample_id")
         quoted_sample_idx = preparer.quote_identifier("sample_idx")
@@ -202,16 +191,20 @@ def _process_pool(
 
     if dry_run:
         typer.echo(
-            f"  [dry-run] would create table {_call_stats_table_name(pool_name)}"
+            "  [dry-run] would create table "
+            f"{pool_table_name(pool_name, PoolTableType.call_stats)}"
         )
         if backfill:
             typer.echo(
-                f"  [dry-run] would backfill from {_samples_table_name(pool_name)}"
+                "  [dry-run] would backfill from "
+                f"{pool_table_name(pool_name, PoolTableType.samples)}"
             )
         return
 
     _ensure_call_stats_table(runtime, pool_name)
-    typer.echo(f"  [ok] table {_call_stats_table_name(pool_name)} ensured")
+    typer.echo(
+        f"  [ok] table {pool_table_name(pool_name, PoolTableType.call_stats)} ensured"
+    )
 
     if backfill:
         count = _backfill_pool(runtime, pool_name, key_columns)

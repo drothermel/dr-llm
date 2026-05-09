@@ -13,7 +13,12 @@ import dr_llm.pool.admin_service as admin_service
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import KeyColumn, PoolSchema
+from dr_llm.pool.db.schema import (
+    KeyColumn,
+    PoolSchema,
+    PoolTableType,
+    pool_table_names,
+)
 from dr_llm.pool.models import AcquireQuery, DeletePoolRequest, PoolDeletionStatus
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
@@ -39,13 +44,7 @@ def _project_for_dsn(name: str, dsn: str) -> ProjectInfo:
 
 
 def _pool_table_names(pool_name: str) -> list[str]:
-    return [
-        f"pool_{pool_name}_samples",
-        f"pool_{pool_name}_claims",
-        f"pool_{pool_name}_pending",
-        f"pool_{pool_name}_metadata",
-        f"pool_{pool_name}_call_stats",
-    ]
+    return pool_table_names(pool_name)
 
 
 def _drop_tables(dsn: str, table_names: Iterable[str]) -> None:
@@ -193,11 +192,11 @@ def test_delete_pool_reports_counts_for_normal_pool(
         assert result.status == PoolDeletionStatus.deleted
         assert result.deleted_table_names == _pool_table_names(pool_name)
         assert result.pre_delete_counts == {
-            schema.samples_table: 1,
-            schema.claims_table: 1,
-            schema.pending_table: 1,
-            schema.metadata_table: 2,
-            schema.call_stats_table: 1,
+            schema.table_name(PoolTableType.samples): 1,
+            schema.table_name(PoolTableType.claims): 1,
+            schema.table_name(PoolTableType.pending): 1,
+            schema.table_name(PoolTableType.metadata): 2,
+            schema.table_name(PoolTableType.call_stats): 1,
         }
         for table_name in _pool_table_names(pool_name):
             assert _table_exists(dsn, table_name) is False
@@ -285,7 +284,7 @@ def test_delete_pool_allows_pending_and_leased_rows(
         )
 
         assert result.status == PoolDeletionStatus.deleted
-        assert result.pre_delete_counts[schema.pending_table] == 2
+        assert result.pre_delete_counts[schema.table_name(PoolTableType.pending)] == 2
         for table_name in _pool_table_names(pool_name):
             assert _table_exists(dsn, table_name) is False
     finally:

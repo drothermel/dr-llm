@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from sqlalchemy.dialects.postgresql import JSONB
 
-from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.db.schema import (
+    ColumnType,
+    KeyColumn,
+    PoolSchema,
+    PoolTableType,
+    pool_table_name,
+    pool_table_names,
+)
 from dr_llm.pool.db.tables import PoolTables
 
 
@@ -25,6 +34,7 @@ def test_pool_tables_contains_all_tables() -> None:
     assert tables.claims.name == "pool_test_claims"
     assert tables.pending.name == "pool_test_pending"
     assert tables.metadata_table.name == "pool_test_metadata"
+    assert tables.call_stats.name == "pool_test_call_stats"
 
 
 def test_pool_tables_key_columns_appear() -> None:
@@ -74,10 +84,54 @@ def test_schema_empty_key_columns_rejected() -> None:
 
 def test_schema_table_names() -> None:
     schema = _simple_schema()
-    assert schema.samples_table == "pool_test_samples"
-    assert schema.claims_table == "pool_test_claims"
-    assert schema.pending_table == "pool_test_pending"
-    assert schema.metadata_table == "pool_test_metadata"
+    assert [table_type.value for table_type in PoolTableType] == [
+        "samples",
+        "claims",
+        "pending",
+        "metadata",
+        "call_stats",
+    ]
+    assert pool_table_name("test", PoolTableType.samples) == "pool_test_samples"
+    assert schema.table_name(PoolTableType.samples) == "pool_test_samples"
+    assert schema.table_name(PoolTableType.claims) == "pool_test_claims"
+    assert schema.table_name(PoolTableType.pending) == "pool_test_pending"
+    assert schema.table_name(PoolTableType.metadata) == "pool_test_metadata"
+    assert schema.table_name(PoolTableType.call_stats) == "pool_test_call_stats"
+    assert schema.table_names() == pool_table_names("test")
+    assert schema.table_names() == [
+        "pool_test_samples",
+        "pool_test_claims",
+        "pool_test_pending",
+        "pool_test_metadata",
+        "pool_test_call_stats",
+    ]
+
+
+def test_schema_dump_excludes_derived_table_names() -> None:
+    dumped = _simple_schema().model_dump()
+
+    assert dumped == {
+        "name": "test",
+        "key_columns": [
+            {"name": "dim_a", "type": ColumnType.text},
+            {"name": "dim_b", "type": ColumnType.integer},
+        ],
+    }
+
+
+def test_schema_ignores_old_persisted_table_name_metadata() -> None:
+    payload: dict[str, Any] = {
+        "name": "test",
+        "key_columns": [KeyColumn(name="dim_a")],
+        "samples_table": "pool_test_samples",
+        "claims_table": "pool_test_claims",
+        "pending_table": "pool_test_pending",
+        "metadata_table": "pool_test_metadata",
+        "call_stats_table": "pool_test_call_stats",
+    }
+    schema = PoolSchema(**payload)
+
+    assert schema.table_names() == pool_table_names("test")
 
 
 def test_schema_key_column_names() -> None:

@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql.elements import ColumnElement
 
 from dr_llm.pool.db.runtime import DbRuntime
-from dr_llm.pool.db.schema import PoolSchema
+from dr_llm.pool.db.schema import PoolSchema, PoolTableType
 from dr_llm.pool.db.sql_helpers import (
     insert_keyed_samples,
     is_constraint_error,
@@ -225,7 +225,7 @@ class PoolStore:
     def _cell_lock_id(self, cell_key: tuple[Any, ...]) -> int:
         lock_payload = json.dumps(
             {
-                "pool": self.schema.samples_table,
+                "pool": self.schema.table_name(PoolTableType.samples),
                 "key_values": {
                     name: value
                     for name, value in zip(

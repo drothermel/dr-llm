@@ -17,7 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Connection
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 
-from dr_llm.pool.db.schema import ColumnType, PoolSchema
+from dr_llm.pool.db.schema import ColumnType, PoolSchema, PoolTableType
 
 
 _TYPE_MAP: dict[ColumnType, type[Any]] = {
@@ -89,7 +89,7 @@ class PoolTables:
 
     def _build_samples_table(self) -> Table:
         return Table(
-            self.schema.samples_table,
+            self.schema.table_name(PoolTableType.samples),
             self.sa_metadata,
             Column("sample_id", Text, primary_key=True),
             *self._key_columns(),
@@ -117,7 +117,7 @@ class PoolTables:
 
     def _build_claims_table(self) -> Table:
         return Table(
-            self.schema.claims_table,
+            self.schema.table_name(PoolTableType.claims),
             self.sa_metadata,
             Column("claim_id", Text, primary_key=True),
             Column("run_id", Text, nullable=False),
@@ -135,7 +135,7 @@ class PoolTables:
 
     def _build_pending_table(self) -> Table:
         return Table(
-            self.schema.pending_table,
+            self.schema.table_name(PoolTableType.pending),
             self.sa_metadata,
             Column("pending_id", Text, primary_key=True),
             *self._key_columns(),
@@ -168,42 +168,42 @@ class PoolTables:
 
     def _build_indexes(self) -> None:
         Index(
-            f"uq_{self.schema.samples_table}_cell",
+            f"uq_{self.samples.name}_cell",
             *self.samples_key_columns,
             self.samples.c.sample_idx,
             unique=True,
         )
         Index(
-            f"idx_{self.schema.samples_table}_key",
+            f"idx_{self.samples.name}_key",
             *self.samples_key_columns,
         )
         Index(
-            f"uq_{self.schema.claims_table}_run_sample",
+            f"uq_{self.claims.name}_run_sample",
             self.claims.c.run_id,
             self.claims.c.sample_id,
             unique=True,
         )
-        Index(f"idx_{self.schema.claims_table}_run", self.claims.c.run_id)
+        Index(f"idx_{self.claims.name}_run", self.claims.c.run_id)
         Index(
-            f"uq_{self.schema.pending_table}_cell",
+            f"uq_{self.pending.name}_cell",
             *self.pending_key_columns,
             self.pending.c.sample_idx,
             unique=True,
         )
         Index(
-            f"idx_{self.schema.pending_table}_status_priority",
+            f"idx_{self.pending.name}_status_priority",
             self.pending.c.status,
             self.pending.c.priority.desc(),
             self.pending.c.created_at.asc(),
         )
         Index(
-            f"idx_{self.schema.pending_table}_key",
+            f"idx_{self.pending.name}_key",
             *self.pending_key_columns,
         )
 
     def _build_metadata_table(self) -> Table:
         return Table(
-            self.schema.metadata_table,
+            self.schema.table_name(PoolTableType.metadata),
             self.sa_metadata,
             Column("pool_name", Text, nullable=False),
             Column("key", Text, nullable=False),
@@ -225,7 +225,7 @@ class PoolTables:
 
     def _build_call_stats_table(self) -> Table:
         return Table(
-            self.schema.call_stats_table,
+            self.schema.table_name(PoolTableType.call_stats),
             self.sa_metadata,
             Column("sample_id", Text, primary_key=True),
             Column("latency_ms", Integer, nullable=False),

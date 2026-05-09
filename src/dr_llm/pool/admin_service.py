@@ -9,7 +9,13 @@ from sqlalchemy.engine import Connection
 
 from dr_llm.datetime_utils import UTC, normalize_utc
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import KeyColumn, PoolSchema
+from dr_llm.pool.db.schema import (
+    KeyColumn,
+    PoolSchema,
+    PoolTableType,
+    pool_table_name,
+    pool_table_names,
+)
 from dr_llm.pool.models import (
     CreatePoolRequest,
     DeletePoolRequest,
@@ -35,19 +41,12 @@ from dr_llm.project.errors import ProjectError, ProjectNotFoundError
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import maybe_get_project
 
-POOL_TABLE_RE = re.compile(r"^pool_(.+)_samples$")
+POOL_TABLE_RE = re.compile(rf"^pool_(.+)_{re.escape(PoolTableType.samples.value)}$")
 POOL_DISCOVERY_SQL = text(
     "SELECT table_name FROM information_schema.tables "
     "WHERE table_schema = 'public' "
-    r"AND table_name LIKE 'pool\_%\_samples' "
+    rf"AND table_name LIKE 'pool\_%\_{PoolTableType.samples.value}' "
     "ORDER BY table_name"
-)
-_POOL_TABLE_SUFFIXES: Final[tuple[str, ...]] = (
-    "samples",
-    "claims",
-    "pending",
-    "metadata",
-    "call_stats",
 )
 _IN_PROGRESS_PENDING_STATUSES: Final[tuple[str, ...]] = ("pending", "leased")
 _DEFAULT_TESTISH_TOKENS: Final[frozenset[str]] = frozenset(
@@ -442,7 +441,7 @@ def _inspect_pool_for_project(project: ProjectInfo, pool_name: str) -> PoolInspe
         reader = PoolReader.from_runtime(runtime, schema=schema)
         progress = reader.progress()
         metadata_table = Table(
-            schema.metadata_table,
+            schema.table_name(PoolTableType.metadata),
             MetaData(),
             Column("pool_name", Text, nullable=False),
             Column("key", Text, nullable=False),
@@ -487,7 +486,7 @@ def _pool_delete_request_violations(
 
 
 def _pool_table_names(pool_name: str) -> list[str]:
-    return [f"pool_{pool_name}_{suffix}" for suffix in _POOL_TABLE_SUFFIXES]
+    return pool_table_names(pool_name)
 
 
 def pool_name_tokens(pool_name: str) -> list[str]:
@@ -529,7 +528,7 @@ def _existing_pool_table_names(runtime: DbRuntime, pool_name: str) -> list[str]:
 
 
 def _count_in_progress_pending_rows(runtime: DbRuntime, pool_name: str) -> int:
-    pending_table = f"pool_{pool_name}_pending"
+    pending_table = pool_table_name(pool_name, PoolTableType.pending)
     validate_pg_identifier(pending_table, "table name")
     existing_table_names = _existing_pool_table_names(runtime, pool_name)
     if pending_table not in existing_table_names:

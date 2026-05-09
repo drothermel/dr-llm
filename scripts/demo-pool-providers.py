@@ -36,7 +36,7 @@ import typer
 
 from _demo_utils import BOLD, CYAN, GREEN, RED, RESET, YELLOW, fail, ok, step, warn
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import KeyColumn, PoolSchema
+from dr_llm.pool.db.schema import KeyColumn, PoolSchema, PoolTableType
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
 from dr_llm.project.project_info import ProjectInfo
@@ -302,7 +302,8 @@ def main(
         store.ensure_schema()
         ok(
             f"Pool '{POOL_SCHEMA.name}' ready "
-            f"(tables: {POOL_SCHEMA.samples_table}, {POOL_SCHEMA.claims_table}, ...)"
+            f"(tables: {POOL_SCHEMA.table_name(PoolTableType.samples)}, "
+            f"{POOL_SCHEMA.table_name(PoolTableType.claims)}, ...)"
         )
 
         succeeded: list[str] = []

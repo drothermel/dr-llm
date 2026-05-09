@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.0 - 2026-05-09
+
+### Changed
+
+- Added `PoolTableType` and enum-backed table-name helpers for pool database
+  table naming.
+- Removed `PoolSchema.samples_table`, `claims_table`, `pending_table`,
+  `metadata_table`, and `call_stats_table`; use
+  `PoolSchema.table_name(...)` instead.
+- Preserved existing pool database table names, so this API break does not
+  require a database migration.
+
 ## 2.3.0 - 2026-04-23
 
 ### Added

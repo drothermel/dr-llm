@@ -20,7 +20,12 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import ProgrammingError
 
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import PoolSchema, _VALID_NAME_RE
+from dr_llm.pool.db.schema import (
+    PoolSchema,
+    PoolTableType,
+    _VALID_NAME_RE,
+    pool_table_name,
+)
 from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
@@ -91,7 +96,7 @@ def _load_schema_from_db(runtime: DbRuntime, pool_name: str) -> PoolSchema:
 
     ad_hoc = MetaData()
     table = Table(
-        f"pool_{pool_name}_metadata",
+        pool_table_name(pool_name, PoolTableType.metadata),
         ad_hoc,
         Column("pool_name", Text, nullable=False),
         Column("key", Text, nullable=False),

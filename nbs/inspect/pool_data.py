@@ -5,9 +5,12 @@ app = marimo.App(width="columns")
 
 with app.setup:
     import marimo as mo
+    from marimo_utils import add_marimo_display
 
     from dr_llm.pool.admin_service import inspect_pool
-    from dr_llm.pool.models import PoolInspectionRequest
+    from dr_llm.pool.models import PoolInspection, PoolInspectionRequest
+
+    add_marimo_display()(PoolInspection)
 
 
 @app.cell
