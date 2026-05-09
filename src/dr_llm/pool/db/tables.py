@@ -47,8 +47,6 @@ class ColumnServerDefault(StrEnum):
 
 
 class PoolTables:
-    """Dynamic SQLAlchemy table metadata for a pool schema."""
-
     def __init__(self, schema: PoolSchema) -> None:
         self.schema = schema
         self.sa_metadata = MetaData()

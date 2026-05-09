@@ -32,8 +32,6 @@ def pool_table_names(pool_name: str) -> list[str]:
 
 
 class KeyColumn(BaseModel):
-    """A single key dimension in a pool schema."""
-
     model_config = ConfigDict(frozen=True)
 
     name: str
@@ -52,8 +50,6 @@ class KeyColumn(BaseModel):
 
 
 class PoolSchema(BaseModel):
-    """Consumer-declared pool schema defining key dimensions and table names."""
-
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     name: str
