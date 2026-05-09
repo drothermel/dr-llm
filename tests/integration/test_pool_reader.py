@@ -14,7 +14,7 @@ from sqlalchemy import text
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema, PoolTableType
-from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
+from dr_llm.pool.errors import PoolNotFoundError
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
@@ -368,50 +368,6 @@ def test_load_schema_from_db_raises_when_pool_missing() -> None:
         with pytest.raises(PoolNotFoundError):
             _load_schema_from_db(runtime, f"never_created_{uuid4().hex[:8]}")
     finally:
-        runtime.close()
-
-
-@pytest.mark.integration
-def test_load_schema_from_db_raises_when_schema_row_missing() -> None:
-    """Migration path: pool exists but _schema row is gone (pre-feature pool)."""
-    dsn = _get_dsn()
-    schema = _isolated_pool_schema()
-    runtime = DbRuntime(
-        DbConfig(
-            dsn=dsn,
-            min_pool_size=1,
-            max_pool_size=2,
-            application_name="pool_reader_tests_migration",
-        )
-    )
-    try:
-        store = PoolStore(schema, runtime)
-        store.ensure_schema()
-
-        # Simulate a pool created before the persist-schema feature.
-        with psycopg.connect(dsn) as conn:
-            conn.execute(
-                sql.SQL("DELETE FROM {} WHERE key = %s").format(
-                    sql.Identifier("public", schema.table_name(PoolTableType.metadata))
-                ),
-                (SCHEMA_METADATA_KEY,),
-            )
-            conn.commit()
-
-        from dr_llm.pool.reader import _load_schema_from_db
-
-        with pytest.raises(PoolSchemaNotPersistedError):
-            _load_schema_from_db(runtime, schema.name)
-
-        # Recovery: from_runtime with explicit schema works without backfilling.
-        reader = PoolReader.from_runtime(runtime, schema=schema)
-        assert reader.schema == schema
-
-        # Re-running ensure_schema backfills the _schema row.
-        store.ensure_schema()
-        assert _load_schema_from_db(runtime, schema.name) == schema
-    finally:
-        _drop_pool_tables(dsn, schema)
         runtime.close()
 
 

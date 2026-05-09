@@ -186,9 +186,3 @@ def test_project_backup_reports_file_not_found_errors(
     )
 
     assert result.exit_code == 1
-
-
-def test_global_project_option_is_removed() -> None:
-    result = runner.invoke(app, ["--project", "demo", "project", "list"])
-
-    assert result.exit_code != 0

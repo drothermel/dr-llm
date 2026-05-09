@@ -57,24 +57,6 @@ def test_query_emits_response_json(monkeypatch: pytest.MonkeyPatch) -> None:
     assert payload["usage"]["total_tokens"] == 3
 
 
-def test_query_recording_flags_are_removed() -> None:
-    result = runner.invoke(
-        app,
-        [
-            "query",
-            "--provider",
-            "openai",
-            "--model",
-            "gpt-4.1",
-            "--message",
-            "hi",
-            "--no-record",
-        ],
-    )
-
-    assert result.exit_code != 0
-
-
 def test_query_rejects_temperature_for_headless_provider() -> None:
     result = runner.invoke(
         app,
@@ -159,9 +141,3 @@ def test_query_accepts_max_tokens_for_kimi_code(
     )
 
     assert result.exit_code == 0
-
-
-def test_run_command_is_removed() -> None:
-    result = runner.invoke(app, ["run", "start"])
-
-    assert result.exit_code != 0

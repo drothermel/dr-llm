@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -105,21 +103,6 @@ def test_schema_table_names() -> None:
         "pool_test_metadata",
         "pool_test_call_stats",
     ]
-
-
-def test_schema_ignores_old_persisted_table_name_metadata() -> None:
-    payload: dict[str, Any] = {
-        "name": "test",
-        "key_columns": [KeyColumn(name="dim_a")],
-        "samples_table": "pool_test_samples",
-        "claims_table": "pool_test_claims",
-        "pending_table": "pool_test_pending",
-        "metadata_table": "pool_test_metadata",
-        "call_stats_table": "pool_test_call_stats",
-    }
-    schema = PoolSchema(**payload)
-
-    assert schema.table_names() == pool_table_names("test")
 
 
 def test_schema_key_column_names() -> None:

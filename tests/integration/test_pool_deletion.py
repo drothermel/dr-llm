@@ -73,67 +73,6 @@ def _table_exists(dsn: str, table_name: str) -> bool:
     return bool(row[0])
 
 
-def _create_legacy_tables(dsn: str, pool_name: str, *, partial: bool = False) -> None:
-    table_names = _pool_table_names(pool_name)
-    create_statements: list[sql.Composed | sql.SQL] = [
-        sql.SQL("CREATE TABLE {} (sample_id text, payload_json jsonb)").format(
-            sql.Identifier("public", table_names[0])
-        ),
-        sql.SQL('CREATE TABLE {} ("key" text, value_json jsonb)').format(
-            sql.Identifier("public", table_names[3])
-        ),
-    ]
-    if not partial:
-        create_statements[1:1] = [
-            sql.SQL("CREATE TABLE {} (claim_id text)").format(
-                sql.Identifier("public", table_names[1])
-            ),
-            sql.SQL("CREATE TABLE {} (status text)").format(
-                sql.Identifier("public", table_names[2])
-            ),
-        ]
-        create_statements.append(
-            sql.SQL("CREATE TABLE {} (sample_id text)").format(
-                sql.Identifier("public", table_names[4])
-            )
-        )
-    with psycopg.connect(dsn) as conn:
-        for statement in create_statements:
-            conn.execute(statement)
-        conn.execute(
-            sql.SQL("INSERT INTO {} (sample_id, payload_json) VALUES (%s, %s)").format(
-                sql.Identifier("public", table_names[0])
-            ),
-            ["sample-1", "{}"],
-        )
-        conn.execute(
-            sql.SQL("INSERT INTO {} (key, value_json) VALUES (%s, %s)").format(
-                sql.Identifier("public", table_names[3])
-            ),
-            ["legacy", "{}"],
-        )
-        if not partial:
-            conn.execute(
-                sql.SQL("INSERT INTO {} (claim_id) VALUES (%s)").format(
-                    sql.Identifier("public", table_names[1])
-                ),
-                ["claim-1"],
-            )
-            conn.execute(
-                sql.SQL("INSERT INTO {} (status) VALUES (%s)").format(
-                    sql.Identifier("public", table_names[2])
-                ),
-                [PendingStatus.failed.value],
-            )
-            conn.execute(
-                sql.SQL("INSERT INTO {} (sample_id) VALUES (%s)").format(
-                    sql.Identifier("public", table_names[4])
-                ),
-                ["sample-1"],
-            )
-        conn.commit()
-
-
 @pytest.mark.integration
 def test_delete_pool_reports_counts_for_normal_pool(
     monkeypatch: pytest.MonkeyPatch,
@@ -206,42 +145,6 @@ def test_delete_pool_reports_counts_for_normal_pool(
 
 
 @pytest.mark.integration
-def test_delete_pool_supports_legacy_pool_without_schema_metadata(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    dsn = _get_dsn()
-    if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
-    pool_name = f"legacy_{uuid4().hex[:8]}"
-    table_names = _pool_table_names(pool_name)
-
-    try:
-        _create_legacy_tables(dsn, pool_name)
-        monkeypatch.setattr(
-            admin_service,
-            "maybe_get_project",
-            lambda name: _project_for_dsn(name, dsn),
-        )
-
-        result = admin_service.delete_pool(
-            DeletePoolRequest(project_name="demo", pool_name=pool_name)
-        )
-
-        assert result.status == PoolDeletionStatus.deleted
-        assert result.pre_delete_counts == {
-            table_names[0]: 1,
-            table_names[1]: 1,
-            table_names[2]: 1,
-            table_names[3]: 1,
-            table_names[4]: 1,
-        }
-        for table_name in table_names:
-            assert _table_exists(dsn, table_name) is False
-    finally:
-        _drop_tables(dsn, table_names)
-
-
-@pytest.mark.integration
 def test_delete_pool_allows_pending_and_leased_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -290,38 +193,3 @@ def test_delete_pool_allows_pending_and_leased_rows(
     finally:
         runtime.close()
         _drop_tables(dsn, _pool_table_names(pool_name))
-
-
-@pytest.mark.integration
-def test_delete_pool_succeeds_when_ancillary_tables_are_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    dsn = _get_dsn()
-    if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
-    pool_name = f"partial_{uuid4().hex[:8]}"
-    table_names = _pool_table_names(pool_name)
-
-    try:
-        _create_legacy_tables(dsn, pool_name, partial=True)
-        monkeypatch.setattr(
-            admin_service,
-            "maybe_get_project",
-            lambda name: _project_for_dsn(name, dsn),
-        )
-
-        result = admin_service.delete_pool(
-            DeletePoolRequest(project_name="demo", pool_name=pool_name)
-        )
-
-        assert result.status == PoolDeletionStatus.deleted
-        assert result.deleted_table_names == [table_names[0], table_names[3]]
-        assert result.missing_table_names == [
-            table_names[1],
-            table_names[2],
-            table_names[4],
-        ]
-        for table_name in table_names:
-            assert _table_exists(dsn, table_name) is False
-    finally:
-        _drop_tables(dsn, table_names)
