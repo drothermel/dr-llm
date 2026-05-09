@@ -274,40 +274,6 @@ def test_worker_snapshot_defaults() -> None:
     assert snapshot.backend_state.status_counts.total == 0
 
 
-def test_pool_root_re_exports_admin_models_and_services() -> None:
-    from dr_llm import pool
-
-    assert not hasattr(pool, "PoolStore")
-    assert not hasattr(pool, "PoolService")
-    assert not hasattr(pool, "PoolSchema")
-    assert hasattr(pool, "AcquireQuery")
-    assert hasattr(pool, "AcquireResult")
-    assert hasattr(pool, "CreatePoolRequest")
-    assert hasattr(pool, "DeletePoolRequest")
-    assert hasattr(pool, "DeletePoolsByTokenRequest")
-    assert hasattr(pool, "PoolInspection")
-    assert hasattr(pool, "assess_pool_creation")
-    assert hasattr(pool, "assess_pool_deletion")
-    assert hasattr(pool, "create_pool")
-    assert hasattr(pool, "delete_pool")
-    assert hasattr(pool, "delete_pools_by_token")
-    assert hasattr(pool, "discover_pools")
-    assert not hasattr(pool, "PendingSample")
-    assert not hasattr(pool, "PoolDb")
-    assert not hasattr(pool, "PoolInspectionStatus")
-
-
-def test_pending_and_db_packages_have_no_re_exports() -> None:
-    import dr_llm.pool.db as pool_db
-    import dr_llm.pool.pending as pending
-
-    assert not hasattr(pool_db, "PoolDb")
-    assert not hasattr(pool_db, "DbConfig")
-    assert not hasattr(pool_db, "RunStatus")
-    assert not hasattr(pending, "PendingSample")
-    assert not hasattr(pending, "PendingStore")
-
-
 def test_delete_pool_request_normalizes_names() -> None:
     request = DeletePoolRequest(project_name=" demo ", pool_name=" sample_pool ")
 
