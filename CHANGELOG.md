@@ -11,6 +11,10 @@
   `PoolSchema.table_name(...)` instead.
 - Preserved existing pool database table names, so this API break does not
   require a database migration.
+- Removed noisy re-export, CLI surface, one-off regression, runtime typing, and
+  demo-script tests from the suite.
+- Narrowed catalog and OpenRouter policy data tests to validation plus
+  representative behavior checks instead of exact inventory snapshots.
 
 ## 2.3.0 - 2026-04-23
 

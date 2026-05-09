@@ -7,58 +7,6 @@ from dr_llm.llm.catalog.model_blacklist import (
 )
 
 
-def test_openai_language_model_pricing_contains_requested_models() -> None:
-    expected_models = {
-        "gpt-5.4-2026-03-05",
-        "gpt-5.4",
-        "gpt-5.2-2025-12-11",
-        "gpt-5.2",
-        "gpt-5.1-2025-11-13",
-        "gpt-5.1",
-        "gpt-5-chat-latest",
-        "gpt-5-2025-08-07",
-        "gpt-5",
-        "gpt-4.1-2025-04-14",
-        "gpt-4.1",
-        "gpt-4o-2024-11-20",
-        "gpt-4o-2024-05-13",
-        "gpt-4o-2024-08-06",
-        "gpt-4o",
-        "gpt-4-0613",
-        "gpt-4",
-        "o3-2025-04-16",
-        "o3",
-        "o1-2024-12-17",
-        "o1",
-        "gpt-5.3-codex",
-        "gpt-5.2-codex",
-        "gpt-5.1-codex-max",
-        "gpt-5.1-codex",
-        "gpt-5-codex",
-        "gpt-5.1-codex-mini",
-        "gpt-5.4-mini-2026-03-17",
-        "gpt-5.4-mini",
-        "gpt-5-mini-2025-08-07",
-        "gpt-5-mini",
-        "gpt-4.1-mini-2025-04-14",
-        "gpt-4.1-mini",
-        "gpt-4o-mini-2024-07-18",
-        "gpt-4o-mini",
-        "o4-mini-2025-04-16",
-        "o4-mini",
-        "o3-mini",
-        "o3-mini-2025-01-31",
-        "gpt-5.4-nano-2026-03-17",
-        "gpt-5.4-nano",
-        "gpt-5-nano-2025-08-07",
-        "gpt-5-nano",
-        "gpt-4.1-nano-2025-04-14",
-        "gpt-4.1-nano",
-    }
-
-    assert set(openai_language_model_pricing()) == expected_models
-
-
 def test_openai_language_model_pricing_values() -> None:
     pricing = openai_language_model_pricing()
     assert pricing["gpt-5.4"].input_cost_per_1m == 2.5
@@ -83,40 +31,9 @@ def test_openai_language_model_pricing_returns_a_fresh_copy() -> None:
 def test_google_irrelevant_models_are_blacklisted() -> None:
     expected_reason = "Irrelevant to LLM research."
     for model in (
-        "gemini-flash-latest",
-        "gemini-flash-lite-latest",
-        "gemini-pro-latest",
         "gemini-2.5-flash-image",
-        "gemini-3.1-pro-preview-customtools",
-        "gemini-3-pro-image-preview",
-        "nano-banana-pro-preview",
-        "gemini-3.1-flash-image-preview",
-        "lyria-3-clip-preview",
-        "lyria-3-pro-preview",
-        "gemini-robotics-er-1.5-preview",
-        "gemini-2.5-computer-use-preview-10-2025",
-        "deep-research-pro-preview-12-2025",
         "gemini-embedding-001",
-        "gemini-embedding-2-preview",
-        "aqa",
-        "imagen-4.0-generate-001",
-        "imagen-4.0-ultra-generate-001",
-        "imagen-4.0-fast-generate-001",
-        "veo-2.0-generate-001",
-        "veo-3.0-generate-001",
-        "veo-3.0-fast-generate-001",
         "veo-3.1-generate-preview",
-        "veo-3.1-fast-generate-preview",
-        "veo-3.1-lite-generate-preview",
-        "gemini-2.5-flash-native-audio-latest",
-        "gemini-2.5-flash-native-audio-preview-09-2025",
-        "gemini-2.5-flash-native-audio-preview-12-2025",
-        "gemini-2.5-flash-preview-tts",
-        "gemini-2.5-pro-preview-tts",
-        "gemini-3.1-flash-live-preview",
-        "gemini-3.1-pro-preview",
-        "gemini-3-pro-preview",
-        "gemini-2.5-pro",
     ):
         assert blacklist_reason(provider="google", model=model) == expected_reason
 

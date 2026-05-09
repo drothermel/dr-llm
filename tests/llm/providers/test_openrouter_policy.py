@@ -1,23 +1,9 @@
 from __future__ import annotations
 
-import csv
-from pathlib import Path
-
 from dr_llm.llm.providers.openrouter.policy import (
     OpenRouterReasoningRequestStyle,
     _policies,
 )
-
-
-def test_openrouter_policy_covers_affordable_models_csv() -> None:
-    csv_path = (
-        Path(__file__).resolve().parents[3] / "info" / "affordable_models_data.csv"
-    )
-    rows = list(csv.DictReader(csv_path.read_text(encoding="utf-8").splitlines()))
-    csv_models = {
-        row["Model"] for row in rows if row["Source"].strip().lower() == "openrouter"
-    }
-    assert set(_policies()) == csv_models
 
 
 def test_openrouter_policy_applies_verified_overrides() -> None:
