@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
@@ -34,6 +35,15 @@ _TYPE_MAP: dict[ColumnType, type[Any]] = {
     ColumnType.boolean: Boolean,
     ColumnType.float_: Double,
 }
+
+
+class ColumnServerDefault(StrEnum):
+    EMPTY_JSONB = "'{}'::jsonb"
+    EMPTY_TEXT = "''"
+    NOW = "now()"
+    ONE = "1"
+    PENDING_STATUS = "'pending'"
+    ZERO = "0"
 
 
 class PoolTables:
@@ -106,20 +116,20 @@ class PoolTables:
                 SampleColumn.PAYLOAD_JSON,
                 JSONB,
                 nullable=False,
-                server_default=text("'{}'::jsonb"),
+                server_default=text(ColumnServerDefault.EMPTY_JSONB.value),
             ),
             Column(SampleColumn.SOURCE_RUN_ID, Text),
             Column(
                 SampleColumn.METADATA_JSON,
                 JSONB,
                 nullable=False,
-                server_default=text("'{}'::jsonb"),
+                server_default=text(ColumnServerDefault.EMPTY_JSONB.value),
             ),
             Column(
                 SampleColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text("now()"),
+                server_default=text(ColumnServerDefault.NOW.value),
             ),
         )
 
@@ -134,7 +144,7 @@ class PoolTables:
                 ClaimColumn.CONSUMER_TAG,
                 Text,
                 nullable=False,
-                server_default=text("''"),
+                server_default=text(ColumnServerDefault.EMPTY_TEXT.value),
             ),
             Column(ClaimColumn.SAMPLE_ID, Text, nullable=False),
             Column(ClaimColumn.CLAIM_IDX, Integer, nullable=False),
@@ -142,7 +152,7 @@ class PoolTables:
                 ClaimColumn.CLAIMED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text("now()"),
+                server_default=text(ColumnServerDefault.NOW.value),
             ),
         )
 
@@ -157,26 +167,26 @@ class PoolTables:
                 PendingColumn.PAYLOAD_JSON,
                 JSONB,
                 nullable=False,
-                server_default=text("'{}'::jsonb"),
+                server_default=text(ColumnServerDefault.EMPTY_JSONB.value),
             ),
             Column(PendingColumn.SOURCE_RUN_ID, Text),
             Column(
                 PendingColumn.METADATA_JSON,
                 JSONB,
                 nullable=False,
-                server_default=text("'{}'::jsonb"),
+                server_default=text(ColumnServerDefault.EMPTY_JSONB.value),
             ),
             Column(
                 PendingColumn.PRIORITY,
                 Integer,
                 nullable=False,
-                server_default=text("0"),
+                server_default=text(ColumnServerDefault.ZERO.value),
             ),
             Column(
                 PendingColumn.STATUS,
                 Text,
                 nullable=False,
-                server_default=text("'pending'"),
+                server_default=text(ColumnServerDefault.PENDING_STATUS.value),
             ),
             Column(PendingColumn.WORKER_ID, Text),
             Column(PendingColumn.LEASE_EXPIRES_AT, TIMESTAMP(timezone=True)),
@@ -184,13 +194,13 @@ class PoolTables:
                 PendingColumn.ATTEMPT_COUNT,
                 Integer,
                 nullable=False,
-                server_default=text("0"),
+                server_default=text(ColumnServerDefault.ZERO.value),
             ),
             Column(
                 PendingColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text("now()"),
+                server_default=text(ColumnServerDefault.NOW.value),
             ),
         )
 
@@ -240,13 +250,13 @@ class PoolTables:
                 MetadataColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text("now()"),
+                server_default=text(ColumnServerDefault.NOW.value),
             ),
             Column(
                 MetadataColumn.UPDATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text("now()"),
+                server_default=text(ColumnServerDefault.NOW.value),
             ),
             PrimaryKeyConstraint(MetadataColumn.POOL_NAME, MetadataColumn.KEY),
         )
@@ -266,14 +276,14 @@ class PoolTables:
                 CallStatsColumn.ATTEMPT_COUNT,
                 Integer,
                 nullable=False,
-                server_default=text("1"),
+                server_default=text(ColumnServerDefault.ONE.value),
             ),
             Column(CallStatsColumn.FINISH_REASON, Text),
             Column(
                 CallStatsColumn.CREATED_AT,
                 TIMESTAMP(timezone=True),
                 nullable=False,
-                server_default=text("now()"),
+                server_default=text(ColumnServerDefault.NOW.value),
             ),
         )
 
