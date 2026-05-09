@@ -31,7 +31,7 @@ from dr_llm.project.models import (
     ProjectPoolInspectionReason,
     ProjectPoolInspectionStatus,
 )
-from dr_llm.pool.models import PoolDeletionResult, PoolDeletionStatus
+from dr_llm.pool.admin.deletion import PoolDeletionResult, PoolDeletionStatus
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import (
     assess_project_creation,
@@ -266,7 +266,7 @@ def test_inspect_projects_includes_discovered_pool_names(
     ]
     monkeypatch.setattr(project_service_module, "list_projects", lambda: projects)
     monkeypatch.setattr(
-        "dr_llm.pool.admin_service.discover_pools",
+        "dr_llm.pool.admin.discovery.discover_pools",
         lambda dsn: ["alpha", "beta"] if dsn.endswith(":5500/dr_llm") else [],
     )
 
@@ -300,7 +300,7 @@ def test_inspect_projects_skips_projects_with_missing_dsn(
     project = ProjectInfo(name="running", status=ContainerStatus.RUNNING)
     monkeypatch.setattr(project_service_module, "list_projects", lambda: [project])
     monkeypatch.setattr(
-        "dr_llm.pool.admin_service.discover_pools",
+        "dr_llm.pool.admin.discovery.discover_pools",
         lambda dsn: (_ for _ in ()).throw(AssertionError("should not inspect pools")),
     )
 
@@ -321,7 +321,7 @@ def test_inspect_projects_reports_connection_failures(
     project = ProjectInfo(name="running", port=5500, status=ContainerStatus.RUNNING)
     monkeypatch.setattr(project_service_module, "list_projects", lambda: [project])
     monkeypatch.setattr(
-        "dr_llm.pool.admin_service.discover_pools",
+        "dr_llm.pool.admin.discovery.discover_pools",
         lambda dsn: (_ for _ in ()).throw(TransientPersistenceError("db unavailable")),
     )
 
@@ -683,7 +683,7 @@ def test_delete_project_destroys_running_project_with_no_pools(
         project_service_module, "maybe_get_project", lambda name: project
     )
     monkeypatch.setattr(
-        "dr_llm.pool.admin_service.discover_pools",
+        "dr_llm.pool.admin.discovery.discover_pools",
         lambda dsn: [],
     )
     monkeypatch.setattr(
@@ -721,7 +721,7 @@ def test_delete_project_autostarts_stopped_project(
         lambda name: started.append(name) or running_project,
     )
     monkeypatch.setattr(
-        "dr_llm.pool.admin_service.discover_pools",
+        "dr_llm.pool.admin.discovery.discover_pools",
         lambda dsn: [],
     )
     monkeypatch.setattr(
@@ -770,7 +770,7 @@ def test_delete_project_preserves_discovered_pool_order(
         project_service_module, "maybe_get_project", lambda name: project
     )
     monkeypatch.setattr(
-        "dr_llm.pool.admin_service.discover_pools",
+        "dr_llm.pool.admin.discovery.discover_pools",
         lambda dsn: ["alpha", "beta", "gamma"],
     )
     monkeypatch.setattr(
@@ -844,7 +844,7 @@ def test_delete_project_fail_fast_restores_temporary_start_state(
         lambda name: stopped.append(name),
     )
     monkeypatch.setattr(
-        "dr_llm.pool.admin_service.discover_pools",
+        "dr_llm.pool.admin.discovery.discover_pools",
         lambda dsn: ["alpha", "beta", "gamma"],
     )
     monkeypatch.setattr(

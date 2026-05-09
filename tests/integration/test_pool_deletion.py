@@ -9,7 +9,7 @@ import psycopg
 import pytest
 from psycopg import sql
 
-import dr_llm.pool.admin_service as admin_service
+from dr_llm.pool.admin import deletion
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.db.names import PoolTableType
@@ -19,13 +19,15 @@ from dr_llm.pool.db.schema import (
     PoolSchema,
     pool_table_names,
 )
-from dr_llm.pool.models import AcquireQuery, DeletePoolRequest, PoolDeletionStatus
+from dr_llm.pool.acquisition import AcquireQuery
+from dr_llm.pool.admin.deletion import DeletePoolRequest, PoolDeletionStatus
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
 from dr_llm.project.docker_project_metadata import ContainerStatus
 from dr_llm.project.project_info import ProjectInfo
+from dr_llm.project import project_service as project_service_module
 
 
 def _get_dsn() -> str:
@@ -119,12 +121,12 @@ def test_delete_pool_reports_counts_for_normal_pool(
         )
 
         monkeypatch.setattr(
-            admin_service,
+            project_service_module,
             "maybe_get_project",
             lambda name: _project_for_dsn(name, dsn),
         )
 
-        result = admin_service.delete_pool(
+        result = deletion.delete_pool(
             DeletePoolRequest(project_name="demo", pool_name=pool_name)
         )
 
@@ -177,12 +179,12 @@ def test_delete_pool_allows_pending_and_leased_rows(
         )
 
         monkeypatch.setattr(
-            admin_service,
+            project_service_module,
             "maybe_get_project",
             lambda name: _project_for_dsn(name, dsn),
         )
 
-        result = admin_service.delete_pool(
+        result = deletion.delete_pool(
             DeletePoolRequest(project_name="demo", pool_name=pool_name)
         )
 

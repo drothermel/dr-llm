@@ -20,7 +20,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from dr_llm.pool.models import InsertResult
+from dr_llm.pool.results import InsertResult
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pool_store import PoolStore
 

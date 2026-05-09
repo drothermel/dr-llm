@@ -28,12 +28,14 @@ from dr_llm.pool.db.sql_helpers import (
     stream_select_rows,
     validate_key_values,
 )
+from dr_llm.pool.acquisition import AcquireQuery, AcquireResult
 from dr_llm.pool.call_stats import CallStats
+from dr_llm.pool.coverage import CoverageRow
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.metadata_store import MetadataStore
-from dr_llm.pool.models import AcquireQuery, AcquireResult, CoverageRow, InsertResult
 from dr_llm.pool.pending.store import PendingStore
 from dr_llm.pool.pool_sample import PoolSample
+from dr_llm.pool.results import InsertResult
 
 SCHEMA_METADATA_KEY = "_schema"
 """Reserved metadata key under which ``ensure_schema`` persists the pool's

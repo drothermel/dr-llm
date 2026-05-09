@@ -13,7 +13,7 @@ from typing import Final, IO, cast
 
 from dr_llm.datetime_utils import UTC, normalize_utc
 from dr_llm.errors import TransientPersistenceError
-from dr_llm.pool.models import (
+from dr_llm.pool.admin.deletion import (
     DeletePoolRequest,
     PoolDeletionResult,
     PoolDeletionStatus,
@@ -464,7 +464,7 @@ def delete_project(request: DeleteProjectRequest) -> ProjectDeletionResult:
                 message=failure_message,
             )
 
-        from dr_llm.pool.admin_service import discover_pools
+        from dr_llm.pool.admin.discovery import discover_pools
 
         discovered_pool_names = discover_pools(running_project.dsn)
         pool_results = _delete_pools_for_project(
@@ -528,7 +528,7 @@ def _collect_claimed_ports() -> set[int]:
 
 
 def _inspect_project_pools(project: ProjectInfo) -> ProjectPoolInspection:
-    from dr_llm.pool.admin_service import discover_pools
+    from dr_llm.pool.admin.discovery import discover_pools
 
     inspected_at = datetime.now(UTC)
     if not project.running:
@@ -859,7 +859,7 @@ def _delete_single_pool_for_project(
     project_name: str,
     pool_name: str,
 ) -> PoolDeletionResult:
-    from dr_llm.pool.admin_service import delete_pool
+    from dr_llm.pool.admin.deletion import delete_pool
 
     return delete_pool(
         DeletePoolRequest(project_name=project_name, pool_name=pool_name)

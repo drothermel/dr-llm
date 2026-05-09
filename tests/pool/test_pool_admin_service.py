@@ -5,25 +5,28 @@ from types import SimpleNamespace
 
 import pytest
 
-from dr_llm.pool import admin_service
-from dr_llm.pool.db.schema import KeyColumn, PoolSchema
-from dr_llm.pool.errors import PoolError
-from dr_llm.pool.models import (
+from dr_llm.pool.admin import creation, deletion, discovery, inspection
+from dr_llm.pool.admin.creation import (
     CreatePoolRequest,
-    DeletePoolRequest,
-    DeletePoolsByTokenRequest,
     PoolCreationBlockReason,
     PoolCreationReadiness,
+    PoolCreationViolation,
+)
+from dr_llm.pool.admin.deletion import (
+    DeletePoolRequest,
+    DeletePoolsByTokenRequest,
     PoolDeletionBlockReason,
     PoolDeletionResult,
     PoolDeletionStatus,
-    PoolInspection,
-    PoolInspectionRequest,
 )
+from dr_llm.pool.admin.inspection import PoolInspection, PoolInspectionRequest
+from dr_llm.pool.db.schema import KeyColumn, PoolSchema
+from dr_llm.pool.errors import PoolError
 from dr_llm.pool.pending.pending_status import PendingStatusCounts
 from dr_llm.project.docker_project_metadata import ContainerStatus
 from dr_llm.project.errors import ProjectNotFoundError
 from dr_llm.project.project_info import ProjectInfo
+from dr_llm.project import project_service as project_service_module
 
 
 def test_create_pool_request_from_csv_normalizes_axes() -> None:
@@ -41,7 +44,7 @@ def test_create_pool_request_from_csv_normalizes_axes() -> None:
 def test_assess_pool_creation_reports_request_violations_before_project_lookup() -> (
     None
 ):
-    readiness = admin_service.assess_pool_creation(
+    readiness = creation.assess_pool_creation(
         CreatePoolRequest(project_name="demo", pool_name="Bad Name", key_axes=[]),
     )
 
@@ -57,12 +60,12 @@ def test_assess_pool_creation_reports_project_not_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        admin_service,
+        project_service_module,
         "maybe_get_project",
         lambda name: ProjectInfo(name=name, status=ContainerStatus.STOPPED),
     )
 
-    readiness = admin_service.assess_pool_creation(
+    readiness = creation.assess_pool_creation(
         CreatePoolRequest(
             project_name="demo", pool_name="sample_pool", key_axes=["provider"]
         )
@@ -78,11 +81,13 @@ def test_assess_pool_creation_reports_existing_pool_limits_and_cooldown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
-    monkeypatch.setattr(admin_service, "maybe_get_project", lambda name: project)
-    monkeypatch.setattr(admin_service, "discover_pools", lambda dsn: ["alpha", "beta"])
+    monkeypatch.setattr(
+        project_service_module, "maybe_get_project", lambda name: project
+    )
+    monkeypatch.setattr(creation, "discover_pools", lambda dsn: ["alpha", "beta"])
     recent = datetime.now(UTC)
     monkeypatch.setattr(
-        admin_service,
+        creation,
         "_inspect_pool_for_project",
         lambda project, pool_name: PoolInspection(
             project_name=project.name,
@@ -99,7 +104,7 @@ def test_assess_pool_creation_reports_existing_pool_limits_and_cooldown(
         ),
     )
 
-    readiness = admin_service.assess_pool_creation(
+    readiness = creation.assess_pool_creation(
         CreatePoolRequest(
             project_name="demo", pool_name="alpha", key_axes=["provider"]
         ),
@@ -145,13 +150,15 @@ def test_inspect_pool_reports_reader_progress(
         def close(self) -> None:
             closed.append(True)
 
-    monkeypatch.setattr(admin_service, "maybe_get_project", lambda name: project)
-    monkeypatch.setattr(admin_service, "DbRuntime", FakeRuntime)
     monkeypatch.setattr(
-        admin_service, "load_schema_from_db", lambda runtime, pool_name: schema
+        project_service_module, "maybe_get_project", lambda name: project
+    )
+    monkeypatch.setattr(inspection, "DbRuntime", FakeRuntime)
+    monkeypatch.setattr(
+        inspection, "load_schema_from_db", lambda runtime, pool_name: schema
     )
     monkeypatch.setattr(
-        admin_service.PoolReader,
+        inspection.PoolReader,
         "from_runtime",
         lambda runtime, schema: SimpleNamespace(
             progress=lambda: SimpleNamespace(
@@ -161,16 +168,16 @@ def test_inspect_pool_reports_reader_progress(
         ),
     )
 
-    inspection = admin_service.inspect_pool(
+    pool_inspection = inspection.inspect_pool(
         PoolInspectionRequest(project_name="demo", pool_name="sample_pool")
     )
 
-    assert inspection.name == "sample_pool"
-    assert inspection.sample_count == 2
-    assert inspection.pending_counts == PendingStatusCounts(
+    assert pool_inspection.name == "sample_pool"
+    assert pool_inspection.sample_count == 2
+    assert pool_inspection.pending_counts == PendingStatusCounts(
         pending=1, leased=0, failed=0
     )
-    assert inspection.created_at == datetime(2024, 1, 2, tzinfo=UTC)
+    assert pool_inspection.created_at == datetime(2024, 1, 2, tzinfo=UTC)
     assert closed == [True]
 
 
@@ -213,14 +220,12 @@ def test_create_pool_ensures_schema_and_returns_fresh_inspection(
         def ensure_schema(self) -> None:
             ensured.append(self.schema)
 
-    monkeypatch.setattr(
-        admin_service, "assess_pool_creation", lambda request: readiness
-    )
-    monkeypatch.setattr(admin_service, "DbRuntime", FakeRuntime)
-    monkeypatch.setattr(admin_service, "PoolStore", FakeStore)
-    monkeypatch.setattr(admin_service, "inspect_pool", lambda request: inspection)
+    monkeypatch.setattr(creation, "assess_pool_creation", lambda request: readiness)
+    monkeypatch.setattr(creation, "DbRuntime", FakeRuntime)
+    monkeypatch.setattr(creation, "PoolStore", FakeStore)
+    monkeypatch.setattr(creation, "inspect_pool", lambda request: inspection)
 
-    created = admin_service.create_pool(request)
+    created = creation.create_pool(request)
 
     assert created == inspection
     assert ensured == [inspection.pool_schema]
@@ -238,7 +243,7 @@ def test_create_pool_raises_project_not_found_for_missing_project(
     readiness = PoolCreationReadiness(
         request=request,
         violations=[
-            admin_service.PoolCreationViolation(
+            PoolCreationViolation(
                 reason=PoolCreationBlockReason.project_not_found,
                 message="Project 'missing' not found",
                 project_name="missing",
@@ -246,12 +251,10 @@ def test_create_pool_raises_project_not_found_for_missing_project(
             )
         ],
     )
-    monkeypatch.setattr(
-        admin_service, "assess_pool_creation", lambda request: readiness
-    )
+    monkeypatch.setattr(creation, "assess_pool_creation", lambda request: readiness)
 
     with pytest.raises(ProjectNotFoundError, match="Project 'missing' not found"):
-        admin_service.create_pool(request)
+        creation.create_pool(request)
 
 
 def test_create_pool_raises_pool_error_for_blocked_readiness(
@@ -266,7 +269,7 @@ def test_create_pool_raises_pool_error_for_blocked_readiness(
         request=request,
         project=ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING),
         violations=[
-            admin_service.PoolCreationViolation(
+            PoolCreationViolation(
                 reason=PoolCreationBlockReason.pool_already_exists,
                 message="Pool 'sample_pool' already exists in project 'demo'.",
                 project_name="demo",
@@ -274,24 +277,22 @@ def test_create_pool_raises_pool_error_for_blocked_readiness(
             )
         ],
     )
-    monkeypatch.setattr(
-        admin_service, "assess_pool_creation", lambda request: readiness
-    )
+    monkeypatch.setattr(creation, "assess_pool_creation", lambda request: readiness)
 
     with pytest.raises(PoolError, match="already exists"):
-        admin_service.create_pool(request)
+        creation.create_pool(request)
 
 
 def test_assess_pool_deletion_reports_project_not_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        admin_service,
+        project_service_module,
         "maybe_get_project",
         lambda name: ProjectInfo(name=name, status=ContainerStatus.STOPPED),
     )
 
-    readiness = admin_service.assess_pool_deletion(
+    readiness = deletion.assess_pool_deletion(
         DeletePoolRequest(project_name="demo", pool_name="sample_pool")
     )
 
@@ -305,11 +306,11 @@ def test_assess_pool_deletion_reports_missing_pool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
-    monkeypatch.setattr(admin_service, "maybe_get_project", lambda name: project)
-    monkeypatch.setattr(admin_service, "_existing_pool_table_names", lambda *args: [])
     monkeypatch.setattr(
-        admin_service, "_count_in_progress_pending_rows", lambda *args: 0
+        project_service_module, "maybe_get_project", lambda name: project
     )
+    monkeypatch.setattr(deletion, "_existing_pool_table_names", lambda *args: [])
+    monkeypatch.setattr(deletion, "_count_in_progress_pending_rows", lambda *args: 0)
 
     class FakeRuntime:
         def __init__(self, config: object) -> None:
@@ -318,9 +319,9 @@ def test_assess_pool_deletion_reports_missing_pool(
         def close(self) -> None:
             return None
 
-    monkeypatch.setattr(admin_service, "DbRuntime", FakeRuntime)
+    monkeypatch.setattr(deletion, "DbRuntime", FakeRuntime)
 
-    readiness = admin_service.assess_pool_deletion(
+    readiness = deletion.assess_pool_deletion(
         DeletePoolRequest(project_name="demo", pool_name="sample_pool")
     )
 
@@ -334,14 +335,16 @@ def test_assess_pool_deletion_allows_pending_rows_but_reports_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
-    monkeypatch.setattr(admin_service, "maybe_get_project", lambda name: project)
     monkeypatch.setattr(
-        admin_service,
+        project_service_module, "maybe_get_project", lambda name: project
+    )
+    monkeypatch.setattr(
+        deletion,
         "_existing_pool_table_names",
         lambda *args: ["pool_sample_pool_samples", "pool_sample_pool_pending"],
     )
     monkeypatch.setattr(
-        admin_service,
+        deletion,
         "_count_in_progress_pending_rows",
         lambda *args: 3,
     )
@@ -353,9 +356,9 @@ def test_assess_pool_deletion_allows_pending_rows_but_reports_count(
         def close(self) -> None:
             return None
 
-    monkeypatch.setattr(admin_service, "DbRuntime", FakeRuntime)
+    monkeypatch.setattr(deletion, "DbRuntime", FakeRuntime)
 
-    readiness = admin_service.assess_pool_deletion(
+    readiness = deletion.assess_pool_deletion(
         DeletePoolRequest(project_name="demo", pool_name="sample_pool")
     )
 
@@ -365,14 +368,14 @@ def test_assess_pool_deletion_allows_pending_rows_but_reports_count(
 
 
 def test_pool_name_has_token_match_uses_exact_underscore_delimited_words() -> None:
-    assert admin_service.pool_name_has_token_match("smoke_eval")
-    assert admin_service.pool_name_has_token_match("demo_tst_case")
-    assert admin_service.pool_name_has_token_match("alpha_demo_run")
-    assert admin_service.pool_name_has_token_match("full_test_run")
-    assert not admin_service.pool_name_has_token_match("contest_pool")
-    assert not admin_service.pool_name_has_token_match("smoketest_pool")
-    assert not admin_service.pool_name_has_token_match("demographic_pool")
-    assert not admin_service.pool_name_has_token_match("attest_case")
+    assert discovery.pool_name_has_token_match("smoke_eval")
+    assert discovery.pool_name_has_token_match("demo_tst_case")
+    assert discovery.pool_name_has_token_match("alpha_demo_run")
+    assert discovery.pool_name_has_token_match("full_test_run")
+    assert not discovery.pool_name_has_token_match("contest_pool")
+    assert not discovery.pool_name_has_token_match("smoketest_pool")
+    assert not discovery.pool_name_has_token_match("demographic_pool")
+    assert not discovery.pool_name_has_token_match("attest_case")
 
 
 def test_delete_pools_by_token_matches_only_exact_words_in_discovery_order(
@@ -388,9 +391,11 @@ def test_delete_pools_by_token_matches_only_exact_words_in_discovery_order(
             status=PoolDeletionStatus.deleted,
         )
 
-    monkeypatch.setattr(admin_service, "maybe_get_project", lambda name: project)
     monkeypatch.setattr(
-        admin_service,
+        project_service_module, "maybe_get_project", lambda name: project
+    )
+    monkeypatch.setattr(
+        deletion,
         "discover_pools",
         lambda dsn: [
             "alpha_test_run",
@@ -401,9 +406,9 @@ def test_delete_pools_by_token_matches_only_exact_words_in_discovery_order(
             "smoketest_pool",
         ],
     )
-    monkeypatch.setattr(admin_service, "delete_pool", fake_delete_pool)
+    monkeypatch.setattr(deletion, "delete_pool", fake_delete_pool)
 
-    result = admin_service.delete_pools_by_token(
+    result = deletion.delete_pools_by_token(
         DeletePoolsByTokenRequest(
             project_name="demo",
             match_tokens=["test", "tst", "smoke", "demo"],
@@ -433,15 +438,17 @@ def test_delete_pools_by_token_dry_run_reports_matches_without_deleting(
             status=PoolDeletionStatus.deleted,
         )
 
-    monkeypatch.setattr(admin_service, "maybe_get_project", lambda name: project)
     monkeypatch.setattr(
-        admin_service,
+        project_service_module, "maybe_get_project", lambda name: project
+    )
+    monkeypatch.setattr(
+        deletion,
         "discover_pools",
         lambda dsn: ["alpha_test_run", "contest_pool", "smoke_eval", "alpha_demo_run"],
     )
-    monkeypatch.setattr(admin_service, "delete_pool", fake_delete_pool)
+    monkeypatch.setattr(deletion, "delete_pool", fake_delete_pool)
 
-    result = admin_service.delete_pools_by_token(
+    result = deletion.delete_pools_by_token(
         DeletePoolsByTokenRequest(
             project_name="demo",
             match_tokens=["test", "tst", "smoke", "demo"],

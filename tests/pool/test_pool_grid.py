@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
-from dr_llm.pool.models import InsertResult
+from dr_llm.pool.results import InsertResult
 from dr_llm.pool.pending.grid import (
     Axis,
     AxisMember,

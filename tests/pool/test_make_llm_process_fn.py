@@ -14,7 +14,7 @@ from dr_llm.llm.providers.usage import TokenUsage
 from dr_llm.llm.response import LlmResponse
 from dr_llm.pool import llm_pool_adapter
 from dr_llm.pool.db.schema import PoolSchema
-from dr_llm.pool.models import InsertResult
+from dr_llm.pool.results import InsertResult
 from dr_llm.pool.pending.grid import Axis, AxisMember, GridCell
 from dr_llm.pool.pending.pending_sample import PendingSample
 

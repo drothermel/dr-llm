@@ -41,7 +41,7 @@ from dr_llm.pool.db.sql_helpers import (
     stream_select_rows,
     validate_key_values,
 )
-from dr_llm.pool.models import InsertResult
+from dr_llm.pool.results import InsertResult
 from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import (

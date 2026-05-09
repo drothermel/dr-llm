@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 import dr_llm.cli.pool as pool_cli
 from dr_llm.cli import app
-from dr_llm.pool.models import (
+from dr_llm.pool.admin.deletion import (
     DeletePoolRequest,
     DeletePoolsByTokenRequest,
     DeletePoolsByTokenResult,

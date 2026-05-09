@@ -8,13 +8,9 @@ from pydantic import BaseModel
 import pytest
 
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
-from dr_llm.pool.models import (
-    AcquireQuery,
-    AcquireResult,
-    DeletePoolRequest,
-    DeletePoolsByTokenRequest,
-    InsertResult,
-)
+from dr_llm.pool.acquisition import AcquireQuery, AcquireResult
+from dr_llm.pool.admin.deletion import DeletePoolRequest, DeletePoolsByTokenRequest
+from dr_llm.pool.results import InsertResult
 from dr_llm.pool.pending.backend import PoolPendingBackendState
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts

@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from dr_llm.pool.models import AcquireQuery, AcquireResult
+from dr_llm.pool.acquisition import AcquireQuery, AcquireResult
 from dr_llm.pool.pool_service import PoolService
 
 
