@@ -33,6 +33,7 @@ _READER_SCHEMA = PoolSchema(
 
 _READER_TABLES = (
     _READER_SCHEMA.table_name(PoolTableType.METADATA),
+    _READER_SCHEMA.table_name(PoolTableType.CALL_STATS),
     _READER_SCHEMA.table_name(PoolTableType.CLAIMS),
     _READER_SCHEMA.table_name(PoolTableType.PENDING),
     _READER_SCHEMA.table_name(PoolTableType.SAMPLES),
@@ -58,6 +59,7 @@ def _drop_pool_tables(dsn: str, schema: PoolSchema) -> None:
     with psycopg.connect(dsn) as conn:
         for tbl in (
             schema.table_name(PoolTableType.METADATA),
+            schema.table_name(PoolTableType.CALL_STATS),
             schema.table_name(PoolTableType.CLAIMS),
             schema.table_name(PoolTableType.PENDING),
             schema.table_name(PoolTableType.SAMPLES),

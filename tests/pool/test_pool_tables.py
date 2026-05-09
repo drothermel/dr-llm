@@ -169,13 +169,13 @@ def test_schema_empty_key_columns_rejected() -> None:
 
 def test_schema_table_names() -> None:
     schema = _simple_schema()
-    assert list(PoolTableType) == [
+    assert {table_type.value for table_type in PoolTableType} == {
         "samples",
         "claims",
         "pending",
         "metadata",
         "call_stats",
-    ]
+    }
     assert pool_table_name("test", PoolTableType.SAMPLES) == "pool_test_samples"
     assert schema.table_name(PoolTableType.SAMPLES) == "pool_test_samples"
     assert schema.table_name(PoolTableType.CLAIMS) == "pool_test_claims"

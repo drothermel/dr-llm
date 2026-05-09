@@ -28,6 +28,15 @@ class PoolTables:
             PoolTableType.METADATA: MetadataTableDef(),
             PoolTableType.CALL_STATS: CallStatsTableDef(),
         }
+        missing_table_types = set(PoolTableType).difference(self.defs)
+        if missing_table_types:
+            missing_values = [
+                table_type.value
+                for table_type in PoolTableType
+                if table_type in missing_table_types
+            ]
+            msg = f"Missing pool table definitions: {', '.join(missing_values)}"
+            raise ValueError(msg)
         self.tables: dict[PoolTableType, Table] = {
             table_type: table_def.build_table(self.schema, self.sa_metadata)
             for table_type, table_def in self.defs.items()

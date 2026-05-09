@@ -242,6 +242,7 @@ def test_bootstrap_backfills_missing_unique_indexes() -> None:
         with psycopg.connect(dsn) as conn:
             for table_name in (
                 schema.table_name(PoolTableType.METADATA),
+                schema.table_name(PoolTableType.CALL_STATS),
                 schema.table_name(PoolTableType.CLAIMS),
                 schema.table_name(PoolTableType.PENDING),
                 schema.table_name(PoolTableType.SAMPLES),

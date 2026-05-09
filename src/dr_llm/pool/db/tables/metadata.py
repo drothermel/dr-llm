@@ -38,8 +38,8 @@ class MetadataTableDef(BaseModel):
             PrimaryKeyConstraint(MetadataColumn.POOL_NAME, MetadataColumn.KEY),
         )
 
-    def build_indexes(self, table: Table, schema: PoolSchema) -> list[Index]:
+    def build_indexes(self, _table: Table, _schema: PoolSchema) -> list[Index]:
         return []
 
-    def select_columns(self, table: Table, schema: PoolSchema) -> list[Any]:
+    def select_columns(self, table: Table, _schema: PoolSchema) -> list[Any]:
         return list(table.c)

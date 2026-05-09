@@ -45,7 +45,7 @@ class ClaimsTableDef(BaseModel):
             ),
         )
 
-    def build_indexes(self, table: Table, schema: PoolSchema) -> list[Index]:
+    def build_indexes(self, table: Table, _schema: PoolSchema) -> list[Index]:
         return [
             Index(
                 pool_index_name(
@@ -63,5 +63,5 @@ class ClaimsTableDef(BaseModel):
             ),
         ]
 
-    def select_columns(self, table: Table, schema: PoolSchema) -> list[Any]:
+    def select_columns(self, table: Table, _schema: PoolSchema) -> list[Any]:
         return list(table.c)
