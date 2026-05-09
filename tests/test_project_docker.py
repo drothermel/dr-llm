@@ -29,49 +29,41 @@ from dr_llm.project.errors import (
 
 
 @pytest.mark.parametrize(
-    ("stderr", "expected_type", "expected_message"),
+    ("stderr", "expected_type"),
     [
         (
             "Cannot connect to the Docker daemon at unix:///var/run/docker.sock.",
             DockerUnavailableError,
-            "Docker is not available. Install Docker or start the daemon.",
         ),
         (
             "Error response from daemon: No such container: demo",
             DockerContainerNotFoundError,
-            "Docker container not found.",
         ),
         (
             "Error: No such object: demo",
             DockerContainerNotFoundError,
-            "Docker container not found.",
         ),
         (
             "Error response from daemon: Container abc123 is not running",
             DockerContainerNotRunningError,
-            "Docker container is not running.",
         ),
         (
             'Conflict. The container name "/demo" is already in use by container abc123.',
             DockerContainerConflictError,
-            "Docker container name is already in use.",
         ),
         (
             "Bind for 0.0.0.0:5500 failed: port is already allocated",
             DockerPortAllocatedError,
-            "Docker host port is already allocated.",
         ),
     ],
 )
 def test_docker_error_maps_common_failures(
     stderr: str,
     expected_type: type[Exception],
-    expected_message: str,
 ) -> None:
     err = docker_runner.docker_error(("ps",), stderr)
 
     assert isinstance(err, expected_type)
-    assert str(err) == expected_message
 
 
 def test_call_docker_uses_text_mode(

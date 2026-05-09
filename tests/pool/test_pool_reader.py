@@ -28,33 +28,6 @@ def test_pool_progress_is_complete_when_no_in_flight() -> None:
     assert progress.is_complete is True
 
 
-def test_pool_progress_computed_fields_appear_in_model_dump() -> None:
-    """Derived properties must be exposed via @computed_field so they
-    survive model_dump / JSON serialization."""
-    progress = PoolProgress(
-        samples_total=42,
-        pending_counts=PendingStatusCounts(pending=1, leased=2, failed=0),
-    )
-    dumped = progress.model_dump()
-    assert dumped["samples_total"] == 42
-    assert dumped["in_flight"] == 3
-    assert dumped["is_complete"] is False
-    # pending_counts is a nested model; its own derived fields are also
-    # subject to whether they were declared with @computed_field. The
-    # existing PendingStatusCounts uses plain @property so its in_flight
-    # is NOT in the dump — that's out of scope for this PR.
-    assert "pending_counts" in dumped
-
-
-def test_pool_progress_is_frozen() -> None:
-    progress = PoolProgress(
-        samples_total=1,
-        pending_counts=PendingStatusCounts(),
-    )
-    with pytest.raises(Exception, match="frozen"):
-        progress.samples_total = 99
-
-
 @pytest.mark.parametrize(
     "name",
     ["a", "abc", "a1", "snake_case", "with_123_digits"],

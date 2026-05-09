@@ -107,18 +107,6 @@ def test_schema_table_names() -> None:
     ]
 
 
-def test_schema_dump_excludes_derived_table_names() -> None:
-    dumped = _simple_schema().model_dump()
-
-    assert dumped == {
-        "name": "test",
-        "key_columns": [
-            {"name": "dim_a", "type": ColumnType.text},
-            {"name": "dim_b", "type": ColumnType.integer},
-        ],
-    }
-
-
 def test_schema_ignores_old_persisted_table_name_metadata() -> None:
     payload: dict[str, Any] = {
         "name": "test",

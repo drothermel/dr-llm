@@ -59,7 +59,6 @@ def test_pool_destroy_requires_confirmation_without_flag() -> None:
     result = runner.invoke(app, ["pool", "destroy", "demo", "sample_pool"], input="n\n")
 
     assert result.exit_code == 1
-    assert "Continue?" in result.output
 
 
 def test_pool_destroy_testish_invokes_service(

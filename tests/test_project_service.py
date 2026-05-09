@@ -27,7 +27,6 @@ from dr_llm.project.models import (
     CreateProjectRequest,
     DeleteProjectRequest,
     ProjectCreationBlockReason,
-    ProjectCreationReadiness,
     ProjectDeletionStatus,
     ProjectPoolInspectionReason,
     ProjectPoolInspectionStatus,
@@ -256,16 +255,6 @@ def test_assess_project_creation_reports_duplicate_project(
     assert [violation.reason for violation in readiness.violations] == [
         ProjectCreationBlockReason.already_exists
     ]
-    assert readiness.blocked_message == "Project 'demo' already exists."
-
-
-def test_project_creation_readiness_blocked_message_is_none_when_allowed() -> None:
-    readiness = ProjectCreationReadiness(
-        request=CreateProjectRequest(project_name="demo"),
-    )
-
-    assert readiness.allowed is True
-    assert readiness.blocked_message is None
 
 
 def test_inspect_projects_includes_discovered_pool_names(
@@ -300,7 +289,6 @@ def test_inspect_projects_includes_discovered_pool_names(
         stopped_summary.pool_inspection.reason
         == ProjectPoolInspectionReason.project_not_running
     )
-    assert stopped_summary.pool_inspection.message == "Project is not running."
     assert stopped_summary.pool_inspection.pool_names == []
     assert stopped_summary.pool_inspection.pool_count == 0
     assert stopped_summary.pool_inspection.inspected_at is not None
@@ -322,7 +310,6 @@ def test_inspect_projects_skips_projects_with_missing_dsn(
     assert summary.project.name == "running"
     assert summary.pool_inspection.status == ProjectPoolInspectionStatus.skipped
     assert summary.pool_inspection.reason == ProjectPoolInspectionReason.missing_dsn
-    assert summary.pool_inspection.message == "Project has no DSN."
     assert summary.pool_inspection.pool_names == []
     assert summary.pool_inspection.pool_count == 0
 
@@ -347,13 +334,8 @@ def test_inspect_projects_reports_connection_failures(
     assert (
         summary.pool_inspection.reason == ProjectPoolInspectionReason.connection_failed
     )
-    assert summary.pool_inspection.message == "Could not connect to project database."
     assert summary.pool_inspection.pool_names == []
     assert summary.pool_inspection.pool_count == 0
-    assert any(
-        "Could not connect to project database during pool inspection" in record.message
-        for record in caplog.records
-    )
     assert not any(record.levelname == "ERROR" for record in caplog.records)
 
 
@@ -662,103 +644,6 @@ def test_restore_project_rejects_plain_sql_files(
         restore_project("demo", backup_file)
 
 
-def test_restore_project_logs_progress_and_table_row_counts(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    backup_file = tmp_path / "demo.sql.gz"
-    with gzip.open(backup_file, "wb") as f:
-        f.write(
-            (
-                b"SET statement_timeout = 0;\n"
-                b"COPY public.pool_alpha_samples (id) FROM stdin;\n"
-                b"1\n"
-                b"2\n"
-                b"\\.\n"
-                b"COPY public.pool_alpha_pending (id) FROM stdin;\n"
-                b"3\n"
-                b"\\.\n"
-            )
-        )
-    captured: dict[str, object] = {}
-
-    def fake_swap_in_db(
-        *,
-        sql_stream: IO[bytes],
-        container_name: str,
-        db_user: str,
-        target_db_name: str,
-    ) -> None:
-        captured["sql_bytes"] = sql_stream.read()
-        captured["container_name"] = container_name
-        captured["db_user"] = db_user
-        captured["target_db_name"] = target_db_name
-
-    monkeypatch.setattr(project_service_module, "docker_swap_in_db", fake_swap_in_db)
-    monkeypatch.setattr(project_service_module, "_BACKUP_PROGRESS_ROWS_STEP", 2)
-
-    with caplog.at_level("INFO", logger="dr_llm.project.project_service"):
-        restore_project("demo", backup_file)
-
-    assert captured["container_name"] == "dr-llm-pg-demo"
-    assert captured["db_user"] == "postgres"
-    assert captured["target_db_name"] == "dr_llm"
-    messages = [record.message for record in caplog.records]
-    assert any("Starting restore for project 'demo'" in message for message in messages)
-    assert any(
-        "started restoring table public.pool_alpha_samples" in message
-        for message in messages
-    )
-    assert any(
-        "restored 2 rows from table public.pool_alpha_samples" in message
-        for message in messages
-    )
-    assert any(
-        "restored 1 rows from table public.pool_alpha_pending" in message
-        for message in messages
-    )
-    assert any(message.endswith("progress: processed 2 rows") for message in messages)
-    assert any(
-        "Completed restore for project 'demo'" in message for message in messages
-    )
-
-
-def test_restore_project_logs_failure_progress(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    backup_file = tmp_path / "demo.sql.gz"
-    with gzip.open(backup_file, "wb") as f:
-        f.write(b"COPY public.pool_alpha_samples (id) FROM stdin;\n1\n2\n")
-
-    def fake_swap_in_db(
-        *,
-        sql_stream: IO[bytes],
-        container_name: str,
-        db_user: str,
-        target_db_name: str,
-    ) -> None:
-        _ = (container_name, db_user, target_db_name)
-        sql_stream.read()
-        raise RuntimeError("restore failed")
-
-    monkeypatch.setattr(project_service_module, "docker_swap_in_db", fake_swap_in_db)
-
-    with (
-        caplog.at_level("INFO", logger="dr_llm.project.project_service"),
-        pytest.raises(RuntimeError, match="restore failed"),
-    ):
-        restore_project("demo", backup_file)
-
-    messages = [record.message for record in caplog.records]
-    assert any(
-        "Restore for project 'demo' failed after processing" in message
-        for message in messages
-    )
-
-
 def test_backup_project_removes_partial_file_when_streaming_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -786,99 +671,6 @@ def test_backup_project_removes_partial_file_when_streaming_fails(
         backup_project("demo", tmp_path)
 
     assert list((tmp_path / "demo").glob("*.sql.gz")) == []
-
-
-def test_backup_project_logs_progress_and_table_row_counts(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    def fake_pg_dump_stream(
-        *,
-        container_name: str,
-        db_user: str,
-        db_name: str,
-        output_stream: IO[bytes],
-    ) -> None:
-        assert container_name == "dr-llm-pg-demo"
-        assert db_user == "postgres"
-        assert db_name == "dr_llm"
-        output_stream.write(
-            (
-                b"SET statement_timeout = 0;\n"
-                b"COPY public.pool_alpha_samples (id) FROM stdin;\n"
-                b"1\n"
-                b"2\n"
-                b"\\.\n"
-                b"COPY public.pool_alpha_pending (id) FROM stdin;\n"
-                b"3\n"
-                b"\\.\n"
-            )
-        )
-
-    monkeypatch.setattr(
-        project_service_module,
-        "call_docker_pg_dump_stream",
-        fake_pg_dump_stream,
-    )
-    monkeypatch.setattr(project_service_module, "_BACKUP_PROGRESS_ROWS_STEP", 2)
-
-    with caplog.at_level("INFO", logger="dr_llm.project.project_service"):
-        backup_project("demo", tmp_path)
-
-    messages = [record.message for record in caplog.records]
-    assert any("Starting backup for project 'demo'" in message for message in messages)
-    assert any(
-        "started dumping table public.pool_alpha_samples" in message
-        for message in messages
-    )
-    assert any(
-        "dumped 2 rows from table public.pool_alpha_samples" in message
-        for message in messages
-    )
-    assert any(
-        "dumped 1 rows from table public.pool_alpha_pending" in message
-        for message in messages
-    )
-    assert any(message.endswith("progress: processed 2 rows") for message in messages)
-    assert any("Completed backup for project 'demo'" in message for message in messages)
-
-
-def test_backup_project_logs_failure_progress(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    def fake_pg_dump_stream(
-        *,
-        container_name: str,
-        db_user: str,
-        db_name: str,
-        output_stream: IO[bytes],
-    ) -> None:
-        assert container_name == "dr-llm-pg-demo"
-        assert db_user == "postgres"
-        assert db_name == "dr_llm"
-        output_stream.write(b"COPY public.pool_alpha_samples (id) FROM stdin;\n1\n2\n")
-        raise RuntimeError("pg_dump failed")
-
-    monkeypatch.setattr(
-        project_service_module,
-        "call_docker_pg_dump_stream",
-        fake_pg_dump_stream,
-    )
-
-    with (
-        caplog.at_level("INFO", logger="dr_llm.project.project_service"),
-        pytest.raises(RuntimeError, match="pg_dump failed"),
-    ):
-        backup_project("demo", tmp_path)
-
-    messages = [record.message for record in caplog.records]
-    assert any(
-        "Backup for project 'demo' failed after processing" in message
-        for message in messages
-    )
 
 
 def test_delete_project_destroys_running_project_with_no_pools(

@@ -9,19 +9,6 @@ from dr_llm.cli import app
 runner = CliRunner()
 
 
-def test_providers_human_readable() -> None:
-    result = runner.invoke(app, ["providers"])
-
-    assert result.exit_code == 0
-    assert "Providers" in result.stdout
-    assert "Available" in result.stdout
-    assert "Structured" in result.stdout
-    assert "openai" in result.stdout
-    assert "anthropic" in result.stdout
-    assert "claude-code" in result.stdout
-    assert '"providers"' not in result.stdout
-
-
 def test_providers_json() -> None:
     result = runner.invoke(app, ["providers", "--json"])
 

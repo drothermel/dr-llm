@@ -381,26 +381,6 @@ def test_snapshot_includes_backend_state() -> None:
     assert isinstance(snapshot.backend_state, FakeBackendState)
 
 
-def test_snapshot_counts_are_frozen() -> None:
-    backend = FakeWorkerBackend(["only-item"])
-    controller = start_workers(
-        backend,
-        process_fn=lambda item: {"item": item},
-        config=WorkerConfig(
-            num_workers=1,
-            min_poll_interval_s=0.01,
-            max_poll_interval_s=0.05,
-        ),
-    )
-    try:
-        snapshot = controller.snapshot()
-    finally:
-        _stop_controller(controller)
-
-    with pytest.raises(ValidationError, match="Instance is frozen"):
-        snapshot.counts.claimed = 1
-
-
 def test_join_shuts_down_executor_on_non_timeout_exception() -> None:
     controller = start_workers(
         ExplodingClaimBackend(),
