@@ -87,7 +87,7 @@ def _load_schema_from_db(runtime: DbRuntime, pool_name: str) -> PoolSchema:
     """Load a persisted :class:`PoolSchema` from a pool's metadata table.
 
     Builds an ad-hoc :class:`Table` mirroring the fixed shape of pool
-    metadata tables (see :meth:`PoolTables._build_metadata_table`) so the
+    metadata tables (see :class:`PoolTableType.METADATA`) so the
     lookup works without already having a :class:`PoolSchema` in hand.
     Translates ``UndefinedTable`` errors into :class:`PoolNotFoundError`;
     a missing schema row into :class:`PoolSchemaNotPersistedError`.

@@ -96,9 +96,10 @@ class PoolStore:
             CallStatsColumn.ATTEMPT_COUNT: stats.attempt_count,
             CallStatsColumn.FINISH_REASON: stats.finish_reason,
         }
+        call_stats_table = self._tables[PoolTableType.CALL_STATS]
         with self._runtime.begin() as conn:
             conn.execute(
-                pg_insert(self._tables.call_stats).values(row).on_conflict_do_nothing()
+                pg_insert(call_stats_table).values(row).on_conflict_do_nothing()
             )
 
     def insert_sample(
@@ -134,10 +135,11 @@ class PoolStore:
         self, samples: list[PoolSample], *, ignore_conflicts: bool
     ) -> InsertResult:
         """Insert samples that already carry an explicit ``sample_idx``."""
+        samples_table = self._tables[PoolTableType.SAMPLES]
         inserted = insert_keyed_samples(
             self._runtime,
-            self._tables.samples,
-            self._tables.samples.c.sample_id,
+            samples_table,
+            samples_table.c.sample_id,
             [sample.to_db_insert_row() for sample in samples],
             ignore_conflicts=ignore_conflicts,
         )
@@ -150,7 +152,7 @@ class PoolStore:
         if not samples:
             return InsertResult()
 
-        samples_table = self._tables.samples
+        samples_table = self._tables[PoolTableType.SAMPLES]
         key_names = self.schema.key_column_names
         base_rows: list[dict[str, Any]] = []
         for sample in samples:
@@ -193,7 +195,7 @@ class PoolStore:
         base_rows: list[dict[str, Any]],
         key_names: list[str],
     ) -> list[dict[str, Any]]:
-        samples_table = self._tables.samples
+        samples_table = self._tables[PoolTableType.SAMPLES]
         cell_keys = sorted(
             {tuple(row[name] for name in key_names) for row in base_rows},
             key=repr,
@@ -255,8 +257,8 @@ class PoolStore:
         if query.n == 0:
             return AcquireResult()
 
-        samples_table = self._tables.samples
-        claims_table = self._tables.claims
+        samples_table = self._tables[PoolTableType.SAMPLES]
+        claims_table = self._tables[PoolTableType.CLAIMS]
 
         locked = (
             select(
@@ -315,7 +317,7 @@ class PoolStore:
         )
 
         stmt = (
-            select(*self._tables.sample_select_columns())
+            select(*self._tables.select_columns(PoolTableType.SAMPLES))
             .join(inserted, samples_table.c.sample_id == inserted.c.sample_id)
             .order_by(
                 samples_table.c.sample_idx.asc(),
@@ -331,8 +333,9 @@ class PoolStore:
     def remaining(self, *, run_id: str, key_values: dict[str, Any]) -> int:
         """Count unclaimed samples for given key dimensions and run."""
         validate_key_values(self.schema, key_values)
+        samples_table = self._tables[PoolTableType.SAMPLES]
         stmt = select(func.count()).where(
-            key_filter_clause(self.schema, self._tables.samples, key_values),
+            key_filter_clause(self.schema, samples_table, key_values),
             self._unclaimed_predicate(run_id),
         )
         with self._runtime.connect() as conn:
@@ -340,25 +343,29 @@ class PoolStore:
 
     def _unclaimed_predicate(self, run_id: str) -> ColumnElement[bool]:
         """Predicate matching samples with no claim row for the given run."""
+        claims_table = self._tables[PoolTableType.CLAIMS]
+        samples_table = self._tables[PoolTableType.SAMPLES]
         return ~exists(
             select(1).where(
-                self._tables.claims.c.run_id == run_id,
-                self._tables.claims.c.sample_id == self._tables.samples.c.sample_id,
+                claims_table.c.run_id == run_id,
+                claims_table.c.sample_id == samples_table.c.sample_id,
             )
         )
 
     def sample_count(self) -> int:
         """Return the total number of rows in the pool's samples table."""
-        stmt = select(func.count()).select_from(self._tables.samples)
+        samples_table = self._tables[PoolTableType.SAMPLES]
+        stmt = select(func.count()).select_from(samples_table)
         with self._runtime.connect() as conn:
             return int(conn.execute(stmt).scalar_one())
 
     def coverage(self) -> list[CoverageRow]:
         """Return sample counts grouped by all key dimensions."""
+        samples_key_columns = self._tables.key_columns(PoolTableType.SAMPLES)
         stmt = select(
-            *self._tables.samples_key_columns,
+            *samples_key_columns,
             func.count().label("cnt"),
-        ).group_by(*self._tables.samples_key_columns)
+        ).group_by(*samples_key_columns)
         with self._runtime.connect() as conn:
             rows = conn.execute(stmt).mappings().all()
         return [
@@ -372,8 +379,9 @@ class PoolStore:
     def cell_depth(self, *, key_values: dict[str, Any]) -> int:
         """Count total samples for a specific cell."""
         validate_key_values(self.schema, key_values)
+        samples_table = self._tables[PoolTableType.SAMPLES]
         stmt = select(func.count()).where(
-            key_filter_clause(self.schema, self._tables.samples, key_values)
+            key_filter_clause(self.schema, samples_table, key_values)
         )
         with self._runtime.connect() as conn:
             return int(conn.execute(stmt).scalar_one())
@@ -404,12 +412,13 @@ class PoolStore:
         open for the lifetime of the iterator — fully consume or close it
         promptly.
         """
+        samples_table = self._tables[PoolTableType.SAMPLES]
         rows = stream_select_rows(
             self._runtime,
             self.schema,
-            self._tables.samples,
-            self._tables.sample_select_columns(),
-            order_by=[self._tables.samples.c.sample_idx.asc()],
+            samples_table,
+            self._tables.select_columns(PoolTableType.SAMPLES),
+            order_by=[samples_table.c.sample_idx.asc()],
             key_filter=key_filter,
             chunk_size=chunk_size,
         )

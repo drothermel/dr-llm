@@ -9,6 +9,9 @@
 - Removed `PoolSchema.samples_table`, `claims_table`, `pending_table`,
   `metadata_table`, and `call_stats_table`; use
   `PoolSchema.table_name(...)` instead.
+- Refactored `PoolTables` into an enum-keyed table collection accessed through
+  `tables` or `PoolTables[PoolTableType]`, removing named table attributes and
+  table-specific helper members.
 - Preserved existing pool database table names, so this API break does not
   require a database migration.
 - Removed noisy re-export, CLI surface, one-off regression, runtime typing, and

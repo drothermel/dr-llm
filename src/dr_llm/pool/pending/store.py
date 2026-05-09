@@ -26,7 +26,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from dr_llm.pool.db.names import PendingColumn, SampleColumn
+from dr_llm.pool.db.names import PendingColumn, PoolTableType, SampleColumn
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.sql_helpers import (
@@ -62,7 +62,7 @@ class PendingStore:
 
     @property
     def _pending(self) -> Table:
-        return self._tables.pending
+        return self._tables[PoolTableType.PENDING]
 
     def insert(self, sample: PendingSample, *, ignore_conflicts: bool = True) -> bool:
         result = self.insert_many([sample], ignore_conflicts=ignore_conflicts)
@@ -135,7 +135,7 @@ class PendingStore:
                     PendingColumn.ATTEMPT_COUNT: p.c.attempt_count + 1,
                 }
             )
-            .returning(*self._tables.pending_select_columns())
+            .returning(*self._tables.select_columns(PoolTableType.PENDING))
         )
 
         with self._runtime.begin() as conn:
@@ -211,8 +211,9 @@ class PendingStore:
             if payload is not None
             else locked.c.payload_json
         )
+        samples_table = self._tables[PoolTableType.SAMPLES]
         inserted = (
-            pg_insert(self._tables.samples)
+            pg_insert(samples_table)
             .from_select(
                 [
                     SampleColumn.SAMPLE_ID,
@@ -232,7 +233,7 @@ class PendingStore:
                 ),
             )
             .on_conflict_do_nothing()
-            .returning(*self._tables.sample_select_columns())
+            .returning(*self._tables.select_columns(PoolTableType.SAMPLES))
             .cte("inserted")
         )
 
@@ -253,7 +254,10 @@ class PendingStore:
         """Return the finalized sample row only when the promoted CTE fired."""
         return (
             select(
-                *[inserted.c[col.name] for col in self._tables.sample_select_columns()]
+                *[
+                    inserted.c[col.name]
+                    for col in self._tables.select_columns(PoolTableType.SAMPLES)
+                ]
             )
             .select_from(inserted)
             .where(exists(select(1).select_from(promoted)))
@@ -456,7 +460,7 @@ class PendingStore:
             self._runtime,
             self._schema,
             self._pending,
-            self._tables.pending_select_columns(),
+            self._tables.select_columns(PoolTableType.PENDING),
             base_predicates=[self._pending.c.status.in_(statuses)],
             order_by=[
                 self._pending.c.priority.desc(),

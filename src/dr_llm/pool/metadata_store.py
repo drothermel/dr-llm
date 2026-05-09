@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from dr_llm.pool.db.names import MetadataColumn
+from dr_llm.pool.db.names import MetadataColumn, PoolTableType
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.tables import PoolTables
@@ -33,7 +33,8 @@ class MetadataStore:
         self._tables = tables
 
     def upsert(self, key: str, value: dict[str, Any]) -> None:
-        stmt = pg_insert(self._tables.metadata_table).values(
+        metadata_table = self._tables[PoolTableType.METADATA]
+        stmt = pg_insert(metadata_table).values(
             {
                 MetadataColumn.POOL_NAME: self._schema.name,
                 MetadataColumn.KEY: key,
@@ -42,8 +43,8 @@ class MetadataStore:
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[
-                self._tables.metadata_table.c.pool_name,
-                self._tables.metadata_table.c.key,
+                metadata_table.c.pool_name,
+                metadata_table.c.key,
             ],
             set_={
                 MetadataColumn.VALUE_JSON: stmt.excluded.value_json,
@@ -54,9 +55,10 @@ class MetadataStore:
             conn.execute(stmt)
 
     def get(self, key: str) -> dict[str, Any] | None:
-        stmt = select(self._tables.metadata_table.c.value_json).where(
-            self._tables.metadata_table.c.pool_name == self._schema.name,
-            self._tables.metadata_table.c.key == key,
+        metadata_table = self._tables[PoolTableType.METADATA]
+        stmt = select(metadata_table.c.value_json).where(
+            metadata_table.c.pool_name == self._schema.name,
+            metadata_table.c.key == key,
         )
         with self._runtime.connect() as conn:
             return conn.execute(stmt).scalar_one_or_none()
@@ -69,16 +71,17 @@ class MetadataStore:
         the full metadata table. Pass ``""`` to iterate every key in the
         pool. Results are ordered by key for stable iteration.
         """
+        metadata_table = self._tables[PoolTableType.METADATA]
         stmt = (
             select(
-                self._tables.metadata_table.c.key,
-                self._tables.metadata_table.c.value_json,
+                metadata_table.c.key,
+                metadata_table.c.value_json,
             )
             .where(
-                self._tables.metadata_table.c.pool_name == self._schema.name,
-                self._tables.metadata_table.c.key.startswith(prefix, autoescape=True),
+                metadata_table.c.pool_name == self._schema.name,
+                metadata_table.c.key.startswith(prefix, autoescape=True),
             )
-            .order_by(self._tables.metadata_table.c.key)
+            .order_by(metadata_table.c.key)
         )
         with self._runtime.connect() as conn:
             for row in conn.execute(stmt).mappings():

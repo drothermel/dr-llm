@@ -50,52 +50,59 @@ class PoolTables:
     def __init__(self, schema: PoolSchema) -> None:
         self.schema = schema
         self.sa_metadata = MetaData()
-        self.samples = self._build_samples_table()
-        self.claims = self._build_claims_table()
-        self.pending = self._build_pending_table()
-        self.metadata_table = self._build_metadata_table()
-        self.call_stats = self._build_call_stats_table()
-        self.samples_key_columns = [
-            self.samples.c[name] for name in schema.key_column_names
-        ]
-        self.pending_key_columns = [
-            self.pending.c[name] for name in schema.key_column_names
-        ]
+        self.tables: dict[PoolTableType, Table] = {
+            PoolTableType.SAMPLES: self._build_samples_table(),
+            PoolTableType.CLAIMS: self._build_claims_table(),
+            PoolTableType.PENDING: self._build_pending_table(),
+            PoolTableType.METADATA: self._build_metadata_table(),
+            PoolTableType.CALL_STATS: self._build_call_stats_table(),
+        }
         self._build_indexes()
-        self.all_tables = [
-            self.samples,
-            self.claims,
-            self.pending,
-            self.metadata_table,
-            self.call_stats,
-        ]
 
-    def sample_select_columns(self) -> list[Any]:
-        return [
-            self.samples.c.sample_id,
-            *self.samples_key_columns,
-            self.samples.c.sample_idx,
-            self.samples.c.payload_json,
-            self.samples.c.source_run_id,
-            self.samples.c.metadata_json,
-            self.samples.c.created_at,
-        ]
+    def __getitem__(self, table_type: PoolTableType) -> Table:
+        return self.tables[table_type]
 
-    def pending_select_columns(self) -> list[Any]:
-        return [
-            self.pending.c.pending_id,
-            *self.pending_key_columns,
-            self.pending.c.sample_idx,
-            self.pending.c.payload_json,
-            self.pending.c.source_run_id,
-            self.pending.c.metadata_json,
-            self.pending.c.priority,
-            self.pending.c.status,
-            self.pending.c.worker_id,
-            self.pending.c.lease_expires_at,
-            self.pending.c.attempt_count,
-            self.pending.c.created_at,
-        ]
+    @property
+    def all_tables(self) -> list[Table]:
+        return [self.tables[table_type] for table_type in PoolTableType]
+
+    def key_columns(self, table_type: PoolTableType) -> list[Column[Any]]:
+        if table_type not in {PoolTableType.SAMPLES, PoolTableType.PENDING}:
+            msg = f"{table_type} does not have pool key columns"
+            raise ValueError(msg)
+        table = self[table_type]
+        return [table.c[name] for name in self.schema.key_column_names]
+
+    def select_columns(self, table_type: PoolTableType) -> list[Any]:
+        if table_type == PoolTableType.SAMPLES:
+            samples = self[PoolTableType.SAMPLES]
+            return [
+                samples.c[SampleColumn.SAMPLE_ID],
+                *self.key_columns(PoolTableType.SAMPLES),
+                samples.c[SampleColumn.SAMPLE_IDX],
+                samples.c[SampleColumn.PAYLOAD_JSON],
+                samples.c[SampleColumn.SOURCE_RUN_ID],
+                samples.c[SampleColumn.METADATA_JSON],
+                samples.c[SampleColumn.CREATED_AT],
+            ]
+        if table_type == PoolTableType.PENDING:
+            pending = self[PoolTableType.PENDING]
+            return [
+                pending.c[PendingColumn.PENDING_ID],
+                *self.key_columns(PoolTableType.PENDING),
+                pending.c[PendingColumn.SAMPLE_IDX],
+                pending.c[PendingColumn.PAYLOAD_JSON],
+                pending.c[PendingColumn.SOURCE_RUN_ID],
+                pending.c[PendingColumn.METADATA_JSON],
+                pending.c[PendingColumn.PRIORITY],
+                pending.c[PendingColumn.STATUS],
+                pending.c[PendingColumn.WORKER_ID],
+                pending.c[PendingColumn.LEASE_EXPIRES_AT],
+                pending.c[PendingColumn.ATTEMPT_COUNT],
+                pending.c[PendingColumn.CREATED_AT],
+            ]
+        msg = f"{table_type} does not have a select-column projection"
+        raise ValueError(msg)
 
     def ensure_indexes(self, bind: Connection) -> None:
         """Backfill any missing named indexes for runtime-owned pool tables."""
@@ -203,38 +210,44 @@ class PoolTables:
         )
 
     def _build_indexes(self) -> None:
+        samples = self[PoolTableType.SAMPLES]
+        claims = self[PoolTableType.CLAIMS]
+        pending = self[PoolTableType.PENDING]
+        samples_key_columns = self.key_columns(PoolTableType.SAMPLES)
+        pending_key_columns = self.key_columns(PoolTableType.PENDING)
+
         Index(
-            f"uq_{self.samples.name}_cell",
-            *self.samples_key_columns,
-            self.samples.c.sample_idx,
+            f"uq_{samples.name}_cell",
+            *samples_key_columns,
+            samples.c.sample_idx,
             unique=True,
         )
         Index(
-            f"idx_{self.samples.name}_key",
-            *self.samples_key_columns,
+            f"idx_{samples.name}_key",
+            *samples_key_columns,
         )
         Index(
-            f"uq_{self.claims.name}_run_sample",
-            self.claims.c.run_id,
-            self.claims.c.sample_id,
+            f"uq_{claims.name}_run_sample",
+            claims.c.run_id,
+            claims.c.sample_id,
             unique=True,
         )
-        Index(f"idx_{self.claims.name}_run", self.claims.c.run_id)
+        Index(f"idx_{claims.name}_run", claims.c.run_id)
         Index(
-            f"uq_{self.pending.name}_cell",
-            *self.pending_key_columns,
-            self.pending.c.sample_idx,
+            f"uq_{pending.name}_cell",
+            *pending_key_columns,
+            pending.c.sample_idx,
             unique=True,
         )
         Index(
-            f"idx_{self.pending.name}_status_priority",
-            self.pending.c.status,
-            self.pending.c.priority.desc(),
-            self.pending.c.created_at.asc(),
+            f"idx_{pending.name}_status_priority",
+            pending.c.status,
+            pending.c.priority.desc(),
+            pending.c.created_at.asc(),
         )
         Index(
-            f"idx_{self.pending.name}_key",
-            *self.pending_key_columns,
+            f"idx_{pending.name}_key",
+            *pending_key_columns,
         )
 
     def _build_metadata_table(self) -> Table:

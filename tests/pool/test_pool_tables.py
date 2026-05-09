@@ -28,26 +28,36 @@ def _simple_schema() -> PoolSchema:
 
 def test_pool_tables_contains_all_tables() -> None:
     tables = PoolTables(_simple_schema())
-    assert tables.samples.name == "pool_test_samples"
-    assert tables.claims.name == "pool_test_claims"
-    assert tables.pending.name == "pool_test_pending"
-    assert tables.metadata_table.name == "pool_test_metadata"
-    assert tables.call_stats.name == "pool_test_call_stats"
+    assert list(tables.tables) == list(PoolTableType)
+    assert tables[PoolTableType.SAMPLES].name == "pool_test_samples"
+    assert tables[PoolTableType.CLAIMS].name == "pool_test_claims"
+    assert tables[PoolTableType.PENDING].name == "pool_test_pending"
+    assert tables[PoolTableType.METADATA].name == "pool_test_metadata"
+    assert tables[PoolTableType.CALL_STATS].name == "pool_test_call_stats"
+    assert tables.all_tables == [tables[table_type] for table_type in PoolTableType]
 
 
 def test_pool_tables_key_columns_appear() -> None:
     tables = PoolTables(_simple_schema())
-    assert str(tables.samples.c.dim_a.type) == "TEXT"
-    assert str(tables.samples.c.dim_b.type) == "INTEGER"
-    assert str(tables.pending.c.dim_a.type) == "TEXT"
-    assert str(tables.pending.c.dim_b.type) == "INTEGER"
+    assert str(tables[PoolTableType.SAMPLES].c.dim_a.type) == "TEXT"
+    assert str(tables[PoolTableType.SAMPLES].c.dim_b.type) == "INTEGER"
+    assert str(tables[PoolTableType.PENDING].c.dim_a.type) == "TEXT"
+    assert str(tables[PoolTableType.PENDING].c.dim_b.type) == "INTEGER"
+    assert [column.name for column in tables.key_columns(PoolTableType.SAMPLES)] == [
+        "dim_a",
+        "dim_b",
+    ]
+    assert [column.name for column in tables.key_columns(PoolTableType.PENDING)] == [
+        "dim_a",
+        "dim_b",
+    ]
 
 
 def test_pool_tables_unique_index_includes_keys() -> None:
     tables = PoolTables(_simple_schema())
     sample_indexes = {
         str(index.name): [str(expr).split(".")[-1] for expr in index.expressions]
-        for index in tables.samples.indexes
+        for index in tables[PoolTableType.SAMPLES].indexes
     }
     assert sample_indexes["uq_pool_test_samples_cell"] == [
         "dim_a",
@@ -58,11 +68,49 @@ def test_pool_tables_unique_index_includes_keys() -> None:
 
 def test_pool_tables_json_columns_are_jsonb() -> None:
     tables = PoolTables(_simple_schema())
-    assert isinstance(tables.samples.c.payload_json.type, JSONB)
-    assert isinstance(tables.samples.c.metadata_json.type, JSONB)
-    assert isinstance(tables.pending.c.payload_json.type, JSONB)
-    assert isinstance(tables.pending.c.metadata_json.type, JSONB)
-    assert isinstance(tables.metadata_table.c.value_json.type, JSONB)
+    assert isinstance(tables[PoolTableType.SAMPLES].c.payload_json.type, JSONB)
+    assert isinstance(tables[PoolTableType.SAMPLES].c.metadata_json.type, JSONB)
+    assert isinstance(tables[PoolTableType.PENDING].c.payload_json.type, JSONB)
+    assert isinstance(tables[PoolTableType.PENDING].c.metadata_json.type, JSONB)
+    assert isinstance(tables[PoolTableType.METADATA].c.value_json.type, JSONB)
+
+
+def test_pool_tables_select_columns_are_table_type_specific() -> None:
+    tables = PoolTables(_simple_schema())
+
+    assert [column.name for column in tables.select_columns(PoolTableType.SAMPLES)] == [
+        "sample_id",
+        "dim_a",
+        "dim_b",
+        "sample_idx",
+        "payload_json",
+        "source_run_id",
+        "metadata_json",
+        "created_at",
+    ]
+    assert [column.name for column in tables.select_columns(PoolTableType.PENDING)] == [
+        "pending_id",
+        "dim_a",
+        "dim_b",
+        "sample_idx",
+        "payload_json",
+        "source_run_id",
+        "metadata_json",
+        "priority",
+        "status",
+        "worker_id",
+        "lease_expires_at",
+        "attempt_count",
+        "created_at",
+    ]
+
+
+def test_pool_tables_reject_missing_table_type_helpers() -> None:
+    tables = PoolTables(_simple_schema())
+    with pytest.raises(ValueError, match="key columns"):
+        tables.key_columns(PoolTableType.CLAIMS)
+    with pytest.raises(ValueError, match="select-column projection"):
+        tables.select_columns(PoolTableType.CLAIMS)
 
 
 def test_schema_name_validation() -> None:
