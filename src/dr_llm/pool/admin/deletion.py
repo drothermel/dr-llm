@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from enum import StrEnum
 from typing import Any, Final
 
@@ -9,11 +10,17 @@ from sqlalchemy.engine import Connection
 
 from dr_llm.pool.admin.discovery import discover_pools, pool_name_has_token_match
 from dr_llm.pool.db import DbConfig, DbRuntime, PendingColumn, PoolTableType
+from dr_llm.pool.pending.pending_status import PendingStatus
 from dr_llm.pool.db.schema import _VALID_NAME_RE, pool_table_name, pool_table_names
 from dr_llm.project.docker_psql import validate_pg_identifier
 from dr_llm.project.project_info import ProjectInfo
 
-_IN_PROGRESS_PENDING_STATUSES: Final[tuple[str, ...]] = ("pending", "leased")
+logger = logging.getLogger(__name__)
+
+_IN_PROGRESS_PENDING_STATUSES: Final[tuple[str, ...]] = (
+    PendingStatus.pending.value,
+    PendingStatus.leased.value,
+)
 
 
 class DeletePoolRequest(BaseModel):
@@ -275,6 +282,11 @@ def delete_pool(request: DeletePoolRequest) -> PoolDeletionResult:
             message=message,
         )
     except Exception as exc:
+        logger.exception(
+            "Pool deletion failed (project=%r, pool=%r)",
+            request.project_name,
+            request.pool_name,
+        )
         return PoolDeletionResult(
             request=request,
             project=readiness.project,
@@ -436,7 +448,7 @@ def _count_in_progress_pending_rows(runtime: DbRuntime, pool_name: str) -> int:
             conn.execute(
                 text(
                     f'SELECT count(*) FROM "{pending_table}" '
-                    f"WHERE {PendingColumn.STATUS} IN ({placeholders})"
+                    f"WHERE {PendingColumn.STATUS.value} IN ({placeholders})"
                 ),
                 params,
             ).scalar_one()

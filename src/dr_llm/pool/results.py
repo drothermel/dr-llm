@@ -18,3 +18,10 @@ class InsertResult(BaseModel):
             skipped=self.skipped + other.skipped,
             failed=self.failed + other.failed,
         )
+
+    def __radd__(self, other: object) -> InsertResult:
+        if other == 0:
+            return self
+        if isinstance(other, InsertResult):
+            return other + self
+        return NotImplemented  # type: ignore[return-value]
