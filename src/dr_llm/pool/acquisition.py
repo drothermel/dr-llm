@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -35,17 +34,3 @@ class AcquireResult(BaseModel):
 
     def deficit(self, requested_n: int) -> int:
         return max(requested_n - len(self.samples), 0)
-
-
-class PoolClaim(BaseModel):
-    """Claim record for no-replacement tracking."""
-
-    model_config = ConfigDict(frozen=True)
-
-    claim_id: str = Field(default_factory=lambda: uuid4().hex)
-    run_id: str
-    request_id: str
-    consumer_tag: str = ""
-    sample_id: str
-    claim_idx: int
-    claimed_at: datetime | None = None

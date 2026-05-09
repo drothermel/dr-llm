@@ -38,7 +38,6 @@ class PoolDeletionBlockReason(StrEnum):
     project_not_found = "project_not_found"
     project_not_running = "project_not_running"
     pool_not_found = "pool_not_found"
-    pool_in_progress = "pool_in_progress"
 
 
 class PoolDeletionViolation(BaseModel):
