@@ -17,6 +17,14 @@ from dr_llm.project import (
     maybe_get_project,
 )
 
+DEFAULT_DEMO_DSN_DOCKER_REASON = (
+    "This demo creates a Postgres container when no --dsn is provided."
+)
+DEFAULT_DEMO_DSN_DOCKER_RECOVERY_HINT = (
+    "Install Docker, start the daemon, or pass --dsn to use an existing "
+    "database."
+)
+
 
 class DemoDsnLease(BaseModel):
     """A DSN plus any demo project cleanup responsibility."""
@@ -55,8 +63,8 @@ def prepare_demo_dsn(
     project_prefix: str,
     project_name: str | None = None,
     keep_project: bool = False,
-    docker_reason: str,
-    docker_recovery_hint: str | None = None,
+    docker_reason: str = DEFAULT_DEMO_DSN_DOCKER_REASON,
+    docker_recovery_hint: str | None = DEFAULT_DEMO_DSN_DOCKER_RECOVERY_HINT,
 ) -> DemoDsnLease:
     """Return a usable DSN, creating a Docker demo project when needed."""
     if dsn is not None:

@@ -216,7 +216,6 @@ def test_prepare_demo_dsn_uses_existing_dsn(
     lease = demo_projects.prepare_demo_dsn(
         dsn="postgresql://localhost/demo",
         project_prefix="demo",
-        docker_reason="needed for postgres",
     )
 
     assert lease == demo_projects.DemoDsnLease(
@@ -256,11 +255,14 @@ def test_prepare_demo_dsn_creates_disposable_project(
     lease = demo_projects.prepare_demo_dsn(
         dsn=None,
         project_prefix="demo",
-        docker_reason="needed for postgres",
-        docker_recovery_hint="start Docker",
     )
 
-    assert docker_checks == [("needed for postgres", "start Docker")]
+    assert docker_checks == [
+        (
+            demo_projects.DEFAULT_DEMO_DSN_DOCKER_REASON,
+            demo_projects.DEFAULT_DEMO_DSN_DOCKER_RECOVERY_HINT,
+        )
+    ]
     assert created == ["demo_abc123"]
     assert lease == demo_projects.DemoDsnLease(
         dsn="postgresql://postgres:postgres@localhost:5500/dr_llm",
@@ -295,7 +297,6 @@ def test_prepare_demo_dsn_can_keep_named_project(
         project_prefix="demo",
         project_name="inspect_me",
         keep_project=True,
-        docker_reason="needed for postgres",
     )
 
     assert created == ["inspect_me"]
@@ -325,7 +326,6 @@ def test_prepare_demo_dsn_cleans_up_disposable_project_without_dsn(
             dsn=None,
             project_prefix="demo",
             project_name="broken",
-            docker_reason="needed for postgres",
         )
 
     assert destroyed == ["broken"]

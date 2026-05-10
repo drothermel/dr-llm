@@ -277,13 +277,6 @@ def main(
         project_prefix=PROJECT_PREFIX,
         project_name=project_name,
         keep_project=keep_project,
-        docker_reason=(
-            "This demo creates a Postgres container to store pool data."
-        ),
-        docker_recovery_hint=(
-            "Install Docker, start the daemon, or pass --dsn to use an "
-            "existing database."
-        ),
     )
     if lease.project_name is not None:
         ok(f"Project '{lease.project_name}' ready at {lease.dsn}")

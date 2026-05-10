@@ -253,14 +253,6 @@ def main(
         project_prefix="demo_pool_fill",
         project_name=project_name,
         keep_project=keep_project,
-        docker_reason=(
-            "This demo creates a temporary Postgres project when no --dsn is "
-            "provided."
-        ),
-        docker_recovery_hint=(
-            "Install Docker, start the daemon, or pass --dsn to use an "
-            "existing database."
-        ),
     )
     if lease.project_name is not None:
         print(f"Postgres ready at {lease.dsn}")
