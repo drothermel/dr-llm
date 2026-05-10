@@ -7,9 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.providers.api_config import APIProviderConfig, resolve_api_key
 from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig
-from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
-from dr_llm.llm.request import ApiBackedLlmRequest, ApiLlmRequest
+from dr_llm.llm.request import ApiBackedLlmRequest, ApiLlmRequest, Message
 
 
 class _GoogleGenerationConfig(BaseModel):

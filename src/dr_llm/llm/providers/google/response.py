@@ -6,14 +6,14 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.google.request import GoogleRequest
 from dr_llm.llm.providers.response_validation import (
     parse_http_response_body,
     validate_http_response,
 )
 from dr_llm.llm.request import LlmRequest
-from dr_llm.llm.response import LlmResponse
-from dr_llm.llm.messages import CallMode
+from dr_llm.llm.response import CallMode, LlmResponse
 from dr_llm.llm.providers.reasoning import ReasoningWarning
 from dr_llm.llm.providers.usage import CostInfo, build_usage_and_reasoning
 
@@ -94,14 +94,16 @@ class GoogleResponse(BaseModel):
 
     def _validated_candidate(self) -> _GoogleCandidate:
         validate_http_response(
-            provider_label="google",
+            provider_label=ProviderName.GOOGLE,
             status_code=self.status_code,
             response_text_preview=self.response_text_preview,
             json_error=self.json_error,
             response_shape_error=self.response_shape_error,
         )
         if not self.candidates:
-            raise ProviderSemanticError("google response missing candidates")
+            raise ProviderSemanticError(
+                f"{ProviderName.GOOGLE} response missing candidates"
+            )
         return self.candidates[0]
 
     def to_llm_response(

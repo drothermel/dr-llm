@@ -36,6 +36,7 @@ from dr_llm.llm import (
     LlmConfig,
     Message,
     OpenAILlmConfig,
+    ProviderName,
     build_default_registry,
     default_reasoning,
 )
@@ -70,17 +71,19 @@ app = typer.Typer()
 
 LLM_CONFIGS: dict[str, LlmConfig] = {
     "gpt-5-mini-default": OpenAILlmConfig(
-        provider="openai",
+        provider=ProviderName.OPENAI,
         model="gpt-5-mini",
         max_tokens=64,
-        reasoning=default_reasoning(provider="openai", model="gpt-5-mini"),
+        reasoning=default_reasoning(
+            provider=ProviderName.OPENAI, model="gpt-5-mini"
+        ),
     ),
     "gemini-flash-default": ApiLlmConfig(
-        provider="google",
+        provider=ProviderName.GOOGLE,
         model="gemini-2.5-flash",
         max_tokens=64,
         reasoning=default_reasoning(
-            provider="google", model="gemini-2.5-flash"
+            provider=ProviderName.GOOGLE, model="gemini-2.5-flash"
         ),
     ),
 }

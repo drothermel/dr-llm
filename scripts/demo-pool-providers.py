@@ -49,6 +49,7 @@ from dr_llm.demo import (
 from dr_llm.llm import (
     EffortSpec,
     ProviderAvailabilityStatus,
+    ProviderName,
     build_default_registry,
     default_effort,
     default_reasoning,
@@ -78,15 +79,15 @@ HEADLESS_TIMEOUT = 300
 ANTHROPIC_MAX_TOKENS = 256
 
 
-DEFAULT_MODELS: dict[str, str] = {
-    "openai": "gpt-4o-mini",
-    "anthropic": "claude-sonnet-4-20250514",
-    "google": "gemini-2.5-flash",
-    "glm": "glm-4.5",
-    "minimax": "MiniMax-M2",
-    "claude-code": "claude-sonnet-4-6",
-    "codex": "gpt-5.4-mini",
-    "kimi-code": "kimi-for-coding",
+DEFAULT_MODELS: dict[ProviderName, str] = {
+    ProviderName.OPENAI: "gpt-4o-mini",
+    ProviderName.ANTHROPIC: "claude-sonnet-4-20250514",
+    ProviderName.GOOGLE: "gemini-2.5-flash",
+    ProviderName.GLM: "glm-4.5",
+    ProviderName.MINIMAX: "MiniMax-M2",
+    ProviderName.CLAUDE_CODE: "claude-sonnet-4-6",
+    ProviderName.CODEX: "gpt-5.4-mini",
+    ProviderName.KIMI_CODE: "kimi-for-coding",
 }
 
 POOL_SCHEMA = PoolSchema(
@@ -148,7 +149,7 @@ def create_demo_project(project_name: str) -> ProjectInfo:
 # --- Model Resolution ---
 
 
-def resolve_model(provider: str) -> str:
+def resolve_model(provider: ProviderName) -> str:
     """Sync catalog, list models, pick default or first available."""
     run_cli("models", "sync", "--provider", provider, "--verbose")
     result = run_cli("models", "list", "--provider", provider, "--json")
@@ -209,7 +210,11 @@ def query_provider(
         "--message",
         prompt,
     ]
-    if provider in {"anthropic", "kimi-code", "minimax"}:
+    if provider in {
+        ProviderName.ANTHROPIC,
+        ProviderName.KIMI_CODE,
+        ProviderName.MINIMAX,
+    }:
         args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
     args.extend(provider_extra_args(provider, model))
     return run_cli(
@@ -346,10 +351,11 @@ def main(
 
         for i, status in enumerate(available, 1):
             provider = status.provider
+            provider_name = ProviderName(provider)
             step(f"4.{i}. Provider: {provider}")
             try:
                 # Resolve model
-                model = resolve_model(provider)
+                model = resolve_model(provider_name)
                 ok(f"Using model: {model}")
 
                 # Show model info

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.llm.messages import CallMode
 from dr_llm.llm.providers.reasoning import ReasoningWarning
 from dr_llm.llm.providers.usage import CostInfo, TokenUsage
+
+
+class CallMode(StrEnum):
+    api = "api"
+    headless = "headless"
 
 
 class CallError(BaseModel):

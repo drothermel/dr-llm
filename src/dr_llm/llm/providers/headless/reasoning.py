@@ -3,6 +3,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from dr_llm.errors import HeadlessExecutionError
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.thinking import (
     ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
 )
@@ -35,10 +36,10 @@ def validate_reasoning_for_codex(
     def _validate_native(spec: CodexReasoning) -> None:
         if not codex_supports_configurable_thinking(model):
             raise ValueError(
-                f"codex thinking is not supported for model={model!r}"
+                f"{ProviderName.CODEX} thinking is not supported for model={model!r}"
             )
         validate_discrete_thinking_level(
-            provider="codex",
+            provider=ProviderName.CODEX,
             model=model,
             thinking_level=spec.thinking_level,
             supports_off=codex_supports_off_thinking(model),
@@ -48,15 +49,15 @@ def validate_reasoning_for_codex(
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
         capabilities = reasoning_capabilities_for_model(
-            provider="codex", model=model
+            provider=ProviderName.CODEX, model=model
         )
         if is_reasoning_unsupported(capabilities):
             raise ValueError(
-                f"Reasoning is not supported for provider='codex' model={model!r}"
+                f"Reasoning is not supported for provider='{ProviderName.CODEX}' model={model!r}"
             )
         assert capabilities is not None
         validate_budget_range(
-            provider="codex",
+            provider=ProviderName.CODEX,
             model=model,
             label="reasoning budget",
             tokens=budget.tokens,
@@ -64,7 +65,7 @@ def validate_reasoning_for_codex(
         )
 
     dispatch_reasoning_validation(
-        provider="codex",
+        provider=ProviderName.CODEX,
         model=model,
         reasoning=reasoning,
         native_spec_type=CodexReasoning,
@@ -80,30 +81,30 @@ def validate_reasoning_for_claude_code(
     if reasoning is None:
         if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
             raise ValueError(
-                f"reasoning is required for provider='claude-code' model={model!r}"
+                f"reasoning is required for provider='{ProviderName.CLAUDE_CODE}' model={model!r}"
             )
         return
     if isinstance(reasoning, ReasoningBudget):
         raise TypeError(
-            f"claude-code does not support budget thinking for model={model!r}"
+            f"{ProviderName.CLAUDE_CODE} does not support budget thinking for model={model!r}"
         )
     if not isinstance(reasoning, AnthropicReasoning):
         raise TypeError(
-            f"claude-code reasoning is not supported for kind={reasoning.kind!r}"
+            f"{ProviderName.CLAUDE_CODE} reasoning is not supported for kind={reasoning.kind!r}"
         )
     if reasoning.display is not None:
         raise ValueError(
-            "claude-code does not support anthropic display controls"
+            f"{ProviderName.CLAUDE_CODE} does not support anthropic display controls"
         )
     if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
         if reasoning.thinking_level != ThinkingLevel.ADAPTIVE:
             raise ValueError(
-                f"claude-code model {model!r} only supports anthropic thinking_level='adaptive'"
+                f"{ProviderName.CLAUDE_CODE} model {model!r} only supports anthropic thinking_level='adaptive'"
             )
         return
     if reasoning.thinking_level != ThinkingLevel.NA:
         raise ValueError(
-            f"claude-code model {model!r} does not support explicit anthropic thinking; use thinking_level='na'"
+            f"{ProviderName.CLAUDE_CODE} model {model!r} does not support explicit anthropic thinking; use thinking_level='na'"
         )
 
 

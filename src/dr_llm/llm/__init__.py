@@ -12,7 +12,15 @@ from dr_llm.llm.config import (
     OpenAILlmConfig,
     parse_llm_config,
 )
-from dr_llm.llm.messages import CallMode, Message
+from dr_llm.llm.names import (
+    ApiBackedProviderName,
+    HeadlessProviderName,
+    KimiCodeProviderName,
+    OpenAIProviderName,
+    ProviderCategories,
+    ProviderName,
+    SamplingApiProviderName,
+)
 from dr_llm.llm.providers.config import (
     ProviderAvailabilityStatus,
     ProviderConfig,
@@ -55,23 +63,20 @@ from dr_llm.llm.providers.registry import (
 )
 from dr_llm.llm.providers.usage import CostInfo, TokenUsage
 from dr_llm.llm.request import (
-    ApiProviderName,
     ApiLlmRequest,
-    HeadlessProviderName,
     HeadlessLlmRequest,
-    KimiCodeProviderName,
     KimiCodeLlmRequest,
     LlmRequest,
-    OpenAIProviderName,
+    Message,
     OpenAILlmRequest,
     parse_llm_request,
 )
-from dr_llm.llm.response import LlmResponse
+from dr_llm.llm.response import CallMode, LlmResponse
 
 __all__ = [
     "ApiLlmConfig",
     "ApiLlmRequest",
-    "ApiProviderName",
+    "ApiBackedProviderName",
     "AnthropicReasoning",
     "CLAUDE_CODE_MODELS",
     "CallMode",
@@ -101,12 +106,15 @@ __all__ = [
     "OpenRouterReasoning",
     "OpenRouterReasoningRequestStyle",
     "ProviderAvailabilityStatus",
+    "ProviderCategories",
     "ProviderConfig",
+    "ProviderName",
     "ProviderRegistry",
     "ReasoningBudget",
     "ReasoningControls",
     "ReasoningSpec",
     "ReasoningWarning",
+    "SamplingApiProviderName",
     "ThinkingLevel",
     "TokenUsage",
     "build_default_registry",

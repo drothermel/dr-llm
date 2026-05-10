@@ -4,19 +4,21 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
-from dr_llm.llm.messages import Message
+from dr_llm.llm.names import (
+    SamplingApiProviderName,
+    HeadlessProviderName,
+    KimiCodeProviderName,
+    OpenAIProviderName,
+)
 from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.reasoning import ReasoningSpec
 from dr_llm.llm.request import (
     ApiBackedLlmRequest,
     ApiLlmRequest,
-    ApiProviderName,
     HeadlessLlmRequest,
-    HeadlessProviderName,
     KimiCodeLlmRequest,
-    KimiCodeProviderName,
     OpenAILlmRequest,
-    OpenAIProviderName,
+    Message,
     validate_llm_constraints,
 )
 from dr_llm.llm.providers.openai_compat.thinking import (
@@ -27,7 +29,9 @@ from dr_llm.llm.providers.openai_compat.thinking import (
 class ApiBackedLlmConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    provider: OpenAIProviderName | ApiProviderName | KimiCodeProviderName
+    provider: (
+        OpenAIProviderName | SamplingApiProviderName | KimiCodeProviderName
+    )
     model: str
     max_tokens: int | None = None
     effort: EffortSpec = EffortSpec.NA
@@ -49,7 +53,7 @@ class ApiBackedLlmConfig(BaseModel):
 
 
 class ApiLlmConfig(ApiBackedLlmConfig):
-    provider: ApiProviderName
+    provider: SamplingApiProviderName
     temperature: float | None = 1.0
     top_p: float | None = 0.95
 

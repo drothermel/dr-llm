@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 from typing import Any, cast
 
 from dr_llm.llm import CallMode, LlmResponse, TokenUsage
@@ -107,7 +108,7 @@ def _response(**overrides: Any) -> LlmResponse:
         "usage": TokenUsage(
             prompt_tokens=5, completion_tokens=3, total_tokens=8
         ),
-        "provider": "openai",
+        "provider": ProviderName.OPENAI,
         "model": "gpt-4.1-mini",
         "mode": CallMode.api,
     }

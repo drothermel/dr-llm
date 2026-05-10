@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 import json
 import subprocess
 from typing import cast
@@ -43,14 +44,14 @@ def test_codex_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
 
     adapter = CodexHeadlessProvider()
     request = make_request(
-        provider="codex",
+        provider=ProviderName.CODEX,
         model="gpt-5.1-codex-mini",
         reasoning=CodexReasoning(thinking_level=ThinkingLevel.LOW),
     )
     response = adapter.generate(request)
 
     command = cast(list[str], captured["command"])
-    assert command[:3] == ["codex", "exec", "--json"]
+    assert command[:3] == [ProviderName.CODEX, "exec", "--json"]
     assert "--ephemeral" in command
     assert "include_plan_tool=false" not in command
     assert "-m" in command
@@ -99,7 +100,7 @@ def test_codex_uses_cli_default_timeout(
 
     adapter = CodexHeadlessProvider()
     request = make_request(
-        provider="codex",
+        provider=ProviderName.CODEX,
         model="gpt-5.1-codex-mini",
         reasoning=CodexReasoning(thinking_level=ThinkingLevel.LOW),
     )
@@ -134,7 +135,7 @@ def test_codex_command_includes_reasoning_effort_config(
 
     adapter = CodexHeadlessProvider()
     request = make_request(
-        provider="codex",
+        provider=ProviderName.CODEX,
         model="gpt-5.1-codex-mini",
         reasoning=CodexReasoning(thinking_level=ThinkingLevel.XHIGH),
     )
@@ -161,7 +162,7 @@ def test_claude_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
 
     adapter = ClaudeHeadlessProvider()
     request = make_request(
-        provider="claude-code",
+        provider=ProviderName.CLAUDE_CODE,
         model="claude-sonnet-4-6",
         effort=EffortSpec.MEDIUM,
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
@@ -212,7 +213,7 @@ def test_claude_uses_cli_default_timeout(
 
     adapter = ClaudeHeadlessProvider()
     request = make_request(
-        provider="claude-code",
+        provider=ProviderName.CLAUDE_CODE,
         model="claude-sonnet-4-6",
         effort=EffortSpec.MEDIUM,
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
@@ -241,7 +242,7 @@ def test_claude_command_includes_effort(
 
     adapter = ClaudeHeadlessProvider()
     request = make_request(
-        provider="claude-code",
+        provider=ProviderName.CLAUDE_CODE,
         model="claude-sonnet-4-6",
         effort=EffortSpec.HIGH,
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
@@ -277,7 +278,7 @@ def test_codex_rejects_reasoning_before_subprocess(
 
     with pytest.raises(ValidationError):
         make_request(
-            provider="codex",
+            provider=ProviderName.CODEX,
             model="gpt-5.1-codex-mini",
             reasoning=ReasoningBudget(tokens=1024),
         )

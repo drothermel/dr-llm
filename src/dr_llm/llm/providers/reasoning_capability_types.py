@@ -4,13 +4,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from dr_llm.llm.names import ProviderName
+
 GoogleThinkingLevel = Literal["minimal", "low", "medium", "high"]
 ReasoningMode = Literal[
     "unsupported",
     "openai_effort",
     "openrouter_toggle",
     "openrouter_effort",
-    "glm",
+    ProviderName.GLM,
     "google_budget",
     "google_level",
     "anthropic_budget",

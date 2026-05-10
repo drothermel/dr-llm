@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.api_config import APIProviderConfig
 
 
 class AnthropicConfig(APIProviderConfig):
-    name: str = "anthropic"
+    name: ProviderName = ProviderName.ANTHROPIC
     base_url: str = "https://api.anthropic.com/v1/messages"
     api_key_env: str = "ANTHROPIC_API_KEY"
     anthropic_version: str = "2023-06-01"

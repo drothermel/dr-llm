@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 from collections.abc import Mapping
 from typing import Any, cast
 
@@ -23,7 +24,7 @@ from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 
 _GOOGLE_CONFIG = APIProviderConfig(
-    name="google",
+    name=ProviderName.GOOGLE,
     base_url="https://generativelanguage.googleapis.com/v1beta",
     api_key_env="GOOGLE_API_KEY",
     api_key="x",
@@ -72,7 +73,7 @@ def test_rejects_unsupported_message_role() -> None:
     )
     request = _make_api_request(
         {
-            "provider": "google",
+            "provider": ProviderName.GOOGLE,
             "model": "gemini-test",
             "messages": [tool_msg],
         }
@@ -92,7 +93,7 @@ def test_payload_serializes_messages() -> None:
 
     request = _make_api_request(
         {
-            "provider": "google",
+            "provider": ProviderName.GOOGLE,
             "model": "gemini-test",
             "messages": [
                 Message(role="system", content="Be concise."),
@@ -121,7 +122,7 @@ def test_payload_serializes_budget_reasoning_under_thinking_config() -> None:
 
     request = _make_api_request(
         {
-            "provider": "google",
+            "provider": ProviderName.GOOGLE,
             "model": "gemini-2.5-flash",
             "reasoning": ReasoningBudget(tokens=512),
         }
@@ -140,7 +141,7 @@ def test_payload_serializes_google_budget_controls() -> None:
 
     request = _make_api_request(
         {
-            "provider": "google",
+            "provider": ProviderName.GOOGLE,
             "model": "gemini-2.5-flash",
             "reasoning": GoogleReasoning(
                 thinking_level=ThinkingLevel.ADAPTIVE
@@ -156,7 +157,7 @@ def test_payload_serializes_google_budget_controls() -> None:
 
     request = _make_api_request(
         {
-            "provider": "google",
+            "provider": ProviderName.GOOGLE,
             "model": "gemini-2.5-flash",
             "reasoning": GoogleReasoning(
                 thinking_level=ThinkingLevel.BUDGET,
@@ -183,7 +184,7 @@ def test_invalid_json_raises_transport_error() -> None:
 
     request = _make_api_request(
         {
-            "provider": "google",
+            "provider": ProviderName.GOOGLE,
             "model": "gemini-test",
             "messages": [Message(role="user", content="hi")],
         }
@@ -197,7 +198,7 @@ def test_response_filters_thought_parts_out_of_visible_text() -> None:
     adapter = GoogleProvider(config=_GOOGLE_CONFIG, client=client)
 
     request = make_request(
-        provider="google",
+        provider=ProviderName.GOOGLE,
         model="gemma-4-31b-it",
         reasoning=GoogleReasoning(thinking_level=ThinkingLevel.HIGH),
     )
@@ -212,7 +213,7 @@ def test_response_filters_thought_parts_out_of_visible_text() -> None:
 
 def test_rejects_kimi_code_request_shape() -> None:
     request = KimiCodeLlmRequest(
-        provider="kimi-code",
+        provider=ProviderName.KIMI_CODE,
         model="kimi-for-coding",
         messages=[Message(role="user", content="hi")],
         max_tokens=256,

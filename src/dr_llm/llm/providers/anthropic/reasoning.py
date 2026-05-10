@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import Field
 
 from dr_llm.errors import ProviderSemanticError
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.thinking import (
     ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
     ANTHROPIC_BUDGET_THINKING_SUPPORTED,
@@ -58,10 +59,10 @@ def validate_reasoning_for_anthropic(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
     capabilities = reasoning_capabilities_for_model(
-        provider="anthropic", model=model
+        provider=ProviderName.ANTHROPIC, model=model
     )
     dispatch_reasoning_validation(
-        provider="anthropic",
+        provider=ProviderName.ANTHROPIC,
         model=model,
         reasoning=reasoning,
         native_spec_type=AnthropicReasoning,
@@ -71,7 +72,9 @@ def validate_reasoning_for_anthropic(
         ),
         validate_top_budget=lambda budget: (
             _validate_anthropic_budget_for_provider(
-                provider="anthropic", model=model, budget_tokens=budget.tokens
+                provider=ProviderName.ANTHROPIC,
+                model=model,
+                budget_tokens=budget.tokens,
             )
         ),
     )
@@ -91,7 +94,7 @@ def _validate_anthropic_reasoning_shape(
         return
     if thinking_level == ThinkingLevel.BUDGET:
         _validate_anthropic_budget_for_provider(
-            provider="anthropic",
+            provider=ProviderName.ANTHROPIC,
             model=model,
             budget_tokens=reasoning.budget_tokens,
         )
@@ -107,7 +110,7 @@ def _validate_anthropic_na(*, model: str) -> None:
         | set(ANTHROPIC_BUDGET_THINKING_SUPPORTED)
     ):
         raise ValueError(
-            f"thinking_level='na' is not supported for provider='anthropic' model={model!r}"
+            f"thinking_level='na' is not supported for provider='{ProviderName.ANTHROPIC}' model={model!r}"
         )
 
 
@@ -148,7 +151,7 @@ def validate_reasoning_for_kimi_code(
         )
     if reasoning.thinking_level == ThinkingLevel.BUDGET:
         _validate_anthropic_budget_for_provider(
-            provider="kimi-code",
+            provider=ProviderName.KIMI_CODE,
             model=model,
             budget_tokens=reasoning.budget_tokens,
         )
@@ -159,7 +162,7 @@ def validate_reasoning_for_minimax(
 ) -> None:
     if reasoning is None:
         raise ValueError(
-            f"reasoning is required for provider='minimax' model={model!r}"
+            f"reasoning is required for provider='{ProviderName.MINIMAX}' model={model!r}"
         )
     if isinstance(reasoning, ReasoningBudget):
         raise ValueError(
@@ -201,7 +204,9 @@ class AnthropicReasoningConfig(BaseProviderReasoningConfig):
                 thinking: dict[str, Any] = {}
                 if thinking_level == ThinkingLevel.BUDGET:
                     tokens = require_budget_tokens(
-                        budget_tokens, label="anthropic", min_value=1
+                        budget_tokens,
+                        label=ProviderName.ANTHROPIC,
+                        min_value=1,
                     )
                     thinking = {"type": "enabled", "budget_tokens": tokens}
                 elif thinking_level == ThinkingLevel.ADAPTIVE:
@@ -211,7 +216,9 @@ class AnthropicReasoningConfig(BaseProviderReasoningConfig):
                 return cls(thinking=thinking)
             case _:
                 raise ProviderSemanticError(
-                    unsupported_reasoning_kind_message("anthropic", config)
+                    unsupported_reasoning_kind_message(
+                        ProviderName.ANTHROPIC, config
+                    )
                 )
 
 
@@ -250,14 +257,16 @@ class KimiCodeReasoningConfig(BaseProviderReasoningConfig):
                 display=None,
             ):
                 tokens = require_budget_tokens(
-                    budget_tokens, label="kimi-code", min_value=1
+                    budget_tokens, label=ProviderName.KIMI_CODE, min_value=1
                 )
                 return cls(
                     thinking={"type": "enabled", "budget_tokens": tokens}
                 )
             case _:
                 raise ProviderSemanticError(
-                    unsupported_reasoning_kind_message("kimi-code", config)
+                    unsupported_reasoning_kind_message(
+                        ProviderName.KIMI_CODE, config
+                    )
                 )
 
 
@@ -271,7 +280,7 @@ class MiniMaxReasoningConfig(BaseProviderReasoningConfig):
     ) -> MiniMaxReasoningConfig:
         if config is None:
             raise ProviderSemanticError(
-                "minimax requires explicit AnthropicReasoning(thinking_level='na')"
+                f"{ProviderName.MINIMAX} requires explicit AnthropicReasoning(thinking_level='na')"
             )
         match config:
             case AnthropicReasoning(
@@ -282,5 +291,7 @@ class MiniMaxReasoningConfig(BaseProviderReasoningConfig):
                 return cls()
             case _:
                 raise ProviderSemanticError(
-                    unsupported_reasoning_kind_message("minimax", config)
+                    unsupported_reasoning_kind_message(
+                        ProviderName.MINIMAX, config
+                    )
                 )

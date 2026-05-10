@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 from collections.abc import Callable
 
 import pytest
@@ -97,7 +98,7 @@ def test_available_names_accepts_precomputed_statuses() -> None:
     [
         lambda: OpenAICompatProvider(
             config=OpenAICompatConfig(
-                name="openai",
+                name=ProviderName.OPENAI,
                 base_url="https://api.example.com/v1",
                 api_key_env="OPENAI_API_KEY",
                 api_key="inline-key",
@@ -111,7 +112,7 @@ def test_available_names_accepts_precomputed_statuses() -> None:
         ),
         lambda: GoogleProvider(
             config=APIProviderConfig(
-                name="google",
+                name=ProviderName.GOOGLE,
                 base_url="https://generativelanguage.googleapis.com/v1beta",
                 api_key_env="GOOGLE_API_KEY",
                 api_key="inline-key",
@@ -119,7 +120,7 @@ def test_available_names_accepts_precomputed_statuses() -> None:
         ),
         lambda: KimiCodeProvider(
             config=AnthropicConfig(
-                name="kimi-code",
+                name=ProviderName.KIMI_CODE,
                 base_url="https://api.kimi.com/coding/v1/messages",
                 api_key_env="KIMI_API_KEY",
                 api_key="inline-key",
@@ -127,14 +128,20 @@ def test_available_names_accepts_precomputed_statuses() -> None:
         ),
         lambda: MiniMaxProvider(
             config=AnthropicConfig(
-                name="minimax",
+                name=ProviderName.MINIMAX,
                 base_url="https://api.minimax.io/anthropic/v1/messages",
                 api_key_env="MINIMAX_API_KEY",
                 api_key="inline-key",
             )
         ),
     ],
-    ids=["openai_compat", "anthropic", "google", "kimi_code", "minimax"],
+    ids=[
+        "openai_compat",
+        ProviderName.ANTHROPIC,
+        ProviderName.GOOGLE,
+        ProviderName.KIMI_CODE,
+        ProviderName.MINIMAX,
+    ],
 )
 def test_inline_api_key_suppresses_env_requirement(
     adapter_factory: Callable[[], object],

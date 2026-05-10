@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import Field
 
 from dr_llm.errors import ProviderSemanticError
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.reasoning import (
     BaseProviderReasoningConfig,
     GoogleReasoning,
@@ -33,24 +34,24 @@ def validate_reasoning_for_google(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
     capabilities = reasoning_capabilities_for_model(
-        provider="google", model=model
+        provider=ProviderName.GOOGLE, model=model
     )
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
         if capabilities is None:
             raise ValueError(
-                f"Reasoning is not allowed for provider='google' model={model!r}: reasoning capabilities are unknown"
+                f"Reasoning is not allowed for provider='{ProviderName.GOOGLE}' model={model!r}: reasoning capabilities are unknown"
             )
         if capabilities.mode == "unsupported":
             raise ValueError(
-                f"Reasoning is not supported for provider='google' model={model!r}"
+                f"Reasoning is not supported for provider='{ProviderName.GOOGLE}' model={model!r}"
             )
         if capabilities.mode == "google_level":
             raise ValueError(
-                f"Top-level reasoning budget is not supported for provider='google' model={model!r} with capabilities.mode={capabilities.mode!r}"
+                f"Top-level reasoning budget is not supported for provider='{ProviderName.GOOGLE}' model={model!r} with capabilities.mode={capabilities.mode!r}"
             )
         validate_budget_range(
-            provider="google",
+            provider=ProviderName.GOOGLE,
             model=model,
             label="reasoning budget",
             tokens=budget.tokens,
@@ -58,7 +59,7 @@ def validate_reasoning_for_google(
         )
 
     dispatch_reasoning_validation(
-        provider="google",
+        provider=ProviderName.GOOGLE,
         model=model,
         reasoning=reasoning,
         native_spec_type=GoogleReasoning,
@@ -79,18 +80,18 @@ def _validate_google_reasoning_shape(
     budget_tokens: int | None,
 ) -> None:
     capabilities = reasoning_capabilities_for_model(
-        provider="google", model=model
+        provider=ProviderName.GOOGLE, model=model
     )
     if is_reasoning_unsupported(capabilities):
         if thinking_level == ThinkingLevel.NA:
             return
         raise ValueError(
-            f"google thinking is not supported for model={model!r}"
+            f"{ProviderName.GOOGLE} thinking is not supported for model={model!r}"
         )
     assert capabilities is not None
     if thinking_level == ThinkingLevel.NA:
         raise ValueError(
-            f"thinking_level='na' is not supported for provider='google' model={model!r}"
+            f"thinking_level='na' is not supported for provider='{ProviderName.GOOGLE}' model={model!r}"
         )
     if capabilities.mode == "google_budget":
         _validate_google_budget_mode(
@@ -108,7 +109,7 @@ def _validate_google_reasoning_shape(
         )
         return
     raise ValueError(
-        f"google reasoning is not supported for provider='google' model={model!r}"
+        f"Reasoning is not supported for provider='{ProviderName.GOOGLE}' model={model!r}"
     )
 
 
@@ -125,7 +126,7 @@ def _validate_google_budget_mode(
         if capabilities.supports_dynamic:
             return
         raise ValueError(
-            f"google dynamic thinking is not supported for model={model!r}"
+            f"{ProviderName.GOOGLE} dynamic thinking is not supported for model={model!r}"
         )
     if thinking_level == ThinkingLevel.BUDGET:
         if budget_tokens is None:
@@ -134,15 +135,15 @@ def _validate_google_budget_mode(
                 "thinking_level is 'budget'"
             )
         validate_budget_range(
-            provider="google",
+            provider=ProviderName.GOOGLE,
             model=model,
-            label="google thinking_budget",
+            label=f"{ProviderName.GOOGLE} thinking_budget",
             tokens=budget_tokens,
             capabilities=capabilities,
         )
         return
     raise ValueError(
-        f"google model {model!r} does not support thinking_level={thinking_level!r}; use off, adaptive, or budget"
+        f"{ProviderName.GOOGLE} model {model!r} does not support thinking_level={thinking_level!r}; use off, adaptive, or budget"
     )
 
 
@@ -157,7 +158,7 @@ def _validate_google_level_mode(
         for level in capabilities.google_levels
     }
     validate_allowed_thinking_levels(
-        provider="google",
+        provider=ProviderName.GOOGLE,
         model=model,
         thinking_level=thinking_level,
         allowed_levels=allowed_levels,
@@ -194,7 +195,9 @@ class GoogleReasoningConfig(BaseProviderReasoningConfig):
                 return cls(payload=payload)
             case _:
                 raise ProviderSemanticError(
-                    unsupported_reasoning_kind_message("google", config)
+                    unsupported_reasoning_kind_message(
+                        ProviderName.GOOGLE, config
+                    )
                 )
 
 
@@ -218,11 +221,11 @@ def _build_thinking_payload(
     if thinking_level == ThinkingLevel.BUDGET:
         return {
             "thinkingBudget": require_budget_tokens(
-                budget_tokens, label="google", min_value=0
+                budget_tokens, label=ProviderName.GOOGLE, min_value=0
             )
         }
     if thinking_level in _GOOGLE_LITERAL_LEVELS:
         return {"thinkingLevel": str(thinking_level)}
     raise ProviderSemanticError(
-        "google reasoning config did not contain a serializable setting"
+        f"{ProviderName.GOOGLE} reasoning config did not contain a serializable setting"
     )

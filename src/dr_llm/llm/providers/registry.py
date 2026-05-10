@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from threading import RLock
 
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
 from dr_llm.llm.providers.api_config import APIProviderConfig
 from dr_llm.llm.providers.base import Provider
@@ -85,10 +86,14 @@ class ProviderRegistry:
             provider.close()
 
 
-_OPENAI_COMPAT_PROVIDERS: tuple[tuple[str, str, str], ...] = (
-    ("openai", "https://api.openai.com/v1", "OPENAI_API_KEY"),
-    ("openrouter", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
-    ("glm", "https://api.z.ai/api/coding/paas/v4", "ZAI_API_KEY"),
+_OPENAI_COMPAT_PROVIDERS: tuple[tuple[ProviderName, str, str], ...] = (
+    (ProviderName.OPENAI, "https://api.openai.com/v1", "OPENAI_API_KEY"),
+    (
+        ProviderName.OPENROUTER,
+        "https://openrouter.ai/api/v1",
+        "OPENROUTER_API_KEY",
+    ),
+    (ProviderName.GLM, "https://api.z.ai/api/coding/paas/v4", "ZAI_API_KEY"),
 )
 
 
@@ -109,7 +114,7 @@ def build_default_registry() -> ProviderRegistry:
     registry.register(
         GoogleProvider(
             config=APIProviderConfig(
-                name="google",
+                name=ProviderName.GOOGLE,
                 base_url="https://generativelanguage.googleapis.com/v1beta",
                 api_key_env="GOOGLE_API_KEY",
             )

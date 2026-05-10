@@ -4,7 +4,14 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
-from dr_llm.llm.messages import Message
+from dr_llm.llm.names import (
+    ApiBackedProviderName,
+    SamplingApiProviderName,
+    HeadlessProviderName,
+    KimiCodeProviderName,
+    OpenAIProviderName,
+    ProviderName,
+)
 from dr_llm.llm.providers.effort import EffortSpec, validate_effort
 from dr_llm.llm.providers.openai_compat.thinking import (
     validate_openai_sampling_controls,
@@ -12,41 +19,19 @@ from dr_llm.llm.providers.openai_compat.thinking import (
 from dr_llm.llm.providers.reasoning import ReasoningSpec
 from dr_llm.llm.providers.reasoning_validation import validate_reasoning
 
-API_PROVIDER_NAMES = (
-    "openai",
-    "openrouter",
-    "glm",
-    "google",
-    "anthropic",
-    "minimax",
-    "kimi-code",
-)
-SAMPLING_API_PROVIDER_NAMES = (
-    "openrouter",
-    "glm",
-    "google",
-    "anthropic",
-    "minimax",
-)
-HEADLESS_PROVIDER_NAMES = ("codex", "claude-code")
 
-type ApiProviderName = Literal[
-    "openrouter",
-    "glm",
-    "google",
-    "anthropic",
-    "minimax",
-]
-type OpenAIProviderName = Literal["openai"]
-type KimiCodeProviderName = Literal["kimi-code"]
-type ApiBackedProviderName = (
-    OpenAIProviderName | ApiProviderName | KimiCodeProviderName
-)
-type HeadlessProviderName = Literal["codex", "claude-code"]
+class Message(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    role: Literal["system", "user", "assistant"]
+    content: str
 
 
 def validate_max_tokens(*, provider: str, max_tokens: int | None) -> None:
-    if provider in {"anthropic", "kimi-code"} and max_tokens is None:
+    if (
+        provider in {ProviderName.ANTHROPIC, ProviderName.KIMI_CODE}
+        and max_tokens is None
+    ):
         raise ValueError(f"max_tokens is required for provider={provider!r}")
 
 
@@ -87,7 +72,7 @@ class ApiBackedLlmRequest(BaseModel):
 
 
 class ApiLlmRequest(ApiBackedLlmRequest):
-    provider: ApiProviderName
+    provider: SamplingApiProviderName
     temperature: float | None = 1.0
     top_p: float | None = 0.95
 

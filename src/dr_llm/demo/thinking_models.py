@@ -6,6 +6,7 @@ from dr_llm.llm import (
     CLAUDE_CODE_MODELS,
     KIMI_CODING_MODELS,
     MINIMAX_TEXT_MODELS,
+    ProviderName,
     openrouter_allowed_models,
 )
 
@@ -45,14 +46,14 @@ DEMO_GOOGLE_MODELS = [
     "gemma-4-31b-it",
 ]
 DEMO_OPENROUTER_MODELS = list(openrouter_allowed_models())
-DEMO_PROVIDER_MODELS: dict[str, list[str]] = {
-    "claude-code": DEMO_CLAUDE_MODELS,
-    "minimax": DEMO_MINIMAX_MODELS,
-    "kimi-code": DEMO_KIMI_CODE_MODELS,
-    "openrouter": DEMO_OPENROUTER_MODELS,
-    "openai": DEMO_OPENAI_MODELS,
-    "codex": DEMO_CODEX_MODELS,
-    "google": DEMO_GOOGLE_MODELS,
+DEMO_PROVIDER_MODELS: dict[ProviderName, list[str]] = {
+    ProviderName.CLAUDE_CODE: DEMO_CLAUDE_MODELS,
+    ProviderName.MINIMAX: DEMO_MINIMAX_MODELS,
+    ProviderName.KIMI_CODE: DEMO_KIMI_CODE_MODELS,
+    ProviderName.OPENROUTER: DEMO_OPENROUTER_MODELS,
+    ProviderName.OPENAI: DEMO_OPENAI_MODELS,
+    ProviderName.CODEX: DEMO_CODEX_MODELS,
+    ProviderName.GOOGLE: DEMO_GOOGLE_MODELS,
 }
 
 __all__ = [

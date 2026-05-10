@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.capabilities import (
     reasoning_capabilities_for_anthropic,
 )
@@ -50,15 +51,15 @@ __all__ = [
 CapabilityResolver = Callable[[str], ReasoningCapabilities | None]
 
 _CAPABILITY_RESOLVERS: dict[str, CapabilityResolver] = {
-    "anthropic": reasoning_capabilities_for_anthropic,
-    "claude-code": reasoning_capabilities_for_claude_code,
-    "codex": reasoning_capabilities_for_codex,
-    "glm": reasoning_capabilities_for_glm,
-    "google": reasoning_capabilities_for_google,
-    "kimi-code": reasoning_capabilities_for_kimi_code,
-    "minimax": reasoning_capabilities_for_minimax,
-    "openai": reasoning_capabilities_for_openai,
-    "openrouter": reasoning_capabilities_for_openrouter,
+    ProviderName.ANTHROPIC: reasoning_capabilities_for_anthropic,
+    ProviderName.CLAUDE_CODE: reasoning_capabilities_for_claude_code,
+    ProviderName.CODEX: reasoning_capabilities_for_codex,
+    ProviderName.GLM: reasoning_capabilities_for_glm,
+    ProviderName.GOOGLE: reasoning_capabilities_for_google,
+    ProviderName.KIMI_CODE: reasoning_capabilities_for_kimi_code,
+    ProviderName.MINIMAX: reasoning_capabilities_for_minimax,
+    ProviderName.OPENAI: reasoning_capabilities_for_openai,
+    ProviderName.OPENROUTER: reasoning_capabilities_for_openrouter,
 }
 
 

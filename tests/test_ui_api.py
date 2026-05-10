@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 import pytest
 from fastapi.testclient import TestClient
 
@@ -41,7 +42,8 @@ def test_openrouter_models_endpoint_applies_policy_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = FakeProvider(
-        "openrouter", config=ProviderConfig(name="openrouter")
+        ProviderName.OPENROUTER,
+        config=ProviderConfig(name=ProviderName.OPENROUTER),
     )
     registry = ProviderRegistry()
     registry.register(adapter)
@@ -52,19 +54,19 @@ def test_openrouter_models_endpoint_applies_policy_filter(
         lambda _provider: (
             [
                 ModelCatalogEntry(
-                    provider="openrouter",
+                    provider=ProviderName.OPENROUTER,
                     model="deepseek/deepseek-chat-v3.1",
                     supports_reasoning=False,
                     source_quality="live",
                 ),
                 ModelCatalogEntry(
-                    provider="openrouter",
+                    provider=ProviderName.OPENROUTER,
                     model="deepseek/deepseek-chat",
                     supports_reasoning=True,
                     source_quality="live",
                 ),
                 ModelCatalogEntry(
-                    provider="openrouter",
+                    provider=ProviderName.OPENROUTER,
                     model="unknown/model",
                     source_quality="live",
                 ),
@@ -91,9 +93,10 @@ def test_openrouter_static_models_use_curated_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = FakeProvider(
-        "openrouter",
+        ProviderName.OPENROUTER,
         config=ProviderConfig(
-            name="openrouter", required_env_vars=["MISSING_TEST_ENV"]
+            name=ProviderName.OPENROUTER,
+            required_env_vars=["MISSING_TEST_ENV"],
         ),
     )
     registry = ProviderRegistry()

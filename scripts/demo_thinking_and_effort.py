@@ -26,7 +26,7 @@ from pydantic import BaseModel, ValidationError
 from dr_llm.demo import DEMO_PROVIDER_MODELS
 from dr_llm.llm import (
     ApiLlmRequest,
-    ApiProviderName,
+    SamplingApiProviderName,
     EffortSpec,
     HeadlessLlmRequest,
     HeadlessProviderName,
@@ -35,7 +35,9 @@ from dr_llm.llm import (
     LlmRequest,
     Message,
     OpenRouterReasoning,
+    ProviderCategories,
     ProviderRegistry,
+    ProviderName,
     ReasoningSpec,
     ThinkingLevel,
     build_default_registry,
@@ -50,7 +52,9 @@ from dr_llm.llm import (
 
 app = typer.Typer()
 
-SUPPORTED_PROVIDER_NAMES = ", ".join(sorted(DEMO_PROVIDER_MODELS))
+SUPPORTED_PROVIDER_NAMES = ", ".join(
+    sorted(provider.value for provider in DEMO_PROVIDER_MODELS)
+)
 PROMPT = "Reply with exactly OK."
 KIMI_CODE_MAX_TOKENS = 2048
 PHASES = ["models", "thinking", "effort"]
@@ -83,7 +87,7 @@ def format_attempt(
     effort: EffortSpec,
     reasoning_override: ReasoningSpec | None = None,
 ) -> str:
-    if provider == "openrouter":
+    if provider == ProviderName.OPENROUTER:
         detail = f"{provider} | {model}"
         match reasoning_override:
             case OpenRouterReasoning(effort=override_effort) if (
@@ -113,7 +117,7 @@ def availability_detail(missing: tuple[str, ...]) -> str:
     return ", ".join(missing)
 
 
-def ensure_required_providers_available(providers: list[str]) -> None:
+def ensure_required_providers_available(providers: list[ProviderName]) -> None:
     registry = build_default_registry()
     try:
         missing: list[str] = []
@@ -150,7 +154,9 @@ def make_request(
     explicit_reasoning: bool = False,
     reasoning_override: ReasoningSpec | None = None,
 ) -> LlmRequest:
-    max_tokens = KIMI_CODE_MAX_TOKENS if provider == "kimi-code" else None
+    max_tokens = (
+        KIMI_CODE_MAX_TOKENS if provider == ProviderName.KIMI_CODE else None
+    )
     reasoning = reasoning_override or reasoning_for_thinking_level(
         provider=provider,
         model=model,
@@ -158,7 +164,7 @@ def make_request(
         budget_tokens=budget_tokens_for_level(provider, model, thinking_level),
         explicit_na=explicit_reasoning,
     )
-    if provider in {"codex", "claude-code"}:
+    if provider in ProviderCategories().headless:
         return HeadlessLlmRequest(
             provider=cast(HeadlessProviderName, provider),
             model=model,
@@ -166,7 +172,7 @@ def make_request(
             effort=effort,
             reasoning=reasoning,
         )
-    if provider == "kimi-code":
+    if provider == ProviderName.KIMI_CODE:
         return KimiCodeLlmRequest(
             provider=cast(KimiCodeProviderName, provider),
             model=model,
@@ -176,7 +182,7 @@ def make_request(
             reasoning=reasoning,
         )
     return ApiLlmRequest(
-        provider=cast(ApiProviderName, provider),
+        provider=cast(SamplingApiProviderName, provider),
         model=model,
         messages=[Message(role="user", content=PROMPT)],
         max_tokens=max_tokens,
@@ -239,13 +245,13 @@ def run_attempt(
 
 
 def requires_explicit_reasoning(provider: str) -> bool:
-    return provider == "minimax"
+    return provider == ProviderName.MINIMAX
 
 
 def run_model_sweep(
     registry: ProviderRegistry,
     counts: dict[tuple[str, str], SummaryCounts],
-    providers: list[str],
+    providers: list[ProviderName],
 ) -> None:
     print("\n== models ==")
     for provider in providers:
@@ -270,11 +276,11 @@ def run_model_sweep(
 def run_thinking_sweep(
     registry: ProviderRegistry,
     counts: dict[tuple[str, str], SummaryCounts],
-    providers: list[str],
+    providers: list[ProviderName],
 ) -> None:
     print("\n== thinking ==")
     for provider in providers:
-        if provider == "openrouter":
+        if provider == ProviderName.OPENROUTER:
             continue
         for model in DEMO_PROVIDER_MODELS[provider]:
             for thinking_level in supported_thinking_levels(
@@ -295,11 +301,11 @@ def run_thinking_sweep(
 def run_effort_sweep(
     registry: ProviderRegistry,
     counts: dict[tuple[str, str], SummaryCounts],
-    providers: list[str],
+    providers: list[ProviderName],
 ) -> None:
     print("\n== effort ==")
     for provider in providers:
-        if provider == "openrouter":
+        if provider == ProviderName.OPENROUTER:
             continue
         for model in DEMO_PROVIDER_MODELS[provider]:
             for effort in supported_effort_levels(
@@ -321,7 +327,7 @@ def run_effort_sweep(
 
 def print_summary(
     counts: dict[tuple[str, str], SummaryCounts],
-    providers: list[str],
+    providers: list[ProviderName],
 ) -> None:
     print("\n== summary ==")
     for provider in providers:
@@ -349,14 +355,23 @@ def main(
     ),
 ) -> None:
     """Sweep curated models for provider-specific reasoning and effort support."""
-    providers = provider or sorted(DEMO_PROVIDER_MODELS)
+    supported_provider_values = {
+        provider.value for provider in DEMO_PROVIDER_MODELS
+    }
     unsupported = [
-        name for name in providers if name not in DEMO_PROVIDER_MODELS
+        name
+        for name in provider or []
+        if name not in supported_provider_values
     ]
     if unsupported:
         raise typer.BadParameter(
             f"Unsupported provider(s): {', '.join(sorted(unsupported))}"
         )
+    providers = (
+        [ProviderName(name) for name in provider]
+        if provider
+        else sorted(DEMO_PROVIDER_MODELS)
+    )
 
     ensure_required_providers_available(providers)
     counts: dict[tuple[str, str], SummaryCounts] = defaultdict(SummaryCounts)

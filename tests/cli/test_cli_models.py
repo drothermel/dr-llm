@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 import json
 from typing import Any, cast
 
@@ -74,7 +75,7 @@ def test_sync_verbose_json(monkeypatch: pytest.MonkeyPatch) -> None:
         _fake_catalog_service(
             sync_results=[
                 ModelCatalogSyncResult(
-                    provider="openai",
+                    provider=ProviderName.OPENAI,
                     success=True,
                     entry_count=42,
                     snapshot_id="snap_123",
@@ -84,7 +85,7 @@ def test_sync_verbose_json(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     result = runner.invoke(
-        app, ["models", "sync", "--provider", "openai", "--verbose"]
+        app, ["models", "sync", "--provider", ProviderName.OPENAI, "--verbose"]
     )
 
     assert result.exit_code == 0
@@ -93,7 +94,7 @@ def test_sync_verbose_json(monkeypatch: pytest.MonkeyPatch) -> None:
         "results": [
             {
                 "entry_count": 42,
-                "provider": "openai",
+                "provider": ProviderName.OPENAI,
                 "raw_payload": {},
                 "snapshot_id": "snap_123",
                 "success": True,
@@ -109,7 +110,7 @@ def test_sync_failure_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
         _fake_catalog_service(
             sync_results=[
                 ModelCatalogSyncResult(
-                    provider="openai",
+                    provider=ProviderName.OPENAI,
                     success=False,
                     error="boom\ntraceback details",
                 )
@@ -117,7 +118,9 @@ def test_sync_failure_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
 
-    result = runner.invoke(app, ["models", "sync", "--provider", "openai"])
+    result = runner.invoke(
+        app, ["models", "sync", "--provider", ProviderName.OPENAI]
+    )
 
     assert result.exit_code == 1
 
@@ -129,7 +132,7 @@ def test_list_json(monkeypatch: pytest.MonkeyPatch) -> None:
         _fake_catalog_service(
             models=[
                 ModelCatalogEntry(
-                    provider="openai",
+                    provider=ProviderName.OPENAI,
                     model="gpt-4.1",
                     display_name="GPT-4.1",
                 )
@@ -138,7 +141,7 @@ def test_list_json(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     result = runner.invoke(
-        app, ["models", "list", "--provider", "openai", "--json"]
+        app, ["models", "list", "--provider", ProviderName.OPENAI, "--json"]
     )
 
     assert result.exit_code == 0
@@ -148,11 +151,11 @@ def test_list_json(monkeypatch: pytest.MonkeyPatch) -> None:
             "display_name": "GPT-4.1",
             "metadata": {},
             "model": "gpt-4.1",
-            "provider": "openai",
+            "provider": ProviderName.OPENAI,
             "source_quality": "live",
         }
     ]
-    _assert_blacklist_json_shape(payload, provider="openai")
+    _assert_blacklist_json_shape(payload, provider=ProviderName.OPENAI)
 
 
 def test_sync_list_json(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -163,12 +166,12 @@ def test_sync_list_json(monkeypatch: pytest.MonkeyPatch) -> None:
         _fake_catalog_service(
             sync_results=[
                 ModelCatalogSyncResult(
-                    provider="openai", success=True, entry_count=42
+                    provider=ProviderName.OPENAI, success=True, entry_count=42
                 )
             ],
             models=[
                 ModelCatalogEntry(
-                    provider="openai",
+                    provider=ProviderName.OPENAI,
                     model="gpt-5-mini",
                     display_name="GPT-5 Mini",
                 )
@@ -178,7 +181,8 @@ def test_sync_list_json(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     result = runner.invoke(
-        app, ["models", "sync-list", "--provider", "openai", "--json"]
+        app,
+        ["models", "sync-list", "--provider", ProviderName.OPENAI, "--json"],
     )
 
     assert result.exit_code == 0
@@ -188,11 +192,11 @@ def test_sync_list_json(monkeypatch: pytest.MonkeyPatch) -> None:
             "display_name": "GPT-5 Mini",
             "metadata": {},
             "model": "gpt-5-mini",
-            "provider": "openai",
+            "provider": ProviderName.OPENAI,
             "source_quality": "live",
         }
     ]
-    _assert_blacklist_json_shape(payload, provider="openai")
+    _assert_blacklist_json_shape(payload, provider=ProviderName.OPENAI)
 
 
 def test_list_json_includes_provider_blacklist(
@@ -204,7 +208,7 @@ def test_list_json_includes_provider_blacklist(
         _fake_catalog_service(
             models=[
                 ModelCatalogEntry(
-                    provider="anthropic",
+                    provider=ProviderName.ANTHROPIC,
                     model="claude-haiku-4-5-20251001",
                     display_name="Claude Haiku 4.5",
                 )
@@ -214,7 +218,7 @@ def test_list_json_includes_provider_blacklist(
     )
 
     result = runner.invoke(
-        app, ["models", "list", "--provider", "anthropic", "--json"]
+        app, ["models", "list", "--provider", ProviderName.ANTHROPIC, "--json"]
     )
 
     assert result.exit_code == 0
@@ -224,11 +228,11 @@ def test_list_json_includes_provider_blacklist(
             "display_name": "Claude Haiku 4.5",
             "metadata": {},
             "model": "claude-haiku-4-5-20251001",
-            "provider": "anthropic",
+            "provider": ProviderName.ANTHROPIC,
             "source_quality": "live",
         }
     ]
-    _assert_blacklist_json_shape(payload, provider="anthropic")
+    _assert_blacklist_json_shape(payload, provider=ProviderName.ANTHROPIC)
 
 
 def test_sync_list_failure_exits_nonzero(
@@ -240,7 +244,7 @@ def test_sync_list_failure_exits_nonzero(
         _fake_catalog_service(
             sync_results=[
                 ModelCatalogSyncResult(
-                    provider="openai",
+                    provider=ProviderName.OPENAI,
                     success=False,
                     error="boom\ntraceback details",
                 )
@@ -249,7 +253,7 @@ def test_sync_list_failure_exits_nonzero(
     )
 
     result = runner.invoke(
-        app, ["models", "sync-list", "--provider", "openai"]
+        app, ["models", "sync-list", "--provider", ProviderName.OPENAI]
     )
 
     assert result.exit_code == 1
