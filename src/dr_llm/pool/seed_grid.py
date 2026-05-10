@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.messages import Message
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.pool.results import InsertResult
+from dr_llm.pool.insert_result import InsertResult
 from dr_llm.pool.pool_store import PoolStore
 
 

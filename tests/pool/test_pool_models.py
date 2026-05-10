@@ -10,7 +10,7 @@ from dr_llm.pool.db import SampleColumn
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.db.tables import SamplesTableDef
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.pool.results import InsertResult
+from dr_llm.pool.insert_result import InsertResult
 
 _TEST_SCHEMA = PoolSchema(
     name="modeltest",

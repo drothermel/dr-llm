@@ -30,7 +30,7 @@ from dr_llm.pool.db.sql_helpers import (
 )
 from dr_llm.pool.db.key_filter import PoolKeyFilter
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.pool.results import InsertResult
+from dr_llm.pool.insert_result import InsertResult
 
 
 class PoolStore:

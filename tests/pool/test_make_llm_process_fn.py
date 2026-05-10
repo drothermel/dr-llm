@@ -16,7 +16,7 @@ from dr_llm.pool import backend as pool_backend
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell, seed_llm_grid
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.pool.results import InsertResult
+from dr_llm.pool.insert_result import InsertResult
 
 
 def _make_sample(request: dict[str, Any]) -> PoolSample:
