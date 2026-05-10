@@ -45,16 +45,17 @@ def ensure_catalog_table(runtime: DbRuntime) -> None:
 def upsert_schema(runtime: DbRuntime, schema: PoolSchema) -> None:
     sa_metadata = MetaData()
     table = _catalog_table(sa_metadata)
+    schema_json = schema.model_dump(mode="json")
     stmt = (
         pg_insert(table)
         .values(
             pool_name=schema.name,
-            schema_json=schema.model_dump(mode="json"),
+            schema_json=schema_json,
         )
         .on_conflict_do_update(
             index_elements=["pool_name"],
             set_={
-                "schema_json": schema.model_dump(mode="json"),
+                "schema_json": schema_json,
                 "updated_at": text("now()"),
             },
         )

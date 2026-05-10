@@ -1,18 +1,26 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from dr_llm.pool.admin.discovery import discover_pools, pool_name_has_token_match
+from dr_llm.pool.admin.discovery import (
+    discover_pools,
+    discover_pools_from_runtime,
+    pool_name_has_token_match,
+)
 from dr_llm.pool.db import DbConfig, DbRuntime
-from dr_llm.pool.db.catalog import delete_catalog_entry, load_schema
+from dr_llm.pool.db.catalog import delete_catalog_entry, list_pool_names, load_schema
 from dr_llm.pool.db.schema import _VALID_NAME_RE, pool_table_names
 from dr_llm.pool.pool_store import PoolStore
+
+if TYPE_CHECKING:
+    from dr_llm.project.project_info import ProjectInfo
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +62,7 @@ class PoolDeletionReadiness(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: DeletePoolRequest
-    project: Any | None = None
+    project: "ProjectInfo | None" = None
     existing_table_names: list[str] = Field(default_factory=list)
     in_progress_count: int = 0
     violations: list[PoolDeletionViolation] = Field(default_factory=list)
@@ -83,7 +91,7 @@ class PoolDeletionResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: DeletePoolRequest
-    project: Any | None = None
+    project: "ProjectInfo | None" = None
     status: PoolDeletionStatus
     existing_table_names: list[str] = Field(default_factory=list)
     deleted_table_names: list[str] = Field(default_factory=list)
@@ -127,7 +135,7 @@ class DeletePoolsByTokenResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: DeletePoolsByTokenRequest
-    project: Any | None = None
+    project: "ProjectInfo | None" = None
     status: DeletePoolsByTokenStatus
     discovered_pool_names: list[str] = Field(default_factory=list)
     matched_pool_names: list[str] = Field(default_factory=list)
@@ -412,6 +420,8 @@ def _validated_pool_table_names(pool_name: str) -> list[str]:
 
 def _existing_pool_table_names(runtime: DbRuntime, pool_name: str) -> list[str]:
     table_names = _validated_pool_table_names(pool_name)
+    known_pool_names = _known_pool_names(runtime)
+    known_pool_names.add(pool_name)
     existing: list[str] = []
     with runtime.connect() as conn:
         for table_name in table_names:
@@ -440,8 +450,44 @@ def _existing_pool_table_names(runtime: DbRuntime, pool_name: str) -> list[str]:
             table_name
             for table_name in claim_rows
             if table_name.startswith(claims_prefix)
+            and _claim_table_belongs_to_pool(
+                table_name,
+                pool_name=pool_name,
+                known_pool_names=known_pool_names,
+            )
         )
     return existing
+
+
+def _known_pool_names(runtime: DbRuntime) -> set[str]:
+    pool_names = set(discover_pools_from_runtime(runtime))
+    try:
+        pool_names.update(list_pool_names(runtime))
+    except Exception:
+        logger.debug("Could not load pool names from pool_catalog", exc_info=True)
+    return pool_names
+
+
+def _claim_table_belongs_to_pool(
+    table_name: str,
+    *,
+    pool_name: str,
+    known_pool_names: Iterable[str],
+) -> bool:
+    known_pool_name_set = set(known_pool_names)
+    if any(
+        table_name in pool_table_names(candidate) for candidate in known_pool_name_set
+    ):
+        return False
+    matching_pool_names = [
+        candidate
+        for candidate in known_pool_name_set
+        if table_name.startswith(f"pool_{candidate}_claims_")
+    ]
+    if not matching_pool_names:
+        return table_name.startswith(f"pool_{pool_name}_claims_")
+    most_specific_pool_name = max(matching_pool_names, key=len)
+    return most_specific_pool_name == pool_name
 
 
 def _count_in_progress_samples(runtime: DbRuntime, pool_name: str) -> int:
@@ -462,3 +508,16 @@ def _table_row_count(conn: Connection, table_name: str) -> int:
 
 def _quote_identifier(conn: Connection, identifier: str) -> str:
     return conn.dialect.identifier_preparer.quote(identifier)
+
+
+def _rebuild_deletion_models() -> None:
+    """Resolve forward refs now that this module is fully initialized."""
+    from dr_llm.project.project_info import ProjectInfo
+
+    ns = {"ProjectInfo": ProjectInfo}
+    PoolDeletionReadiness.model_rebuild(_types_namespace=ns)
+    PoolDeletionResult.model_rebuild(_types_namespace=ns)
+    DeletePoolsByTokenResult.model_rebuild(_types_namespace=ns)
+
+
+_rebuild_deletion_models()

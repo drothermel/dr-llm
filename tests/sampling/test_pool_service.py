@@ -58,3 +58,28 @@ def test_acquire_or_generate_calls_generator_on_deficit() -> None:
 
     assert result.claimed == 1
     store.insert_samples.assert_called_once()
+
+
+def test_acquire_or_generate_skips_reacquire_when_nothing_inserted() -> None:
+    service, store, sampling = _make_service()
+    empty_result = AcquireResult()
+    generated_sample = PoolSample(
+        key_values={"dim_a": "x", "dim_b": 1},
+        request={"prompt": "hi"},
+        response={"text": "ok"},
+        finish_reason="stop",
+        sample_idx=0,
+    )
+    sampling.acquire.return_value = empty_result
+    store.insert_samples.return_value = InsertResult(inserted=0, skipped=1, failed=0)
+    query = AcquireQuery(run_id="r1", key_values={"dim_a": "x", "dim_b": 1}, n=1)
+
+    result = service.acquire_or_generate(
+        query,
+        consumer_id="c1",
+        generator_fn=lambda kv, n: [generated_sample],
+    )
+
+    assert result.claimed == 0
+    sampling.acquire.assert_called_once()
+    store.insert_samples.assert_called_once()

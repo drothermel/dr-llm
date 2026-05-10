@@ -10,6 +10,7 @@ from dr_llm.pool.admin.creation import (
 from dr_llm.pool.admin.deletion import (
     DeletePoolRequest,
     PoolDeletionBlockReason,
+    _claim_table_belongs_to_pool,
     _pool_delete_request_violations,
 )
 from dr_llm.pool.admin.inspection import PoolInspection
@@ -49,4 +50,39 @@ def test_delete_pool_request_validates_pool_name() -> None:
     violations = _pool_delete_request_violations(request)
     assert any(
         v.reason == PoolDeletionBlockReason.invalid_pool_name for v in violations
+    )
+
+
+def test_claim_table_match_uses_most_specific_pool_name() -> None:
+    known_pool_names = {"foo", "foo_claims_bar"}
+    table_name = "pool_foo_claims_bar_claims_baz"
+
+    assert (
+        _claim_table_belongs_to_pool(
+            table_name,
+            pool_name="foo",
+            known_pool_names=known_pool_names,
+        )
+        is False
+    )
+    assert (
+        _claim_table_belongs_to_pool(
+            table_name,
+            pool_name="foo_claims_bar",
+            known_pool_names=known_pool_names,
+        )
+        is True
+    )
+
+
+def test_claim_table_match_excludes_known_pool_tables() -> None:
+    known_pool_names = {"foo", "foo_claims_bar"}
+
+    assert (
+        _claim_table_belongs_to_pool(
+            "pool_foo_claims_bar_samples",
+            pool_name="foo",
+            known_pool_names=known_pool_names,
+        )
+        is False
     )

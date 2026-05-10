@@ -213,8 +213,7 @@ def test_service_acquire_or_generate(pool_store: PoolStore) -> None:
     svc_consumer = "svc_sweep"
     svc_sampling.setup_consumer(svc_consumer)
     try:
-        service = PoolService(pool_store)
-        service._sampling = svc_sampling
+        service = PoolService(pool_store, sampling_store=svc_sampling)
 
         def generator(key_values: dict[str, Any], deficit: int) -> list[PoolSample]:
             return [
@@ -249,8 +248,7 @@ def test_service_generator_error_wraps_as_topup_error(pool_store: PoolStore) -> 
     svc_consumer = "svc_err_sweep"
     svc_sampling.setup_consumer(svc_consumer)
     try:
-        service = PoolService(pool_store)
-        service._sampling = svc_sampling
+        service = PoolService(pool_store, sampling_store=svc_sampling)
 
         def failing_generator(
             key_values: dict[str, Any], deficit: int

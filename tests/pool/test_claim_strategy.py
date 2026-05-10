@@ -34,9 +34,12 @@ def test_cycles_through_values() -> None:
     second = claimer.claim(worker_id="w1", lease_seconds=60)
     third = claimer.claim(worker_id="w1", lease_seconds=60)
 
-    assert first is not None and first.key_values["dim_a"] == "x"
-    assert second is not None and second.key_values["dim_a"] == "y"
-    assert third is not None and third.key_values["dim_a"] == "z"
+    assert first is not None
+    assert first.key_values["dim_a"] == "x"
+    assert second is not None
+    assert second.key_values["dim_a"] == "y"
+    assert third is not None
+    assert third.key_values["dim_a"] == "z"
 
 
 def test_returns_none_when_all_exhausted() -> None:
@@ -132,6 +135,9 @@ def test_merge_filter_with_base() -> None:
     dim_a = result.root["dim_a"]
     dim_b = result.root["dim_b"]
     dim_c = result.root["dim_c"]
-    assert isinstance(dim_a, PoolKeyEqClause) and dim_a.value == "x"
-    assert isinstance(dim_b, PoolKeyEqClause) and dim_b.value == 1
-    assert isinstance(dim_c, PoolKeyEqClause) and dim_c.value == "hello"
+    assert isinstance(dim_a, PoolKeyEqClause)
+    assert dim_a.value == "x"
+    assert isinstance(dim_b, PoolKeyEqClause)
+    assert dim_b.value == 1
+    assert isinstance(dim_c, PoolKeyEqClause)
+    assert dim_c.value == "hello"

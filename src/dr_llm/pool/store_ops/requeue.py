@@ -65,7 +65,6 @@ def requeue_errors(
 
 def reset_samples(
     runtime: DbRuntime,
-    schema: PoolSchema,
     tables: PoolTables,
     *,
     sample_ids: Sequence[str],

@@ -647,7 +647,7 @@ def _(
             "pool_label": f"{project_name} / {pool_name}",
             "pool_inspection": pool_inspection,
             "key_columns": key_columns,
-            "call_stats_frame": response_stats_frame,
+            "response_stats_frame": response_stats_frame,
         }
 
     def make_pool_health_pie_card(inspection: Any) -> PoolSimpleStatsPieCard:
@@ -657,12 +657,12 @@ def _(
         )
 
     def make_pool_finish_reason_card(
-        call_stats_frame: pd.DataFrame,
+        response_stats_frame: pd.DataFrame,
     ) -> Card | None:
-        if "finish_reason" not in call_stats_frame.columns:
+        if "finish_reason" not in response_stats_frame.columns:
             return None
         finish_counts = value_counts(
-            call_stats_frame["finish_reason"].astype("string").str.lower()
+            response_stats_frame["finish_reason"].astype("string").str.lower()
         )
         return Card(
             title="Finish reasons",
@@ -676,16 +676,16 @@ def _(
         )
 
     def make_pool_cost_distribution_plot(
-        call_stats_frame: pd.DataFrame,
+        response_stats_frame: pd.DataFrame,
         column: str = "total_cost_usd",
     ) -> BoxPlotCard | None:
-        if column not in call_stats_frame.columns:
+        if column not in response_stats_frame.columns:
             return None
-        cost_series = scaled_series(call_stats_frame, column, 1.0)
+        cost_series = scaled_series(response_stats_frame, column, 1.0)
         cost_range = range_line(cost_series, "**True Range:** ${lo:,.4f} - ${hi:,.4f}")
         return BoxPlotCard(
             column=column,
-            data=call_stats_frame,
+            data=response_stats_frame,
             label="Cost",
             title="Cost distribution",
             description=f"p1 · q1 · median · q3 · p99 ($)\n{cost_range}",
@@ -694,17 +694,17 @@ def _(
         )
 
     def make_pool_cost_shape_plot(
-        call_stats_frame: pd.DataFrame,
+        response_stats_frame: pd.DataFrame,
         column: str = "total_cost_usd",
     ) -> ViolinPlotCard | None:
-        if column not in call_stats_frame.columns:
+        if column not in response_stats_frame.columns:
             return None
-        cost_series = scaled_series(call_stats_frame, column, 1.0)
+        cost_series = scaled_series(response_stats_frame, column, 1.0)
         cost_range = range_line(cost_series, "**True Range:** ${lo:,.4f} - ${hi:,.4f}")
         shape_primary = "KDE on p1-p99 bulk; <=2k sampled points"
         return ViolinPlotCard(
             column=column,
-            data=call_stats_frame,
+            data=response_stats_frame,
             label="Cost",
             title="Cost shape",
             description=f"{shape_primary}\n{cost_range}",
@@ -714,19 +714,19 @@ def _(
         )
 
     def make_pool_latency_distribution_plot(
-        call_stats_frame: pd.DataFrame,
+        response_stats_frame: pd.DataFrame,
         column: str = "latency_ms",
     ) -> BoxPlotCard | None:
-        if column not in call_stats_frame.columns:
+        if column not in response_stats_frame.columns:
             return None
         latency_scale = 0.001
-        latency_series = scaled_series(call_stats_frame, column, latency_scale)
+        latency_series = scaled_series(response_stats_frame, column, latency_scale)
         latency_range = range_line(
             latency_series, "**True Range:** {lo:,.2f} - {hi:,.2f}s"
         )
         return BoxPlotCard(
             column=column,
-            data=call_stats_frame,
+            data=response_stats_frame,
             label="Latency",
             title="Latency distribution",
             description=f"p1 · q1 · median · q3 · p99 (s)\n{latency_range}",
@@ -736,20 +736,20 @@ def _(
         )
 
     def make_pool_latency_shape_plot(
-        call_stats_frame: pd.DataFrame,
+        response_stats_frame: pd.DataFrame,
         column: str = "latency_ms",
     ) -> ViolinPlotCard | None:
-        if column not in call_stats_frame.columns:
+        if column not in response_stats_frame.columns:
             return None
         latency_scale = 0.001
-        latency_series = scaled_series(call_stats_frame, column, latency_scale)
+        latency_series = scaled_series(response_stats_frame, column, latency_scale)
         latency_range = range_line(
             latency_series, "**True Range:** {lo:,.2f} - {hi:,.2f}s"
         )
         shape_primary = "KDE on p1-p99 bulk; <=2k sampled points"
         return ViolinPlotCard(
             column=column,
-            data=call_stats_frame,
+            data=response_stats_frame,
             label="Latency",
             title="Latency shape",
             description=f"{shape_primary}\n{latency_range}",
@@ -778,14 +778,14 @@ def _(
     )
 
     inspection = health_data["pool_inspection"]
-    call_stats_frame: pd.DataFrame = health_data["call_stats_frame"]
+    response_stats_frame: pd.DataFrame = health_data["response_stats_frame"]
 
     pool_pie = make_pool_health_pie_card(inspection)
-    finish_reasons = make_pool_finish_reason_card(call_stats_frame)
-    cost_distribution = make_pool_cost_distribution_plot(call_stats_frame)
-    cost_shape = make_pool_cost_shape_plot(call_stats_frame)
-    latency_distribution = make_pool_latency_distribution_plot(call_stats_frame)
-    latency_shape = make_pool_latency_shape_plot(call_stats_frame)
+    finish_reasons = make_pool_finish_reason_card(response_stats_frame)
+    cost_distribution = make_pool_cost_distribution_plot(response_stats_frame)
+    cost_shape = make_pool_cost_shape_plot(response_stats_frame)
+    latency_distribution = make_pool_latency_distribution_plot(response_stats_frame)
+    latency_shape = make_pool_latency_shape_plot(response_stats_frame)
 
     _body = mo.hstack(
         [

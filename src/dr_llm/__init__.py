@@ -35,7 +35,7 @@ _EXPORT_MODULES = {
     "delete_project": "dr_llm.project.project_service",
 }
 
-_EXPORT_ALIASES = {
+_EXPORT_ALIASES: dict[str, str] = {
     "ProjectDeleteRequest": "DeleteProjectRequest",
 }
 

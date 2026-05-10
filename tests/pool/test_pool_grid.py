@@ -173,7 +173,7 @@ def test_seed_grid_inserts_cross_product_with_n_per_cell() -> None:
             for s in all_inserted
             if (s.key_values["axis_a"], s.key_values["axis_b"]) == cell_key
         )
-    assert idxs == [0, 1, 2]
+        assert idxs == [0, 1, 2]
     assert all(s.response is None for s in all_inserted)
     assert all(
         s.request == {"a": s.key_values["axis_a"], "b": s.key_values["axis_b"]}

@@ -155,7 +155,6 @@ class PoolStore:
         """Administratively reset specific samples to incomplete."""
         return requeue_ops.reset_samples(
             self._runtime,
-            self.schema,
             self._tables,
             sample_ids=sample_ids,
             reset_request=reset_request,

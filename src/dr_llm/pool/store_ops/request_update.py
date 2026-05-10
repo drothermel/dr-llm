@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 from pydantic_core import to_jsonable_python
 from sqlalchemy import update
+from sqlalchemy.engine import Connection
 from sqlalchemy.sql.schema import Table
 
 from dr_llm.pool.db import DbRuntime, SampleColumn
@@ -21,8 +22,8 @@ class RequestUpdate(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
-def update_incomplete_request(
-    runtime: DbRuntime,
+def _update_incomplete_request_on_connection(
+    conn: Connection,
     samples_table: Table,
     *,
     sample_id: str,
@@ -44,8 +45,25 @@ def update_incomplete_request(
         .values(values)
         .returning(samples_table.c[SampleColumn.SAMPLE_ID])
     )
+    return conn.execute(stmt).scalar_one_or_none() is not None
+
+
+def update_incomplete_request(
+    runtime: DbRuntime,
+    samples_table: Table,
+    *,
+    sample_id: str,
+    request: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+) -> bool:
     with runtime.begin() as conn:
-        return conn.execute(stmt).scalar_one_or_none() is not None
+        return _update_incomplete_request_on_connection(
+            conn,
+            samples_table,
+            sample_id=sample_id,
+            request=request,
+            metadata=metadata,
+        )
 
 
 def update_incomplete_requests(
@@ -55,13 +73,14 @@ def update_incomplete_requests(
     rows: Iterable[RequestUpdate],
 ) -> int:
     count = 0
-    for row in rows:
-        if update_incomplete_request(
-            runtime,
-            samples_table,
-            sample_id=row.sample_id,
-            request=row.request,
-            metadata=row.metadata,
-        ):
-            count += 1
+    with runtime.begin() as conn:
+        for row in rows:
+            if _update_incomplete_request_on_connection(
+                conn,
+                samples_table,
+                sample_id=row.sample_id,
+                request=row.request,
+                metadata=row.metadata,
+            ):
+                count += 1
     return count

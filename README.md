@@ -119,14 +119,16 @@ from dr_llm import DbConfig, PoolSchema, PoolStore
 from dr_llm.llm import build_default_registry
 from dr_llm.llm.config import ApiLlmConfig, LlmConfig, OpenAILlmConfig
 from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.reasoning import GoogleReasoning, ThinkingLevel
 from dr_llm.pool.backend import LlmPoolBackend, LlmPoolBackendConfig, make_llm_process_fn
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell, seed_llm_grid
+from dr_llm.project.models import CreateProjectRequest
 from dr_llm.project.project_service import create_project
 from dr_llm.workers import WorkerConfig, start_workers
 
 # 1. Create a Docker-managed Postgres project
-project = create_project("my_eval")
+project = create_project(CreateProjectRequest(project_name="my_eval"))
 
 # 2. Build a schema whose key columns match the axis names
 schema = PoolSchema.from_axis_names("my_eval", ["llm_config", "prompt"])
@@ -152,6 +154,10 @@ llm_config_axis = Axis[LlmConfig](
                 provider="google",
                 model="gemini-2.5-flash",
                 max_tokens=64,
+                reasoning=GoogleReasoning(
+                    thinking_level=ThinkingLevel.BUDGET,
+                    budget_tokens=512,
+                ),
             ),
         ),
     ],
@@ -171,7 +177,7 @@ prompt_axis = Axis[list[Message]](
 )
 
 # 4. Seed the cross product. seed_llm_grid handles payload shaping,
-#    sample_idx expansion, axis-metadata upserts, and bulk insert.
+#    sample_idx expansion, and bulk insert.
 def build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
     return cell.values["prompt"], cell.values["llm_config"]
 

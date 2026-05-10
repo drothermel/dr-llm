@@ -62,5 +62,5 @@ class ClaimsTableDef(BaseModel):
             ),
         ]
 
-    def select_columns(self, table: Table) -> list[Any]:
+    def select_columns(self, table: Table) -> list[Column[Any]]:
         return list(table.c)

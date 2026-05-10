@@ -59,9 +59,11 @@ class LlmPoolBackend(WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]
             key_filter=self._config.key_filter,
         )
         if sample is not None:
-            self._attempt_counts[sample.sample_id] = (
-                self._attempt_counts.get(sample.sample_id, 0) + 1
+            prior = max(
+                sample.attempt_count,
+                self._attempt_counts.get(sample.sample_id, 0),
             )
+            self._attempt_counts[sample.sample_id] = prior + 1
         return sample
 
     def complete(

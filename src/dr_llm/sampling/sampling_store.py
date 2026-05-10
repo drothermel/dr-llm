@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 from sqlalchemy import Text, exists, func, literal, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -38,7 +38,7 @@ class SamplingStore:
         self._consumers: dict[str, ClaimsTables] = {}
 
     @classmethod
-    def from_pool_store(cls, store: PoolStore) -> "SamplingStore":
+    def from_pool_store(cls, store: PoolStore) -> Self:
         """Create a sampling store from an initialized pool store."""
         return cls(store.schema, store._runtime, store._tables)
 

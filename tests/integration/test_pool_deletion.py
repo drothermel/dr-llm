@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterable
 from urllib.parse import urlparse
@@ -24,6 +25,8 @@ from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project import project_service as project_service_module
 from dr_llm.sampling.db.names import claims_table_name
 from dr_llm.sampling.sampling_store import SamplingStore
+
+logger = logging.getLogger(__name__)
 
 
 def _get_dsn() -> str:
@@ -60,8 +63,14 @@ def _drop_pool(dsn: str, pool_name: str) -> None:
         with psycopg.connect(dsn) as conn:
             conn.execute("DELETE FROM pool_catalog WHERE pool_name = %s", [pool_name])
             conn.commit()
-    except psycopg.OperationalError:
+    except psycopg.errors.UndefinedTable:
         return
+    except psycopg.OperationalError as exc:
+        msg = str(exc).lower()
+        if "does not exist" in msg:
+            return
+        logger.exception("Unexpected error during pool teardown cleanup")
+        raise
 
 
 def _table_exists(dsn: str, table_name: str) -> bool:
@@ -253,3 +262,56 @@ def test_delete_pool_removes_sampling_claim_tables(
     finally:
         runtime.close()
         _drop_pool(dsn, pool_name)
+
+
+@pytest.mark.integration
+def test_delete_pool_does_not_delete_longer_pool_claim_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dsn = _get_dsn()
+    short_pool_name = f"del_amb_{uuid4().hex[:8]}"
+    longer_pool_name = f"{short_pool_name}_claims_bar"
+    consumer_id = "baz"
+    longer_claims_table = claims_table_name(longer_pool_name, consumer_id)
+    short_runtime = DbRuntime(DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=2))
+    longer_runtime = DbRuntime(DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=2))
+    short_schema = PoolSchema(
+        name=short_pool_name, key_columns=[KeyColumn(name="dim_a")]
+    )
+    longer_schema = PoolSchema(
+        name=longer_pool_name, key_columns=[KeyColumn(name="dim_a")]
+    )
+    short_store = PoolStore(short_schema, short_runtime)
+    longer_store = PoolStore(longer_schema, longer_runtime)
+
+    try:
+        try:
+            short_store.ensure_schema()
+            longer_store.ensure_schema()
+        except (psycopg.OperationalError, TransientPersistenceError) as exc:
+            pytest.skip(f"Postgres unavailable for pool integration tests: {exc}")
+
+        sampling = SamplingStore.from_pool_store(longer_store)
+        sampling.setup_consumer(consumer_id)
+        assert _table_exists(dsn, longer_claims_table) is True
+
+        monkeypatch.setattr(
+            project_service_module,
+            "maybe_get_project",
+            lambda name: _project_for_dsn(name, dsn),
+        )
+
+        result = deletion.delete_pool(
+            DeletePoolRequest(project_name="demo", pool_name=short_pool_name)
+        )
+
+        assert result.status == PoolDeletionStatus.deleted
+        assert longer_claims_table not in result.deleted_table_names
+        assert _table_exists(dsn, longer_claims_table) is True
+        for table_name in pool_table_names(longer_pool_name):
+            assert _table_exists(dsn, table_name) is True
+    finally:
+        short_runtime.close()
+        longer_runtime.close()
+        _drop_pool(dsn, longer_pool_name)
+        _drop_pool(dsn, short_pool_name)
