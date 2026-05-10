@@ -30,14 +30,17 @@ with app.setup:
         compute_gini,
         skew_label,
     )
-    from dr_llm.pool.admin.inspection import PoolInspectionRequest, inspect_pool
-    from dr_llm.pool.db.catalog import load_schema
-    from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-    from dr_llm.pool.reader import PoolReader
-    from dr_llm.pool.response_stats import sample_response_stats
-    from dr_llm.project.project_service import (
-        maybe_get_project,
+    from dr_llm.pool import (
+        DbConfig,
+        DbRuntime,
+        PoolInspectionRequest,
+        PoolReader,
+        inspect_pool,
+        sample_response_stats,
+    )
+    from dr_llm.project import (
         inspect_projects,
+        maybe_get_project,
     )
     from dr_llm.ui import PoolSimpleStatsPieCard, bootstrap_tailwind
 
@@ -107,10 +110,8 @@ def _():
             )
         )
         try:
-            schema = load_schema(runtime, pool_name)
-            if schema is None:
-                raise ValueError(f"Pool {pool_name!r} not found in catalog")
-            reader = PoolReader.from_runtime(runtime, schema=schema)
+            reader = PoolReader.open(pool_name, runtime=runtime)
+            schema = reader.schema
             key_columns = list(schema.key_column_names)
             yield runtime, schema, reader, key_columns
         finally:

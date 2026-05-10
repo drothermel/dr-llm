@@ -59,6 +59,26 @@ Catalog data is cached locally at `~/.dr_llm/catalog_cache/`. No database requir
 Human-readable and JSON model listings also include the repo's curated blacklist,
 and OpenRouter listings are filtered through the local reasoning-policy allowlist.
 
+## Demo Scripts
+
+The README gives the mental model and short commands. The demo scripts are the
+source of truth for complete runnable workflows, including exact imports,
+provider/model choices, setup, cleanup, and progress output.
+
+| Script | Use it for | Requirements |
+|---|---|---|
+| `scripts/demo-providers.py` | Discover providers and sync/list model catalogs. | API keys or CLI tools for the providers you want to query. No database. |
+| `scripts/demo-pool-providers.py` | Query every available provider and store one result per provider/model in a typed pool. | Docker plus at least one API key or supported CLI tool. |
+| `scripts/demo-pool-fill.py` | Seed an `(llm_config, prompt)` grid, fill it with workers, and inspect stored responses. | OpenAI/Google API keys, plus Docker or `--dsn` for Postgres. |
+| `scripts/demo_thinking_and_effort.py` | Live-check provider-specific reasoning and effort validation. | API keys or CLI tools for the providers under test. |
+
+```bash
+uv run python scripts/demo-providers.py
+uv run python scripts/demo-pool-providers.py --help
+uv run python scripts/demo-pool-fill.py --help
+uv run python scripts/demo_thinking_and_effort.py --provider openai
+```
+
 ## Available Providers
 
 | Provider | Type | Requirements |
@@ -79,6 +99,10 @@ Some providers use static model lists for `models sync` (no `/models` endpoint).
 
 ## Python API
 
+The Python API exposes the same provider and pool primitives used by the demo
+scripts. Keep README examples small; use the demos above for maintained
+end-to-end workflows.
+
 `OpenAILlmRequest` / `OpenAILlmConfig` are the concrete request/config shapes for `provider="openai"`. `ApiLlmRequest` / `ApiLlmConfig` are the concrete shapes for the remaining sampling-capable API providers. `KimiCodeLlmRequest` / `KimiCodeLlmConfig` are the concrete shapes for `kimi-code`. `HeadlessLlmRequest` / `HeadlessLlmConfig` are the concrete shapes for CLI-backed providers. `LlmRequest` and `LlmConfig` remain available as unions, and `parse_llm_request(...)` / `parse_llm_config(...)` validate raw payloads into the correct concrete model by `provider`.
 
 For generic sampling-capable API providers, omitted sampling controls default to `temperature=1.0` and `top_p=0.95`. OpenAI omits those fields unless you set them explicitly. `kimi-code` and headless providers reject those fields entirely.
@@ -86,8 +110,7 @@ For generic sampling-capable API providers, omitted sampling controls default to
 ### Calling a provider
 
 ```python
-from dr_llm.llm import OpenAILlmRequest, build_default_registry
-from dr_llm.llm.messages import Message
+from dr_llm.llm import Message, OpenAILlmRequest, build_default_registry
 
 registry = build_default_registry()
 adapter = registry.get("openai")
@@ -102,198 +125,26 @@ response = adapter.generate(
 print(response.text)
 ```
 
-### Filling a pool with LLM calls (requires Docker)
+### Pool workflows
 
 The recommended way to populate a pool: declare each variant axis (LLM
-configs, prompts, datasets, …), pass them to `seed_llm_grid`, and let
-parallel workers make the actual provider calls. `seed_llm_grid` walks
-the cross product, builds per-cell payloads in the shape
-`make_llm_process_fn` consumes, and bulk-inserts the unfilled sample
-rows in one round-trip. Docker is used to auto-manage a Postgres
-project.
+configs, prompts, datasets, ...), pass them to `seed_llm_grid`, and let
+parallel workers make the provider calls. `seed_llm_grid` walks the cross
+product, builds per-cell payloads in the shape `make_llm_process_fn` consumes,
+and bulk-inserts the unfilled sample rows in one round-trip.
 
-```python
-import time
+Run the maintained worker example instead of copying a README-sized snippet:
 
-from dr_llm import DbConfig, PoolSchema, PoolStore
-from dr_llm.llm import build_default_registry
-from dr_llm.llm.config import ApiLlmConfig, LlmConfig, OpenAILlmConfig
-from dr_llm.llm.messages import Message
-from dr_llm.llm.providers.reasoning import GoogleReasoning, ThinkingLevel
-from dr_llm.pool.backend import LlmPoolBackend, LlmPoolBackendConfig, make_llm_process_fn
-from dr_llm.pool.db.runtime import DbRuntime
-from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell, seed_llm_grid
-from dr_llm.project.models import CreateProjectRequest
-from dr_llm.project.project_service import create_project
-from dr_llm.workers import WorkerConfig, start_workers
-
-# 1. Create a Docker-managed Postgres project
-project = create_project(CreateProjectRequest(project_name="my_eval"))
-
-# 2. Build a schema whose key columns match the axis names
-schema = PoolSchema.from_axis_names("my_eval", ["llm_config", "prompt"])
-runtime = DbRuntime(DbConfig(dsn=project.dsn))
-store = PoolStore(schema, runtime)
-store.ensure_schema()
-
-# 3. Declare each axis as a list of AxisMembers
-llm_config_axis = Axis[LlmConfig](
-    name="llm_config",
-    members=[
-        AxisMember(
-            id="gpt-4.1-mini",
-            value=OpenAILlmConfig(
-                provider="openai",
-                model="gpt-4.1-mini",
-                max_tokens=64,
-            ),
-        ),
-        AxisMember(
-            id="gemini-flash",
-            value=ApiLlmConfig(
-                provider="google",
-                model="gemini-2.5-flash",
-                max_tokens=64,
-                reasoning=GoogleReasoning(
-                    thinking_level=ThinkingLevel.BUDGET,
-                    budget_tokens=512,
-                ),
-            ),
-        ),
-    ],
-)
-prompt_axis = Axis[list[Message]](
-    name="prompt",
-    members=[
-        AxisMember(
-            id="haiku",
-            value=[Message(role="user", content="Write a haiku about programming.")],
-        ),
-        AxisMember(
-            id="math",
-            value=[Message(role="user", content="What is 17 * 23?")],
-        ),
-    ],
-)
-
-# 4. Seed the cross product. seed_llm_grid handles payload shaping,
-#    sample_idx expansion, and bulk insert.
-def build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
-    return cell.values["prompt"], cell.values["llm_config"]
-
-seed_result = seed_llm_grid(
-    store,
-    axes=[llm_config_axis, prompt_axis],
-    build_request=build_request,
-    n=2,  # 2 configs × 2 prompts × n=2 = 8 sample rows
-)
-print(f"Seeded {seed_result.inserted} sample rows")
-
-# 5. Start workers — they call the real providers
-registry = build_default_registry()
-controller = start_workers(
-    LlmPoolBackend(store, config=LlmPoolBackendConfig(max_retries=1)),
-    process_fn=make_llm_process_fn(registry),
-    config=WorkerConfig(num_workers=4, thread_name_prefix="pool-fill"),
-)
-
-# 6. Drain to idle
-try:
-    while True:
-        snapshot = controller.snapshot()
-        state = snapshot.backend_state
-        if state is not None:
-            print(f"incomplete={state.incomplete} complete={state.complete}")
-            if state.incomplete == 0:
-                break
-        time.sleep(0.5)
-finally:
-    controller.stop()
-    controller.join()
-
-# 7. Acquire completed samples (no-replacement, per-consumer)
-#    Sample acquisition lives in dr_llm.sampling. Each consumer gets its
-#    own claims table; setup_consumer/teardown_consumer manages it.
-from dr_llm.sampling.acquisition import AcquireQuery
-from dr_llm.sampling.sampling_store import SamplingStore
-
-sampling = SamplingStore.from_pool_store(store)
-sampling.setup_consumer("eval_consumer_1")
-result = sampling.acquire(
-    AcquireQuery(
-        run_id="eval_run_1",
-        key_values={"llm_config": "gpt-4.1-mini", "prompt": "math"},
-        n=2,
-    ),
-    "eval_consumer_1",
-)
-
-# 8. Clean up when done
-sampling.teardown_consumer("eval_consumer_1")
-registry.close()
-runtime.close()
+```bash
+uv run python scripts/demo-pool-fill.py
+uv run python scripts/demo-pool-fill.py --dsn postgresql://postgres:postgres@localhost:5433/dr_llm_test
 ```
 
-See `scripts/demo-pool-fill.py` for a complete runnable example.
-
-### Fair worker claiming
-
-`LlmPoolBackend` claims incomplete samples in creation order by default. When a
-worker pool should interleave work across a key dimension, use
-`RoundRobinClaimer` from `dr_llm.pool.claim_strategy` to cycle through explicit
-key values while still relying on `PoolStore.claim_lease(...)` for lease safety.
-
-```python
-from dr_llm.pool.claim_strategy import ClaimOrder, RoundRobinClaimer
-
-claimer = RoundRobinClaimer(
-    store,
-    round_robin_key="llm_config",
-    round_robin_values=["gpt-4.1-mini", "gemini-flash"],
-    order=ClaimOrder(kind="random", seed=7),
-)
-
-sample = claimer.claim(worker_id="worker-1", lease_seconds=60)
-```
-
-### Reading an existing pool
-
-Once a pool has been seeded and filled, `PoolReader` gives consumers a
-typed read-only handle for inspection without re-wiring `DbRuntime` /
-`PoolSchema` / `PoolStore` by hand. The reader composes a private
-`PoolStore` and exposes only its read-side methods.
-
-```python
-from dr_llm import PoolReader
-from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.project.project_service import maybe_get_project
-
-project = maybe_get_project("my_eval")
-runtime = DbRuntime(DbConfig(dsn=project.dsn))
-try:
-    with PoolReader.open("provider_queries", runtime=runtime) as reader:
-        progress = reader.progress()
-        print(
-            f"total={progress.total} "
-            f"complete={progress.complete} "
-            f"incomplete={progress.incomplete} "
-            f"leased={progress.leased} "
-            f"error={progress.error}"
-        )
-
-        # Typed PoolSample iterator/list with optional key + completion filters
-        for sample in reader.samples_list(
-            key_filter={"llm_config": "gpt-4.1-mini"},
-        ):
-            print(sample.sample_id, sample.request, sample.response)
-finally:
-    runtime.close()
-```
-
-`PoolReader.open(pool, runtime=runtime)` reads the pool's `PoolSchema` from
-the project-global `pool_catalog` table, where `PoolStore.ensure_schema()`
-persists it. Use `PoolReader.from_runtime(runtime, schema=...)` when you
-already have the schema in hand or want to control schema construction in tests.
+For reading pools, `PoolReader.open(pool, runtime=runtime)` loads the pool's
+persisted `PoolSchema` from `pool_catalog` and exposes read-side methods such as
+`progress()` and `samples_list(...)`. For fair worker scheduling,
+`RoundRobinClaimer` can interleave claims across an explicit key dimension while
+still relying on `PoolStore.claim_lease(...)` for lease safety.
 
 ## CLI Reference
 
@@ -399,54 +250,3 @@ uv run pytest tests/ -v -m "not integration"
 ```
 
 `pytest` now defaults to `pytest-xdist`, so `uv run pytest tests/ -v -m "not integration"` runs the safe non-integration suite in parallel. `run-tests-local.sh` forces `-n 0`, auto-creates a temporary Docker Postgres project, runs `pytest -m integration`, and destroys it on exit. Pass extra pytest args for targeted runs: `./scripts/run-tests-local.sh -k test_pool_store`.
-
-## Demo Scripts
-
-### Provider discovery (no DB needed)
-
-```bash
-uv run python scripts/demo-providers.py
-```
-
-Lists all supported providers, syncs and displays model catalogs for each available one.
-
-### Pool provider demo (requires Docker)
-
-```bash
-uv run python scripts/demo-pool-providers.py
-```
-
-Creates a project, queries every available provider, stores results in a typed pool, prints a summary table. Run with `--help` for options.
-
-### Pool fill worker demo (requires Docker + API keys)
-
-```bash
-uv run python scripts/demo-pool-fill.py
-```
-
-Auto-creates a Docker Postgres project, seeds an `(llm_config, prompt)` pool via `seed_llm_grid` from declared `Axis` instances, starts workers that make real LLM calls via `make_llm_process_fn`, drains the queue to idle with `drain`, shows response snippets, and destroys the project on exit. Pass `--dsn` to use an existing database instead. Run with `--help` for options.
-
-### Reasoning and effort demo (live API / CLI checks)
-
-```bash
-uv run python scripts/demo_thinking_and_effort.py
-```
-
-Exercises the branch's provider-specific reasoning and effort validation against
-curated model sets for OpenAI, OpenRouter, Google, Codex, Claude Code, MiniMax,
-and Kimi Code. Use `--provider` to limit the run to one provider.
-
-Reasoning configs are validated before dispatch. For example, OpenAI GPT-5
-family models use configs like `{"kind":"openai","thinking_level":"high"}`,
-Codex reasoning-capable models also accept `{"kind":"codex","thinking_level":"xhigh"}`,
-Google 2.5 models accept budget configs like
-`{"kind":"google","thinking_level":"budget","budget_tokens":512}`, `minimax`
-requires `{"kind":"anthropic","thinking_level":"na"}` together with an explicit
-`--effort`, `kimi-code` uses Anthropic-compatible reasoning like
-`{"kind":"anthropic","thinking_level":"adaptive"}` together with an explicit
-`--effort` and `--max-tokens`, and OpenRouter reasoning-capable models use
-`{"kind":"openrouter", ...}` with either `enabled` or `effort` depending on the
-repo's curated model policy.
-
-The OpenRouter policy layer is based on direct API observations from the
-provider endpoint.

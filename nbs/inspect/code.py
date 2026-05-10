@@ -4,15 +4,9 @@ __generated_with = "0.23.1"
 app = marimo.App(width="columns")
 
 with app.setup:
-    import marimo as mo
-
-    from dr_llm.llm.request import (
+    from dr_llm.llm import (
         ApiLlmRequest,
-        HeadlessLlmRequest,
-        KimiCodeLlmRequest,
-        OpenAILlmRequest,
     )
-    from pydantic import BaseModel
 
     import html
     import inspect as inspect_
@@ -47,9 +41,7 @@ def _():
             type_label, name = _get_object_title(obj)
 
             type_colors = {
-                "class": (
-                    "background-color: var(--blue-3); color: var(--blue-11);"
-                ),
+                "class": ("background-color: var(--blue-3); color: var(--blue-11);"),
                 "function": (
                     "background-color: var(--green-3); color: var(--green-11);"
                 ),
@@ -62,9 +54,7 @@ def _():
                 "instance": (
                     "background-color: var(--crimson-3); color: var(--crimson-11);"
                 ),
-                "object": (
-                    "background-color: var(--slate-3); color: var(--slate-11);"
-                ),
+                "object": ("background-color: var(--slate-3); color: var(--slate-11);"),
             }
 
             pill_style = type_colors.get(type_label, type_colors["object"])
@@ -130,18 +120,16 @@ def _():
                         "white-space: pre-wrap;"
                     )
                     main_content.append(h.div(html.escape(docstring), style=doc_style))
-    
+
                 if value and not inspect_.isclass(obj) and not callable(obj):
                     main_content.append(_render_value(obj))
-    
+
                 if callable(obj):
                     sig = _get_signature(obj)
                     if sig:
                         if inspect_.isfunction(obj) or inspect_.ismethod(obj):
                             # For functions/methods, show the full definition
-                            func_name = (
-                                obj.__name__ if hasattr(obj, "__name__") else ""
-                            )
+                            func_name = obj.__name__ if hasattr(obj, "__name__") else ""
                             prefix = (
                                 "async def"
                                 if inspect_.iscoroutinefunction(obj)
@@ -179,14 +167,16 @@ def _():
                                     ),
                                 )
                             )
-    
+
                 if attributes:
                     table_rows = []
-                    for name, value, attr_type, error in attributes:
+                    for name, attr_value, attr_type, error in attributes:
                         table_rows.append(
-                            _render_attribute_row(name, value, attr_type, error, docs)
+                            _render_attribute_row(
+                                name, attr_value, attr_type, error, docs
+                            )
                         )
-    
+
                     main_content.append(
                         h.div(
                             h.table(h.tbody(table_rows)),
@@ -216,7 +206,6 @@ def _():
             except Exception:
                 return self.text
 
-
     def _get_object_title(obj: object) -> tuple[str, str]:
         """Returns (type_label, name) for the object."""
         if inspect_.isclass(obj):
@@ -244,13 +233,11 @@ def _():
         else:
             return ("object", type(obj).__name__)
 
-
     def _get_signature(obj: object) -> str | None:
         try:
             return str(inspect_.signature(obj))  # type: ignore
         except (ValueError, TypeError):
             return None
-
 
     def _get_filtered_attributes(
         obj: object, methods: bool, private: bool, dunder: bool
@@ -290,13 +277,11 @@ def _():
 
         return attributes
 
-
     def _is_property(obj: object, name: str) -> bool:
         for cls in inspect_.getmro(type(obj)):
             if name in cls.__dict__ and isinstance(cls.__dict__[name], property):
                 return True
         return False
-
 
     def _render_value(obj: object) -> str:
         container_style = (
@@ -330,7 +315,6 @@ def _():
             ),
             style=container_style,
         )
-
 
     def _render_attribute_row(
         name: str,
@@ -408,7 +392,6 @@ def _():
                 ]
             )
 
-
     def _format_method(name: str, method: object, docs: bool) -> str:
         try:
             sig = inspect_.signature(method)  # type: ignore
@@ -428,7 +411,6 @@ def _():
                 display += f": {first_line}"
 
         return display
-
 
     def _render_value_inline(value: object) -> str:
         if isinstance(value, str):
@@ -450,9 +432,7 @@ def _():
             html_obj = as_html(value)
             _, data = html_obj._mime_()
             if isinstance(value, (dict, list, tuple)):
-                return h.div(
-                    data, style="font-size: 0.75rem; display: inline-block;"
-                )
+                return h.div(data, style="font-size: 0.75rem; display: inline-block;")
             return h.span(data, style="display: inline-block;")
         except Exception:
             # Fall back to repr
@@ -470,7 +450,6 @@ def _():
             html.escape(value_str),
             style="font-family: monospace; font-size: 0.75rem;",
         )
-
 
     return (inspect,)
 

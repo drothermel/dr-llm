@@ -35,19 +35,22 @@ from typing import Any
 import typer
 
 from _demo_utils import BOLD, CYAN, GREEN, RED, RESET, YELLOW, fail, ok, step, warn
-from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import KeyColumn, PoolSchema
-from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.pool.pool_store import PoolStore
-from dr_llm.project.project_info import ProjectInfo
-from dr_llm.project.models import CreateProjectRequest
-from dr_llm.project.project_service import (
+from dr_llm.llm import ProviderAvailabilityStatus, build_default_registry
+from dr_llm.pool import (
+    DbConfig,
+    DbRuntime,
+    KeyColumn,
+    PoolSample,
+    PoolSchema,
+    PoolStore,
+)
+from dr_llm.project import (
+    CreateProjectRequest,
+    ProjectInfo,
     create_project,
     destroy_project,
     maybe_get_project,
 )
-from dr_llm.llm.providers.registry import build_default_registry
-from dr_llm.llm.providers.config import ProviderAvailabilityStatus
 
 app = typer.Typer()
 
