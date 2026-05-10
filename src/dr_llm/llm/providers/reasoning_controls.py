@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from pydantic import BaseModel, ConfigDict
 
 from dr_llm.llm.providers.anthropic.thinking import (
@@ -74,18 +76,11 @@ def reasoning_controls_for_model(
 def supported_thinking_levels(
     *, provider: str, model: str
 ) -> tuple[ThinkingLevel, ...]:
-    capabilities = reasoning_capabilities_for_model(
-        provider=provider, model=model
-    )
-    if provider == "openai":
-        return _supported_openai_thinking_levels(model)
-    if provider == "codex":
-        return _supported_codex_thinking_levels(model)
-    if provider == "claude-code":
-        return _supported_claude_code_thinking_levels(model)
-    if provider == "minimax":
-        return (ThinkingLevel.NA,)
-    if provider == "kimi-code":
+    def get_capabilities() -> ReasoningCapabilities | None:
+        return reasoning_capabilities_for_model(provider=provider, model=model)
+
+    def supported_kimi_code_thinking_levels() -> tuple[ThinkingLevel, ...]:
+        capabilities = get_capabilities()
         if _is_reasoning_unsupported(capabilities):
             return (ThinkingLevel.NA,)
         return (
@@ -93,13 +88,23 @@ def supported_thinking_levels(
             ThinkingLevel.ADAPTIVE,
             ThinkingLevel.BUDGET,
         )
-    if provider == "openrouter":
-        return (ThinkingLevel.NA,)
-    return _supported_capability_thinking_levels(
-        provider=provider,
-        model=model,
-        capabilities=capabilities,
-    )
+
+    dispatch: dict[str, Callable[[], tuple[ThinkingLevel, ...]]] = {
+        "openai": lambda: _supported_openai_thinking_levels(model),
+        "codex": lambda: _supported_codex_thinking_levels(model),
+        "claude-code": lambda: _supported_claude_code_thinking_levels(model),
+        "minimax": lambda: (ThinkingLevel.NA,),
+        "kimi-code": supported_kimi_code_thinking_levels,
+        "openrouter": lambda: (ThinkingLevel.NA,),
+    }
+    return dispatch.get(
+        provider,
+        lambda: _supported_capability_thinking_levels(
+            provider=provider,
+            model=model,
+            capabilities=get_capabilities(),
+        ),
+    )()
 
 
 def default_thinking_level(*, provider: str, model: str) -> ThinkingLevel:
@@ -262,7 +267,8 @@ def _supported_capability_thinking_levels(
     if capabilities.mode == "anthropic_effort":
         return _supported_anthropic_effort_thinking_levels(model)
     if capabilities.mode == "anthropic_effort_and_budget":
-        return _supported_anthropic_effort_thinking_levels(model) + (
+        return (
+            *_supported_anthropic_effort_thinking_levels(model),
             ThinkingLevel.BUDGET,
         )
     raise ValueError(
@@ -286,6 +292,7 @@ def _default_openrouter_reasoning(model: str) -> OpenRouterReasoning | None:
     if policy.request_style == OpenRouterReasoningRequestStyle.NONE:
         return None
     if policy.request_style == OpenRouterReasoningRequestStyle.ENABLED_FLAG:
+        # Default to disabled when the model supports it; otherwise request enabled.
         if policy.supports_disable:
             return OpenRouterReasoning(enabled=False)
         return OpenRouterReasoning(enabled=True)
