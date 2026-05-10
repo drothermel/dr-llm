@@ -6,7 +6,9 @@ from typing import Any
 from dr_llm.llm.catalog.fetchers.anthropic import fetch_anthropic_models
 from dr_llm.llm.catalog.fetchers.google import fetch_google_models
 from dr_llm.llm.catalog.fetchers.kimi import fetch_kimi_models
-from dr_llm.llm.catalog.fetchers.openai_compat import fetch_openai_compat_models
+from dr_llm.llm.catalog.fetchers.openai_compat import (
+    fetch_openai_compat_models,
+)
 from dr_llm.llm.catalog.fetchers.static import (
     fetch_static_headless_models,
     fetch_static_minimax_models,

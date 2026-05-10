@@ -26,7 +26,9 @@ def reasoning_capabilities_for_kimi_code(
     return resolve_capability_rules(KIMI_CODE_CAPABILITY_RULES, model)
 
 
-def supported_effort_levels_for_kimi_code(model: str) -> tuple[EffortSpec, ...]:
+def supported_effort_levels_for_kimi_code(
+    model: str,
+) -> tuple[EffortSpec, ...]:
     if reasoning_capabilities_for_kimi_code(model) is None:
         return ()
     return FULL_EFFORT

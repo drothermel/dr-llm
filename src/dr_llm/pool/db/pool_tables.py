@@ -31,7 +31,9 @@ class PoolTables:
                 for table_type in PoolTableType
                 if table_type in missing_table_types
             ]
-            msg = f"Missing pool table definitions: {', '.join(missing_values)}"
+            msg = (
+                f"Missing pool table definitions: {', '.join(missing_values)}"
+            )
             raise ValueError(msg)
         self.tables: dict[PoolTableType, Table] = {
             table_type: table_def.build_table(self.schema, self.sa_metadata)
@@ -54,7 +56,9 @@ class PoolTables:
         return [table.c[name] for name in self.schema.key_column_names]
 
     def select_columns(self, table_type: PoolTableType) -> list[Any]:
-        return self.defs[table_type].select_columns(self[table_type], self.schema)
+        return self.defs[table_type].select_columns(
+            self[table_type], self.schema
+        )
 
     def ensure_indexes(self, bind: Connection) -> None:
         """Backfill any missing named indexes for runtime-owned pool tables."""

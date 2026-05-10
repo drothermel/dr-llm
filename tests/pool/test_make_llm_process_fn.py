@@ -60,7 +60,9 @@ def _make_registry(response: LlmResponse | None = None) -> MagicMock:
 
 
 def _sample_request() -> dict[str, Any]:
-    config = LlmConfig(provider="openai", model="gpt-4.1-mini", temperature=0.5)
+    config = LlmConfig(
+        provider="openai", model="gpt-4.1-mini", temperature=0.5
+    )
     messages = [Message(role="user", content="Say hello")]
     return {
         "llm_config": config.model_dump(),
@@ -112,7 +114,9 @@ def test_emits_worker_logging_events(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
 
-    with generation_log_context({"pool_name": "demo", "worker_id": "worker-1"}):
+    with generation_log_context(
+        {"pool_name": "demo", "worker_id": "worker-1"}
+    ):
         result = process_fn(sample)
 
     assert result.text == "hello world"
@@ -200,7 +204,9 @@ def test_explicit_none_request_field_raises_value_error() -> None:
         {"llm_config": None, "prompt": [{"role": "user", "content": "hi"}]}
     )
 
-    with pytest.raises(ValueError, match=r"PoolSample\.request\['llm_config'\]"):
+    with pytest.raises(
+        ValueError, match=r"PoolSample\.request\['llm_config'\]"
+    ):
         process_fn(sample)
 
 
@@ -290,7 +296,9 @@ def test_seed_llm_grid_round_trips_with_make_llm_process_fn() -> None:
 
 def test_seed_llm_grid_round_trips_headless_config() -> None:
     """Headless LLM configs should seed and deserialize into headless requests."""
-    schema = PoolSchema.from_axis_names("rt_headless", ["llm_config", "prompt"])
+    schema = PoolSchema.from_axis_names(
+        "rt_headless", ["llm_config", "prompt"]
+    )
     store, captured = _make_seed_store(schema)
 
     cfg = HeadlessLlmConfig(
@@ -300,7 +308,9 @@ def test_seed_llm_grid_round_trips_headless_config() -> None:
     )
     msgs = [Message(role="user", content="headless round trip")]
 
-    def _build_request(cell: GridCell) -> tuple[list[Message], HeadlessLlmConfig]:
+    def _build_request(
+        cell: GridCell,
+    ) -> tuple[list[Message], HeadlessLlmConfig]:
         assert cell.values["llm_config"] == cfg
         assert cell.values["prompt"] == msgs
         return msgs, cfg
@@ -333,7 +343,9 @@ def test_seed_llm_grid_round_trips_headless_config() -> None:
     assert call_args.provider == "codex"
     assert call_args.model == "gpt-5.4-mini"
     assert call_args.messages[0].content == "headless round trip"
-    assert call_args.reasoning == CodexReasoning(thinking_level=ThinkingLevel.XHIGH)
+    assert call_args.reasoning == CodexReasoning(
+        thinking_level=ThinkingLevel.XHIGH
+    )
     assert not hasattr(call_args, "temperature")
 
 

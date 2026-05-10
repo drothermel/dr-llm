@@ -5,7 +5,9 @@ from collections.abc import Callable
 from dr_llm.llm.providers.anthropic.capabilities import (
     reasoning_capabilities_for_anthropic,
 )
-from dr_llm.llm.providers.google.capabilities import reasoning_capabilities_for_google
+from dr_llm.llm.providers.google.capabilities import (
+    reasoning_capabilities_for_google,
+)
 from dr_llm.llm.providers.headless.claude_capabilities import (
     reasoning_capabilities_for_claude_code,
 )

@@ -43,7 +43,9 @@ class AnthropicRequest(BaseModel):
     base_url: str = Field(exclude=True)
     api_key: str = Field(exclude=True, repr=False)
     anthropic_version: str = Field(exclude=True)
-    warnings: list[ReasoningWarning] = Field(default_factory=list, exclude=True)
+    warnings: list[ReasoningWarning] = Field(
+        default_factory=list, exclude=True
+    )
 
     @classmethod
     def from_llm_request(
@@ -54,16 +56,26 @@ class AnthropicRequest(BaseModel):
         if request.max_tokens is None and request.provider != "minimax":
             raise cls._missing_max_tokens_error(request.provider)
         if request.provider == "kimi-code":
-            reasoning_mapping = KimiCodeReasoningConfig.from_base(request.reasoning)
+            reasoning_mapping = KimiCodeReasoningConfig.from_base(
+                request.reasoning
+            )
         elif request.provider == "minimax":
-            reasoning_mapping = MiniMaxReasoningConfig.from_base(request.reasoning)
+            reasoning_mapping = MiniMaxReasoningConfig.from_base(
+                request.reasoning
+            )
         else:
-            reasoning_mapping = AnthropicReasoningConfig.from_base(request.reasoning)
+            reasoning_mapping = AnthropicReasoningConfig.from_base(
+                request.reasoning
+            )
         output_config = (
-            {"effort": request.effort} if request.effort != EffortSpec.NA else None
+            {"effort": request.effort}
+            if request.effort != EffortSpec.NA
+            else None
         )
         system = "\n".join(
-            message.content for message in request.messages if message.role == "system"
+            message.content
+            for message in request.messages
+            if message.role == "system"
         )
         return cls(
             provider=request.provider,
@@ -99,7 +111,11 @@ class AnthropicRequest(BaseModel):
                     payload.append(
                         _AnthropicRequestMessage(
                             role="assistant",
-                            content=[_AnthropicRequestTextBlock(text=message.content)],
+                            content=[
+                                _AnthropicRequestTextBlock(
+                                    text=message.content
+                                )
+                            ],
                         )
                     )
                 continue
@@ -108,7 +124,9 @@ class AnthropicRequest(BaseModel):
                 payload.append(
                     _AnthropicRequestMessage(
                         role="user",
-                        content=[_AnthropicRequestTextBlock(text=message.content)],
+                        content=[
+                            _AnthropicRequestTextBlock(text=message.content)
+                        ],
                     )
                 )
 

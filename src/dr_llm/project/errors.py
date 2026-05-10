@@ -19,7 +19,9 @@ class DockerUnavailableError(ProjectError):
     """Docker is not installed or the daemon is unavailable."""
 
     def __init__(self) -> None:
-        super().__init__("Docker is not available. Install Docker or start the daemon.")
+        super().__init__(
+            "Docker is not available. Install Docker or start the daemon."
+        )
 
 
 class DockerCommandError(ProjectError):

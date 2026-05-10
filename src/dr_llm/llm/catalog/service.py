@@ -13,7 +13,9 @@ from dr_llm.llm.catalog.models import (
 )
 from dr_llm.llm.catalog.model_blacklist import filter_blacklisted_entries
 from dr_llm.llm.catalog.fetchers import fetch_models_for_provider
-from dr_llm.llm.providers.openrouter.policy import apply_openrouter_model_policies
+from dr_llm.llm.providers.openrouter.policy import (
+    apply_openrouter_model_policies,
+)
 from dr_llm.llm.providers.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
@@ -36,11 +38,15 @@ class ModelCatalogRepository(Protocol):
         entries: list[ModelCatalogEntry],
     ) -> int: ...
 
-    def list_models(self, *, query: ModelCatalogQuery) -> list[ModelCatalogEntry]: ...
+    def list_models(
+        self, *, query: ModelCatalogQuery
+    ) -> list[ModelCatalogEntry]: ...
 
     def count_models(self, *, query: ModelCatalogQuery) -> int: ...
 
-    def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None: ...
+    def get_model(
+        self, *, provider: str, model: str
+    ) -> ModelCatalogEntry | None: ...
 
 
 class ModelCatalogService:
@@ -135,12 +141,18 @@ class ModelCatalogService:
     def count_models(self, query: ModelCatalogQuery) -> int:
         return self._require_repository().count_models(query=query)
 
-    def show_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
-        return self._require_repository().get_model(provider=provider, model=model)
+    def show_model(
+        self, *, provider: str, model: str
+    ) -> ModelCatalogEntry | None:
+        return self._require_repository().get_model(
+            provider=provider, model=model
+        )
 
     def _require_repository(self) -> ModelCatalogRepository:
         if self._repository is None:
-            raise PersistenceError("ModelCatalogService.repository is not configured")
+            raise PersistenceError(
+                "ModelCatalogService.repository is not configured"
+            )
         return self._repository
 
     def _resolve_targets(self, *, provider: str | None) -> list[str]:

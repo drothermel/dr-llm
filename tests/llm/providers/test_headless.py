@@ -61,10 +61,14 @@ def test_codex_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.usage.completion_tokens == 3
 
 
-def test_codex_uses_cli_default_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_codex_uses_cli_default_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict[str, object] = {}
 
-    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        *args: object, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
         command = cast(list[str], args[0])
         captured["command"] = command
         captured["timeout"] = kwargs.get("timeout")
@@ -178,10 +182,14 @@ def test_claude_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.cost.total_cost_usd == 0.01
 
 
-def test_claude_uses_cli_default_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_claude_uses_cli_default_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict[str, object] = {}
 
-    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        *args: object, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
         command = cast(list[str], args[0])
         captured["command"] = command
         captured["timeout"] = kwargs.get("timeout")
@@ -215,7 +223,9 @@ def test_claude_uses_cli_default_timeout(monkeypatch: pytest.MonkeyPatch) -> Non
     assert captured["timeout"] == 600.0
 
 
-def test_claude_command_includes_effort(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_claude_command_includes_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     stdout = json.dumps(
         {
             "type": "result",

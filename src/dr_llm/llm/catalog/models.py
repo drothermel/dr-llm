@@ -5,7 +5,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from dr_llm.llm.providers.reasoning_capability_types import ReasoningCapabilities
+from dr_llm.llm.providers.reasoning_capability_types import (
+    ReasoningCapabilities,
+)
 
 
 def _derive_supports_reasoning_from_capabilities(

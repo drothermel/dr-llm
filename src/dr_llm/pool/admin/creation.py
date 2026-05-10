@@ -3,7 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+)
 
 from dr_llm.datetime_utils import UTC, normalize_utc
 from dr_llm.pool.admin.discovery import discover_pools
@@ -45,7 +51,9 @@ class CreatePoolRequest(BaseModel):
         return cls(
             project_name=project_name,
             pool_name=pool_name,
-            key_axes=[axis.strip() for axis in axes_csv.split(",") if axis.strip()],
+            key_axes=[
+                axis.strip() for axis in axes_csv.split(",") if axis.strip()
+            ],
         )
 
     @computed_field
@@ -140,7 +148,8 @@ def assess_pool_creation(
 
     pool_names = discover_pools(project.dsn)
     existing_pools = [
-        _inspect_pool_for_project(project, pool_name) for pool_name in pool_names
+        _inspect_pool_for_project(project, pool_name)
+        for pool_name in pool_names
     ]
 
     if any(pool.name == request.pool_name for pool in existing_pools):
@@ -201,7 +210,9 @@ def create_pool(request: CreatePoolRequest) -> PoolInspection:
             violation.reason == PoolCreationBlockReason.project_not_found
             for violation in readiness.violations
         ):
-            raise ProjectNotFoundError(f"Project {request.project_name!r} not found")
+            raise ProjectNotFoundError(
+                f"Project {request.project_name!r} not found"
+            )
         assert readiness.blocked_message is not None
         if any(
             violation.reason == PoolCreationBlockReason.project_not_running
@@ -229,7 +240,9 @@ def create_pool(request: CreatePoolRequest) -> PoolInspection:
     )
 
 
-def _request_violations(request: CreatePoolRequest) -> list[PoolCreationViolation]:
+def _request_violations(
+    request: CreatePoolRequest,
+) -> list[PoolCreationViolation]:
     violations: list[PoolCreationViolation] = []
     if not request.pool_name_is_valid:
         violations.append(

@@ -30,7 +30,9 @@ def make_subprocess_mock(
 ) -> tuple[dict[str, Any], Callable[..., subprocess.CompletedProcess[str]]]:
     captured: dict[str, Any] = {}
 
-    def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        *args: Any, **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
         captured["command"] = args[0]
         captured["input"] = kwargs.get("input")
         captured["env"] = kwargs.get("env")

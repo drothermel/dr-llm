@@ -64,7 +64,9 @@ class PoolService:
         deficit = result.deficit(query.n)
         try:
             logger.info(
-                "Generating %d top-up samples for %s", deficit, query.key_values
+                "Generating %d top-up samples for %s",
+                deficit,
+                query.key_values,
             )
             generated = generator_fn(query.key_values, deficit)
         except Exception as exc:
@@ -73,7 +75,9 @@ class PoolService:
             ) from exc
 
         if generated:
-            insert_result = self._store.insert_samples(generated, ignore_conflicts=True)
+            insert_result = self._store.insert_samples(
+                generated, ignore_conflicts=True
+            )
             logger.info(
                 "Top-up inserted %d samples (skipped %d, failed %d)",
                 insert_result.inserted,

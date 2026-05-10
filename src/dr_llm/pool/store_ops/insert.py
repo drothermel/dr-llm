@@ -68,7 +68,11 @@ def insert_samples(
         )
     if auto_idx:
         result += _batch_insert_auto_idx(
-            runtime, schema, tables, auto_idx, ignore_conflicts=ignore_conflicts
+            runtime,
+            schema,
+            tables,
+            auto_idx,
+            ignore_conflicts=ignore_conflicts,
         )
     return result
 
@@ -114,7 +118,11 @@ def _batch_insert_auto_idx(
         try:
             with runtime.begin() as conn:
                 rows = _allocate_auto_idx_rows(
-                    conn, schema, tables, base_rows=base_rows, key_names=key_names
+                    conn,
+                    schema,
+                    tables,
+                    base_rows=base_rows,
+                    key_names=key_names,
                 )
                 stmt = pg_insert(samples_table)
                 if ignore_conflicts:
@@ -128,7 +136,9 @@ def _batch_insert_auto_idx(
                 inserted = 0
                 for _ in result.scalars():
                     inserted += 1
-            return InsertResult(inserted=inserted, skipped=len(samples) - inserted)
+            return InsertResult(
+                inserted=inserted, skipped=len(samples) - inserted
+            )
         except Exception as exc:
             if is_constraint_error(exc):
                 if attempt < AUTO_IDX_INSERT_RETRIES:
@@ -162,9 +172,9 @@ def _allocate_auto_idx_rows(
         key_values = dict(zip(key_names, cell_key, strict=True))
         max_sample_idx_by_cell[cell_key] = int(
             conn.execute(
-                select(func.coalesce(func.max(samples_table.c.sample_idx), -1)).where(
-                    key_filter_clause(schema, samples_table, key_values)
-                )
+                select(
+                    func.coalesce(func.max(samples_table.c.sample_idx), -1)
+                ).where(key_filter_clause(schema, samples_table, key_values))
             ).scalar_one()
         )
 
@@ -185,10 +195,14 @@ def _cell_lock_id(schema: PoolSchema, cell_key: tuple[Any, ...]) -> int:
     lock_payload = json.dumps(
         {
             "pool": schema.table_name(PoolTableType.SAMPLES),
-            "key_values": dict(zip(schema.key_column_names, cell_key, strict=True)),
+            "key_values": dict(
+                zip(schema.key_column_names, cell_key, strict=True)
+            ),
         },
         sort_keys=True,
         separators=(",", ":"),
     )
-    digest = hashlib.blake2b(lock_payload.encode("utf-8"), digest_size=8).digest()
+    digest = hashlib.blake2b(
+        lock_payload.encode("utf-8"), digest_size=8
+    ).digest()
     return int.from_bytes(digest, byteorder="big", signed=True)

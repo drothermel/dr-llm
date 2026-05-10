@@ -21,7 +21,9 @@ class _FakeProvider:
     def generate(self, request: Any) -> Any:
         return make_response(
             text="hi",
-            usage=TokenUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3),
+            usage=TokenUsage(
+                prompt_tokens=1, completion_tokens=2, total_tokens=3
+            ),
             provider="openai",
             model="gpt-4.1",
         )

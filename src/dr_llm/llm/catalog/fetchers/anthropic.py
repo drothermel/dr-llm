@@ -12,7 +12,9 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
-from dr_llm.llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
+from dr_llm.llm.providers.reasoning_capabilities import (
+    reasoning_capabilities_for_model,
+)
 
 
 def fetch_anthropic_models(
@@ -25,7 +27,9 @@ def fetch_anthropic_models(
             f"Anthropic base URL must end with '/messages' for catalog sync. Got: {provider.config.base_url}"
         )
     models_path = f"{path[: -len('/messages')]}/models"
-    models_url = urlunsplit((parsed.scheme, parsed.netloc, models_path, "", ""))
+    models_url = urlunsplit(
+        (parsed.scheme, parsed.netloc, models_path, "", "")
+    )
     key = require_api_key(
         api_key=provider.config.api_key,
         env_var=provider.config.api_key_env,
@@ -36,7 +40,9 @@ def fetch_anthropic_models(
         "x-api-key": key,
     }
 
-    def process(item: dict[str, Any], now: datetime) -> ModelCatalogEntry | None:
+    def process(
+        item: dict[str, Any], now: datetime
+    ) -> ModelCatalogEntry | None:
         model_id = str(item.get("id") or "").strip()
         if not model_id:
             return None

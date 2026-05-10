@@ -175,7 +175,9 @@ def docker_swap_in_db(
         f'CREATE DATABASE "{swap_in_db}";',
     )
     try:
-        call_docker_psql_input_stream(container_name, db_user, swap_in_db, sql_stream)
+        call_docker_psql_input_stream(
+            container_name, db_user, swap_in_db, sql_stream
+        )
         _call_docker_psql_admin(
             container_name,
             db_user,

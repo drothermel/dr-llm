@@ -19,8 +19,13 @@ from dr_llm.llm.providers.reasoning import (
     ReasoningWarning,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
-from dr_llm.llm.providers.registry import ProviderRegistry, build_default_registry
+from dr_llm.llm.providers.reasoning_capabilities import (
+    reasoning_capabilities_for_model,
+)
+from dr_llm.llm.providers.registry import (
+    ProviderRegistry,
+    build_default_registry,
+)
 from dr_llm.llm.providers.usage import CostInfo, TokenUsage
 from dr_llm.llm.request import (
     ApiProviderName,

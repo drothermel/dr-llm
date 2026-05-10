@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-from dr_llm.llm.providers.reasoning_capability_types import ReasoningCapabilities
+from dr_llm.llm.providers.reasoning_capability_types import (
+    ReasoningCapabilities,
+)
 
 if TYPE_CHECKING:
     from dr_llm.llm.catalog.models import ModelCatalogEntry

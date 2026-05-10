@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    Future,
+    ThreadPoolExecutor,
+    wait,
+)
 import gzip
 import logging
 import socket
@@ -299,7 +304,9 @@ def _project_from_metadata(metadata: DockerProjectMetadata) -> ProjectInfo:
 
 
 def maybe_get_project(name: str) -> ProjectInfo | None:
-    metadata = get_docker_project_metadata(ProjectInfo.container_name_for(name))
+    metadata = get_docker_project_metadata(
+        ProjectInfo.container_name_for(name)
+    )
     if metadata is None:
         return None
     return _project_from_metadata(metadata)
@@ -313,7 +320,9 @@ def get_project(name: str) -> ProjectInfo:
 
 
 def list_projects() -> list[ProjectInfo]:
-    return [_project_from_metadata(m) for m in get_all_docker_project_metadata()]
+    return [
+        _project_from_metadata(m) for m in get_all_docker_project_metadata()
+    ]
 
 
 def inspect_projects() -> list[ProjectInspectionSummary]:
@@ -386,7 +395,8 @@ def create_project(request: CreateProjectRequest) -> ProjectInfo:
             (
                 violation
                 for violation in readiness.violations
-                if violation.reason == ProjectCreationBlockReason.already_exists
+                if violation.reason
+                == ProjectCreationBlockReason.already_exists
             ),
             None,
         )
@@ -402,7 +412,9 @@ def create_project(request: CreateProjectRequest) -> ProjectInfo:
     return project.model_copy(update={"status": status})
 
 
-def assess_project_deletion(request: DeleteProjectRequest) -> ProjectDeletionReadiness:
+def assess_project_deletion(
+    request: DeleteProjectRequest,
+) -> ProjectDeletionReadiness:
     project = maybe_get_project(request.project_name)
     if project is None:
         return ProjectDeletionReadiness(
@@ -471,7 +483,10 @@ def delete_project(request: DeleteProjectRequest) -> ProjectDeletionResult:
             request.project_name,
             discovered_pool_names,
         )
-        if any(result.status != PoolDeletionStatus.deleted for result in pool_results):
+        if any(
+            result.status != PoolDeletionStatus.deleted
+            for result in pool_results
+        ):
             failure_message = _project_delete_failure_message(pool_results)
         else:
             call_docker_destroy(
@@ -600,7 +615,9 @@ def _create_container_with_port_retry(
                 ),
             )
         except DockerContainerConflictError as exc:
-            raise ProjectAlreadyExistsError(f"Project '{name}' already exists") from exc
+            raise ProjectAlreadyExistsError(
+                f"Project '{name}' already exists"
+            ) from exc
         except DockerPortAllocatedError:
             claimed_ports.add(port)
             continue
@@ -617,7 +634,9 @@ def _wait_ready_or_destroy(project: ProjectInfo) -> ContainerStatus:
         # Defeat the startup race where pg_isready returns OK against the
         # in-container Unix socket while the host-mapped TCP listener is
         # still bouncing connections during init.
-        assert project.dsn is not None, "newly-created project must have a port"
+        assert project.dsn is not None, (
+            "newly-created project must have a port"
+        )
         wait_dsn_ready(project.dsn)
         return status
     except Exception as exc:
@@ -706,7 +725,9 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
                 )
                 progress_stream.finalize()
             except DockerContainerNotFoundError as exc:
-                raise ProjectNotFoundError(f"Project '{name}' not found") from exc
+                raise ProjectNotFoundError(
+                    f"Project '{name}' not found"
+                ) from exc
             except DockerContainerNotRunningError as exc:
                 raise ProjectError(
                     f"Project '{name}' is not running. Start it first."
@@ -764,7 +785,9 @@ def restore_project(name: str, backup_file: Path) -> None:
                 )
                 progress_stream.finalize()
             except DockerContainerNotFoundError as exc:
-                raise ProjectNotFoundError(f"Project '{name}' not found") from exc
+                raise ProjectNotFoundError(
+                    f"Project '{name}' not found"
+                ) from exc
             except DockerContainerNotRunningError as exc:
                 raise ProjectError(
                     f"Project '{name}' is not running. Start it first."
@@ -843,7 +866,10 @@ def _delete_pools_for_project(
                     submitted_index += 1
                 continue
 
-            while submitted_index < len(pool_names) and len(futures) < max_workers:
+            while (
+                submitted_index < len(pool_names)
+                and len(futures) < max_workers
+            ):
                 future = executor.submit(
                     _delete_single_pool_for_project,
                     project_name,
@@ -866,7 +892,9 @@ def _delete_single_pool_for_project(
     )
 
 
-def _project_delete_failure_message(pool_results: list[PoolDeletionResult]) -> str:
+def _project_delete_failure_message(
+    pool_results: list[PoolDeletionResult],
+) -> str:
     first_failure = next(
         (
             result

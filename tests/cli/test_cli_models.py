@@ -24,7 +24,9 @@ def _fake_catalog_service(
     count: int = 0,
 ) -> type:
     class _FakeService:
-        def __init__(self, *, registry: object, repository: object = None) -> None:
+        def __init__(
+            self, *, registry: object, repository: object = None
+        ) -> None:
             _ = registry, repository
 
         async def sync_models_detailed(
@@ -33,7 +35,9 @@ def _fake_catalog_service(
             _ = provider
             return sync_results or []
 
-        def list_models(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
+        def list_models(
+            self, query: ModelCatalogQuery
+        ) -> list[ModelCatalogEntry]:
             _ = query
             return models or []
 
@@ -79,7 +83,9 @@ def test_sync_verbose_json(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
 
-    result = runner.invoke(app, ["models", "sync", "--provider", "openai", "--verbose"])
+    result = runner.invoke(
+        app, ["models", "sync", "--provider", "openai", "--verbose"]
+    )
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -131,7 +137,9 @@ def test_list_json(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
 
-    result = runner.invoke(app, ["models", "list", "--provider", "openai", "--json"])
+    result = runner.invoke(
+        app, ["models", "list", "--provider", "openai", "--json"]
+    )
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -154,7 +162,9 @@ def test_sync_list_json(monkeypatch: pytest.MonkeyPatch) -> None:
         "ModelCatalogService",
         _fake_catalog_service(
             sync_results=[
-                ModelCatalogSyncResult(provider="openai", success=True, entry_count=42)
+                ModelCatalogSyncResult(
+                    provider="openai", success=True, entry_count=42
+                )
             ],
             models=[
                 ModelCatalogEntry(
@@ -185,7 +195,9 @@ def test_sync_list_json(monkeypatch: pytest.MonkeyPatch) -> None:
     _assert_blacklist_json_shape(payload, provider="openai")
 
 
-def test_list_json_includes_provider_blacklist(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_list_json_includes_provider_blacklist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         models_cli,
         "ModelCatalogService",
@@ -201,7 +213,9 @@ def test_list_json_includes_provider_blacklist(monkeypatch: pytest.MonkeyPatch) 
         ),
     )
 
-    result = runner.invoke(app, ["models", "list", "--provider", "anthropic", "--json"])
+    result = runner.invoke(
+        app, ["models", "list", "--provider", "anthropic", "--json"]
+    )
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -217,7 +231,9 @@ def test_list_json_includes_provider_blacklist(monkeypatch: pytest.MonkeyPatch) 
     _assert_blacklist_json_shape(payload, provider="anthropic")
 
 
-def test_sync_list_failure_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sync_list_failure_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         models_cli,
         "ModelCatalogService",
@@ -232,6 +248,8 @@ def test_sync_list_failure_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> Non
         ),
     )
 
-    result = runner.invoke(app, ["models", "sync-list", "--provider", "openai"])
+    result = runner.invoke(
+        app, ["models", "sync-list", "--provider", "openai"]
+    )
 
     assert result.exit_code == 1

@@ -32,7 +32,9 @@ _GOOGLE_THINKING_BUDGET_ADAPTIVE = -1
 def validate_reasoning_for_google(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
-    capabilities = reasoning_capabilities_for_model(provider="google", model=model)
+    capabilities = reasoning_capabilities_for_model(
+        provider="google", model=model
+    )
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
         if capabilities is None:
@@ -76,11 +78,15 @@ def _validate_google_reasoning_shape(
     thinking_level: ThinkingLevel,
     budget_tokens: int | None,
 ) -> None:
-    capabilities = reasoning_capabilities_for_model(provider="google", model=model)
+    capabilities = reasoning_capabilities_for_model(
+        provider="google", model=model
+    )
     if is_reasoning_unsupported(capabilities):
         if thinking_level == ThinkingLevel.NA:
             return
-        raise ValueError(f"google thinking is not supported for model={model!r}")
+        raise ValueError(
+            f"google thinking is not supported for model={model!r}"
+        )
     assert capabilities is not None
     if thinking_level == ThinkingLevel.NA:
         raise ValueError(
@@ -147,7 +153,8 @@ def _validate_google_level_mode(
     capabilities: ReasoningCapabilities,
 ) -> None:
     allowed_levels = {
-        google_literal_to_thinking_level(level) for level in capabilities.google_levels
+        google_literal_to_thinking_level(level)
+        for level in capabilities.google_levels
     }
     validate_allowed_thinking_levels(
         provider="google",

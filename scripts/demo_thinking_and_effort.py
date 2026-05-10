@@ -81,13 +81,19 @@ class SummaryCounts(BaseModel):
     had_output_text: int = 0
 
 
-def supported_thinking_levels(provider: str, model: str) -> list[ThinkingLevel]:
+def supported_thinking_levels(
+    provider: str, model: str
+) -> list[ThinkingLevel]:
     if provider == "claude-code":
         return _supported_claude_code_thinking_levels(model)
     if provider == "minimax":
         return [ThinkingLevel.NA]
     if provider == "kimi-code":
-        return [ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE, ThinkingLevel.BUDGET]
+        return [
+            ThinkingLevel.OFF,
+            ThinkingLevel.ADAPTIVE,
+            ThinkingLevel.BUDGET,
+        ]
     if provider == "openai":
         return _supported_openai_thinking_levels(model)
     if provider == "codex":
@@ -125,14 +131,22 @@ def _supported_claude_code_thinking_levels(model: str) -> list[ThinkingLevel]:
 
 
 def _supported_google_thinking_levels(model: str) -> list[ThinkingLevel]:
-    capabilities = reasoning_capabilities_for_model(provider="google", model=model)
+    capabilities = reasoning_capabilities_for_model(
+        provider="google", model=model
+    )
     if capabilities is None or capabilities.mode == "unsupported":
         return [ThinkingLevel.NA]
     if capabilities.mode == "google_budget":
-        return [ThinkingLevel.ADAPTIVE, ThinkingLevel.OFF, ThinkingLevel.BUDGET]
+        return [
+            ThinkingLevel.ADAPTIVE,
+            ThinkingLevel.OFF,
+            ThinkingLevel.BUDGET,
+        ]
     if capabilities.mode == "google_level":
         return [ThinkingLevel(level) for level in capabilities.google_levels]
-    raise ValueError(f"unexpected google reasoning mode: {capabilities.mode!r}")
+    raise ValueError(
+        f"unexpected google reasoning mode: {capabilities.mode!r}"
+    )
 
 
 def _supported_openai_style_thinking_levels(
@@ -206,7 +220,13 @@ def reasoning_for_level(
     thinking_level: ThinkingLevel,
     *,
     explicit: bool = False,
-) -> AnthropicReasoning | OpenAIReasoning | CodexReasoning | GoogleReasoning | None:
+) -> (
+    AnthropicReasoning
+    | OpenAIReasoning
+    | CodexReasoning
+    | GoogleReasoning
+    | None
+):
     if provider == "claude-code":
         if thinking_level == ThinkingLevel.ADAPTIVE:
             return AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
@@ -214,13 +234,17 @@ def reasoning_for_level(
             return AnthropicReasoning(thinking_level=ThinkingLevel.NA)
         if thinking_level == ThinkingLevel.NA:
             return None
-        raise ValueError(f"unsupported claude-code thinking level: {thinking_level!r}")
+        raise ValueError(
+            f"unsupported claude-code thinking level: {thinking_level!r}"
+        )
     if provider == "minimax":
         if thinking_level == ThinkingLevel.NA and explicit:
             return AnthropicReasoning(thinking_level=ThinkingLevel.NA)
         if thinking_level == ThinkingLevel.NA:
             return None
-        raise ValueError(f"unsupported minimax thinking level: {thinking_level!r}")
+        raise ValueError(
+            f"unsupported minimax thinking level: {thinking_level!r}"
+        )
     if provider == "kimi-code":
         if thinking_level == ThinkingLevel.NA:
             return None
@@ -468,7 +492,9 @@ def run_effort_sweep(
         if provider == "openrouter":
             continue
         for model in PROVIDER_MODELS[provider]:
-            for effort in supported_effort_levels(provider=provider, model=model):
+            for effort in supported_effort_levels(
+                provider=provider, model=model
+            ):
                 run_attempt(
                     registry=registry,
                     provider=provider,

@@ -29,7 +29,9 @@ _GOOGLE_CONFIG = APIProviderConfig(
 )
 
 _MOCK_RESPONSE = {
-    "candidates": [{"content": {"parts": [{"text": "done"}]}, "finishReason": "STOP"}],
+    "candidates": [
+        {"content": {"parts": [{"text": "done"}]}, "finishReason": "STOP"}
+    ],
     "usageMetadata": {
         "promptTokenCount": 1,
         "candidatesTokenCount": 2,
@@ -56,13 +58,17 @@ _THOUGHT_RESPONSE = {
 }
 
 
-def _make_api_request(overrides: Mapping[str, Any] | None = None) -> ApiLlmRequest:
+def _make_api_request(
+    overrides: Mapping[str, Any] | None = None,
+) -> ApiLlmRequest:
     return cast(ApiLlmRequest, make_request(**(overrides or {})))
 
 
 def test_rejects_unsupported_message_role() -> None:
     """model_construct can bypass validation; unsupported roles must not be dropped silently."""
-    tool_msg = Message.model_construct(role="tool", content="secret tool output")
+    tool_msg = Message.model_construct(
+        role="tool", content="secret tool output"
+    )
     request = _make_api_request(
         {
             "provider": "google",
@@ -70,7 +76,9 @@ def test_rejects_unsupported_message_role() -> None:
             "messages": [tool_msg],
         }
     )
-    with pytest.raises(ValueError, match=r"Unsupported Message\.role.*'tool'") as exc:
+    with pytest.raises(
+        ValueError, match=r"Unsupported Message\.role.*'tool'"
+    ) as exc:
         GoogleRequest.from_llm_request(request, _GOOGLE_CONFIG)
     message = str(exc.value)
     assert "Content length: 18" in message
@@ -120,7 +128,9 @@ def test_payload_serializes_budget_reasoning_under_thinking_config() -> None:
     adapter.generate(request)
 
     payload = cast(dict[str, Any], captured["payload"])
-    assert payload["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 512}
+    assert payload["generationConfig"]["thinkingConfig"] == {
+        "thinkingBudget": 512
+    }
 
 
 def test_payload_serializes_google_budget_controls() -> None:
@@ -131,13 +141,17 @@ def test_payload_serializes_google_budget_controls() -> None:
         {
             "provider": "google",
             "model": "gemini-2.5-flash",
-            "reasoning": GoogleReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+            "reasoning": GoogleReasoning(
+                thinking_level=ThinkingLevel.ADAPTIVE
+            ),
         }
     )
     adapter.generate(request)
 
     payload = cast(dict[str, Any], captured["payload"])
-    assert payload["generationConfig"]["thinkingConfig"] == {"thinkingBudget": -1}
+    assert payload["generationConfig"]["thinkingConfig"] == {
+        "thinkingBudget": -1
+    }
 
     request = _make_api_request(
         {

@@ -28,7 +28,9 @@ def pool_table_name(pool_name: str, table_type: _PoolTableType) -> str:
 
 
 def pool_table_names(pool_name: str) -> list[str]:
-    return [pool_table_name(pool_name, table_type) for table_type in _PoolTableType]
+    return [
+        pool_table_name(pool_name, table_type) for table_type in _PoolTableType
+    ]
 
 
 class KeyColumn(BaseModel):
@@ -83,7 +85,9 @@ class PoolSchema(BaseModel):
         """
         return cls(
             name=name,
-            key_columns=[KeyColumn(name=axis_name) for axis_name in axis_names],
+            key_columns=[
+                KeyColumn(name=axis_name) for axis_name in axis_names
+            ],
         )
 
     def table_name(self, table_type: _PoolTableType) -> str:

@@ -19,7 +19,11 @@ from dr_llm.llm.providers.reasoning import (
     OpenRouterReasoning,
     ThinkingLevel,
 )
-from dr_llm.llm.request import ApiLlmRequest, KimiCodeLlmRequest, OpenAILlmRequest
+from dr_llm.llm.request import (
+    ApiLlmRequest,
+    KimiCodeLlmRequest,
+    OpenAILlmRequest,
+)
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 
@@ -36,7 +40,9 @@ _REASONING_RESPONSE_JSON: dict[str, Any] = {
             "message": {
                 "content": "final answer",
                 "reasoning": "internal trace",
-                "reasoning_details": [{"type": "reasoning.text", "text": "step 1"}],
+                "reasoning_details": [
+                    {"type": "reasoning.text", "text": "step 1"}
+                ],
             },
         }
     ],
@@ -56,7 +62,9 @@ _REASONING_RESPONSE_JSON: dict[str, Any] = {
 def _make_api_request(
     overrides: Mapping[str, Any] | None = None,
 ) -> ApiLlmRequest | OpenAILlmRequest:
-    return cast(ApiLlmRequest | OpenAILlmRequest, make_request(**(overrides or {})))
+    return cast(
+        ApiLlmRequest | OpenAILlmRequest, make_request(**(overrides or {}))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +143,8 @@ def test_request_builds_endpoint_and_headers() -> None:
     provider_request = OpenAICompatRequest.from_llm_request(request, _CONFIG)
 
     assert (
-        provider_request.endpoint() == "https://openrouter.ai/api/v1/chat/completions"
+        provider_request.endpoint()
+        == "https://openrouter.ai/api/v1/chat/completions"
     )
     assert provider_request.headers()["Idempotency-Key"] == "fixed-key"
     assert provider_request.messages == [{"role": "user", "content": "hi"}]
@@ -171,7 +180,9 @@ def test_glm_request_serializes_native_thinking_payload() -> None:
             "reasoning": GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
         }
     )
-    provider_request = OpenAICompatRequest.from_llm_request(request, glm_config)
+    provider_request = OpenAICompatRequest.from_llm_request(
+        request, glm_config
+    )
     assert provider_request.reasoning_effort is None
     assert provider_request.json_payload()["thinking"] == {"type": "enabled"}
 
@@ -190,7 +201,9 @@ def test_openai_gpt5_swaps_max_tokens_for_max_completion_tokens() -> None:
             "reasoning": OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
         }
     )
-    provider_request = OpenAICompatRequest.from_llm_request(request, openai_config)
+    provider_request = OpenAICompatRequest.from_llm_request(
+        request, openai_config
+    )
     payload = provider_request.json_payload()
     assert "max_tokens" not in payload
     assert payload["max_completion_tokens"] == 64
@@ -209,7 +222,9 @@ def test_openai_legacy_model_keeps_max_tokens() -> None:
             "max_tokens": 64,
         }
     )
-    provider_request = OpenAICompatRequest.from_llm_request(request, openai_config)
+    provider_request = OpenAICompatRequest.from_llm_request(
+        request, openai_config
+    )
     payload = provider_request.json_payload()
     assert payload["max_tokens"] == 64
     assert "max_completion_tokens" not in payload
@@ -227,7 +242,9 @@ def test_openai_request_omits_sampling_fields_when_not_configured() -> None:
             "model": "gpt-4.1-mini",
         }
     )
-    provider_request = OpenAICompatRequest.from_llm_request(request, openai_config)
+    provider_request = OpenAICompatRequest.from_llm_request(
+        request, openai_config
+    )
     payload = provider_request.json_payload()
 
     assert "temperature" not in payload
@@ -249,7 +266,9 @@ def test_openai_request_serializes_explicit_sampling_fields() -> None:
             "reasoning": OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
         }
     )
-    provider_request = OpenAICompatRequest.from_llm_request(request, openai_config)
+    provider_request = OpenAICompatRequest.from_llm_request(
+        request, openai_config
+    )
     payload = provider_request.json_payload()
 
     assert payload["temperature"] == 0.3
@@ -270,7 +289,8 @@ def test_request_rejects_extra_body_key_collisions() -> None:
     )
 
     with pytest.raises(
-        ValueError, match="extra_body conflicts with validated payload keys: model"
+        ValueError,
+        match="extra_body conflicts with validated payload keys: model",
     ):
         provider_request.json_payload()
 
@@ -281,17 +301,23 @@ def test_request_rejects_extra_body_key_collisions() -> None:
 
 
 def test_response_parses_reasoning_and_cost() -> None:
-    http_response = httpx.Response(status_code=200, json=_REASONING_RESPONSE_JSON)
+    http_response = httpx.Response(
+        status_code=200, json=_REASONING_RESPONSE_JSON
+    )
     provider_response = OpenAICompatResponse.from_http_response(http_response)
 
     request = _make_api_request(
         {"provider": "openrouter", "model": "deepseek/deepseek-chat"}
     )
-    result = provider_response.to_llm_response(request, latency_ms=42, warnings=[])
+    result = provider_response.to_llm_response(
+        request, latency_ms=42, warnings=[]
+    )
 
     assert result.text == "final answer"
     assert result.reasoning == "internal trace"
-    assert result.reasoning_details == [{"type": "reasoning.text", "text": "step 1"}]
+    assert result.reasoning_details == [
+        {"type": "reasoning.text", "text": "step 1"}
+    ]
     assert result.usage.reasoning_tokens == 22
     assert result.cost is not None
     assert result.cost.total_cost_usd == 0.003

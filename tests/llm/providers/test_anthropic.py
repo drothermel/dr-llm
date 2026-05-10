@@ -58,7 +58,10 @@ def test_payload_serializes_messages() -> None:
     messages = payload["messages"]
     assert messages == [
         {"role": "user", "content": [{"type": "text", "text": "hello"}]},
-        {"role": "assistant", "content": [{"type": "text", "text": "hi there"}]},
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "hi there"}],
+        },
     ]
 
 
@@ -156,7 +159,9 @@ def test_invalid_json_raises_transport_error() -> None:
     assert call_count == 1
 
 
-def test_transport_failure_retries_raw_http_send_only_once_before_success() -> None:
+def test_transport_failure_retries_raw_http_send_only_once_before_success() -> (
+    None
+):
     call_count = 0
 
     def handler(_request: httpx.Request) -> httpx.Response:

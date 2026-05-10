@@ -57,7 +57,9 @@ class FakeWorkerBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
             self._claims += 1
             return self._queued.pop(0)
 
-    def complete(self, *, item: str, result: dict[str, Any], worker_id: str) -> None:
+    def complete(
+        self, *, item: str, result: dict[str, Any], worker_id: str
+    ) -> None:
         del worker_id
         assert result["item"] == item
         with self._lock:
@@ -106,7 +108,9 @@ class FakeWorkerBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
             self._events.append(f"exit:{item}:{worker_id}")
 
 
-class ExplodingClaimBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
+class ExplodingClaimBackend(
+    WorkerBackend[str, dict[str, Any], FakeBackendState]
+):
     def claim(self, *, worker_id: str, lease_seconds: int) -> str | None:
         del worker_id, lease_seconds
         raise RuntimeError("claim exploded")
@@ -133,7 +137,9 @@ class ExplodingClaimBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]
         return FakeBackendState()
 
 
-class BlockingClaimBackend(WorkerBackend[str, dict[str, Any], FakeBackendState]):
+class BlockingClaimBackend(
+    WorkerBackend[str, dict[str, Any], FakeBackendState]
+):
     def __init__(self) -> None:
         self.release = threading.Event()
 
@@ -193,7 +199,9 @@ def test_worker_config_validation() -> None:
         WorkerConfig(num_workers=1, lease_seconds=0)
     with pytest.raises(ValidationError, match="greater than 0"):
         WorkerConfig(num_workers=1, min_poll_interval_s=0.0)
-    with pytest.raises(ValidationError, match="max_poll_interval_s must be >="):
+    with pytest.raises(
+        ValidationError, match="max_poll_interval_s must be >="
+    ):
         WorkerConfig(
             num_workers=1,
             min_poll_interval_s=0.2,
@@ -201,7 +209,9 @@ def test_worker_config_validation() -> None:
         )
     with pytest.raises(ValidationError, match="greater than or equal to 1"):
         WorkerConfig(num_workers=1, backoff_factor=0.5)
-    with pytest.raises(ValidationError, match="thread_name_prefix must be non-empty"):
+    with pytest.raises(
+        ValidationError, match="thread_name_prefix must be non-empty"
+    ):
         WorkerConfig(num_workers=1, thread_name_prefix="  ")
 
 
@@ -220,7 +230,8 @@ def test_start_workers_completes_claimed_items() -> None:
         snapshot = _wait_for(
             controller,
             lambda snap: (
-                snap.backend_state is not None and snap.backend_state.completed == 3
+                snap.backend_state is not None
+                and snap.backend_state.completed == 3
             ),
         )
     finally:
@@ -247,7 +258,9 @@ def test_idle_polling_increments_and_stops_cleanly() -> None:
         ),
     )
     try:
-        snapshot = _wait_for(controller, lambda snap: snap.counts.idle_polls >= 2)
+        snapshot = _wait_for(
+            controller, lambda snap: snap.counts.idle_polls >= 2
+        )
     finally:
         snapshot = _stop_controller(controller)
 
@@ -279,7 +292,8 @@ def test_retry_then_success() -> None:
         snapshot = _wait_for(
             controller,
             lambda snap: (
-                snap.backend_state is not None and snap.backend_state.completed == 1
+                snap.backend_state is not None
+                and snap.backend_state.completed == 1
             ),
         )
     finally:
@@ -315,7 +329,8 @@ def test_retry_then_fail() -> None:
         snapshot = _wait_for(
             controller,
             lambda snap: (
-                snap.backend_state is not None and snap.backend_state.failed == 1
+                snap.backend_state is not None
+                and snap.backend_state.failed == 1
             ),
         )
     finally:
@@ -349,7 +364,8 @@ def test_process_context_hook_runs_around_work() -> None:
         snapshot = _wait_for(
             controller,
             lambda snap: (
-                snap.backend_state is not None and snap.backend_state.completed == 1
+                snap.backend_state is not None
+                and snap.backend_state.completed == 1
             ),
         )
     finally:
@@ -411,7 +427,9 @@ def test_join_does_not_cache_final_snapshot_on_timeout() -> None:
     )
 
     try:
-        with pytest.raises(TimeoutError, match="Timed out waiting for workers to stop"):
+        with pytest.raises(
+            TimeoutError, match="Timed out waiting for workers to stop"
+        ):
             controller.join(timeout=0.01)
         assert controller.final_snapshot is None
     finally:

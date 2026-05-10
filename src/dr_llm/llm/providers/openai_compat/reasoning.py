@@ -38,7 +38,9 @@ def validate_reasoning_for_openai(
 ) -> None:
     def _validate_native(spec: OpenAIReasoning) -> None:
         if not openai_supports_configurable_thinking(model):
-            raise ValueError(f"openai thinking is not supported for model={model!r}")
+            raise ValueError(
+                f"openai thinking is not supported for model={model!r}"
+            )
         validate_discrete_thinking_level(
             provider="openai",
             model=model,
@@ -68,8 +70,12 @@ def validate_reasoning_for_openrouter(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
     if openrouter_model_policy(model) is None:
-        raise ValueError(f"openrouter model={model!r} is not in the curated allowlist")
-    capabilities = reasoning_capabilities_for_model(provider="openrouter", model=model)
+        raise ValueError(
+            f"openrouter model={model!r} is not in the curated allowlist"
+        )
+    capabilities = reasoning_capabilities_for_model(
+        provider="openrouter", model=model
+    )
     if reasoning is None:
         if not is_reasoning_unsupported(capabilities):
             raise ValueError(
@@ -85,7 +91,9 @@ def validate_reasoning_for_openrouter(
         return
     if isinstance(reasoning, OpenAIReasoning):
         if not openai_supports_configurable_thinking(model):
-            raise ValueError(f"openai thinking is not supported for model={model!r}")
+            raise ValueError(
+                f"openai thinking is not supported for model={model!r}"
+            )
         validate_discrete_thinking_level(
             provider="openrouter",
             model=model,
@@ -111,9 +119,13 @@ def _validate_openrouter_shape(
 ) -> None:
     policy = openrouter_model_policy(model)
     if policy is None:
-        raise ValueError(f"openrouter reasoning is not supported for model={model!r}")
+        raise ValueError(
+            f"openrouter reasoning is not supported for model={model!r}"
+        )
     if policy.request_style == OpenRouterReasoningRequestStyle.NONE:
-        raise ValueError(f"openrouter reasoning is not supported for model={model!r}")
+        raise ValueError(
+            f"openrouter reasoning is not supported for model={model!r}"
+        )
     if policy.request_style == OpenRouterReasoningRequestStyle.ENABLED_FLAG:
         if effort is not None:
             raise ValueError(
@@ -143,8 +155,12 @@ def _validate_openrouter_shape(
         )
 
 
-def validate_reasoning_for_glm(*, model: str, reasoning: ReasoningSpec | None) -> None:
-    capabilities = reasoning_capabilities_for_model(provider="glm", model=model)
+def validate_reasoning_for_glm(
+    *, model: str, reasoning: ReasoningSpec | None
+) -> None:
+    capabilities = reasoning_capabilities_for_model(
+        provider="glm", model=model
+    )
     if reasoning is None:
         if not is_reasoning_unsupported(capabilities):
             raise ValueError(
@@ -164,11 +180,15 @@ def validate_reasoning_for_glm(*, model: str, reasoning: ReasoningSpec | None) -
         raise ValueError(
             f"Top-level reasoning budgets are not supported for provider='glm' model={model!r}; use GlmReasoning(thinking_level=...)"
         )
-    raise ValueError(f"glm reasoning is not supported for kind={reasoning.kind!r}")
+    raise ValueError(
+        f"glm reasoning is not supported for kind={reasoning.kind!r}"
+    )
 
 
 class OpenAICompatReasoningConfig(BaseProviderReasoningConfig):
-    reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
+    reasoning_effort: (
+        Literal["none", "minimal", "low", "medium", "high"] | None
+    ) = None
     extra_body: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod

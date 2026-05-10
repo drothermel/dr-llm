@@ -83,7 +83,9 @@ class ApiProvider(Provider):
         self.close()
 
     @abstractmethod
-    def _build_request(self, request: ApiBackedLlmRequest) -> ApiProviderRequest:
+    def _build_request(
+        self, request: ApiBackedLlmRequest
+    ) -> ApiProviderRequest:
         """Translate an ``ApiBackedLlmRequest`` into an ``ApiProviderRequest``."""
 
     @abstractmethod
@@ -91,12 +93,16 @@ class ApiProvider(Provider):
         """Decode an ``httpx.Response`` into the provider-specific response shape."""
 
     @retry(
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.TransportError)),
+        retry=retry_if_exception_type(
+            (httpx.TimeoutException, httpx.TransportError)
+        ),
         wait=wait_exponential_jitter(initial=0.5, max=8),
         stop=stop_after_attempt(3),
         reraise=True,
     )
-    def _post_with_retry(self, provider_request: ApiProviderRequest) -> httpx.Response:
+    def _post_with_retry(
+        self, provider_request: ApiProviderRequest
+    ) -> httpx.Response:
         return self._client.post(
             provider_request.endpoint(),
             headers=provider_request.headers(),

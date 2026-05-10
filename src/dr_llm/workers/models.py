@@ -27,7 +27,9 @@ class WorkerConfig(BaseModel):
     @model_validator(mode="after")
     def _validate_poll_intervals(self) -> WorkerConfig:
         if self.max_poll_interval_s < self.min_poll_interval_s:
-            raise ValueError("max_poll_interval_s must be >= min_poll_interval_s")
+            raise ValueError(
+                "max_poll_interval_s must be >= min_poll_interval_s"
+            )
         return self
 
     @model_validator(mode="after")
@@ -52,9 +54,9 @@ class WorkerStatCounts(BaseModel):
 # maintained, so a missed update on either side could silently produce
 # unknown-key dict writes or runtime construction errors. Catch the
 # misalignment at import time instead.
-assert set(get_args(WorkerStatKey.__value__)) == set(WorkerStatCounts.model_fields), (
-    "WorkerStatKey literals are out of sync with WorkerStatCounts fields"
-)
+assert set(get_args(WorkerStatKey.__value__)) == set(
+    WorkerStatCounts.model_fields
+), "WorkerStatKey literals are out of sync with WorkerStatCounts fields"
 
 
 class WorkerSnapshot[TBackendState: BaseModel](BaseModel):

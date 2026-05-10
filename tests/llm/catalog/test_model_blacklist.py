@@ -35,10 +35,14 @@ def test_google_irrelevant_models_are_blacklisted() -> None:
         "gemini-embedding-001",
         "veo-3.1-generate-preview",
     ):
-        assert blacklist_reason(provider="google", model=model) == expected_reason
+        assert (
+            blacklist_reason(provider="google", model=model) == expected_reason
+        )
 
 
-def test_google_gemini_20_flash_models_are_blacklisted_as_unavailable() -> None:
+def test_google_gemini_20_flash_models_are_blacklisted_as_unavailable() -> (
+    None
+):
     expected_reason = (
         "No longer available to new users via the Google API as of 2026-04-03. "
         "Use a newer Gemini Flash model instead."
@@ -49,7 +53,9 @@ def test_google_gemini_20_flash_models_are_blacklisted_as_unavailable() -> None:
         "gemini-2.0-flash-lite",
         "gemini-2.0-flash-lite-001",
     ):
-        assert blacklist_reason(provider="google", model=model) == expected_reason
+        assert (
+            blacklist_reason(provider="google", model=model) == expected_reason
+        )
 
 
 def test_glm_5_turbo_is_blacklisted() -> None:

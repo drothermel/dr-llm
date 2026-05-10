@@ -54,10 +54,16 @@ GOOGLE_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
         model_prefix="gemini-2.5-pro",
         capabilities=_GOOGLE_25_PRO_CAPS,
     ),
-    ReasoningCapabilityRule(model_prefix="gemini-3", capabilities=_GOOGLE_3_CAPS),
-    ReasoningCapabilityRule(model_prefix="gemma-4", capabilities=_GEMMA_4_CAPS),
+    ReasoningCapabilityRule(
+        model_prefix="gemini-3", capabilities=_GOOGLE_3_CAPS
+    ),
+    ReasoningCapabilityRule(
+        model_prefix="gemma-4", capabilities=_GEMMA_4_CAPS
+    ),
 )
 
 
-def reasoning_capabilities_for_google(model: str) -> ReasoningCapabilities | None:
+def reasoning_capabilities_for_google(
+    model: str,
+) -> ReasoningCapabilities | None:
     return resolve_capability_rules(GOOGLE_CAPABILITY_RULES, model)

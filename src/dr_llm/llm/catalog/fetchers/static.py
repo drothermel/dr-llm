@@ -7,7 +7,9 @@ from dr_llm.llm.providers.headless.codex import CodexHeadlessProvider
 from dr_llm.llm.providers.headless.claude import ClaudeHeadlessProvider
 from dr_llm.llm.providers.base import Provider
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
+from dr_llm.llm.providers.reasoning_capabilities import (
+    reasoning_capabilities_for_model,
+)
 
 CODEX_DOCS_URL = "https://developers.openai.com/codex/models"
 

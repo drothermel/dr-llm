@@ -43,6 +43,8 @@ def validate_reasoning(
     validator = _REASONING_VALIDATORS.get(provider)
     if validator is None:
         if reasoning is not None:
-            raise ValueError(f"reasoning is not supported for provider={provider!r}")
+            raise ValueError(
+                f"reasoning is not supported for provider={provider!r}"
+            )
         return
     validator(model=model, reasoning=reasoning)

@@ -20,7 +20,9 @@ class ClaimOrder(BaseModel):
     seed: int | None = None
 
 
-def _merge_filter(base: PoolKeyFilter | None, key: str, value: str) -> PoolKeyFilter:
+def _merge_filter(
+    base: PoolKeyFilter | None, key: str, value: str
+) -> PoolKeyFilter:
     clauses = dict(base.root) if base is not None else {}
     clauses[key] = PoolKeyEqClause(value=value)
     return PoolKeyFilter(clauses)
@@ -48,7 +50,9 @@ class RoundRobinClaimer:
             rng.shuffle(values)
         self._values = values
 
-    def claim(self, *, worker_id: str, lease_seconds: int) -> PoolSample | None:
+    def claim(
+        self, *, worker_id: str, lease_seconds: int
+    ) -> PoolSample | None:
         if not self._values:
             return None
 

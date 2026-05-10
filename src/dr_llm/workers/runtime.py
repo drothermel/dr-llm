@@ -46,7 +46,9 @@ def start_workers[TWorkItem, TResult, TBackendState: BaseModel](
             _worker_loop,
             backend=backend,
             process_fn=process_fn,
-            worker_id=_make_worker_id(prefix=config.thread_name_prefix, idx=idx),
+            worker_id=_make_worker_id(
+                prefix=config.thread_name_prefix, idx=idx
+            ),
             stop_event=stop_event,
             stats=stats,
             config=config,
@@ -94,7 +96,9 @@ def _worker_loop[TWorkItem, TResult, TBackendState: BaseModel](
 ) -> None:
     poll_interval_s = config.min_poll_interval_s
     while not stop_event.is_set():
-        item = backend.claim(worker_id=worker_id, lease_seconds=config.lease_seconds)
+        item = backend.claim(
+            worker_id=worker_id, lease_seconds=config.lease_seconds
+        )
         if item is None:
             next_interval = _handle_idle_poll(
                 stop_event=stop_event,
@@ -127,7 +131,9 @@ def _handle_idle_poll(
     stats.incr("idle_polls")
     if stop_event.wait(poll_interval_s):
         return None
-    return min(config.max_poll_interval_s, poll_interval_s * config.backoff_factor)
+    return min(
+        config.max_poll_interval_s, poll_interval_s * config.backoff_factor
+    )
 
 
 def _process_one_item[TWorkItem, TResult, TBackendState: BaseModel](
@@ -146,7 +152,11 @@ def _process_one_item[TWorkItem, TResult, TBackendState: BaseModel](
         backend.complete(item=item, result=result, worker_id=worker_id)
         stats.incr("completed")
     except Exception as exc:
-        logger.exception("Worker %s failed while processing work item", worker_id)
+        logger.exception(
+            "Worker %s failed while processing work item", worker_id
+        )
         stats.incr("process_errors")
-        action = backend.handle_process_error(item=item, worker_id=worker_id, exc=exc)
+        action = backend.handle_process_error(
+            item=item, worker_id=worker_id, exc=exc
+        )
         stats.incr(_ERROR_DECISION_STAT[action])

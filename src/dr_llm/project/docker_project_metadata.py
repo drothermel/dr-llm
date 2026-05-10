@@ -20,7 +20,14 @@ class ContainerStatus(StrEnum):
         """Map a Docker container status string to ContainerStatus."""
         if status == "running":
             return cls.RUNNING
-        if status in ("exited", "created", "paused", "restarting", "removing", "dead"):
+        if status in (
+            "exited",
+            "created",
+            "paused",
+            "restarting",
+            "removing",
+            "dead",
+        ):
             return cls.STOPPED
         return cls.UNKNOWN
 
@@ -34,7 +41,9 @@ class DockerProjectLabelMetadata(BaseModel):
     created_at_label_suffix: ClassVar[str] = ".created-at"
     name_label_key: ClassVar[str] = f"{label_prefix}{name_label_suffix}"
     port_label_key: ClassVar[str] = f"{label_prefix}{port_label_suffix}"
-    created_at_label_key: ClassVar[str] = f"{label_prefix}{created_at_label_suffix}"
+    created_at_label_key: ClassVar[str] = (
+        f"{label_prefix}{created_at_label_suffix}"
+    )
 
     name: str
     port: int | None = None

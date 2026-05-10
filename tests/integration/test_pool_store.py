@@ -57,7 +57,8 @@ def _drop_tables(dsn: str) -> None:
         conn.commit()
         try:
             conn.execute(
-                "DELETE FROM pool_catalog WHERE pool_name = %s", [_TEST_SCHEMA.name]
+                "DELETE FROM pool_catalog WHERE pool_name = %s",
+                [_TEST_SCHEMA.name],
             )
         except psycopg.errors.UndefinedTable:
             conn.rollback()
@@ -66,7 +67,9 @@ def _drop_tables(dsn: str) -> None:
 
 
 def _get_dsn() -> str | None:
-    return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv("DR_LLM_DATABASE_URL")
+    return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv(
+        "DR_LLM_DATABASE_URL"
+    )
 
 
 def _index_exists(dsn: str, *, index_name: str) -> bool:
@@ -90,7 +93,9 @@ def pool_store() -> Generator[PoolStore, None, None]:
     values to avoid cross-test interference."""
     dsn = _get_dsn()
     if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+        pytest.skip(
+            "Set DR_LLM_TEST_DATABASE_URL to run pool integration tests"
+        )
     runtime: DbRuntime | None = None
     try:
         _drop_tables(dsn)
@@ -139,7 +144,9 @@ def test_insert_auto_idx(pool_store: PoolStore) -> None:
     s2 = _sample(dim_a="auto", dim_b=10)
     assert pool_store.insert_sample(s1) is True
     assert pool_store.insert_sample(s2) is True
-    assert pool_store.cell_depth(key_values={"dim_a": "auto", "dim_b": 10}) == 2
+    assert (
+        pool_store.cell_depth(key_values={"dim_a": "auto", "dim_b": 10}) == 2
+    )
 
 
 @pytest.mark.integration
@@ -177,7 +184,9 @@ def test_bulk_insert(pool_store: PoolStore) -> None:
 def test_bootstrap_backfills_missing_unique_indexes() -> None:
     dsn = _get_dsn()
     if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+        pytest.skip(
+            "Set DR_LLM_TEST_DATABASE_URL to run pool integration tests"
+        )
 
     schema = PoolSchema(
         name=f"itest_idx_{uuid4().hex[:8]}",
@@ -212,7 +221,9 @@ def test_bootstrap_backfills_missing_unique_indexes() -> None:
         )
         with psycopg.connect(dsn) as conn:
             conn.execute(
-                sql.SQL("DROP INDEX IF EXISTS {}").format(sql.Identifier(index_name))
+                sql.SQL("DROP INDEX IF EXISTS {}").format(
+                    sql.Identifier(index_name)
+                )
             )
             conn.commit()
         assert _index_exists(dsn, index_name=index_name) is False
@@ -239,7 +250,9 @@ def test_bootstrap_backfills_missing_unique_indexes() -> None:
                         sql.Identifier("public", schema.table_name(table_type))
                     )
                 )
-            conn.execute("DELETE FROM pool_catalog WHERE pool_name = %s", [schema.name])
+            conn.execute(
+                "DELETE FROM pool_catalog WHERE pool_name = %s", [schema.name]
+            )
             conn.commit()
         runtime.close()
 
@@ -248,7 +261,9 @@ def test_bootstrap_backfills_missing_unique_indexes() -> None:
 def test_runtime_applies_statement_timeout_setting() -> None:
     dsn = _get_dsn()
     if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+        pytest.skip(
+            "Set DR_LLM_TEST_DATABASE_URL to run pool integration tests"
+        )
 
     runtime = DbRuntime(
         DbConfig(
@@ -292,7 +307,9 @@ def test_bulk_load_with_filter(pool_store: PoolStore) -> None:
             )
         )
 
-    filtered = pool_store.bulk_load(key_filter=_eq_filter(dim_a="bload", dim_b=99))
+    filtered = pool_store.bulk_load(
+        key_filter=_eq_filter(dim_a="bload", dim_b=99)
+    )
     assert len(filtered) == 3
     assert all(s.key_values["dim_a"] == "bload" for s in filtered)
     first_batch = next(s for s in filtered if s.run_id == "bulk-run-0")

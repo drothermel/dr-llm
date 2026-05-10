@@ -33,7 +33,9 @@ def project_create(
     """Create a new project with its own Postgres container and persistent volume."""
     project_info = create_project(CreateProjectRequest(project_name=name))
     typer.echo(
-        json.dumps(project_info.model_dump(mode="json", exclude_none=True), indent=2)
+        json.dumps(
+            project_info.model_dump(mode="json", exclude_none=True), indent=2
+        )
     )
 
 
@@ -46,7 +48,8 @@ def project_list() -> None:
         typer.echo("No projects found.")
         return
     port_values = [
-        str(project.port) if project.port is not None else "-" for project in projects
+        str(project.port) if project.port is not None else "-"
+        for project in projects
     ]
     name_w = max(len(project.name) for project in projects)
     port_w = max(len(port) for port in port_values)
@@ -54,7 +57,9 @@ def project_list() -> None:
     typer.echo(header)
     typer.echo("-" * len(header))
     for project, port in zip(projects, port_values, strict=True):
-        typer.echo(f"{project.name:<{name_w}}  {port:<{port_w}}  {project.status}")
+        typer.echo(
+            f"{project.name:<{name_w}}  {port:<{port_w}}  {project.status}"
+        )
 
 
 @project_app.command("start")
@@ -75,7 +80,9 @@ def project_stop(
     name: str = typer.Argument(..., help="Project name"),
 ) -> None:
     stop_project(name)
-    typer.secho(f"Project '{name}' stopped. Data is preserved.", fg=typer.colors.GREEN)
+    typer.secho(
+        f"Project '{name}' stopped. Data is preserved.", fg=typer.colors.GREEN
+    )
 
 
 @project_app.command("use")
@@ -130,7 +137,9 @@ def project_destroy(
 @handle_cli_errors(ProjectError, FileNotFoundError)
 def project_backup(
     name: str = typer.Argument(..., help="Project name"),
-    output_dir: Path | None = typer.Option(None, help="Custom backup directory."),
+    output_dir: Path | None = typer.Option(
+        None, help="Custom backup directory."
+    ),
 ) -> None:
     path = backup_project(name, output_dir)
     typer.secho(f"Backup saved to {path}", fg=typer.colors.GREEN)
@@ -140,7 +149,9 @@ def project_backup(
 @handle_cli_errors(ProjectError, FileNotFoundError)
 def project_restore(
     name: str = typer.Argument(..., help="Project name"),
-    backup_file: Path = typer.Argument(..., help="Path to backup file (.sql.gz)"),
+    backup_file: Path = typer.Argument(
+        ..., help="Path to backup file (.sql.gz)"
+    ),
 ) -> None:
     restore_project(name, backup_file)
     typer.secho(f"Restored '{name}' from {backup_file}", fg=typer.colors.GREEN)

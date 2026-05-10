@@ -12,7 +12,9 @@ from dr_llm.llm.catalog.fetchers.common import (
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.coercion import as_int
 from dr_llm.llm.providers.google.provider import GoogleProvider
-from dr_llm.llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
+from dr_llm.llm.providers.reasoning_capabilities import (
+    reasoning_capabilities_for_model,
+)
 
 
 def fetch_google_models(
@@ -25,7 +27,9 @@ def fetch_google_models(
     )
     endpoint = f"{provider.config.base_url.rstrip('/')}/models"
 
-    def process(item: dict[str, Any], now: datetime) -> ModelCatalogEntry | None:
+    def process(
+        item: dict[str, Any], now: datetime
+    ) -> ModelCatalogEntry | None:
         name_raw = str(item.get("name") or "").strip()
         if not name_raw:
             return None

@@ -19,7 +19,9 @@ def _supports_anthropic_effort(model: str) -> bool:
     )
 
 
-def supported_effort_levels_for_anthropic(model: str) -> tuple[EffortSpec, ...]:
+def supported_effort_levels_for_anthropic(
+    model: str,
+) -> tuple[EffortSpec, ...]:
     if not _supports_anthropic_effort(model):
         return ()
     levels = [EffortSpec.LOW, EffortSpec.MEDIUM, EffortSpec.HIGH]

@@ -56,7 +56,9 @@ class PoolReader:
         return cls(schema=schema, runtime=runtime, owns_runtime=False)
 
     @classmethod
-    def from_runtime(cls, runtime: DbRuntime, *, schema: PoolSchema) -> PoolReader:
+    def from_runtime(
+        cls, runtime: DbRuntime, *, schema: PoolSchema
+    ) -> PoolReader:
         """Construct a reader from an existing runtime and explicit schema.
 
         The returned reader does NOT take ownership of the runtime.
@@ -69,7 +71,9 @@ class PoolReader:
         key_filter: PoolKeyFilter | None = None,
         completion: CompletionFilter = "all",
     ) -> Iterator[PoolSample]:
-        return self._store.iter_samples(key_filter=key_filter, completion=completion)
+        return self._store.iter_samples(
+            key_filter=key_filter, completion=completion
+        )
 
     def samples_list(
         self,
@@ -77,9 +81,13 @@ class PoolReader:
         key_filter: PoolKeyFilter | None = None,
         completion: CompletionFilter = "all",
     ) -> list[PoolSample]:
-        return self._store.bulk_load(key_filter=key_filter, completion=completion)
+        return self._store.bulk_load(
+            key_filter=key_filter, completion=completion
+        )
 
-    def progress(self, *, key_filter: PoolKeyFilter | None = None) -> PoolProgress:
+    def progress(
+        self, *, key_filter: PoolKeyFilter | None = None
+    ) -> PoolProgress:
         return self._store.progress(key_filter=key_filter)
 
     def close(self) -> None:

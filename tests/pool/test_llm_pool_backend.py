@@ -76,14 +76,20 @@ class _FakeStore:
 
     def release_lease(self, *, sample_id: str, worker_id: str) -> bool:
         self.calls.append("release_lease")
-        self.release_calls.append({"sample_id": sample_id, "worker_id": worker_id})
+        self.release_calls.append(
+            {"sample_id": sample_id, "worker_id": worker_id}
+        )
         return self.release_result
 
-    def incomplete_count(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+    def incomplete_count(
+        self, *, key_filter: PoolKeyFilter | None = None
+    ) -> int:
         assert key_filter is None or isinstance(key_filter, PoolKeyFilter)
         return self.incomplete
 
-    def complete_count(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+    def complete_count(
+        self, *, key_filter: PoolKeyFilter | None = None
+    ) -> int:
         assert key_filter is None or isinstance(key_filter, PoolKeyFilter)
         return self.complete
 
@@ -100,7 +106,9 @@ def _response(**overrides: Any) -> LlmResponse:
     defaults: dict[str, Any] = {
         "text": "ok",
         "finish_reason": "stop",
-        "usage": TokenUsage(prompt_tokens=5, completion_tokens=3, total_tokens=8),
+        "usage": TokenUsage(
+            prompt_tokens=5, completion_tokens=3, total_tokens=8
+        ),
         "provider": "openai",
         "model": "gpt-4.1-mini",
         "mode": CallMode.api,
@@ -175,7 +183,9 @@ def test_backend_complete_writes_response_then_releases_lease() -> None:
             "lease_owner": "worker-1",
         }
     ]
-    assert store.release_calls == [{"sample_id": "sample-1", "worker_id": "worker-1"}]
+    assert store.release_calls == [
+        {"sample_id": "sample-1", "worker_id": "worker-1"}
+    ]
 
 
 def test_backend_retries_while_attempts_are_within_limit() -> None:
@@ -197,7 +207,9 @@ def test_backend_retries_while_attempts_are_within_limit() -> None:
 
     assert action == ErrorDecision.retry
     assert store.complete_calls == []
-    assert store.release_calls == [{"sample_id": "sample-1", "worker_id": "worker-1"}]
+    assert store.release_calls == [
+        {"sample_id": "sample-1", "worker_id": "worker-1"}
+    ]
 
 
 def test_backend_fails_when_retries_are_exhausted() -> None:
@@ -265,7 +277,9 @@ def test_reclaiming_same_sample_id_increments_attempt_counter() -> None:
     )
     second_claim = backend.claim(worker_id="worker-1", lease_seconds=30)
     assert second_claim is not None
-    backend.complete(item=second_claim, result=_response(), worker_id="worker-1")
+    backend.complete(
+        item=second_claim, result=_response(), worker_id="worker-1"
+    )
 
     assert store.complete_calls[-1]["attempt_count"] == 2
 

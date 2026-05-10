@@ -12,7 +12,10 @@ from dr_llm.sampling.db.names import (
 
 
 def test_claims_table_name() -> None:
-    assert claims_table_name("mypool", "sweep_01") == "pool_mypool_claims_sweep_01"
+    assert (
+        claims_table_name("mypool", "sweep_01")
+        == "pool_mypool_claims_sweep_01"
+    )
 
 
 def test_claims_tables_builds_table() -> None:

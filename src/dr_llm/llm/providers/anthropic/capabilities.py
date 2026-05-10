@@ -24,7 +24,8 @@ ANTHROPIC_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
         model_prefix="claude-opus-4-6", capabilities=_ANTHROPIC_OPUS_46_CAPS
     ),
     ReasoningCapabilityRule(
-        model_prefix="claude-sonnet-4-6", capabilities=_ANTHROPIC_SONNET_46_CAPS
+        model_prefix="claude-sonnet-4-6",
+        capabilities=_ANTHROPIC_SONNET_46_CAPS,
     ),
     ReasoningCapabilityRule(
         model_prefix="claude-opus-4-5", capabilities=_ANTHROPIC_OPUS_45_CAPS
@@ -50,5 +51,7 @@ ANTHROPIC_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
 )
 
 
-def reasoning_capabilities_for_anthropic(model: str) -> ReasoningCapabilities | None:
+def reasoning_capabilities_for_anthropic(
+    model: str,
+) -> ReasoningCapabilities | None:
     return resolve_capability_rules(ANTHROPIC_CAPABILITY_RULES, model)

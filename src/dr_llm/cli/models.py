@@ -62,7 +62,9 @@ def _emit_models_list(
         supports_reasoning=supports_reasoning,
         model_contains=model_contains,
     )
-    list_query = base_query.model_copy(update={"limit": limit, "offset": offset})
+    list_query = base_query.model_copy(
+        update={"limit": limit, "offset": offset}
+    )
     items = svc.list_models(list_query)
     grouped_blacklist = blacklisted_models(provider=provider)
     if json_output:
@@ -96,12 +98,17 @@ def _emit_models_list(
     common._render_blacklist(grouped_blacklist, provider)
     static_docs: dict[str, str] = {}
     for item in items:
-        if item.source_quality == "static" and item.provider not in static_docs:
+        if (
+            item.source_quality == "static"
+            and item.provider not in static_docs
+        ):
             static_docs[item.provider] = item.metadata.get("docs_url", "")
     for provider_name in sorted(static_docs):
         message = f"\nNote: {provider_name} models are from a static list and may be out of date."
         if static_docs[provider_name]:
-            message += f"\nSee {static_docs[provider_name]} for the latest models."
+            message += (
+                f"\nSee {static_docs[provider_name]} for the latest models."
+            )
         typer.echo(message, err=True)
 
 
@@ -137,11 +144,15 @@ def models_sync(
 
 @models_app.command("list")
 def models_list(
-    provider: str | None = typer.Option(None, help="Optional provider filter."),
+    provider: str | None = typer.Option(
+        None, help="Optional provider filter."
+    ),
     supports_reasoning: bool | None = typer.Option(
         None, help="Optional reasoning support filter."
     ),
-    model_contains: str | None = typer.Option(None, help="Substring model filter."),
+    model_contains: str | None = typer.Option(
+        None, help="Substring model filter."
+    ),
     limit: int = typer.Option(20),
     offset: int = typer.Option(0),
     json_output: bool = typer.Option(
@@ -166,11 +177,15 @@ def models_list(
 
 @models_app.command("sync-list")
 def models_sync_list(
-    provider: str | None = typer.Option(None, help="Optional provider filter."),
+    provider: str | None = typer.Option(
+        None, help="Optional provider filter."
+    ),
     supports_reasoning: bool | None = typer.Option(
         None, help="Optional reasoning support filter."
     ),
-    model_contains: str | None = typer.Option(None, help="Substring model filter."),
+    model_contains: str | None = typer.Option(
+        None, help="Substring model filter."
+    ),
     limit: int = typer.Option(20),
     offset: int = typer.Option(0),
     json_output: bool = typer.Option(
@@ -213,5 +228,7 @@ def models_show(
         )
         raise typer.Exit(code=1)
     common._emit(
-        item.model_dump(mode="json", exclude_none=True, exclude_computed_fields=True)
+        item.model_dump(
+            mode="json", exclude_none=True, exclude_computed_fields=True
+        )
     )

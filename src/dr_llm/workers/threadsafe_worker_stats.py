@@ -13,7 +13,9 @@ class ThreadsafeWorkerStats:
     def incr(self, key: WorkerStatKey, amount: int = 1) -> None:
         with self._lock:
             current: int = getattr(self._counts, key)
-            self._counts = self._counts.model_copy(update={key: current + amount})
+            self._counts = self._counts.model_copy(
+                update={key: current + amount}
+            )
 
     def snapshot(self) -> WorkerStatCounts:
         with self._lock:

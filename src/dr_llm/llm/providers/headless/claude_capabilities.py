@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.anthropic.effort import ANTHROPIC_EFFORT_SUPPORTED_MODELS
+from dr_llm.llm.providers.anthropic.effort import (
+    ANTHROPIC_EFFORT_SUPPORTED_MODELS,
+)
 from dr_llm.llm.providers.effort_types import FULL_EFFORT, EffortSpec
 from dr_llm.llm.providers.reasoning_capability_types import (
     ReasoningCapabilities,
@@ -9,10 +11,14 @@ from dr_llm.llm.providers.reasoning_capability_types import (
 )
 
 _CLAUDE_HEADLESS_CAPS = ReasoningCapabilities(mode="claude_cli_effort")
-_CLAUDE_HEADLESS_EFFORT_SUPPORTED_SET = frozenset(ANTHROPIC_EFFORT_SUPPORTED_MODELS)
+_CLAUDE_HEADLESS_EFFORT_SUPPORTED_SET = frozenset(
+    ANTHROPIC_EFFORT_SUPPORTED_MODELS
+)
 
 CLAUDE_HEADLESS_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
-    ReasoningCapabilityRule(model_prefix="claude-", capabilities=_CLAUDE_HEADLESS_CAPS),
+    ReasoningCapabilityRule(
+        model_prefix="claude-", capabilities=_CLAUDE_HEADLESS_CAPS
+    ),
 )
 
 
@@ -22,7 +28,9 @@ def reasoning_capabilities_for_claude_code(
     return resolve_capability_rules(CLAUDE_HEADLESS_CAPABILITY_RULES, model)
 
 
-def supported_effort_levels_for_claude_code(model: str) -> tuple[EffortSpec, ...]:
+def supported_effort_levels_for_claude_code(
+    model: str,
+) -> tuple[EffortSpec, ...]:
     # Claude Code reasoning capabilities are prefix-based via
     # `CLAUDE_HEADLESS_CAPABILITY_RULES`, but effort support is intentionally
     # narrower and limited to `_CLAUDE_HEADLESS_EFFORT_SUPPORTED_SET`.

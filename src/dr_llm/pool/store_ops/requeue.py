@@ -47,7 +47,9 @@ def requeue_errors(
         .values(values)
         .returning(samples_table.c[SampleColumn.SAMPLE_ID])
     )
-    partial_filter = partial_key_filter_clause(schema, samples_table, key_filter)
+    partial_filter = partial_key_filter_clause(
+        schema, samples_table, key_filter
+    )
     if partial_filter is not None:
         stmt = stmt.where(partial_filter)
 

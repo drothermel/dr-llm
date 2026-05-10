@@ -31,7 +31,10 @@ class PoolKeyFilter(RootModel[dict[str, PoolKeyClause]]):
     @classmethod
     def eq(cls, **key_values: object) -> PoolKeyFilter:
         return cls(
-            {key: PoolKeyEqClause(value=value) for key, value in key_values.items()}
+            {
+                key: PoolKeyEqClause(value=value)
+                for key, value in key_values.items()
+            }
         )
 
     @classmethod

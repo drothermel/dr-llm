@@ -64,7 +64,9 @@ class _FakeRepo:
     def count_models(self, *, query: object) -> int:
         return 0
 
-    def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
+    def get_model(
+        self, *, provider: str, model: str
+    ) -> ModelCatalogEntry | None:
         return None
 
 
@@ -76,7 +78,9 @@ def test_sync_writes_snapshots_and_replaces_models(
     repo = _FakeRepo()
     service = ModelCatalogService(registry=registry, repository=repo)
 
-    def fake_fetch(provider: Any) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+    def fake_fetch(
+        provider: Any,
+    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         return (
             [
                 ModelCatalogEntry(
@@ -109,7 +113,9 @@ def test_sync_records_failure_on_fetch_error(
     repo = _FakeRepo()
     service = ModelCatalogService(registry=registry, repository=repo)
 
-    def failing_fetch(provider: Any) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+    def failing_fetch(
+        provider: Any,
+    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         del provider
         raise RuntimeError("network timeout")
 
@@ -137,7 +143,9 @@ def test_sync_filters_blacklisted_models_before_replace(
     repo = _FakeRepo()
     service = ModelCatalogService(registry=registry, repository=repo)
 
-    def fake_fetch(provider: Any) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+    def fake_fetch(
+        provider: Any,
+    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         return (
             [
                 ModelCatalogEntry(
@@ -179,7 +187,9 @@ def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata(
     repo = _FakeRepo()
     service = ModelCatalogService(registry=registry, repository=repo)
 
-    def fake_fetch(provider: Any) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+    def fake_fetch(
+        provider: Any,
+    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         return (
             [
                 ModelCatalogEntry(
@@ -238,7 +248,9 @@ def test_sync_records_failure_when_replace_fails_without_success_snapshot(
     repo = _ReplaceFailsRepo()
     service = ModelCatalogService(registry=registry, repository=repo)
 
-    def fake_fetch(provider: Any) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+    def fake_fetch(
+        provider: Any,
+    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         return (
             [
                 ModelCatalogEntry(
@@ -259,7 +271,9 @@ def test_sync_records_failure_when_replace_fails_without_success_snapshot(
 
     assert len(results) == 1
     assert not results[0].success
-    assert "replace failed for dummy with 1 entries" in (results[0].error or "")
+    assert "replace failed for dummy with 1 entries" in (
+        results[0].error or ""
+    )
     assert repo.actions == ["replace", "snapshot"]
     assert repo.snapshots == [
         {

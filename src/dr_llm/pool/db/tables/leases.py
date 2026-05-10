@@ -22,7 +22,9 @@ class LeasesTableDef(BaseModel):
             Column(LeaseColumn.SAMPLE_ID, Text, primary_key=True),
             Column(LeaseColumn.WORKER_ID, Text, nullable=False),
             Column(
-                LeaseColumn.LEASE_EXPIRES_AT, TIMESTAMP(timezone=True), nullable=False
+                LeaseColumn.LEASE_EXPIRES_AT,
+                TIMESTAMP(timezone=True),
+                nullable=False,
             ),
         )
 

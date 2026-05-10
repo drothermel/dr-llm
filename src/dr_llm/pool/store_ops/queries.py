@@ -43,7 +43,11 @@ def incomplete_count(
     key_filter: PoolKeyFilter | None = None,
 ) -> int:
     return _completion_count(
-        runtime, schema, samples_table, is_complete=False, key_filter=key_filter
+        runtime,
+        schema,
+        samples_table,
+        is_complete=False,
+        key_filter=key_filter,
     )
 
 
@@ -72,8 +76,14 @@ def _completion_count(
         if is_complete
         else samples_table.c[SampleColumn.RESPONSE_JSON].is_(None)
     )
-    stmt = select(func.count()).select_from(samples_table).where(response_predicate)
-    partial_filter = partial_key_filter_clause(schema, samples_table, key_filter)
+    stmt = (
+        select(func.count())
+        .select_from(samples_table)
+        .where(response_predicate)
+    )
+    partial_filter = partial_key_filter_clause(
+        schema, samples_table, key_filter
+    )
     if partial_filter is not None:
         stmt = stmt.where(partial_filter)
     with runtime.connect() as conn:
@@ -95,7 +105,9 @@ def error_count(
             samples_table.c[SampleColumn.FINISH_REASON] == "error",
         )
     )
-    partial_filter = partial_key_filter_clause(schema, samples_table, key_filter)
+    partial_filter = partial_key_filter_clause(
+        schema, samples_table, key_filter
+    )
     if partial_filter is not None:
         stmt = stmt.where(partial_filter)
     with runtime.connect() as conn:
@@ -123,7 +135,9 @@ def leased_count(
             leases_table.c[LeaseColumn.LEASE_EXPIRES_AT] >= func.now(),
         )
     )
-    partial_filter = partial_key_filter_clause(schema, samples_table, key_filter)
+    partial_filter = partial_key_filter_clause(
+        schema, samples_table, key_filter
+    )
     if partial_filter is not None:
         stmt = stmt.where(partial_filter)
     with runtime.connect() as conn:
@@ -151,7 +165,9 @@ def progress(
         .label("error"),
     ).select_from(samples_table)
 
-    partial_filter = partial_key_filter_clause(schema, samples_table, key_filter)
+    partial_filter = partial_key_filter_clause(
+        schema, samples_table, key_filter
+    )
     if partial_filter is not None:
         stmt = stmt.where(partial_filter)
 
@@ -212,7 +228,11 @@ def bulk_load(
 ) -> list[PoolSample]:
     return list(
         iter_samples(
-            runtime, schema, tables, key_filter=key_filter, completion=completion
+            runtime,
+            schema,
+            tables,
+            key_filter=key_filter,
+            completion=completion,
         )
     )
 

@@ -75,7 +75,9 @@ def load_schema(runtime: DbRuntime, pool_name: str) -> PoolSchema | None:
     return PoolSchema(**row)
 
 
-def load_catalog_created_at(runtime: DbRuntime, pool_name: str) -> datetime | None:
+def load_catalog_created_at(
+    runtime: DbRuntime, pool_name: str
+) -> datetime | None:
     sa_metadata = MetaData()
     table = _catalog_table(sa_metadata)
     stmt = select(table.c.created_at).where(table.c.pool_name == pool_name)
@@ -95,7 +97,9 @@ def delete_catalog_entry(runtime: DbRuntime, pool_name: str) -> bool:
     sa_metadata = MetaData()
     table = _catalog_table(sa_metadata)
     stmt = (
-        delete(table).where(table.c.pool_name == pool_name).returning(table.c.pool_name)
+        delete(table)
+        .where(table.c.pool_name == pool_name)
+        .returning(table.c.pool_name)
     )
     with runtime.begin() as conn:
         return conn.execute(stmt).scalar_one_or_none() is not None

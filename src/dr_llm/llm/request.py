@@ -39,7 +39,9 @@ type ApiProviderName = Literal[
 ]
 type OpenAIProviderName = Literal["openai"]
 type KimiCodeProviderName = Literal["kimi-code"]
-type ApiBackedProviderName = OpenAIProviderName | ApiProviderName | KimiCodeProviderName
+type ApiBackedProviderName = (
+    OpenAIProviderName | ApiProviderName | KimiCodeProviderName
+)
 type HeadlessProviderName = Literal["codex", "claude-code"]
 
 

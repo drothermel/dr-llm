@@ -107,10 +107,15 @@ def test_fetch_models_for_provider_dispatches_openai_compat_subclasses(
         fake_fetch_openai_compat_models,
     )
 
-    assert fetch_models_for_provider(provider) == ([], {"source": "openai_compat"})
+    assert fetch_models_for_provider(provider) == (
+        [],
+        {"source": "openai_compat"},
+    )
 
 
-def test_fetch_models_for_provider_returns_unsupported_for_unknown_provider() -> None:
+def test_fetch_models_for_provider_returns_unsupported_for_unknown_provider() -> (
+    None
+):
     assert fetch_models_for_provider(_UnsupportedProvider()) == (
         [],
         {"source": "unsupported_provider_type"},

@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from dr_llm.logging.config import GenerationLogConfig
-from dr_llm.logging.events import GenerationLogEvent, get_generation_log_context
+from dr_llm.logging.events import (
+    GenerationLogEvent,
+    get_generation_log_context,
+)
 from dr_llm.logging.redaction import redact_payload
 
 
@@ -23,7 +26,9 @@ def _serialize(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str)
 
 
-def _truncation_envelope(payload: dict[str, Any], raw: bytes, max_bytes: int) -> str:
+def _truncation_envelope(
+    payload: dict[str, Any], raw: bytes, max_bytes: int
+) -> str:
     # Reserve half of max_bytes for the inlined event_prefix so the envelope's
     # constant header fields plus the prefix together still fit inside
     # max_bytes. Without this floor (see config.MIN_MAX_EVENT_BYTES) the
@@ -34,7 +39,9 @@ def _truncation_envelope(payload: dict[str, Any], raw: bytes, max_bytes: int) ->
             "max_event_bytes": max_bytes,
             "event_type": payload.get("event_type"),
             "stage": payload.get("stage"),
-            "event_prefix": raw[: max_bytes // 2].decode("utf-8", errors="ignore"),
+            "event_prefix": raw[: max_bytes // 2].decode(
+                "utf-8", errors="ignore"
+            ),
         },
         ensure_ascii=True,
         sort_keys=True,

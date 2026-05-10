@@ -84,7 +84,9 @@ class SamplingStore:
                 samples_table.c.created_at,
             )
             .where(
-                key_filter_clause(self._schema, samples_table, query.key_values),
+                key_filter_clause(
+                    self._schema, samples_table, query.key_values
+                ),
                 samples_table.c[SampleColumn.RESPONSE_JSON].is_not(None),
                 self._unclaimed_predicate(query.run_id, consumer_id),
             )
@@ -98,10 +100,16 @@ class SamplingStore:
         )
 
         claim_source = select(
-            func.cast(func.gen_random_uuid(), Text).label(ClaimColumn.CLAIM_ID),
+            func.cast(func.gen_random_uuid(), Text).label(
+                ClaimColumn.CLAIM_ID
+            ),
             literal(query.run_id, type_=Text).label(ClaimColumn.RUN_ID),
-            literal(query.request_id, type_=Text).label(ClaimColumn.REQUEST_ID),
-            literal(query.consumer_tag, type_=Text).label(ClaimColumn.CONSUMER_TAG),
+            literal(query.request_id, type_=Text).label(
+                ClaimColumn.REQUEST_ID
+            ),
+            literal(query.consumer_tag, type_=Text).label(
+                ClaimColumn.CONSUMER_TAG
+            ),
             locked.c.sample_id.label(ClaimColumn.SAMPLE_ID),
             (
                 func.row_number().over(
@@ -128,7 +136,10 @@ class SamplingStore:
                 claim_source,
             )
             .on_conflict_do_nothing(
-                index_elements=[claims_table.c.run_id, claims_table.c.sample_id]
+                index_elements=[
+                    claims_table.c.run_id,
+                    claims_table.c.sample_id,
+                ]
             )
             .returning(claims_table.c.sample_id)
             .cte("inserted")
@@ -145,7 +156,9 @@ class SamplingStore:
 
         with self._runtime.begin() as conn:
             rows = conn.execute(stmt).mappings().all()
-        samples = [self._pool_tables.sample_from_row(dict(row)) for row in rows]
+        samples = [
+            self._pool_tables.sample_from_row(dict(row)) for row in rows
+        ]
         return AcquireResult(samples=samples)
 
     def remaining(

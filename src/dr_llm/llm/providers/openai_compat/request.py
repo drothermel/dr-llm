@@ -9,11 +9,17 @@ from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.providers.api_config import resolve_api_key
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
-from dr_llm.llm.providers.openai_compat.reasoning import OpenAICompatReasoningConfig
+from dr_llm.llm.providers.openai_compat.reasoning import (
+    OpenAICompatReasoningConfig,
+)
 from dr_llm.llm.providers.openai_compat.thinking import (
     openai_uses_max_completion_tokens,
 )
-from dr_llm.llm.request import ApiBackedLlmRequest, ApiLlmRequest, OpenAILlmRequest
+from dr_llm.llm.request import (
+    ApiBackedLlmRequest,
+    ApiLlmRequest,
+    OpenAILlmRequest,
+)
 
 if TYPE_CHECKING:
     from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
@@ -35,7 +41,9 @@ class OpenAICompatRequest(BaseModel):
     api_key_env: str = Field(exclude=True)
     api_key: str = Field(exclude=True, repr=False)
     idempotency_key: str = Field(exclude=True)
-    warnings: list[ReasoningWarning] = Field(default_factory=list, exclude=True)
+    warnings: list[ReasoningWarning] = Field(
+        default_factory=list, exclude=True
+    )
 
     @classmethod
     def from_llm_request(
@@ -74,11 +82,14 @@ class OpenAICompatRequest(BaseModel):
     @staticmethod
     def _to_openai_messages(messages: list[Message]) -> list[dict[str, str]]:
         return [
-            {"role": message.role, "content": message.content} for message in messages
+            {"role": message.role, "content": message.content}
+            for message in messages
         ]
 
     @staticmethod
-    def _resolve_idempotency_key(*, request: ApiLlmRequest | OpenAILlmRequest) -> str:
+    def _resolve_idempotency_key(
+        *, request: ApiLlmRequest | OpenAILlmRequest
+    ) -> str:
         raw_idempotency_key = request.metadata.get("idempotency_key")
         if isinstance(raw_idempotency_key, str) and raw_idempotency_key:
             return raw_idempotency_key

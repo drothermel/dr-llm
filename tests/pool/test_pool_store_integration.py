@@ -22,7 +22,9 @@ pytestmark = pytest.mark.integration
 
 
 def _get_dsn() -> str | None:
-    return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv("DR_LLM_DATABASE_URL")
+    return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv(
+        "DR_LLM_DATABASE_URL"
+    )
 
 
 def _schema() -> PoolSchema:
@@ -59,7 +61,9 @@ def _drop_tables(dsn: str, schema: PoolSchema) -> None:
                     sql.Identifier("public", schema.table_name(table_type))
                 )
             )
-        conn.execute("DELETE FROM pool_catalog WHERE pool_name = %s", [schema.name])
+        conn.execute(
+            "DELETE FROM pool_catalog WHERE pool_name = %s", [schema.name]
+        )
         conn.commit()
 
 
@@ -83,7 +87,9 @@ def _lease_worker(dsn: str, schema: PoolSchema, sample_id: str) -> str | None:
     with psycopg.connect(dsn) as conn:
         row = conn.execute(
             sql.SQL("SELECT worker_id FROM {} WHERE sample_id = %s").format(
-                sql.Identifier("public", schema.table_name(PoolTableType.LEASES))
+                sql.Identifier(
+                    "public", schema.table_name(PoolTableType.LEASES)
+                )
             ),
             [sample_id],
         ).fetchone()
@@ -99,7 +105,11 @@ def _expire_lease(dsn: str, schema: PoolSchema, sample_id: str) -> None:
                 SET lease_expires_at = now() - interval '1 second'
                 WHERE sample_id = %s
                 """
-            ).format(sql.Identifier("public", schema.table_name(PoolTableType.LEASES))),
+            ).format(
+                sql.Identifier(
+                    "public", schema.table_name(PoolTableType.LEASES)
+                )
+            ),
             [sample_id],
         )
         conn.commit()
@@ -109,7 +119,9 @@ def _expire_lease(dsn: str, schema: PoolSchema, sample_id: str) -> None:
 def pool_store() -> Generator[PoolStore, None, None]:
     dsn = _get_dsn()
     if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+        pytest.skip(
+            "Set DR_LLM_TEST_DATABASE_URL to run pool integration tests"
+        )
 
     schema = _schema()
     runtime = DbRuntime(
@@ -134,7 +146,9 @@ def pool_store() -> Generator[PoolStore, None, None]:
         runtime.close()
 
 
-def test_ensure_schema_creates_tables_idempotently(pool_store: PoolStore) -> None:
+def test_ensure_schema_creates_tables_idempotently(
+    pool_store: PoolStore,
+) -> None:
     dsn = _get_dsn()
     assert dsn is not None
 
@@ -142,17 +156,21 @@ def test_ensure_schema_creates_tables_idempotently(pool_store: PoolStore) -> Non
     pool_store.ensure_schema()
 
     assert (
-        _table_exists(dsn, pool_store.schema.table_name(PoolTableType.SAMPLES)) is True
+        _table_exists(dsn, pool_store.schema.table_name(PoolTableType.SAMPLES))
+        is True
     )
     assert (
-        _table_exists(dsn, pool_store.schema.table_name(PoolTableType.LEASES)) is True
+        _table_exists(dsn, pool_store.schema.table_name(PoolTableType.LEASES))
+        is True
     )
 
 
 def test_insert_samples_and_complete_sample(pool_store: PoolStore) -> None:
     sample = _sample(dim_a="complete", dim_b=1, sample_id="complete-1")
     assert pool_store.insert_sample(sample) is True
-    [stored] = pool_store.bulk_load(key_filter=PoolKeyFilter.eq(dim_a="complete"))
+    [stored] = pool_store.bulk_load(
+        key_filter=PoolKeyFilter.eq(dim_a="complete")
+    )
     assert stored.is_complete is False
 
     assert (
@@ -174,7 +192,9 @@ def test_insert_samples_and_complete_sample(pool_store: PoolStore) -> None:
         is False
     )
 
-    [completed] = pool_store.bulk_load(key_filter=PoolKeyFilter.eq(dim_a="complete"))
+    [completed] = pool_store.bulk_load(
+        key_filter=PoolKeyFilter.eq(dim_a="complete")
+    )
     assert completed.is_complete is True
     assert completed.response == {"text": "done"}
     assert completed.finish_reason == "stop"
@@ -239,18 +259,24 @@ def test_claim_lease_skips_active_leases(pool_store: PoolStore) -> None:
     assert _lease_worker(dsn, pool_store.schema, first.sample_id) == "worker-a"
 
 
-def test_release_lease_makes_sample_claimable_again(pool_store: PoolStore) -> None:
+def test_release_lease_makes_sample_claimable_again(
+    pool_store: PoolStore,
+) -> None:
     sample = _sample(dim_a="release", sample_id="release-1")
     assert pool_store.insert_sample(sample) is True
     claimed = pool_store.claim_lease(worker_id="worker-a", lease_seconds=60)
     assert claimed is not None
 
     assert (
-        pool_store.release_lease(sample_id=claimed.sample_id, worker_id="wrong-worker")
+        pool_store.release_lease(
+            sample_id=claimed.sample_id, worker_id="wrong-worker"
+        )
         is False
     )
     assert (
-        pool_store.release_lease(sample_id=claimed.sample_id, worker_id="worker-a")
+        pool_store.release_lease(
+            sample_id=claimed.sample_id, worker_id="worker-a"
+        )
         is True
     )
     reclaimed = pool_store.claim_lease(worker_id="worker-b", lease_seconds=60)
@@ -287,7 +313,9 @@ def test_claim_lease_reclaims_expired_lease(pool_store: PoolStore) -> None:
 
     assert reclaimed is not None
     assert reclaimed.sample_id == claimed.sample_id
-    assert _lease_worker(dsn, pool_store.schema, claimed.sample_id) == "worker-b"
+    assert (
+        _lease_worker(dsn, pool_store.schema, claimed.sample_id) == "worker-b"
+    )
 
 
 def test_completion_counts(pool_store: PoolStore) -> None:
@@ -352,7 +380,9 @@ def test_auto_idx_insertion_allocates_sequential_indices(
     ]
     assert pool_store.insert_samples(samples).inserted == 3
 
-    rows = pool_store.bulk_load(key_filter=PoolKeyFilter.eq(dim_a="auto", dim_b=1))
+    rows = pool_store.bulk_load(
+        key_filter=PoolKeyFilter.eq(dim_a="auto", dim_b=1)
+    )
     assert sorted(row.sample_idx for row in rows) == [0, 1, 2]
 
 
@@ -411,7 +441,9 @@ def test_error_count_with_key_filter(pool_store: PoolStore) -> None:
 
     assert pool_store.error_count() == 2
     assert (
-        pool_store.error_count(key_filter=PoolKeyFilter.eq(dim_a="errcnt", dim_b=1))
+        pool_store.error_count(
+            key_filter=PoolKeyFilter.eq(dim_a="errcnt", dim_b=1)
+        )
         == 1
     )
 
@@ -460,7 +492,9 @@ def test_bulk_load_completion_filter(pool_store: PoolStore) -> None:
     kf = PoolKeyFilter.eq(dim_a="cf")
     assert len(pool_store.bulk_load(key_filter=kf, completion="all")) == 3
     assert len(pool_store.bulk_load(key_filter=kf, completion="complete")) == 2
-    assert len(pool_store.bulk_load(key_filter=kf, completion="incomplete")) == 1
+    assert (
+        len(pool_store.bulk_load(key_filter=kf, completion="incomplete")) == 1
+    )
     errors = pool_store.bulk_load(key_filter=kf, completion="error")
     assert len(errors) == 1
     assert errors[0].sample_id == "cf-2"
@@ -480,7 +514,9 @@ def test_iter_samples_completion_filter(pool_store: PoolStore) -> None:
     )
 
     kf = PoolKeyFilter.eq(dim_a="cfi")
-    incomplete = list(pool_store.iter_samples(key_filter=kf, completion="incomplete"))
+    incomplete = list(
+        pool_store.iter_samples(key_filter=kf, completion="incomplete")
+    )
     assert len(incomplete) == 1
     assert incomplete[0].sample_id == "cfi-2"
 
@@ -499,7 +535,9 @@ def test_update_incomplete_request_succeeds(pool_store: PoolStore) -> None:
     assert s.request == {"prompt": "new"}
 
 
-def test_update_incomplete_request_noop_for_complete(pool_store: PoolStore) -> None:
+def test_update_incomplete_request_noop_for_complete(
+    pool_store: PoolStore,
+) -> None:
     sample = _sample(dim_a="updc", dim_b=1, sample_id="updc-1")
     pool_store.insert_sample(sample)
     pool_store.complete_sample(
@@ -530,7 +568,9 @@ def test_update_incomplete_requests_batch(pool_store: PoolStore) -> None:
     assert count == 2
 
 
-def test_update_incomplete_request_with_metadata(pool_store: PoolStore) -> None:
+def test_update_incomplete_request_with_metadata(
+    pool_store: PoolStore,
+) -> None:
     sample = _sample(dim_a="updm", dim_b=1, sample_id="updm-1")
     pool_store.insert_sample(sample)
 
@@ -574,7 +614,9 @@ def test_catalog_list_pool_names(pool_store: PoolStore) -> None:
 # --- Requeue / reset tests ---
 
 
-def test_requeue_errors_clears_response_and_leases(pool_store: PoolStore) -> None:
+def test_requeue_errors_clears_response_and_leases(
+    pool_store: PoolStore,
+) -> None:
     sample = _sample(dim_a="rq", dim_b=1, sample_id="rq-1")
     pool_store.insert_sample(sample)
     pool_store.complete_sample(
@@ -612,10 +654,14 @@ def test_requeue_errors_respects_key_filter(pool_store: PoolStore) -> None:
         key_filter=PoolKeyFilter.eq(dim_a="rqf", dim_b=1)
     )
     assert requeued == 1
-    assert pool_store.error_count(key_filter=PoolKeyFilter.eq(dim_a="rqf")) == 1
+    assert (
+        pool_store.error_count(key_filter=PoolKeyFilter.eq(dim_a="rqf")) == 1
+    )
 
 
-def test_requeue_errors_skips_successful_completions(pool_store: PoolStore) -> None:
+def test_requeue_errors_skips_successful_completions(
+    pool_store: PoolStore,
+) -> None:
     sample = _sample(dim_a="rqs", dim_b=1, sample_id="rqs-1")
     pool_store.insert_sample(sample)
     pool_store.complete_sample(
@@ -625,7 +671,10 @@ def test_requeue_errors_skips_successful_completions(pool_store: PoolStore) -> N
         attempt_count=1,
     )
 
-    assert pool_store.requeue_errors(key_filter=PoolKeyFilter.eq(dim_a="rqs")) == 0
+    assert (
+        pool_store.requeue_errors(key_filter=PoolKeyFilter.eq(dim_a="rqs"))
+        == 0
+    )
 
 
 def test_reset_samples_by_id(pool_store: PoolStore) -> None:

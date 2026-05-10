@@ -48,7 +48,9 @@ class ClaimsTableDef(BaseModel):
         return [
             Index(
                 claims_index_name(
-                    IndexNamePrefix.UNIQUE, table.name, ClaimsIndexName.RUN_SAMPLE
+                    IndexNamePrefix.UNIQUE,
+                    table.name,
+                    ClaimsIndexName.RUN_SAMPLE,
                 ),
                 table.c[ClaimColumn.RUN_ID],
                 table.c[ClaimColumn.SAMPLE_ID],

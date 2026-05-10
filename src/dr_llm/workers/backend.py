@@ -17,9 +17,13 @@ type ProcessFn[TWorkItem, TResult] = Callable[[TWorkItem], TResult]
 
 
 class WorkerBackend[TWorkItem, TResult, TBackendState: BaseModel](Protocol):
-    def claim(self, *, worker_id: str, lease_seconds: int) -> TWorkItem | None: ...
+    def claim(
+        self, *, worker_id: str, lease_seconds: int
+    ) -> TWorkItem | None: ...
 
-    def complete(self, *, item: TWorkItem, result: TResult, worker_id: str) -> None: ...
+    def complete(
+        self, *, item: TWorkItem, result: TResult, worker_id: str
+    ) -> None: ...
 
     def handle_process_error(
         self,

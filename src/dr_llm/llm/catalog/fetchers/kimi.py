@@ -11,7 +11,9 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.kimi_code import KimiCodeProvider
-from dr_llm.llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
+from dr_llm.llm.providers.reasoning_capabilities import (
+    reasoning_capabilities_for_model,
+)
 
 
 KIMI_CATALOG_URL = "https://api.kimi.com/coding/v1/models"
@@ -27,7 +29,9 @@ def fetch_kimi_models(
         label="Kimi",
     )
 
-    def process(item: dict[str, Any], now: datetime) -> ModelCatalogEntry | None:
+    def process(
+        item: dict[str, Any], now: datetime
+    ) -> ModelCatalogEntry | None:
         model_id = str(item.get("id") or "").strip()
         if not model_id:
             return None

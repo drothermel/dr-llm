@@ -11,4 +11,6 @@ def sqlalchemy_dsn(dsn: str) -> str:
     base = url.drivername
     if base == "postgres":
         base = "postgresql"
-    return url.set(drivername=f"{base}+psycopg").render_as_string(hide_password=False)
+    return url.set(drivername=f"{base}+psycopg").render_as_string(
+        hide_password=False
+    )

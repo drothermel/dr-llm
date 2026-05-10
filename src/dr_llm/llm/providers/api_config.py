@@ -20,12 +20,16 @@ class APIProviderConfig(ProviderConfig):
     def _compute_api_env_requirements(self) -> Self:
         if not self.api_key and self.api_key_env not in self.required_env_vars:
             object.__setattr__(
-                self, "required_env_vars", [*self.required_env_vars, self.api_key_env]
+                self,
+                "required_env_vars",
+                [*self.required_env_vars, self.api_key_env],
             )
         return self
 
 
-def resolve_api_key(config: APIProviderConfig, *, label: str | None = None) -> str:
+def resolve_api_key(
+    config: APIProviderConfig, *, label: str | None = None
+) -> str:
     """Resolve a provider's API key from inline config or env, raising on miss."""
     key = config.api_key or os.getenv(config.api_key_env)
     if not key:

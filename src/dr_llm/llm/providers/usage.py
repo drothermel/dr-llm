@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    model_validator,
+)
 
 from dr_llm.llm.coercion import as_int, as_str, first_float, first_str
 
@@ -147,7 +153,10 @@ class CostInfo(BaseModel):
         prompt_cost = _find_float_value(usage, body_raw, "prompt_cost")
         completion_cost = _find_float_value(usage, body_raw, "completion_cost")
         reasoning_cost = _find_float_value(usage, body_raw, "reasoning_cost")
-        currency = _find_string_value(usage, body_raw, "currency") or _DEFAULT_CURRENCY
+        currency = (
+            _find_string_value(usage, body_raw, "currency")
+            or _DEFAULT_CURRENCY
+        )
 
         if (
             total_cost is None
@@ -174,7 +183,9 @@ def _find_float_value(
     *keys: str,
 ) -> float | None:
     """Look up the first float-coercible value across `usage` then `body_raw` for each key."""
-    candidates = [usage.get(key) for key in keys] + [body_raw.get(key) for key in keys]
+    candidates = [usage.get(key) for key in keys] + [
+        body_raw.get(key) for key in keys
+    ]
     return first_float(*candidates)
 
 
@@ -184,7 +195,9 @@ def _find_string_value(
     *keys: str,
 ) -> str | None:
     """Look up the first string-coercible value across `usage` then `body_raw` for each key."""
-    candidates = [usage.get(key) for key in keys] + [body_raw.get(key) for key in keys]
+    candidates = [usage.get(key) for key in keys] + [
+        body_raw.get(key) for key in keys
+    ]
     return first_str(*candidates)
 
 
@@ -252,7 +265,9 @@ def _extract_direct_reasoning(
     if reasoning_raw is None:
         reasoning_raw = message_raw.get("reasoning_content")
     reasoning_text = (
-        str(reasoning_raw) if isinstance(reasoning_raw, (str, int, float)) else None
+        str(reasoning_raw)
+        if isinstance(reasoning_raw, (str, int, float))
+        else None
     )
 
     reasoning_details_raw = message_raw.get("reasoning_details")

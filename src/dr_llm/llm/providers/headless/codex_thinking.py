@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.reasoning_capability_types import ReasoningCapabilities
+from dr_llm.llm.providers.reasoning_capability_types import (
+    ReasoningCapabilities,
+)
 from dr_llm.llm.providers.thinking_utils import matches_family
 
 _CODEX_CLI_EFFORT_CAPS = ReasoningCapabilities(mode="codex_cli_effort")
@@ -33,7 +35,9 @@ CODEX_OFF_THINKING_SUPPORTED_MODELS = [
 
 
 def codex_supports_configurable_thinking(model: str) -> bool:
-    return matches_family(normalized=model, families=CODEX_THINKING_SUPPORTED_MODELS)
+    return matches_family(
+        normalized=model, families=CODEX_THINKING_SUPPORTED_MODELS
+    )
 
 
 def codex_supports_minimal_thinking(model: str) -> bool:
@@ -50,7 +54,9 @@ def codex_supports_off_thinking(model: str) -> bool:
     )
 
 
-def reasoning_capabilities_for_codex(model: str) -> ReasoningCapabilities | None:
+def reasoning_capabilities_for_codex(
+    model: str,
+) -> ReasoningCapabilities | None:
     if codex_supports_configurable_thinking(model):
         return _CODEX_CLI_EFFORT_CAPS
     return None

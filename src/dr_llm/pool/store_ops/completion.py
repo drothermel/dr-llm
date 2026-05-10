@@ -23,7 +23,9 @@ def complete_sample(
     lease_owner: str | None = None,
 ) -> bool:
     if lease_owner is not None and leases_table is None:
-        raise ValueError("leases_table is required when lease_owner is provided")
+        raise ValueError(
+            "leases_table is required when lease_owner is provided"
+        )
 
     predicates = [
         samples_table.c[SampleColumn.SAMPLE_ID] == sample_id,

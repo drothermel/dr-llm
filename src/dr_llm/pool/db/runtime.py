@@ -39,7 +39,9 @@ class DbRuntime:
             sqlalchemy_dsn(self.config.dsn),
             poolclass=QueuePool,
             pool_size=self.config.min_pool_size,
-            max_overflow=max(0, self.config.max_pool_size - self.config.min_pool_size),
+            max_overflow=max(
+                0, self.config.max_pool_size - self.config.min_pool_size
+            ),
             pool_pre_ping=True,
             connect_args={"application_name": self.config.application_name},
         )
@@ -70,7 +72,12 @@ class DbRuntime:
                     last_exc = exc
                     if attempt >= retries:
                         break
-                    sleep(max(0.0, float(self.config.pool_open_retry_backoff_seconds)))
+                    sleep(
+                        max(
+                            0.0,
+                            float(self.config.pool_open_retry_backoff_seconds),
+                        )
+                    )
             raise TransientPersistenceError(
                 f"Failed to open connection pool after {retries} attempts: {last_exc}"
             ) from last_exc

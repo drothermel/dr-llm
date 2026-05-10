@@ -29,7 +29,14 @@ class HeadlessReasoningResult(Protocol):
 
 
 HEADLESS_DEFAULT_EMPTY_PROMPT = " "
-_DISALLOWED_HEADLESS_COMMANDS = {"sh", "bash", "zsh", "fish", "pwsh", "powershell"}
+_DISALLOWED_HEADLESS_COMMANDS = {
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "pwsh",
+    "powershell",
+}
 
 
 class HeadlessRequestPayload(BaseModel):
@@ -43,7 +50,9 @@ class HeadlessRequestPayload(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
-    def from_llm_request(cls, request: HeadlessLlmRequest) -> HeadlessRequestPayload:
+    def from_llm_request(
+        cls, request: HeadlessLlmRequest
+    ) -> HeadlessRequestPayload:
         return cls(
             provider=request.provider,
             model=request.model,
@@ -103,13 +112,17 @@ class ParsedHeadlessOutput(BaseModel):
                 prompt_tokens=raw_usage.get("prompt_tokens"),
                 completion_tokens=raw_usage.get("completion_tokens"),
                 total_tokens=raw_usage.get("total_tokens"),
-                reasoning_tokens=TokenUsage.extract_reasoning_tokens(raw_usage),
+                reasoning_tokens=TokenUsage.extract_reasoning_tokens(
+                    raw_usage
+                ),
             ),
             body=body,
             raw_json=raw_json or body,
         )
 
-    def to_llm_response(self, request: LlmRequest, *, latency_ms: int) -> LlmResponse:
+    def to_llm_response(
+        self, request: LlmRequest, *, latency_ms: int
+    ) -> LlmResponse:
         body = self.body or {}
         message_raw = (
             body.get("message")
@@ -129,7 +142,9 @@ class ParsedHeadlessOutput(BaseModel):
             raw_reasoning_details = body.get("reasoning_details")
             if isinstance(raw_reasoning_details, list):
                 reasoning_details = [
-                    item for item in raw_reasoning_details if isinstance(item, dict)
+                    item
+                    for item in raw_reasoning_details
+                    if isinstance(item, dict)
                 ]
         return LlmResponse(
             text=self.text,
@@ -166,7 +181,9 @@ def validate_headless_command(command: list[str]) -> None:
         raise HeadlessExecutionError("headless command must be non-empty")
     executable = command[0].strip()
     if not executable:
-        raise HeadlessExecutionError("headless command executable must be non-empty")
+        raise HeadlessExecutionError(
+            "headless command executable must be non-empty"
+        )
     command_name = os.path.basename(executable).lower()
     if command_name in _DISALLOWED_HEADLESS_COMMANDS:
         raise HeadlessExecutionError(
@@ -225,8 +242,12 @@ class BaseHeadlessProvider(Provider):
         del request, payload
         return {**os.environ, **self._config.env_overrides}
 
-    def reasoning_mapping(self, request: HeadlessLlmRequest) -> HeadlessReasoningResult:
-        raise NotImplementedError("subclasses must implement reasoning_mapping")
+    def reasoning_mapping(
+        self, request: HeadlessLlmRequest
+    ) -> HeadlessReasoningResult:
+        raise NotImplementedError(
+            "subclasses must implement reasoning_mapping"
+        )
 
     def parse_stdout(
         self,
@@ -242,9 +263,13 @@ class BaseHeadlessProvider(Provider):
         try:
             body = json.loads(stdout_clean)
         except json.JSONDecodeError:
-            return ParsedHeadlessOutput.text_response(text=stdout_clean, stderr=stderr)
+            return ParsedHeadlessOutput.text_response(
+                text=stdout_clean, stderr=stderr
+            )
         if not isinstance(body, dict):
-            return ParsedHeadlessOutput.text_response(text=stdout_clean, stderr=stderr)
+            return ParsedHeadlessOutput.text_response(
+                text=stdout_clean, stderr=stderr
+            )
         return ParsedHeadlessOutput.from_body(body=body, raw_json=body)
 
     def generate(self, request: LlmRequest) -> LlmResponse:
@@ -372,6 +397,11 @@ class BaseHeadlessProvider(Provider):
         ).to_llm_response(request, latency_ms=latency_ms)
         if reasoning_mapping.warnings:
             response = response.model_copy(
-                update={"warnings": [*response.warnings, *reasoning_mapping.warnings]}
+                update={
+                    "warnings": [
+                        *response.warnings,
+                        *reasoning_mapping.warnings,
+                    ]
+                }
             )
         return response

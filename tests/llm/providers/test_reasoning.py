@@ -6,14 +6,20 @@ from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
 from dr_llm.llm.providers.anthropic.reasoning import AnthropicReasoningConfig
 from dr_llm.llm.providers.anthropic.reasoning import KimiCodeReasoningConfig
 from dr_llm.llm.providers.anthropic.reasoning import MiniMaxReasoningConfig
-from dr_llm.llm.providers.anthropic.reasoning import validate_reasoning_for_kimi_code
-from dr_llm.llm.providers.anthropic.reasoning import validate_reasoning_for_minimax
+from dr_llm.llm.providers.anthropic.reasoning import (
+    validate_reasoning_for_kimi_code,
+)
+from dr_llm.llm.providers.anthropic.reasoning import (
+    validate_reasoning_for_minimax,
+)
 from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig
 from dr_llm.llm.providers.headless.reasoning import (
     ClaudeHeadlessReasoningConfig,
     CodexHeadlessReasoningConfig,
 )
-from dr_llm.llm.providers.openai_compat.reasoning import OpenAICompatReasoningConfig
+from dr_llm.llm.providers.openai_compat.reasoning import (
+    OpenAICompatReasoningConfig,
+)
 from dr_llm.llm.providers.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
@@ -181,9 +187,9 @@ def test_claude_headless_accepts_adaptive_and_na() -> None:
 
 
 def test_google_serializes_budget_family_controls() -> None:
-    assert GoogleReasoningConfig.from_base(ReasoningBudget(tokens=512)).payload == {
-        "thinkingBudget": 512
-    }
+    assert GoogleReasoningConfig.from_base(
+        ReasoningBudget(tokens=512)
+    ).payload == {"thinkingBudget": 512}
     assert GoogleReasoningConfig.from_base(
         GoogleReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
     ).payload == {"thinkingBudget": -1}
@@ -208,7 +214,9 @@ def test_google_serializes_level() -> None:
 def test_claude_headless_rejects_reasoning_config() -> None:
     with pytest.raises(HeadlessExecutionError):
         ClaudeHeadlessReasoningConfig.from_base(
-            AnthropicReasoning(thinking_level=ThinkingLevel.BUDGET, budget_tokens=1024)
+            AnthropicReasoning(
+                thinking_level=ThinkingLevel.BUDGET, budget_tokens=1024
+            )
         )
 
 

@@ -5,7 +5,13 @@ from collections.abc import Iterable
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+)
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -15,7 +21,11 @@ from dr_llm.pool.admin.discovery import (
     pool_name_has_token_match,
 )
 from dr_llm.pool.db import DbConfig, DbRuntime
-from dr_llm.pool.db.catalog import delete_catalog_entry, list_pool_names, load_schema
+from dr_llm.pool.db.catalog import (
+    delete_catalog_entry,
+    list_pool_names,
+    load_schema,
+)
 from dr_llm.pool.db.schema import _VALID_NAME_RE, pool_table_names
 from dr_llm.pool.pool_store import PoolStore
 
@@ -190,7 +200,9 @@ def assess_pool_deletion(request: DeletePoolRequest) -> PoolDeletionReadiness:
 
     runtime = DbRuntime(DbConfig(dsn=project.dsn))
     try:
-        existing_table_names = _existing_pool_table_names(runtime, request.pool_name)
+        existing_table_names = _existing_pool_table_names(
+            runtime, request.pool_name
+        )
         if not existing_table_names:
             violations.append(
                 PoolDeletionViolation(
@@ -210,7 +222,9 @@ def assess_pool_deletion(request: DeletePoolRequest) -> PoolDeletionReadiness:
                 violations=violations,
             )
 
-        in_progress_count = _count_in_progress_samples(runtime, request.pool_name)
+        in_progress_count = _count_in_progress_samples(
+            runtime, request.pool_name
+        )
         return PoolDeletionReadiness(
             request=request,
             project=project,
@@ -247,7 +261,9 @@ def delete_pool(request: DeletePoolRequest) -> PoolDeletionResult:
     runtime = DbRuntime(DbConfig(dsn=readiness.project.dsn))
     pre_delete_counts: dict[str, int] = {}
     try:
-        existing_table_names = _existing_pool_table_names(runtime, request.pool_name)
+        existing_table_names = _existing_pool_table_names(
+            runtime, request.pool_name
+        )
         missing_table_names = [
             table_name
             for table_name in target_table_names
@@ -255,7 +271,9 @@ def delete_pool(request: DeletePoolRequest) -> PoolDeletionResult:
         ]
         with runtime.begin() as conn:
             for table_name in existing_table_names:
-                pre_delete_counts[table_name] = _table_row_count(conn, table_name)
+                pre_delete_counts[table_name] = _table_row_count(
+                    conn, table_name
+                )
             for table_name in existing_table_names:
                 conn.execute(
                     text(
@@ -263,7 +281,9 @@ def delete_pool(request: DeletePoolRequest) -> PoolDeletionResult:
                     )
                 )
         delete_catalog_entry(runtime, request.pool_name)
-        remaining_table_names = _existing_pool_table_names(runtime, request.pool_name)
+        remaining_table_names = _existing_pool_table_names(
+            runtime, request.pool_name
+        )
         status = (
             PoolDeletionStatus.deleted
             if not remaining_table_names
@@ -352,13 +372,17 @@ def delete_pools_by_token(
         )
     pool_results = [
         delete_pool(
-            DeletePoolRequest(project_name=request.project_name, pool_name=pool_name)
+            DeletePoolRequest(
+                project_name=request.project_name, pool_name=pool_name
+            )
         )
         for pool_name in matched_pool_names
     ]
     if any(not result.success for result in pool_results):
         failed_pool_names = [
-            result.request.pool_name for result in pool_results if not result.success
+            result.request.pool_name
+            for result in pool_results
+            if not result.success
         ]
         return DeletePoolsByTokenResult(
             request=request,
@@ -368,7 +392,8 @@ def delete_pools_by_token(
             matched_pool_names=matched_pool_names,
             pool_results=pool_results,
             dry_run=False,
-            message="Failed to delete matching pools: " + ", ".join(failed_pool_names),
+            message="Failed to delete matching pools: "
+            + ", ".join(failed_pool_names),
         )
     return DeletePoolsByTokenResult(
         request=request,
@@ -418,7 +443,9 @@ def _validated_pool_table_names(pool_name: str) -> list[str]:
     return table_names
 
 
-def _existing_pool_table_names(runtime: DbRuntime, pool_name: str) -> list[str]:
+def _existing_pool_table_names(
+    runtime: DbRuntime, pool_name: str
+) -> list[str]:
     table_names = _validated_pool_table_names(pool_name)
     known_pool_names = _known_pool_names(runtime)
     known_pool_names.add(pool_name)
@@ -464,7 +491,9 @@ def _known_pool_names(runtime: DbRuntime) -> set[str]:
     try:
         pool_names.update(list_pool_names(runtime))
     except Exception:
-        logger.warning("Could not load pool names from pool_catalog", exc_info=True)
+        logger.warning(
+            "Could not load pool names from pool_catalog", exc_info=True
+        )
     return pool_names
 
 
@@ -476,7 +505,8 @@ def _claim_table_belongs_to_pool(
 ) -> bool:
     known_pool_name_set = set(known_pool_names)
     if any(
-        table_name in pool_table_names(candidate) for candidate in known_pool_name_set
+        table_name in pool_table_names(candidate)
+        for candidate in known_pool_name_set
     ):
         return False
     matching_pool_names = [

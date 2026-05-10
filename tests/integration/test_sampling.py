@@ -35,7 +35,9 @@ _POOL_TABLES = tuple(reversed(_TEST_SCHEMA.table_names()))
 
 
 def _get_dsn() -> str | None:
-    return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv("DR_LLM_DATABASE_URL")
+    return os.getenv("DR_LLM_TEST_DATABASE_URL") or os.getenv(
+        "DR_LLM_DATABASE_URL"
+    )
 
 
 def _drop_tables(dsn: str) -> None:
@@ -53,7 +55,8 @@ def _drop_tables(dsn: str) -> None:
             )
         )
         conn.execute(
-            "DELETE FROM pool_catalog WHERE pool_name = %s", [_TEST_SCHEMA.name]
+            "DELETE FROM pool_catalog WHERE pool_name = %s",
+            [_TEST_SCHEMA.name],
         )
         conn.commit()
 
@@ -74,7 +77,9 @@ def _sample(dim_a: str = "a", dim_b: int = 1, **kwargs: Any) -> PoolSample:
 def pool_store() -> Generator[PoolStore, None, None]:
     dsn = _get_dsn()
     if not dsn:
-        pytest.skip("Set DR_LLM_TEST_DATABASE_URL to run sampling integration tests")
+        pytest.skip(
+            "Set DR_LLM_TEST_DATABASE_URL to run sampling integration tests"
+        )
     runtime: DbRuntime | None = None
     try:
         _drop_tables(dsn)
@@ -91,7 +96,9 @@ def pool_store() -> Generator[PoolStore, None, None]:
     except (psycopg.OperationalError, TransientPersistenceError) as exc:
         if runtime is not None:
             runtime.close()
-        pytest.skip(f"Postgres unavailable for sampling integration tests: {exc}")
+        pytest.skip(
+            f"Postgres unavailable for sampling integration tests: {exc}"
+        )
     yield store
     dsn_val = _get_dsn()
     if dsn_val:
@@ -100,7 +107,9 @@ def pool_store() -> Generator[PoolStore, None, None]:
 
 
 @pytest.fixture(scope="module")
-def sampling_store(pool_store: PoolStore) -> Generator[SamplingStore, None, None]:
+def sampling_store(
+    pool_store: PoolStore,
+) -> Generator[SamplingStore, None, None]:
     store = SamplingStore.from_pool_store(pool_store)
     store.setup_consumer(_CONSUMER_ID)
     yield store
@@ -108,7 +117,9 @@ def sampling_store(pool_store: PoolStore) -> Generator[SamplingStore, None, None
 
 
 @pytest.mark.integration
-def test_acquire_basic(pool_store: PoolStore, sampling_store: SamplingStore) -> None:
+def test_acquire_basic(
+    pool_store: PoolStore, sampling_store: SamplingStore
+) -> None:
     pool_store.insert_sample(
         _sample(
             dim_a="acq",
@@ -122,7 +133,9 @@ def test_acquire_basic(pool_store: PoolStore, sampling_store: SamplingStore) -> 
     for i in range(1, 3):
         pool_store.insert_sample(_sample(dim_a="acq", dim_b=1, sample_idx=i))
 
-    q = AcquireQuery(run_id="run1", key_values={"dim_a": "acq", "dim_b": 1}, n=2)
+    q = AcquireQuery(
+        run_id="run1", key_values={"dim_a": "acq", "dim_b": 1}, n=2
+    )
     result = sampling_store.acquire(q, _CONSUMER_ID)
     assert result.claimed == 2
     assert len(result.samples) == 2
@@ -140,15 +153,21 @@ def test_acquire_no_replacement(
     for i in range(3):
         pool_store.insert_sample(_sample(dim_a="norep", dim_b=1, sample_idx=i))
 
-    q1 = AcquireQuery(run_id="run_nr", key_values={"dim_a": "norep", "dim_b": 1}, n=2)
+    q1 = AcquireQuery(
+        run_id="run_nr", key_values={"dim_a": "norep", "dim_b": 1}, n=2
+    )
     r1 = sampling_store.acquire(q1, _CONSUMER_ID)
     assert r1.claimed == 2
 
-    q2 = AcquireQuery(run_id="run_nr", key_values={"dim_a": "norep", "dim_b": 1}, n=2)
+    q2 = AcquireQuery(
+        run_id="run_nr", key_values={"dim_a": "norep", "dim_b": 1}, n=2
+    )
     r2 = sampling_store.acquire(q2, _CONSUMER_ID)
     assert r2.claimed == 1
 
-    q3 = AcquireQuery(run_id="run_nr", key_values={"dim_a": "norep", "dim_b": 1}, n=2)
+    q3 = AcquireQuery(
+        run_id="run_nr", key_values={"dim_a": "norep", "dim_b": 1}, n=2
+    )
     r3 = sampling_store.acquire(q3, _CONSUMER_ID)
     assert r3.claimed == 0
 
@@ -166,7 +185,9 @@ def test_acquire_skips_incomplete_samples(
             finish_reason=None,
         )
     )
-    pool_store.insert_sample(_sample(dim_a="incomplete", dim_b=1, sample_idx=1))
+    pool_store.insert_sample(
+        _sample(dim_a="incomplete", dim_b=1, sample_idx=1)
+    )
 
     q = AcquireQuery(
         run_id="run_incomplete",
@@ -180,7 +201,9 @@ def test_acquire_skips_incomplete_samples(
 
 
 @pytest.mark.integration
-def test_remaining(pool_store: PoolStore, sampling_store: SamplingStore) -> None:
+def test_remaining(
+    pool_store: PoolStore, sampling_store: SamplingStore
+) -> None:
     for i in range(3):
         pool_store.insert_sample(_sample(dim_a="rem", dim_b=1, sample_idx=i))
 
@@ -194,7 +217,9 @@ def test_remaining(pool_store: PoolStore, sampling_store: SamplingStore) -> None
     )
 
     sampling_store.acquire(
-        AcquireQuery(run_id="run_rem", key_values={"dim_a": "rem", "dim_b": 1}, n=1),
+        AcquireQuery(
+            run_id="run_rem", key_values={"dim_a": "rem", "dim_b": 1}, n=1
+        ),
         _CONSUMER_ID,
     )
     assert (
@@ -215,7 +240,9 @@ def test_service_acquire_or_generate(pool_store: PoolStore) -> None:
     try:
         service = PoolService(pool_store, sampling_store=svc_sampling)
 
-        def generator(key_values: dict[str, Any], deficit: int) -> list[PoolSample]:
+        def generator(
+            key_values: dict[str, Any], deficit: int
+        ) -> list[PoolSample]:
             return [
                 PoolSample(
                     key_values=key_values,
@@ -243,7 +270,9 @@ def test_service_acquire_or_generate(pool_store: PoolStore) -> None:
 
 
 @pytest.mark.integration
-def test_service_generator_error_wraps_as_topup_error(pool_store: PoolStore) -> None:
+def test_service_generator_error_wraps_as_topup_error(
+    pool_store: PoolStore,
+) -> None:
     svc_sampling = SamplingStore.from_pool_store(pool_store)
     svc_consumer = "svc_err_sweep"
     svc_sampling.setup_consumer(svc_consumer)

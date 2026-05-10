@@ -21,7 +21,9 @@ def register(app: typer.Typer) -> None:
 
 
 def query(
-    provider: str = typer.Option(..., help="Provider key registered in dr-llm."),
+    provider: str = typer.Option(
+        ..., help="Provider key registered in dr-llm."
+    ),
     model: str = typer.Option(..., help="Model identifier for the provider."),
     message: list[str] = typer.Option(
         None, "--message", help="User message. Repeatable."
@@ -46,11 +48,16 @@ def query(
         None,
         help='JSON reasoning config (e.g. {"kind":"budget","tokens":1024}).',
     ),
-    metadata_json: str | None = typer.Option(None, help="JSON object metadata."),
+    metadata_json: str | None = typer.Option(
+        None, help="JSON object metadata."
+    ),
 ) -> None:
     """Execute a single LLM query through the unified provider interface."""
     metadata = (
-        common._parse_json(metadata_json, arg_name="metadata_json", expected=dict) or {}
+        common._parse_json(
+            metadata_json, arg_name="metadata_json", expected=dict
+        )
+        or {}
     )
     reasoning_payload = common._parse_json(
         reasoning_json, arg_name="reasoning_json", expected=dict
@@ -132,6 +139,8 @@ def query(
                     )
                 },
             )
-        common._emit(response.model_dump(mode="json", exclude_computed_fields=True))
+        common._emit(
+            response.model_dump(mode="json", exclude_computed_fields=True)
+        )
     finally:
         registry.close()

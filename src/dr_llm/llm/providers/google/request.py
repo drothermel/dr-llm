@@ -49,7 +49,9 @@ class GoogleRequest(BaseModel):
     base_url: str = Field(exclude=True)
     api_key_env: str = Field(exclude=True)
     api_key: str = Field(exclude=True, repr=False)
-    warnings: list[ReasoningWarning] = Field(default_factory=list, exclude=True)
+    warnings: list[ReasoningWarning] = Field(
+        default_factory=list, exclude=True
+    )
 
     @classmethod
     def from_llm_request(
@@ -63,14 +65,18 @@ class GoogleRequest(BaseModel):
             )
         reasoning_mapping = GoogleReasoningConfig.from_base(request.reasoning)
         system = "\n".join(
-            message.content for message in request.messages if message.role == "system"
+            message.content
+            for message in request.messages
+            if message.role == "system"
         )
         return cls(
             provider=request.provider,
             model=request.model,
             contents=cls._to_google_contents(request.messages),
             systemInstruction=(
-                _GoogleSystemInstruction(parts=[_GoogleRequestPart(text=system)])
+                _GoogleSystemInstruction(
+                    parts=[_GoogleRequestPart(text=system)]
+                )
                 if system
                 else None
             ),
@@ -85,7 +91,9 @@ class GoogleRequest(BaseModel):
         )
 
     @staticmethod
-    def _to_google_contents(messages: list[Message]) -> list[_GoogleRequestContent]:
+    def _to_google_contents(
+        messages: list[Message],
+    ) -> list[_GoogleRequestContent]:
         contents: list[_GoogleRequestContent] = []
         for message in messages:
             if message.role == "system" or not message.content:
@@ -123,7 +131,9 @@ class GoogleRequest(BaseModel):
         reasoning_payload: dict[str, Any],
     ) -> _GoogleGenerationConfig | None:
         thinking_config = (
-            _GoogleThinkingConfig(**reasoning_payload) if reasoning_payload else None
+            _GoogleThinkingConfig(**reasoning_payload)
+            if reasoning_payload
+            else None
         )
         if (
             request.temperature is not None

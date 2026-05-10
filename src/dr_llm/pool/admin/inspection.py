@@ -42,15 +42,21 @@ def inspect_pool(request: PoolInspectionRequest) -> PoolInspection:
 
     project = maybe_get_project(request.project_name)
     if project is None:
-        raise ProjectNotFoundError(f"Project {request.project_name!r} not found")
+        raise ProjectNotFoundError(
+            f"Project {request.project_name!r} not found"
+        )
     return _inspect_pool_for_project(project, request.pool_name)
 
 
-def _inspect_pool_for_project(project: ProjectInfo, pool_name: str) -> PoolInspection:
+def _inspect_pool_for_project(
+    project: ProjectInfo, pool_name: str
+) -> PoolInspection:
     from dr_llm.project.errors import ProjectError
 
     if project.dsn is None:
-        raise ProjectError(f"Project {project.name!r} has no DSN; start it first.")
+        raise ProjectError(
+            f"Project {project.name!r} has no DSN; start it first."
+        )
 
     runtime = DbRuntime(DbConfig(dsn=project.dsn))
     try:

@@ -6,7 +6,13 @@ import re
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+)
 
 _PROJECT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -180,7 +186,9 @@ class ProjectInspectionSummary(BaseModel):
         inspection_detail = inspection.message or inspection_status
         if inspection.status == ProjectPoolInspectionStatus.discovered:
             pools = (
-                ", ".join(inspection.pool_names) if inspection.pool_names else "(none)"
+                ", ".join(inspection.pool_names)
+                if inspection.pool_names
+                else "(none)"
             )
         else:
             pools = "-"
@@ -189,7 +197,9 @@ class ProjectInspectionSummary(BaseModel):
             "status": str(self.project.status),
             "port": self.project.port,
             "dsn": self.project.dsn,
-            "project_created_at": self._format_datetime(self.project.created_at),
+            "project_created_at": self._format_datetime(
+                self.project.created_at
+            ),
             "inspected_at": self._format_datetime(inspection.inspected_at),
             "inspection_status": inspection_status,
             "inspection": inspection_detail,

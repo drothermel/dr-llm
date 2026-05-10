@@ -28,7 +28,9 @@ class ProviderConfig(BaseModel):
 
     def missing_env_vars(self) -> tuple[str, ...]:
         return tuple(
-            env_var for env_var in self.required_env_vars if not os.getenv(env_var)
+            env_var
+            for env_var in self.required_env_vars
+            if not os.getenv(env_var)
         )
 
     def missing_executables(self) -> tuple[str, ...]:

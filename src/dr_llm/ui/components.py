@@ -19,7 +19,9 @@ class AxisBadge(BaseModel):
         ("prompt", "border-amber-300 bg-amber-50 text-amber-900"),
         ("data", "border-emerald-300 bg-emerald-50 text-emerald-900"),
     ]
-    DEFAULT_CLASSES: ClassVar[str] = "border-slate-300 bg-slate-50 text-slate-900"
+    DEFAULT_CLASSES: ClassVar[str] = (
+        "border-slate-300 bg-slate-50 text-slate-900"
+    )
 
     label: str
 

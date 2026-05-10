@@ -51,7 +51,9 @@ def test_kimi_code_serializes_effort_and_adaptive_thinking() -> None:
 
 def test_kimi_code_serializes_budget_thinking() -> None:
     budget_captured, budget_client = make_http_client(_MOCK_RESPONSE)
-    budget_adapter = KimiCodeProvider(config=_kimi_test_config(), client=budget_client)
+    budget_adapter = KimiCodeProvider(
+        config=_kimi_test_config(), client=budget_client
+    )
     budget_request = make_request(
         provider=KIMI_CODE_PROVIDER_NAME,
         model="kimi-for-coding",
@@ -72,7 +74,9 @@ def test_kimi_code_serializes_budget_thinking() -> None:
 
 def test_kimi_code_serializes_disabled_thinking() -> None:
     off_captured, off_client = make_http_client(_MOCK_RESPONSE)
-    off_adapter = KimiCodeProvider(config=_kimi_test_config(), client=off_client)
+    off_adapter = KimiCodeProvider(
+        config=_kimi_test_config(), client=off_client
+    )
     off_request = make_request(
         provider=KIMI_CODE_PROVIDER_NAME,
         model="kimi-for-coding",

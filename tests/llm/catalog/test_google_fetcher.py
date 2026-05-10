@@ -23,7 +23,9 @@ def test_google_catalog_fetch_passes_api_key_via_header(
         captured["timeout_seconds"] = timeout_seconds
         return {"models": []}
 
-    monkeypatch.setattr("dr_llm.llm.catalog.fetchers.common.get_json", fake_get_json)
+    monkeypatch.setattr(
+        "dr_llm.llm.catalog.fetchers.common.get_json", fake_get_json
+    )
     provider = GoogleProvider(
         config=APIProviderConfig(
             name="google",
@@ -37,6 +39,9 @@ def test_google_catalog_fetch_passes_api_key_via_header(
 
     assert entries == []
     assert payload == {"models": []}
-    assert captured["url"] == "https://generativelanguage.googleapis.com/v1beta/models"
+    assert (
+        captured["url"]
+        == "https://generativelanguage.googleapis.com/v1beta/models"
+    )
     assert captured["headers"] == {"x-goog-api-key": "secret"}
     assert "?key=" not in captured["url"]

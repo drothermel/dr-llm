@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from dr_llm.pool.claim_strategy import ClaimOrder, RoundRobinClaimer, _merge_filter
+from dr_llm.pool.claim_strategy import (
+    ClaimOrder,
+    RoundRobinClaimer,
+    _merge_filter,
+)
 from dr_llm.pool.db.key_filter import PoolKeyEqClause, PoolKeyFilter
 from dr_llm.pool.pool_sample import PoolSample
 
@@ -19,7 +23,11 @@ def _make_sample(dim_a: str) -> PoolSample:
 
 def test_cycles_through_values() -> None:
     store = MagicMock()
-    samples = {"x": _make_sample("x"), "y": _make_sample("y"), "z": _make_sample("z")}
+    samples = {
+        "x": _make_sample("x"),
+        "y": _make_sample("y"),
+        "z": _make_sample("z"),
+    }
     store.claim_lease.side_effect = lambda **kw: samples.get(
         kw["key_filter"].root["dim_a"].value
     )

@@ -4,7 +4,11 @@ import pytest
 from pydantic import ValidationError
 
 from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.config import HeadlessLlmConfig, KimiCodeLlmConfig, parse_llm_config
+from dr_llm.llm.config import (
+    HeadlessLlmConfig,
+    KimiCodeLlmConfig,
+    parse_llm_config,
+)
 from dr_llm.llm.request import (
     HeadlessLlmRequest,
     KimiCodeLlmRequest,
@@ -314,7 +318,9 @@ def test_minimax_accepts_all_effort_levels() -> None:
         )
 
 
-def test_minimax_accepts_optional_max_tokens_and_explicit_na_reasoning() -> None:
+def test_minimax_accepts_optional_max_tokens_and_explicit_na_reasoning() -> (
+    None
+):
     LlmConfig(
         provider="minimax",
         model="MiniMax-M2.7",
@@ -343,7 +349,9 @@ def test_minimax_rejects_explicit_thinking_controls() -> None:
             provider="minimax",
             model="MiniMax-M2.7",
             effort=EffortSpec.LOW,
-            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+            reasoning=AnthropicReasoning(
+                thinking_level=ThinkingLevel.ADAPTIVE
+            ),
         )
     with pytest.raises(ValidationError):
         LlmConfig(
@@ -549,7 +557,9 @@ def test_openai_rejects_sampling_for_gpt5_when_reasoning_is_not_explicitly_off()
         )
 
 
-def test_openai_accepts_sampling_for_gpt52_and_gpt54_when_reasoning_is_off() -> None:
+def test_openai_accepts_sampling_for_gpt52_and_gpt54_when_reasoning_is_off() -> (
+    None
+):
     config = LlmConfig(
         provider="openai",
         model="gpt-5.4",
@@ -930,7 +940,9 @@ def test_anthropic_adaptive_requires_model_support_not_effort() -> None:
             provider="anthropic",
             model="claude-opus-4-5",
             max_tokens=256,
-            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+            reasoning=AnthropicReasoning(
+                thinking_level=ThinkingLevel.ADAPTIVE
+            ),
         )
 
 
@@ -974,5 +986,7 @@ def test_claude_code_haiku_accepts_na_only() -> None:
         LlmConfig(
             provider="claude-code",
             model="claude-haiku-4-5-20251001",
-            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
+            reasoning=AnthropicReasoning(
+                thinking_level=ThinkingLevel.ADAPTIVE
+            ),
         )

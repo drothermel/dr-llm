@@ -38,7 +38,9 @@ def _simple_schema() -> PoolSchema:
     )
 
 
-def _index_by_name(tables: PoolTables, table_type: PoolTableType) -> dict[str, Index]:
+def _index_by_name(
+    tables: PoolTables, table_type: PoolTableType
+) -> dict[str, Index]:
     return {str(index.name): index for index in tables[table_type].indexes}
 
 
@@ -51,7 +53,9 @@ def test_pool_tables_contains_new_tables_only() -> None:
     assert list(tables.tables) == list(PoolTableType)
     assert tables[PoolTableType.SAMPLES].name == "pool_test_samples"
     assert tables[PoolTableType.LEASES].name == "pool_test_leases"
-    assert tables.all_tables == [tables[table_type] for table_type in PoolTableType]
+    assert tables.all_tables == [
+        tables[table_type] for table_type in PoolTableType
+    ]
 
 
 def test_samples_table_def_builds_expected_columns() -> None:
@@ -94,7 +98,9 @@ def test_samples_table_def_builds_expected_indexes() -> None:
     indexes = _index_by_name(tables, PoolTableType.SAMPLES)
 
     cell_index = indexes[
-        pool_index_name(IndexNamePrefix.UNIQUE, samples.name, PoolIndexName.CELL)
+        pool_index_name(
+            IndexNamePrefix.UNIQUE, samples.name, PoolIndexName.CELL
+        )
     ]
     assert cell_index.unique is True
     assert _expression_names(cell_index) == [
@@ -104,7 +110,9 @@ def test_samples_table_def_builds_expected_indexes() -> None:
     ]
 
     key_index = indexes[
-        pool_index_name(IndexNamePrefix.STANDARD, samples.name, PoolIndexName.KEY)
+        pool_index_name(
+            IndexNamePrefix.STANDARD, samples.name, PoolIndexName.KEY
+        )
     ]
     assert _expression_names(key_index) == ["dim_a", "dim_b"]
 
@@ -140,18 +148,24 @@ def test_leases_table_def_builds_expected_columns() -> None:
 def test_pool_tables_key_columns_only_for_samples() -> None:
     tables = PoolTables(_simple_schema())
 
-    assert [column.name for column in tables.key_columns(PoolTableType.SAMPLES)] == [
+    assert [
+        column.name for column in tables.key_columns(PoolTableType.SAMPLES)
+    ] == [
         "dim_a",
         "dim_b",
     ]
-    with pytest.raises(ValueError, match="leases does not have pool key columns"):
+    with pytest.raises(
+        ValueError, match="leases does not have pool key columns"
+    ):
         tables.key_columns(PoolTableType.LEASES)
 
 
 def test_pool_tables_select_columns_are_table_type_specific() -> None:
     tables = PoolTables(_simple_schema())
 
-    assert [column.name for column in tables.select_columns(PoolTableType.SAMPLES)] == [
+    assert [
+        column.name for column in tables.select_columns(PoolTableType.SAMPLES)
+    ] == [
         "sample_id",
         "dim_a",
         "dim_b",
@@ -164,7 +178,9 @@ def test_pool_tables_select_columns_are_table_type_specific() -> None:
         "metadata_json",
         "created_at",
     ]
-    assert [column.name for column in tables.select_columns(PoolTableType.LEASES)] == [
+    assert [
+        column.name for column in tables.select_columns(PoolTableType.LEASES)
+    ] == [
         "sample_id",
         "worker_id",
         "lease_expires_at",
@@ -184,7 +200,9 @@ def test_pool_tables_registers_pydantic_table_defs() -> None:
         assert isinstance(table_def, BaseModel)
         assert isinstance(table_def, expected_type)
         assert table_def.table_type == table_type
-        assert tables[table_type].name == _simple_schema().table_name(table_type)
+        assert tables[table_type].name == _simple_schema().table_name(
+            table_type
+        )
 
 
 def test_schema_name_validation() -> None:
@@ -208,7 +226,9 @@ def test_schema_table_names() -> None:
         "samples",
         "leases",
     }
-    assert pool_table_name("test", PoolTableType.SAMPLES) == "pool_test_samples"
+    assert (
+        pool_table_name("test", PoolTableType.SAMPLES) == "pool_test_samples"
+    )
     assert pool_table_name("test", PoolTableType.LEASES) == "pool_test_leases"
     assert schema.table_name(PoolTableType.SAMPLES) == "pool_test_samples"
     assert schema.table_name(PoolTableType.LEASES) == "pool_test_leases"

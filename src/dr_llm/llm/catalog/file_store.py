@@ -13,7 +13,9 @@ from pydantic import ValidationError
 from dr_llm.errors import PersistenceError
 from dr_llm.llm.catalog.model_blacklist import filter_blacklisted_entries
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
-from dr_llm.llm.providers.openrouter.policy import apply_openrouter_model_policies
+from dr_llm.llm.providers.openrouter.policy import (
+    apply_openrouter_model_policies,
+)
 
 _DEFAULT_CACHE_DIR = Path.home() / ".dr_llm" / "catalog_cache"
 
@@ -47,7 +49,10 @@ class FileCatalogStore:
         entries: list[ModelCatalogEntry],
     ) -> int:
         self._cache_dir.mkdir(parents=True, exist_ok=True)
-        data = [entry.model_dump(mode="json", exclude_none=True) for entry in entries]
+        data = [
+            entry.model_dump(mode="json", exclude_none=True)
+            for entry in entries
+        ]
         target = self._cache_dir / f"{provider}.json"
         fd, tmp_path = tempfile.mkstemp(
             dir=self._cache_dir, suffix=".tmp", prefix=f"{provider}_"
@@ -61,18 +66,24 @@ class FileCatalogStore:
             raise
         return len(entries)
 
-    def list_models(self, *, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
+    def list_models(
+        self, *, query: ModelCatalogQuery
+    ) -> list[ModelCatalogEntry]:
         entries = self._filtered_entries(query)
         return entries[query.offset : query.offset + query.limit]
 
     def count_models(self, *, query: ModelCatalogQuery) -> int:
         return len(self._filtered_entries(query))
 
-    def _filtered_entries(self, query: ModelCatalogQuery) -> list[ModelCatalogEntry]:
+    def _filtered_entries(
+        self, query: ModelCatalogQuery
+    ) -> list[ModelCatalogEntry]:
         entries = self._load_all(provider_filter=query.provider)
         return self._apply_filters(entries, query)
 
-    def get_model(self, *, provider: str, model: str) -> ModelCatalogEntry | None:
+    def get_model(
+        self, *, provider: str, model: str
+    ) -> ModelCatalogEntry | None:
         entries = self._load_provider(provider)
         for entry in entries:
             if entry.model == model:
@@ -85,11 +96,18 @@ class FileCatalogStore:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             chunk = [ModelCatalogEntry(**item) for item in data]
-        except (OSError, json.JSONDecodeError, ValidationError, TypeError) as exc:
+        except (
+            OSError,
+            json.JSONDecodeError,
+            ValidationError,
+            TypeError,
+        ) as exc:
             raise CatalogCacheCorruptError(
                 f"corrupt catalog cache {path}: {exc}"
             ) from exc
-        return apply_openrouter_model_policies(filter_blacklisted_entries(chunk))
+        return apply_openrouter_model_policies(
+            filter_blacklisted_entries(chunk)
+        )
 
     def _load_provider(self, provider: str) -> list[ModelCatalogEntry]:
         path = self._cache_dir / f"{provider}.json"
@@ -122,7 +140,9 @@ class FileCatalogStore:
     ) -> list[ModelCatalogEntry]:
         if query.supports_reasoning is not None:
             entries = [
-                e for e in entries if e.supports_reasoning == query.supports_reasoning
+                e
+                for e in entries
+                if e.supports_reasoning == query.supports_reasoning
             ]
         if query.model_contains is not None:
             needle = query.model_contains.lower()

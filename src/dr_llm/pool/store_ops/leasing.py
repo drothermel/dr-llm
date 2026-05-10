@@ -43,7 +43,9 @@ def claim_lease(
             leases_table.c[LeaseColumn.LEASE_EXPIRES_AT] < func.now(),
         ),
     ]
-    partial_filter = partial_key_filter_clause(schema, samples_table, key_filter)
+    partial_filter = partial_key_filter_clause(
+        schema, samples_table, key_filter
+    )
     if partial_filter is not None:
         predicates.append(partial_filter)
 
@@ -62,7 +64,9 @@ def claim_lease(
         .with_for_update(of=samples_table, skip_locked=True)
         .cte("locked_sample")
     )
-    lease_expires_at = func.now() + func.make_interval(0, 0, 0, 0, 0, 0, lease_seconds)
+    lease_expires_at = func.now() + func.make_interval(
+        0, 0, 0, 0, 0, 0, lease_seconds
+    )
     leased = (
         pg_insert(leases_table)
         .from_select(
@@ -96,7 +100,9 @@ def claim_lease(
         )
         .values(
             {
-                SampleColumn.ATTEMPT_COUNT: samples_table.c[SampleColumn.ATTEMPT_COUNT]
+                SampleColumn.ATTEMPT_COUNT: samples_table.c[
+                    SampleColumn.ATTEMPT_COUNT
+                ]
                 + 1
             }
         )
