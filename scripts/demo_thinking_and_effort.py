@@ -21,9 +21,14 @@ from collections import defaultdict
 from typing import cast
 
 import typer
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
-from dr_llm.demo import DEMO_THINKING_SWEEP_MODELS, print_list
+from dr_llm.demo import (
+    ATTEMPT_SUMMARY_FIELDS,
+    DEMO_THINKING_SWEEP_MODELS,
+    DemoCounts,
+    print_list,
+)
 from dr_llm.llm import (
     ApiLlmRequest,
     SamplingApiProviderName,
@@ -58,13 +63,6 @@ SUPPORTED_PROVIDER_NAMES = ", ".join(
 PROMPT = "Reply with exactly OK."
 KIMI_CODE_MAX_TOKENS = 2048
 PHASES = ["models", "thinking", "effort"]
-
-
-class SummaryCounts(BaseModel):
-    attempted: int = 0
-    succeeded: int = 0
-    failed: int = 0
-    had_output_text: int = 0
 
 
 def budget_tokens_for_level(
@@ -202,12 +200,12 @@ def run_attempt(
     thinking_level: ThinkingLevel,
     effort: EffortSpec,
     explicit_reasoning: bool,
-    counts: dict[tuple[str, str], SummaryCounts],
+    counts: dict[tuple[str, str], DemoCounts],
     reasoning_override: ReasoningSpec | None = None,
 ) -> None:
     key = (provider, phase)
     summary = counts[key]
-    summary.attempted += 1
+    summary.increment("attempted")
     print(
         format_attempt(
             provider,
@@ -228,7 +226,7 @@ def run_attempt(
             reasoning_override=reasoning_override,
         )
     except (ValidationError, ValueError) as exc:
-        summary.failed += 1
+        summary.increment("failed")
         print(f"  validation failure: {exc}")
         return
 
@@ -236,13 +234,13 @@ def run_attempt(
     try:
         response = model_provider.generate(request)
     except Exception as exc:  # noqa: BLE001
-        summary.failed += 1
+        summary.increment("failed")
         print(f"  runtime failure: {type(exc).__name__}: {exc}")
         return
 
-    summary.succeeded += 1
+    summary.increment("succeeded")
     if response.text:
-        summary.had_output_text += 1
+        summary.increment("had_output_text")
     print(f"  text: {response.text!r}")
 
 
@@ -252,7 +250,7 @@ def requires_explicit_reasoning(provider: str) -> bool:
 
 def run_model_sweep(
     registry: ProviderRegistry,
-    counts: dict[tuple[str, str], SummaryCounts],
+    counts: dict[tuple[str, str], DemoCounts],
     providers: list[ProviderName],
 ) -> None:
     print("\n== models ==")
@@ -277,7 +275,7 @@ def run_model_sweep(
 
 def run_thinking_sweep(
     registry: ProviderRegistry,
-    counts: dict[tuple[str, str], SummaryCounts],
+    counts: dict[tuple[str, str], DemoCounts],
     providers: list[ProviderName],
 ) -> None:
     print("\n== thinking ==")
@@ -302,7 +300,7 @@ def run_thinking_sweep(
 
 def run_effort_sweep(
     registry: ProviderRegistry,
-    counts: dict[tuple[str, str], SummaryCounts],
+    counts: dict[tuple[str, str], DemoCounts],
     providers: list[ProviderName],
 ) -> None:
     print("\n== effort ==")
@@ -328,7 +326,7 @@ def run_effort_sweep(
 
 
 def print_summary(
-    counts: dict[tuple[str, str], SummaryCounts],
+    counts: dict[tuple[str, str], DemoCounts],
     providers: list[ProviderName],
 ) -> None:
     print("\n== summary ==")
@@ -336,13 +334,7 @@ def print_summary(
         print(provider)
         for phase in PHASES:
             summary = counts[(provider, phase)]
-            print(
-                "  "
-                f"{phase}: attempted={summary.attempted} "
-                f"succeeded={summary.succeeded} "
-                f"failed={summary.failed} "
-                f"had_output_text={summary.had_output_text}"
-            )
+            print(f"  {phase}: {summary.format_line(ATTEMPT_SUMMARY_FIELDS)}")
 
 
 @app.command()
@@ -376,7 +368,7 @@ def main(
     )
 
     ensure_required_providers_available(providers)
-    counts: dict[tuple[str, str], SummaryCounts] = defaultdict(SummaryCounts)
+    counts: dict[tuple[str, str], DemoCounts] = defaultdict(DemoCounts)
     registry = build_default_registry()
     try:
         run_model_sweep(registry, counts, providers)

@@ -5,12 +5,95 @@ from typing import Any
 
 import pytest
 import typer
+from pydantic import ValidationError
 
 import dr_llm.demo.cli_calls as demo_cli_calls
+import dr_llm.demo.counts as demo_counts
 import dr_llm.demo.projects as demo_projects
 import dr_llm.demo.requirements as demo_requirements
+from dr_llm.pool import LlmPoolBackendState
 from dr_llm.project import CreateProjectRequest, ProjectInfo
 from dr_llm.project.errors import DockerUnavailableError
+from dr_llm.workers import WorkerSnapshot, WorkerStatCounts
+
+
+def test_demo_counts_formats_default_attempt_summary() -> None:
+    counts = demo_counts.DemoCounts()
+
+    assert counts.format_line(demo_counts.ATTEMPT_SUMMARY_FIELDS) == (
+        "attempted=0 succeeded=0 failed=0 had_output_text=0"
+    )
+
+
+def test_demo_counts_increment_updates_selected_metric() -> None:
+    counts = demo_counts.DemoCounts()
+
+    counts.increment("attempted")
+    counts.increment("failed", by=2)
+
+    assert counts.attempted == 1
+    assert counts.failed == 2
+
+
+def test_demo_counts_increment_rejects_negative_result() -> None:
+    counts = demo_counts.DemoCounts()
+
+    with pytest.raises(ValidationError):
+        counts.increment("attempted", by=-1)
+
+
+def test_demo_counts_formats_unknown_pool_totals() -> None:
+    counts = demo_counts.DemoCounts(claimed=1, completed=2, failed=3)
+
+    assert counts.format_line(demo_counts.POOL_PROGRESS_FIELDS) == (
+        "claimed=1 completed=2 failed=3 incomplete=? complete=?"
+    )
+    assert counts.key(demo_counts.POOL_PROGRESS_FIELDS) == (
+        1,
+        2,
+        3,
+        None,
+        None,
+    )
+
+
+def test_demo_counts_changed_from_compares_selected_fields() -> None:
+    previous = demo_counts.DemoCounts(attempted=1, claimed=7)
+    unchanged = demo_counts.DemoCounts(attempted=1, claimed=8)
+    changed = demo_counts.DemoCounts(attempted=2, claimed=7)
+
+    fields = demo_counts.ATTEMPT_SUMMARY_FIELDS
+
+    assert previous.changed_from(None, fields)
+    assert not unchanged.changed_from(previous, fields)
+    assert changed.changed_from(previous, fields)
+
+
+def test_demo_counts_from_pool_snapshot_with_backend_state() -> None:
+    snapshot = WorkerSnapshot[LlmPoolBackendState](
+        worker_count=2,
+        counts=WorkerStatCounts(claimed=3, completed=2, failed=1),
+        backend_state=LlmPoolBackendState(incomplete=4, complete=5),
+    )
+
+    counts = demo_counts.DemoCounts.from_pool_snapshot(snapshot)
+
+    assert counts.format_line(demo_counts.POOL_PROGRESS_FIELDS) == (
+        "claimed=3 completed=2 failed=1 incomplete=4 complete=5"
+    )
+
+
+def test_demo_counts_from_pool_snapshot_without_backend_state() -> None:
+    snapshot = WorkerSnapshot[LlmPoolBackendState](
+        worker_count=2,
+        counts=WorkerStatCounts(claimed=3, completed=2, failed=1),
+    )
+
+    counts = demo_counts.DemoCounts.from_pool_snapshot(snapshot)
+
+    assert counts.format_line(demo_counts.POOL_PROGRESS_FIELDS) == (
+        "claimed=3 completed=2 failed=1 incomplete=? complete=?"
+    )
 
 
 def test_ensure_docker_available_calls_docker_version(

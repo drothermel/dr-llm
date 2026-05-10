@@ -30,6 +30,8 @@ from typing import Annotated
 import typer
 
 from dr_llm.demo import (
+    DemoCounts,
+    POOL_PROGRESS_FIELDS,
     demo_pool_fill_llm_configs,
     ensure_docker_available,
     require_demo_project_dsn,
@@ -75,51 +77,6 @@ PROMPTS: dict[str, list[Message]] = {
     ],
 }
 
-ProgressKey = tuple[int, int, int, int, int]
-_UNKNOWN = -1
-
-
-def _format_pool_progress_line(
-    snapshot: WorkerSnapshot[LlmPoolBackendState],
-) -> str:
-    worker_counts = snapshot.counts
-    backend_state = snapshot.backend_state
-    if backend_state is None:
-        incomplete: int | str = "?"
-        complete: int | str = "?"
-    else:
-        incomplete = backend_state.incomplete
-        complete = backend_state.complete
-    return (
-        f"claimed={worker_counts.claimed} "
-        f"completed={worker_counts.completed} "
-        f"failed={worker_counts.failed} "
-        f"incomplete={incomplete} "
-        f"complete={complete}"
-    )
-
-
-def _pool_progress_key(
-    snapshot: WorkerSnapshot[LlmPoolBackendState],
-) -> ProgressKey:
-    worker_counts = snapshot.counts
-    backend_state = snapshot.backend_state
-    if backend_state is None:
-        return (
-            worker_counts.claimed,
-            worker_counts.completed,
-            worker_counts.failed,
-            _UNKNOWN,
-            _UNKNOWN,
-        )
-    return (
-        worker_counts.claimed,
-        worker_counts.completed,
-        worker_counts.failed,
-        backend_state.incomplete,
-        backend_state.complete,
-    )
-
 
 def _pool_is_idle(snapshot: WorkerSnapshot[LlmPoolBackendState]) -> bool:
     backend_state = snapshot.backend_state
@@ -129,19 +86,20 @@ def _pool_is_idle(snapshot: WorkerSnapshot[LlmPoolBackendState]) -> bool:
 def _drain(
     controller: WorkerController[LlmPoolBackendState],
     *,
-    on_change: Callable[[WorkerSnapshot[LlmPoolBackendState]], None]
-    | None = None,
+    on_change: Callable[[DemoCounts], None] | None = None,
     poll_interval_s: float = 0.5,
 ) -> WorkerSnapshot[LlmPoolBackendState]:
     if poll_interval_s <= 0:
         raise ValueError(f"poll_interval_s must be > 0, got {poll_interval_s}")
-    last_key: ProgressKey | None = None
+    last_counts: DemoCounts | None = None
     while True:
         snapshot = controller.snapshot()
-        key = _pool_progress_key(snapshot)
-        if on_change is not None and key != last_key:
-            on_change(snapshot)
-            last_key = key
+        counts = DemoCounts.from_pool_snapshot(snapshot)
+        if on_change is not None and counts.changed_from(
+            last_counts, POOL_PROGRESS_FIELDS
+        ):
+            on_change(counts)
+            last_counts = counts
         if _pool_is_idle(snapshot):
             return snapshot
         time.sleep(poll_interval_s)
@@ -221,8 +179,8 @@ def _run_demo(
         try:
             _drain(
                 controller,
-                on_change=lambda snap: print(
-                    f"Progress: {_format_pool_progress_line(snap)}"
+                on_change=lambda counts: print(
+                    f"Progress: {counts.format_line(POOL_PROGRESS_FIELDS)}"
                 ),
             )
         finally:

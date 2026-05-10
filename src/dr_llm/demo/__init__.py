@@ -19,6 +19,12 @@ from dr_llm.demo.console import (
     step,
     warn,
 )
+from dr_llm.demo.counts import (
+    ATTEMPT_SUMMARY_FIELDS,
+    DemoCountField,
+    DemoCounts,
+    POOL_PROGRESS_FIELDS,
+)
 from dr_llm.demo.demo_models import (
     DEMO_QUERY_DEFAULT_MODELS,
     DEMO_THINKING_SWEEP_MODELS,
@@ -37,14 +43,18 @@ __all__ = [
     "command_hint",
     "create_demo_project",
     "DEFAULT_CLI_TIMEOUT",
+    "ATTEMPT_SUMMARY_FIELDS",
     "DEMO_QUERY_DEFAULT_MODELS",
     "DEMO_THINKING_SWEEP_MODELS",
+    "DemoCountField",
+    "DemoCounts",
     "demo_pool_fill_llm_configs",
     "ensure_docker_available",
     "fail",
     "header",
     "list_models_json",
     "ok",
+    "POOL_PROGRESS_FIELDS",
     "print_list",
     "query_json",
     "require_demo_project_dsn",
