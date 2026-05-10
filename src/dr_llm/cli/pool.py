@@ -12,6 +12,10 @@ from dr_llm.pool.admin.deletion import (
     delete_pool,
     delete_pools_by_token,
 )
+from dr_llm.pool.admin.migration import (
+    BackfillProjectCatalogRequest,
+    backfill_project_catalog,
+)
 from dr_llm.pool.errors import PoolError
 from dr_llm.project.errors import ProjectError
 
@@ -37,6 +41,33 @@ def pool_destroy(
 
     result = delete_pool(
         DeletePoolRequest(project_name=project_name, pool_name=pool_name)
+    )
+    typer.echo(
+        json.dumps(
+            result.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_computed_fields=True,
+            ),
+            indent=2,
+        )
+    )
+    if not result.success:
+        raise typer.Exit(1)
+
+
+@pool_app.command("backfill-catalog")
+@handle_cli_errors(ProjectError, PoolError, ValidationError)
+def pool_backfill_catalog(
+    project_name: str = typer.Argument(..., help="Project name"),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Report pools that would be backfilled without writing.",
+    ),
+) -> None:
+    result = backfill_project_catalog(
+        BackfillProjectCatalogRequest(project_name=project_name, dry_run=dry_run)
     )
     typer.echo(
         json.dumps(
