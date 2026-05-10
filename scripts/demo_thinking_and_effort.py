@@ -25,49 +25,33 @@ from pydantic import BaseModel, ValidationError
 
 from dr_llm.demo import DEMO_PROVIDER_MODELS
 from dr_llm.llm import (
-    AnthropicReasoning,
     ApiLlmRequest,
     ApiProviderName,
-    CodexReasoning,
     EffortSpec,
-    GoogleReasoning,
     HeadlessLlmRequest,
     HeadlessProviderName,
     KimiCodeLlmRequest,
     KimiCodeProviderName,
     LlmRequest,
     Message,
-    OpenAIReasoning,
     OpenRouterReasoning,
-    OpenRouterReasoningRequestStyle,
     ProviderRegistry,
     ReasoningSpec,
     ThinkingLevel,
     build_default_registry,
-    openrouter_model_policy,
+    default_effort,
+    default_reasoning,
+    default_thinking_level,
     reasoning_capabilities_for_model,
+    reasoning_for_thinking_level,
     supported_effort_levels,
-)
-from dr_llm.llm.providers.anthropic.thinking import (
-    ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
-)
-from dr_llm.llm.providers.headless.codex_thinking import (
-    codex_supports_configurable_thinking,
-    codex_supports_minimal_thinking,
-    codex_supports_off_thinking,
-)
-from dr_llm.llm.providers.openai_compat.thinking import (
-    openai_supports_configurable_thinking,
-    openai_supports_minimal_thinking,
-    openai_supports_off_thinking,
+    supported_thinking_levels,
 )
 
 app = typer.Typer()
 
 SUPPORTED_PROVIDER_NAMES = ", ".join(sorted(DEMO_PROVIDER_MODELS))
 PROMPT = "Reply with exactly OK."
-GOOGLE_FIXED_BUDGET = 1024
-KIMI_CODE_FIXED_BUDGET = 1024
 KIMI_CODE_MAX_TOKENS = 2048
 PHASES = ["models", "thinking", "effort"]
 
@@ -79,193 +63,17 @@ class SummaryCounts(BaseModel):
     had_output_text: int = 0
 
 
-def supported_thinking_levels(
-    provider: str, model: str
-) -> list[ThinkingLevel]:
-    if provider == "claude-code":
-        return _supported_claude_code_thinking_levels(model)
-    if provider == "minimax":
-        return [ThinkingLevel.NA]
-    if provider == "kimi-code":
-        return [
-            ThinkingLevel.OFF,
-            ThinkingLevel.ADAPTIVE,
-            ThinkingLevel.BUDGET,
-        ]
-    if provider == "openai":
-        return _supported_openai_thinking_levels(model)
-    if provider == "codex":
-        return _supported_codex_thinking_levels(model)
-    if provider == "google":
-        return _supported_google_thinking_levels(model)
-    if provider == "openrouter":
-        return [ThinkingLevel.NA]
-    raise ValueError(f"unsupported provider: {provider!r}")
-
-
-def _supported_openai_thinking_levels(model: str) -> list[ThinkingLevel]:
-    return _supported_openai_style_thinking_levels(
-        supports_configurable=openai_supports_configurable_thinking(model),
-        supports_off=openai_supports_off_thinking(model),
-        supports_minimal=openai_supports_minimal_thinking(model),
-    )
-
-
-def _supported_codex_thinking_levels(model: str) -> list[ThinkingLevel]:
-    levels = _supported_openai_style_thinking_levels(
-        supports_configurable=codex_supports_configurable_thinking(model),
-        supports_off=codex_supports_off_thinking(model),
-        supports_minimal=codex_supports_minimal_thinking(model),
-    )
-    if codex_supports_configurable_thinking(model):
-        levels.append(ThinkingLevel.XHIGH)
-    return levels
-
-
-def _supported_claude_code_thinking_levels(model: str) -> list[ThinkingLevel]:
-    if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
-        return [ThinkingLevel.ADAPTIVE]
-    return [ThinkingLevel.NA]
-
-
-def _supported_google_thinking_levels(model: str) -> list[ThinkingLevel]:
+def budget_tokens_for_level(
+    provider: str, model: str, thinking_level: ThinkingLevel
+) -> int | None:
+    if thinking_level != ThinkingLevel.BUDGET:
+        return None
     capabilities = reasoning_capabilities_for_model(
-        provider="google", model=model
+        provider=provider, model=model
     )
-    if capabilities is None or capabilities.mode == "unsupported":
-        return [ThinkingLevel.NA]
-    if capabilities.mode == "google_budget":
-        return [
-            ThinkingLevel.ADAPTIVE,
-            ThinkingLevel.OFF,
-            ThinkingLevel.BUDGET,
-        ]
-    if capabilities.mode == "google_level":
-        return [ThinkingLevel(level) for level in capabilities.google_levels]
-    raise ValueError(
-        f"unexpected google reasoning mode: {capabilities.mode!r}"
-    )
-
-
-def _supported_openai_style_thinking_levels(
-    *,
-    supports_configurable: bool,
-    supports_off: bool,
-    supports_minimal: bool,
-) -> list[ThinkingLevel]:
-    if not supports_configurable:
-        return [ThinkingLevel.NA]
-    levels: list[ThinkingLevel] = []
-    if supports_off:
-        levels.append(ThinkingLevel.OFF)
-    elif supports_minimal:
-        levels.append(ThinkingLevel.MINIMAL)
-    levels.extend(
-        [
-            ThinkingLevel.LOW,
-            ThinkingLevel.MEDIUM,
-            ThinkingLevel.HIGH,
-        ]
-    )
-    return levels
-
-
-def default_thinking_for_model(provider: str, model: str) -> ThinkingLevel:
-    if provider in {"minimax", "kimi-code"}:
-        return ThinkingLevel.NA
-    if provider == "claude-code":
-        levels = supported_thinking_levels(provider, model)
-        if ThinkingLevel.ADAPTIVE in levels:
-            return ThinkingLevel.ADAPTIVE
-        return ThinkingLevel.NA
-    levels = supported_thinking_levels(provider, model)
-    if ThinkingLevel.OFF in levels:
-        return ThinkingLevel.OFF
-    if ThinkingLevel.MINIMAL in levels:
-        return ThinkingLevel.MINIMAL
-    if ThinkingLevel.LOW in levels:
-        return ThinkingLevel.LOW
-    return ThinkingLevel.NA
-
-
-def default_effort_for_model(provider: str, model: str) -> EffortSpec:
-    levels = supported_effort_levels(provider=provider, model=model)
-    if levels:
-        return levels[0]
-    return EffortSpec.NA
-
-
-def default_reasoning_override(
-    provider: str,
-    model: str,
-) -> ReasoningSpec | None:
-    if provider != "openrouter":
+    if capabilities is None or capabilities.min_budget_tokens is None:
         return None
-    policy = openrouter_model_policy(model)
-    if policy is None:
-        raise ValueError(f"missing openrouter policy for model={model!r}")
-    if policy.request_style == OpenRouterReasoningRequestStyle.NONE:
-        return None
-    if policy.request_style == OpenRouterReasoningRequestStyle.ENABLED_FLAG:
-        if policy.supports_disable:
-            return OpenRouterReasoning(enabled=False)
-        return OpenRouterReasoning(enabled=True)
-    return OpenRouterReasoning(effort=policy.allowed_efforts[0])
-
-
-def reasoning_for_level(
-    provider: str,
-    thinking_level: ThinkingLevel,
-    *,
-    explicit: bool = False,
-) -> (
-    AnthropicReasoning
-    | OpenAIReasoning
-    | CodexReasoning
-    | GoogleReasoning
-    | None
-):
-    if provider == "claude-code":
-        if thinking_level == ThinkingLevel.ADAPTIVE:
-            return AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
-        if thinking_level == ThinkingLevel.NA and explicit:
-            return AnthropicReasoning(thinking_level=ThinkingLevel.NA)
-        if thinking_level == ThinkingLevel.NA:
-            return None
-        raise ValueError(
-            f"unsupported claude-code thinking level: {thinking_level!r}"
-        )
-    if provider == "minimax":
-        if thinking_level == ThinkingLevel.NA and explicit:
-            return AnthropicReasoning(thinking_level=ThinkingLevel.NA)
-        if thinking_level == ThinkingLevel.NA:
-            return None
-        raise ValueError(
-            f"unsupported minimax thinking level: {thinking_level!r}"
-        )
-    if provider == "kimi-code":
-        if thinking_level == ThinkingLevel.NA:
-            return None
-        if thinking_level == ThinkingLevel.BUDGET:
-            return AnthropicReasoning(
-                thinking_level=thinking_level,
-                budget_tokens=KIMI_CODE_FIXED_BUDGET,
-            )
-        return AnthropicReasoning(thinking_level=thinking_level)
-    if thinking_level == ThinkingLevel.NA:
-        return None
-    if provider == "openai":
-        return OpenAIReasoning(thinking_level=thinking_level)
-    if provider == "codex":
-        return CodexReasoning(thinking_level=thinking_level)
-    if provider == "google":
-        if thinking_level == ThinkingLevel.BUDGET:
-            return GoogleReasoning(
-                thinking_level=thinking_level,
-                budget_tokens=GOOGLE_FIXED_BUDGET,
-            )
-        return GoogleReasoning(thinking_level=thinking_level)
-    raise ValueError(f"unsupported provider: {provider!r}")
+    return capabilities.min_budget_tokens
 
 
 def format_attempt(
@@ -288,15 +96,11 @@ def format_attempt(
                 detail += " | reasoning=none"
         return detail
     detail = f"{provider} | {model} | thinking={thinking_level.name}"
-    if provider == "google" and thinking_level == ThinkingLevel.BUDGET:
+    budget_tokens = budget_tokens_for_level(provider, model, thinking_level)
+    if budget_tokens is not None:
         detail = (
             f"{provider} | {model} | "
-            f"thinking={thinking_level.name}({GOOGLE_FIXED_BUDGET})"
-        )
-    if provider == "kimi-code" and thinking_level == ThinkingLevel.BUDGET:
-        detail = (
-            f"{provider} | {model} | "
-            f"thinking={thinking_level.name}({KIMI_CODE_FIXED_BUDGET})"
+            f"thinking={thinking_level.name}({budget_tokens})"
         )
     if effort != EffortSpec.NA:
         detail += f" | effort={effort.name}"
@@ -347,10 +151,12 @@ def make_request(
     reasoning_override: ReasoningSpec | None = None,
 ) -> LlmRequest:
     max_tokens = KIMI_CODE_MAX_TOKENS if provider == "kimi-code" else None
-    reasoning = reasoning_override or reasoning_for_level(
-        provider,
-        thinking_level,
-        explicit=explicit_reasoning,
+    reasoning = reasoning_override or reasoning_for_thinking_level(
+        provider=provider,
+        model=model,
+        thinking_level=thinking_level,
+        budget_tokens=budget_tokens_for_level(provider, model, thinking_level),
+        explicit_na=explicit_reasoning,
     )
     if provider in {"codex", "claude-code"}:
         return HeadlessLlmRequest(
@@ -449,11 +255,15 @@ def run_model_sweep(
                 provider=provider,
                 model=model,
                 phase="models",
-                thinking_level=default_thinking_for_model(provider, model),
-                effort=default_effort_for_model(provider, model),
+                thinking_level=default_thinking_level(
+                    provider=provider, model=model
+                ),
+                effort=default_effort(provider=provider, model=model),
                 explicit_reasoning=requires_explicit_reasoning(provider),
                 counts=counts,
-                reasoning_override=default_reasoning_override(provider, model),
+                reasoning_override=default_reasoning(
+                    provider=provider, model=model
+                ),
             )
 
 
@@ -467,14 +277,16 @@ def run_thinking_sweep(
         if provider == "openrouter":
             continue
         for model in DEMO_PROVIDER_MODELS[provider]:
-            for thinking_level in supported_thinking_levels(provider, model):
+            for thinking_level in supported_thinking_levels(
+                provider=provider, model=model
+            ):
                 run_attempt(
                     registry=registry,
                     provider=provider,
                     model=model,
                     phase="thinking",
                     thinking_level=thinking_level,
-                    effort=default_effort_for_model(provider, model),
+                    effort=default_effort(provider=provider, model=model),
                     explicit_reasoning=True,
                     counts=counts,
                 )
@@ -498,7 +310,9 @@ def run_effort_sweep(
                     provider=provider,
                     model=model,
                     phase="effort",
-                    thinking_level=default_thinking_for_model(provider, model),
+                    thinking_level=default_thinking_level(
+                        provider=provider, model=model
+                    ),
                     effort=effort,
                     explicit_reasoning=requires_explicit_reasoning(provider),
                     counts=counts,

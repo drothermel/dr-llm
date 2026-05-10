@@ -40,6 +40,15 @@ from dr_llm.llm.providers.reasoning import (
 from dr_llm.llm.providers.reasoning_capabilities import (
     reasoning_capabilities_for_model,
 )
+from dr_llm.llm.providers.reasoning_controls import (
+    ReasoningControls,
+    default_effort,
+    default_reasoning,
+    default_thinking_level,
+    reasoning_controls_for_model,
+    reasoning_for_thinking_level,
+    supported_thinking_levels,
+)
 from dr_llm.llm.providers.registry import (
     ProviderRegistry,
     build_default_registry,
@@ -95,16 +104,23 @@ __all__ = [
     "ProviderConfig",
     "ProviderRegistry",
     "ReasoningBudget",
+    "ReasoningControls",
     "ReasoningSpec",
     "ReasoningWarning",
     "ThinkingLevel",
     "TokenUsage",
     "build_default_registry",
+    "default_effort",
+    "default_reasoning",
+    "default_thinking_level",
     "openrouter_allowed_models",
     "openrouter_model_policy",
     "parse_llm_config",
     "parse_llm_request",
     "parse_reasoning_spec",
     "reasoning_capabilities_for_model",
+    "reasoning_controls_for_model",
+    "reasoning_for_thinking_level",
     "supported_effort_levels",
+    "supported_thinking_levels",
 ]

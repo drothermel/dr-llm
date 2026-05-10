@@ -46,7 +46,13 @@ from dr_llm.demo import (
     step,
     warn,
 )
-from dr_llm.llm import ProviderAvailabilityStatus, build_default_registry
+from dr_llm.llm import (
+    EffortSpec,
+    ProviderAvailabilityStatus,
+    build_default_registry,
+    default_effort,
+    default_reasoning,
+)
 from dr_llm.pool import (
     DbConfig,
     DbRuntime,
@@ -81,41 +87,6 @@ DEFAULT_MODELS: dict[str, str] = {
     "claude-code": "claude-sonnet-4-6",
     "codex": "gpt-5.4-mini",
     "kimi-code": "kimi-for-coding",
-}
-
-# Per-provider extra CLI args needed to satisfy reasoning/effort validation.
-# Reasoning and effort requirements vary by provider/model on this branch;
-# we send the minimum valid config so the demo can exercise every provider
-# end to end without picking reasoning-tuned model variants.
-PROVIDER_EXTRA_ARGS: dict[str, list[str]] = {
-    "google": [
-        "--reasoning-json",
-        '{"kind":"google","thinking_level":"budget","budget_tokens":1}',
-    ],
-    "glm": ["--reasoning-json", '{"kind":"glm","thinking_level":"off"}'],
-    "codex": ["--reasoning-json", '{"kind":"codex","thinking_level":"low"}'],
-    "openrouter": [
-        "--reasoning-json",
-        '{"kind":"openrouter","enabled":false}',
-    ],
-    "minimax": [
-        "--reasoning-json",
-        '{"kind":"anthropic","thinking_level":"na"}',
-        "--effort",
-        "low",
-    ],
-    "kimi-code": [
-        "--reasoning-json",
-        '{"kind":"anthropic","thinking_level":"adaptive"}',
-        "--effort",
-        "low",
-    ],
-    "claude-code": [
-        "--reasoning-json",
-        '{"kind":"anthropic","thinking_level":"adaptive"}',
-        "--effort",
-        "low",
-    ],
 }
 
 POOL_SCHEMA = PoolSchema(
@@ -208,6 +179,22 @@ def show_model(provider: str, model: str) -> dict[str, Any]:
 # --- Query ---
 
 
+def provider_extra_args(provider: str, model: str) -> list[str]:
+    args: list[str] = []
+    reasoning = default_reasoning(provider=provider, model=model)
+    if reasoning is not None:
+        args.extend(
+            [
+                "--reasoning-json",
+                reasoning.model_dump_json(exclude_none=True),
+            ]
+        )
+    effort = default_effort(provider=provider, model=model)
+    if effort != EffortSpec.NA:
+        args.extend(["--effort", effort.value])
+    return args
+
+
 def query_provider(
     provider: str, model: str, prompt: str, *, is_headless: bool = False
 ) -> dict[str, Any]:
@@ -224,7 +211,7 @@ def query_provider(
     ]
     if provider in {"anthropic", "kimi-code", "minimax"}:
         args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
-    args.extend(PROVIDER_EXTRA_ARGS.get(provider, []))
+    args.extend(provider_extra_args(provider, model))
     return run_cli(
         *args,
         timeout=timeout,

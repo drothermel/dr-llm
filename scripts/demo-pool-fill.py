@@ -33,13 +33,11 @@ import typer
 
 from dr_llm.llm import (
     ApiLlmConfig,
-    GoogleReasoning,
     LlmConfig,
     Message,
-    OpenAIReasoning,
     OpenAILlmConfig,
-    ThinkingLevel,
     build_default_registry,
+    default_reasoning,
 )
 from dr_llm.pool import (
     Axis,
@@ -71,19 +69,18 @@ from dr_llm.workers import (
 app = typer.Typer()
 
 LLM_CONFIGS: dict[str, LlmConfig] = {
-    "gpt-5-mini-low": OpenAILlmConfig(
+    "gpt-5-mini-default": OpenAILlmConfig(
         provider="openai",
         model="gpt-5-mini",
         max_tokens=64,
-        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
+        reasoning=default_reasoning(provider="openai", model="gpt-5-mini"),
     ),
-    "gemini-flash-budget": ApiLlmConfig(
+    "gemini-flash-default": ApiLlmConfig(
         provider="google",
         model="gemini-2.5-flash",
         max_tokens=64,
-        reasoning=GoogleReasoning(
-            thinking_level=ThinkingLevel.BUDGET,
-            budget_tokens=512,
+        reasoning=default_reasoning(
+            provider="google", model="gemini-2.5-flash"
         ),
     ),
 }
