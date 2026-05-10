@@ -17,7 +17,9 @@ from dr_llm.llm.providers.headless.base import (
     messages_to_prompt,
 )
 from dr_llm.llm.providers.headless.config import ClaudeHeadlessProviderConfig
-from dr_llm.llm.providers.headless.reasoning import ClaudeHeadlessReasoningConfig
+from dr_llm.llm.providers.headless.reasoning import (
+    ClaudeHeadlessReasoningConfig,
+)
 from dr_llm.llm.request import HeadlessLlmRequest
 
 
@@ -74,7 +76,9 @@ class ClaudeHeadlessResponse(BaseModel):
     body: ClaudeHeadlessRawResponse | None = None
 
     @classmethod
-    def from_stdout(cls, *, stdout: str, stderr: str) -> ClaudeHeadlessResponse:
+    def from_stdout(
+        cls, *, stdout: str, stderr: str
+    ) -> ClaudeHeadlessResponse:
         stdout_clean = stdout.strip()
         if not stdout_clean:
             return cls(stdout_text="", stderr=stderr)
@@ -182,7 +186,9 @@ class ClaudeHeadlessProvider(BaseHeadlessProvider):
             command.extend(reasoning_mapping.cli_args)
         return command
 
-    def reasoning_mapping(self, request: HeadlessLlmRequest) -> HeadlessReasoningResult:
+    def reasoning_mapping(
+        self, request: HeadlessLlmRequest
+    ) -> HeadlessReasoningResult:
         return ClaudeHeadlessReasoningConfig.from_base(request.reasoning)
 
     def stdin_for_request(

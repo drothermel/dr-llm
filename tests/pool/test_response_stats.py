@@ -93,7 +93,11 @@ def test_sample_response_stats_delegates() -> None:
         key_values={"x": "a"},
         response={
             "latency_ms": 300,
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+            },
         },
         finish_reason="stop",
         attempt_count=2,

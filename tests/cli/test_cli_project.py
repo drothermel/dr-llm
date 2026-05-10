@@ -28,7 +28,9 @@ def test_project_start_invokes_service_and_reports_port(
 
     def fake_start_project(name: str) -> ProjectInfo:
         started.append(name)
-        return ProjectInfo(name=name, port=5500, status=ContainerStatus.RUNNING)
+        return ProjectInfo(
+            name=name, port=5500, status=ContainerStatus.RUNNING
+        )
 
     monkeypatch.setattr(project_cli, "start_project", fake_start_project)
 
@@ -59,7 +61,9 @@ def test_project_destroy_invokes_service(
 ) -> None:
     destroyed: list[str] = []
 
-    def fake_delete_project(request: DeleteProjectRequest) -> ProjectDeletionResult:
+    def fake_delete_project(
+        request: DeleteProjectRequest,
+    ) -> ProjectDeletionResult:
         destroyed.append(request.project_name)
         return ProjectDeletionResult(
             request=request,
@@ -133,7 +137,9 @@ def test_project_use_requires_running_project_lookup(
 
     def fake_get_project(name: str) -> ProjectInfo:
         looked_up.append(name)
-        return ProjectInfo(name=name, port=5500, status=ContainerStatus.RUNNING)
+        return ProjectInfo(
+            name=name, port=5500, status=ContainerStatus.RUNNING
+        )
 
     monkeypatch.setattr(project_cli, "get_project", fake_get_project)
 

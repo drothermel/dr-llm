@@ -96,7 +96,9 @@ def test_fetch_models_with_template_raises_when_items_key_is_not_a_list(
         )
 
 
-def test_fetch_static_headless_models_raises_for_unknown_provider_type() -> None:
+def test_fetch_static_headless_models_raises_for_unknown_provider_type() -> (
+    None
+):
     provider = cast(Any, _UnsupportedProvider())
 
     with pytest.raises(

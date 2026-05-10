@@ -61,7 +61,12 @@ from dr_llm.project import (
     create_project,
     destroy_project,
 )
-from dr_llm.workers import WorkerConfig, WorkerController, WorkerSnapshot, start_workers
+from dr_llm.workers import (
+    WorkerConfig,
+    WorkerController,
+    WorkerSnapshot,
+    start_workers,
+)
 
 app = typer.Typer()
 
@@ -84,9 +89,13 @@ LLM_CONFIGS: dict[str, LlmConfig] = {
 }
 
 PROMPTS: dict[str, list[Message]] = {
-    "haiku": [Message(role="user", content="Write a haiku about programming.")],
+    "haiku": [
+        Message(role="user", content="Write a haiku about programming.")
+    ],
     "math": [
-        Message(role="user", content="What is 17 * 23? Reply with just the number.")
+        Message(
+            role="user", content="What is 17 * 23? Reply with just the number."
+        )
     ],
 }
 
@@ -144,7 +153,8 @@ def _pool_is_idle(snapshot: WorkerSnapshot[LlmPoolBackendState]) -> bool:
 def _drain(
     controller: WorkerController[LlmPoolBackendState],
     *,
-    on_change: Callable[[WorkerSnapshot[LlmPoolBackendState]], None] | None = None,
+    on_change: Callable[[WorkerSnapshot[LlmPoolBackendState]], None]
+    | None = None,
     poll_interval_s: float = 0.5,
 ) -> WorkerSnapshot[LlmPoolBackendState]:
     if poll_interval_s <= 0:
@@ -301,14 +311,18 @@ def main(
     # Auto-manage a Docker Postgres project
     if not shutil.which("docker"):
         print("Error: Docker is required when no --dsn is provided.")
-        print("Either install Docker or pass --dsn to use an existing database.")
+        print(
+            "Either install Docker or pass --dsn to use an existing database."
+        )
         raise typer.Exit(1)
 
     project_name = f"demo_pool_fill_{uuid4().hex[:8]}"
     project: ProjectInfo | None = None
     try:
         print(f"Creating temporary project '{project_name}'...")
-        project = create_project(CreateProjectRequest(project_name=project_name))
+        project = create_project(
+            CreateProjectRequest(project_name=project_name)
+        )
         assert project.dsn is not None
         print(f"Postgres ready at {project.dsn}")
         _run_demo(

@@ -51,7 +51,9 @@ class AnthropicResponse(BaseModel):
     usage: _AnthropicUsage | None = None
     stop_reason: str | None = None
     json_error: str | None = Field(default=None, exclude=True, repr=False)
-    response_shape_error: str | None = Field(default=None, exclude=True, repr=False)
+    response_shape_error: str | None = Field(
+        default=None, exclude=True, repr=False
+    )
 
     @classmethod
     def from_http_response(cls, response: httpx.Response) -> AnthropicResponse:
@@ -95,7 +97,9 @@ class AnthropicResponse(BaseModel):
         warnings: list[ReasoningWarning],
     ) -> LlmResponse:
         self._validate()
-        text_chunks = [item.text or "" for item in self.content if item.type == "text"]
+        text_chunks = [
+            item.text or "" for item in self.content if item.type == "text"
+        ]
         raw_json = self.raw_json if isinstance(self.raw_json, dict) else {}
         usage_dump = (
             self.usage.model_dump(mode="json", exclude_none=True)
@@ -105,7 +109,9 @@ class AnthropicResponse(BaseModel):
         prompt_tokens = self.usage.input_tokens if self.usage else None
         completion_tokens = self.usage.output_tokens if self.usage else None
         total_tokens = (
-            (prompt_tokens or 0) + (completion_tokens or 0) if self.usage else None
+            (prompt_tokens or 0) + (completion_tokens or 0)
+            if self.usage
+            else None
         )
         usage, reasoning, reasoning_details = build_usage_and_reasoning(
             usage_dump=usage_dump,

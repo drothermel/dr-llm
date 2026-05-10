@@ -34,7 +34,18 @@ from typing import Any
 
 import typer
 
-from _demo_utils import BOLD, CYAN, GREEN, RED, RESET, YELLOW, fail, ok, step, warn
+from _demo_utils import (
+    BOLD,
+    CYAN,
+    GREEN,
+    RED,
+    RESET,
+    YELLOW,
+    fail,
+    ok,
+    step,
+    warn,
+)
 from dr_llm.llm import ProviderAvailabilityStatus, build_default_registry
 from dr_llm.pool import (
     DbConfig,
@@ -83,7 +94,10 @@ PROVIDER_EXTRA_ARGS: dict[str, list[str]] = {
     ],
     "glm": ["--reasoning-json", '{"kind":"glm","thinking_level":"off"}'],
     "codex": ["--reasoning-json", '{"kind":"codex","thinking_level":"low"}'],
-    "openrouter": ["--reasoning-json", '{"kind":"openrouter","enabled":false}'],
+    "openrouter": [
+        "--reasoning-json",
+        '{"kind":"openrouter","enabled":false}',
+    ],
     "minimax": [
         "--reasoning-json",
         '{"kind":"anthropic","thinking_level":"na"}',
@@ -142,7 +156,8 @@ def detect_providers(
             continue
         reasons = [f"{env_var} not set" for env_var in status.missing_env_vars]
         reasons.extend(
-            f"'{executable}' CLI not found" for executable in status.missing_executables
+            f"'{executable}' CLI not found"
+            for executable in status.missing_executables
         )
         warn(f"{status.provider}: {', '.join(reasons)}")
     return available
@@ -175,9 +190,13 @@ def resolve_model(provider: str) -> str:
     if default_model and default_model in model_ids:
         return default_model
     if default_model:
-        print(f"  default model '{default_model}' not found, using '{model_ids[0]}'")
+        print(
+            f"  default model '{default_model}' not found, using '{model_ids[0]}'"
+        )
     else:
-        print(f"  no default model configured for {provider}, using '{model_ids[0]}'")
+        print(
+            f"  no default model configured for {provider}, using '{model_ids[0]}'"
+        )
     return model_ids[0]
 
 
@@ -289,8 +308,12 @@ def print_summary(store: PoolStore) -> None:
 
 @app.command()
 def main(
-    project_name: str = typer.Option(DEFAULT_PROJECT, help="Project name for the demo"),
-    prompt: str = typer.Option(DEFAULT_PROMPT, help="Prompt to send to each provider"),
+    project_name: str = typer.Option(
+        DEFAULT_PROJECT, help="Project name for the demo"
+    ),
+    prompt: str = typer.Option(
+        DEFAULT_PROMPT, help="Prompt to send to each provider"
+    ),
 ) -> None:
     """Query all available LLM providers and store results in a typed pool."""
     if not shutil.which("docker"):
@@ -324,7 +347,9 @@ def main(
         ok(f"Project '{project_name}' created at {project.dsn}")
 
         step("3. Initializing pool")
-        runtime = DbRuntime(DbConfig(dsn=project.dsn, min_pool_size=1, max_pool_size=4))
+        runtime = DbRuntime(
+            DbConfig(dsn=project.dsn, min_pool_size=1, max_pool_size=4)
+        )
         store = PoolStore(POOL_SCHEMA, runtime)
         store.ensure_schema()
         ok(f"Pool '{POOL_SCHEMA.name}' ready")
@@ -370,7 +395,9 @@ def main(
         print_summary(store)
 
         if failed_providers:
-            print(f"\n{YELLOW}Failed providers: {', '.join(failed_providers)}{RESET}")
+            print(
+                f"\n{YELLOW}Failed providers: {', '.join(failed_providers)}{RESET}"
+            )
 
         demo_succeeded = True
 

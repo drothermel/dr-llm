@@ -21,12 +21,16 @@ def fetch_openai_compat_models(
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     base = provider.config.base_url.rstrip("/")
     endpoint = f"{base}/models"
-    key = provider.config.api_key or api_key_from_env(provider.config.api_key_env)
+    key = provider.config.api_key or api_key_from_env(
+        provider.config.api_key_env
+    )
     headers: dict[str, str] | None = None
     if key:
         headers = {"Authorization": f"Bearer {key}"}
 
-    def process(item: dict[str, Any], now: datetime) -> ModelCatalogEntry | None:
+    def process(
+        item: dict[str, Any], now: datetime
+    ) -> ModelCatalogEntry | None:
         return _process_openai_model_item(
             item=item, now=now, provider_name=provider.name
         )
@@ -81,7 +85,9 @@ def _resolve_reasoning_support(
     if not isinstance(supported_params, list):
         return None, reasoning_capabilities
     normalized = {str(param) for param in supported_params}
-    supports_reasoning = "reasoning" in normalized or "reasoning.effort" in normalized
+    supports_reasoning = (
+        "reasoning" in normalized or "reasoning.effort" in normalized
+    )
     if supports_reasoning and reasoning_capabilities is None:
         reasoning_capabilities = ReasoningCapabilities(mode="openai_effort")
     return supports_reasoning, reasoning_capabilities
@@ -108,8 +114,12 @@ def _parse_pricing(value: Any) -> ModelCatalogPricing | None:
     scale = 1_000_000.0
     return ModelCatalogPricing(
         currency="USD",
-        input_cost_per_1m=input_cost * scale if input_cost is not None else None,
-        output_cost_per_1m=output_cost * scale if output_cost is not None else None,
+        input_cost_per_1m=input_cost * scale
+        if input_cost is not None
+        else None,
+        output_cost_per_1m=output_cost * scale
+        if output_cost is not None
+        else None,
         reasoning_cost_per_1m=(
             reasoning_cost * scale if reasoning_cost is not None else None
         ),
@@ -121,13 +131,15 @@ def _detect_supports_vision(item: dict[str, Any]) -> bool | None:
     modalities = item.get("input_modalities")
     if isinstance(modalities, list):
         return any(
-            str(modality).lower() in {"image", "vision"} for modality in modalities
+            str(modality).lower() in {"image", "vision"}
+            for modality in modalities
         )
     architecture = item.get("architecture")
     if isinstance(architecture, dict):
         mods = architecture.get("input_modalities")
         if isinstance(mods, list):
             return any(
-                str(modality).lower() in {"image", "vision"} for modality in mods
+                str(modality).lower() in {"image", "vision"}
+                for modality in mods
             )
     return None

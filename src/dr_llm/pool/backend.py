@@ -11,7 +11,10 @@ from dr_llm.llm.config import parse_llm_config
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.registry import ProviderRegistry
 from dr_llm.llm.response import LlmResponse
-from dr_llm.logging.events import generation_log_context, get_generation_log_context
+from dr_llm.logging.events import (
+    generation_log_context,
+    get_generation_log_context,
+)
 from dr_llm.logging.sinks import emit_generation_event
 from dr_llm.pool.db.key_filter import PoolKeyFilter
 from dr_llm.pool.db.sql_helpers import validate_key_filter
@@ -42,16 +45,22 @@ LlmWorkerBackend = WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]
 LlmProcessFn = ProcessFn[PoolSample, LlmResponse]
 
 
-class LlmPoolBackend(WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]):
+class LlmPoolBackend(
+    WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]
+):
     """LLM-specific backend for the generic worker runtime."""
 
-    def __init__(self, store: PoolStore, *, config: LlmPoolBackendConfig) -> None:
+    def __init__(
+        self, store: PoolStore, *, config: LlmPoolBackendConfig
+    ) -> None:
         self._store = store
         self._config = config
         if config.key_filter is not None:
             validate_key_filter(self._store.schema, config.key_filter)
 
-    def claim(self, *, worker_id: str, lease_seconds: int) -> PoolSample | None:
+    def claim(
+        self, *, worker_id: str, lease_seconds: int
+    ) -> PoolSample | None:
         sample = self._store.claim_lease(
             worker_id=worker_id,
             lease_seconds=lease_seconds,
@@ -113,7 +122,11 @@ class LlmPoolBackend(WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]
             return ErrorDecision.retry
 
         message = str(exc).strip()
-        reason = f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+        reason = (
+            f"{type(exc).__name__}: {message}"
+            if message
+            else type(exc).__name__
+        )
         completed = self._store.complete_sample(
             sample_id=item.sample_id,
             response={"error": reason},
@@ -143,8 +156,12 @@ class LlmPoolBackend(WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]
 
     def snapshot(self) -> LlmPoolBackendState:
         return LlmPoolBackendState(
-            incomplete=self._store.incomplete_count(key_filter=self._config.key_filter),
-            complete=self._store.complete_count(key_filter=self._config.key_filter),
+            incomplete=self._store.incomplete_count(
+                key_filter=self._config.key_filter
+            ),
+            complete=self._store.complete_count(
+                key_filter=self._config.key_filter
+            ),
             key_filter=(
                 None
                 if self._config.key_filter is None

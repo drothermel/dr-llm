@@ -44,6 +44,8 @@ def _redact(value: Any) -> Any:
             )
             for key, item in value.items()
         }
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+    if isinstance(value, Sequence) and not isinstance(
+        value, (str, bytes, bytearray)
+    ):
         return [_redact(item) for item in value]
     return value

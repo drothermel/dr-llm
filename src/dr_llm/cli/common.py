@@ -46,7 +46,9 @@ def _provider_requirements_text(status: ProviderAvailabilityStatus) -> str:
     return ", ".join(parts)
 
 
-def _render_providers_table(statuses: list[ProviderAvailabilityStatus]) -> None:
+def _render_providers_table(
+    statuses: list[ProviderAvailabilityStatus],
+) -> None:
     table = Table(title="Providers")
     table.add_column("Provider", style="bold")
     table.add_column("Available")
@@ -54,7 +56,9 @@ def _render_providers_table(statuses: list[ProviderAvailabilityStatus]) -> None:
     table.add_column("Missing Requirements", overflow="fold")
 
     for status in statuses:
-        available_text = "[green]yes[/green]" if status.available else "[red]no[/red]"
+        available_text = (
+            "[green]yes[/green]" if status.available else "[red]no[/red]"
+        )
         structured_text = (
             "[green]yes[/green]"
             if status.supports_structured_output
@@ -105,12 +109,18 @@ def _render_models_sync_summary(results: list[ModelCatalogSyncResult]) -> None:
     total_entries = sum(result.entry_count for result in successes)
     if len(successes) == 1:
         result = successes[0]
-        typer.echo(f"Synced {result.entry_count} models for {result.provider}.")
+        typer.echo(
+            f"Synced {result.entry_count} models for {result.provider}."
+        )
         return
-    typer.echo(f"Synced {total_entries} models across {len(successes)} providers.")
+    typer.echo(
+        f"Synced {total_entries} models across {len(successes)} providers."
+    )
 
 
-def _models_list_header(items: list[ModelCatalogEntry], provider: str | None) -> str:
+def _models_list_header(
+    items: list[ModelCatalogEntry], provider: str | None
+) -> str:
     count = len(items)
     if provider is not None:
         return f"{provider} Models (Showing {count} out of {{total_count}})"
@@ -140,10 +150,18 @@ def _render_models_list(
         typer.echo("No models found.")
         return
 
-    typer.echo(_models_list_header(items, provider).format(total_count=total_count))
-    include_provider = provider is None and len({item.provider for item in items}) > 1
+    typer.echo(
+        _models_list_header(items, provider).format(total_count=total_count)
+    )
+    include_provider = (
+        provider is None and len({item.provider for item in items}) > 1
+    )
     for item in items:
-        label = f"{item.provider}: {item.model}" if include_provider else item.model
+        label = (
+            f"{item.provider}: {item.model}"
+            if include_provider
+            else item.model
+        )
         if item.display_name and item.display_name != item.model:
             label = f"{label} ({item.display_name})"
         typer.echo(f"- {label}")
@@ -171,14 +189,19 @@ def _render_blacklist(
 
 
 def _parse_json(
-    value: str | None, *, arg_name: str, expected: type | tuple[type, ...] | None = None
+    value: str | None,
+    *,
+    arg_name: str,
+    expected: type | tuple[type, ...] | None = None,
 ) -> Any:
     if value is None:
         return None
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError as exc:
-        raise typer.BadParameter(f"Invalid JSON for {arg_name}: {exc}") from exc
+        raise typer.BadParameter(
+            f"Invalid JSON for {arg_name}: {exc}"
+        ) from exc
     if expected is not None and not isinstance(parsed, expected):
         expected_names = (
             ", ".join(t.__name__ for t in expected)
@@ -200,7 +223,9 @@ def _load_messages(
         try:
             payload = json.loads(messages_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
-            raise typer.BadParameter(f"messages-file is not valid JSON: {exc}") from exc
+            raise typer.BadParameter(
+                f"messages-file is not valid JSON: {exc}"
+            ) from exc
         if isinstance(payload, dict):
             payload = payload.get("messages")
         if not isinstance(payload, list):
@@ -209,7 +234,9 @@ def _load_messages(
             )
         for item in payload:
             if not isinstance(item, dict):
-                raise typer.BadParameter("messages-file entries must be JSON objects")
+                raise typer.BadParameter(
+                    "messages-file entries must be JSON objects"
+                )
             try:
                 result.append(Message(**item))
             except ValidationError as exc:
@@ -217,7 +244,9 @@ def _load_messages(
                     f"Invalid message in messages-file: {exc}"
                 ) from exc
 
-    result.extend(Message(role="user", content=content) for content in messages)
+    result.extend(
+        Message(role="user", content=content) for content in messages
+    )
     if require_nonempty and not result:
         raise typer.BadParameter(
             "At least one message is required (use --message or --messages-file)"

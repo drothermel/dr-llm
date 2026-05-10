@@ -34,7 +34,9 @@ _EFFORT_RESOLVERS: dict[str, EffortResolver] = {
 }
 
 
-def supported_effort_levels(*, provider: str, model: str) -> tuple[EffortSpec, ...]:
+def supported_effort_levels(
+    *, provider: str, model: str
+) -> tuple[EffortSpec, ...]:
     resolver = _EFFORT_RESOLVERS.get(provider)
     if resolver is None:
         return ()

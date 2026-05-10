@@ -19,7 +19,9 @@ from dr_llm.llm.providers.headless.base import (
     messages_to_prompt,
 )
 from dr_llm.llm.providers.headless.config import CodexHeadlessProviderConfig
-from dr_llm.llm.providers.headless.reasoning import CodexHeadlessReasoningConfig
+from dr_llm.llm.providers.headless.reasoning import (
+    CodexHeadlessReasoningConfig,
+)
 from dr_llm.llm.request import HeadlessLlmRequest
 
 
@@ -60,7 +62,9 @@ class CodexEvent(BaseModel):
         return self.type == self.TYPE_ERROR
 
     def agent_text(self) -> str | None:
-        if self.type != self.TYPE_ITEM_COMPLETED or not isinstance(self.item, dict):
+        if self.type != self.TYPE_ITEM_COMPLETED or not isinstance(
+            self.item, dict
+        ):
             return None
         if self.item.get("type") != self.ITEM_AGENT_MESSAGE:
             return None
@@ -68,7 +72,9 @@ class CodexEvent(BaseModel):
         return text if isinstance(text, str) and text else None
 
     def usage_payload(self) -> dict[str, int] | None:
-        if self.type != self.TYPE_TURN_COMPLETED or not isinstance(self.usage, dict):
+        if self.type != self.TYPE_TURN_COMPLETED or not isinstance(
+            self.usage, dict
+        ):
             return None
         prompt_tokens = self.usage.get("input_tokens")
         completion_tokens = self.usage.get("output_tokens")
@@ -77,7 +83,9 @@ class CodexEvent(BaseModel):
             usage["prompt_tokens"] = prompt_tokens
         if isinstance(completion_tokens, int):
             usage["completion_tokens"] = completion_tokens
-        if isinstance(prompt_tokens, int) and isinstance(completion_tokens, int):
+        if isinstance(prompt_tokens, int) and isinstance(
+            completion_tokens, int
+        ):
             usage["total_tokens"] = prompt_tokens + completion_tokens
         return usage
 
@@ -105,7 +113,11 @@ class CodexHeadlessResponse(BaseModel):
         except json.JSONDecodeError:
             parsed_body = None
         if isinstance(parsed_body, dict) and "type" not in parsed_body:
-            return cls(stdout_text=stdout_clean, stderr=stderr, direct_body=parsed_body)
+            return cls(
+                stdout_text=stdout_clean,
+                stderr=stderr,
+                direct_body=parsed_body,
+            )
 
         events: list[CodexEvent] = []
         passthrough_lines: list[str] = []
@@ -249,7 +261,9 @@ class CodexHeadlessProvider(BaseHeadlessProvider):
         )
         return command
 
-    def reasoning_mapping(self, request: HeadlessLlmRequest) -> HeadlessReasoningResult:
+    def reasoning_mapping(
+        self, request: HeadlessLlmRequest
+    ) -> HeadlessReasoningResult:
         return CodexHeadlessReasoningConfig.from_base(request.reasoning)
 
     def stdin_for_request(

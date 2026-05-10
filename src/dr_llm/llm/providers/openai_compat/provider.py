@@ -24,8 +24,12 @@ class OpenAICompatProvider(ApiProvider):
     def config(self) -> OpenAICompatConfig:
         return self._config
 
-    def _build_request(self, request: ApiBackedLlmRequest) -> OpenAICompatRequest:
+    def _build_request(
+        self, request: ApiBackedLlmRequest
+    ) -> OpenAICompatRequest:
         return OpenAICompatRequest.from_llm_request(request, self._config)
 
-    def _parse_response(self, response: httpx.Response) -> OpenAICompatResponse:
+    def _parse_response(
+        self, response: httpx.Response
+    ) -> OpenAICompatResponse:
         return OpenAICompatResponse.from_http_response(response)

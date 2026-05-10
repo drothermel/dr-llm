@@ -56,7 +56,9 @@ def test_pool_destroy_invokes_service(
 
 
 def test_pool_destroy_requires_confirmation_without_flag() -> None:
-    result = runner.invoke(app, ["pool", "destroy", "demo", "sample_pool"], input="n\n")
+    result = runner.invoke(
+        app, ["pool", "destroy", "demo", "sample_pool"], input="n\n"
+    )
 
     assert result.exit_code == 1
 
@@ -86,7 +88,9 @@ def test_pool_destroy_testish_invokes_service(
             ],
         )
 
-    monkeypatch.setattr(pool_cli, "delete_pools_by_token", fake_delete_pools_by_token)
+    monkeypatch.setattr(
+        pool_cli, "delete_pools_by_token", fake_delete_pools_by_token
+    )
 
     result = runner.invoke(
         app,
@@ -108,7 +112,9 @@ def test_pool_destroy_testish_dry_run_invokes_service_without_confirmation(
     def fake_delete_pools_by_token(
         request: DeletePoolsByTokenRequest,
     ) -> DeletePoolsByTokenResult:
-        deleted.append((request.project_name, request.match_tokens, request.dry_run))
+        deleted.append(
+            (request.project_name, request.match_tokens, request.dry_run)
+        )
         return DeletePoolsByTokenResult(
             request=request,
             status=DeletePoolsByTokenStatus.completed,
@@ -118,7 +124,9 @@ def test_pool_destroy_testish_dry_run_invokes_service_without_confirmation(
             message="Dry run: would delete 1 matching pools.",
         )
 
-    monkeypatch.setattr(pool_cli, "delete_pools_by_token", fake_delete_pools_by_token)
+    monkeypatch.setattr(
+        pool_cli, "delete_pools_by_token", fake_delete_pools_by_token
+    )
 
     result = runner.invoke(
         app,

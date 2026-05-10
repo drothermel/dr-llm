@@ -26,4 +26,6 @@ class GenerationLogConfig(BaseSettings):
     rotate_bytes: int = 100 * 1024 * 1024
     backups: int = 10
     redact_enabled: bool = True
-    max_event_bytes: int = Field(default=10 * 1024 * 1024, ge=MIN_MAX_EVENT_BYTES)
+    max_event_bytes: int = Field(
+        default=10 * 1024 * 1024, ge=MIN_MAX_EVENT_BYTES
+    )

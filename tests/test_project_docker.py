@@ -157,7 +157,9 @@ def test_call_docker_bytes_decodes_stderr_before_mapping_error(
             stderr="bad-\u03b2".encode(),
         )
 
-    def fake_docker_error(args: tuple[str, ...], stderr: str) -> DockerCommandError:
+    def fake_docker_error(
+        args: tuple[str, ...], stderr: str
+    ) -> DockerCommandError:
         observed["args"] = args
         observed["stderr"] = stderr
         return DockerCommandError("boom")
@@ -387,9 +389,13 @@ def test_wait_dsn_ready_raises_after_timeout(
 
     monkeypatch.setattr(docker_lifecycle.psycopg, "connect", fake_connect)
     monkeypatch.setattr(docker_lifecycle, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(docker_lifecycle, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(
+        docker_lifecycle, "monotonic", lambda: next(monotonic_values)
+    )
 
-    with pytest.raises(DockerCommandError, match="did not accept SQL connections"):
+    with pytest.raises(
+        DockerCommandError, match="did not accept SQL connections"
+    ):
         docker_lifecycle.wait_dsn_ready(
             "postgresql://postgres:postgres@localhost:5500/dr_llm",
             timeout_seconds=2,
@@ -753,7 +759,9 @@ def test_docker_swap_in_db_drops_temp_db_when_stream_restore_fails(
             stderr=b"",
         )
 
-    monkeypatch.setattr(docker_psql, "_call_docker_psql_admin", fake_psql_admin)
+    monkeypatch.setattr(
+        docker_psql, "_call_docker_psql_admin", fake_psql_admin
+    )
 
     def fake_psql_input_stream(
         container_name: str,
@@ -783,7 +791,10 @@ def test_docker_swap_in_db_drops_temp_db_when_stream_restore_fails(
     assert len(calls) == 3
     assert calls[0] == ("admin", (f'CREATE DATABASE "{calls[1][1][0]}";',))
     assert calls[1] == ("restore", (calls[1][1][0],))
-    assert calls[2] == ("admin", (f'DROP DATABASE IF EXISTS "{calls[1][1][0]}";',))
+    assert calls[2] == (
+        "admin",
+        (f'DROP DATABASE IF EXISTS "{calls[1][1][0]}";',),
+    )
 
 
 def test_docker_swap_in_db_creates_restores_and_swaps_temp_db(
@@ -815,7 +826,9 @@ def test_docker_swap_in_db_creates_restores_and_swaps_temp_db(
         assert sql_stream.read() == b"select 1;\n"
         calls.append(("restore", (db_name,)))
 
-    monkeypatch.setattr(docker_psql, "_call_docker_psql_admin", fake_psql_admin)
+    monkeypatch.setattr(
+        docker_psql, "_call_docker_psql_admin", fake_psql_admin
+    )
     monkeypatch.setattr(
         docker_psql,
         "call_docker_psql_input_stream",
@@ -866,7 +879,9 @@ def test_call_docker_psql_input_stream_suppresses_broken_pipe(
         del args, stdin, stdout
         operation(fake_process)
 
-    monkeypatch.setattr(docker_psql, "_run_docker_process", fake_run_docker_process)
+    monkeypatch.setattr(
+        docker_psql, "_run_docker_process", fake_run_docker_process
+    )
 
     docker_psql.call_docker_psql_input_stream(
         container_name="demo",
@@ -903,7 +918,9 @@ def test_run_docker_process_reads_stderr_concurrently(
         return "boom"
 
     monkeypatch.setattr(docker_psql.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(docker_psql, "read_process_stderr", fake_read_process_stderr)
+    monkeypatch.setattr(
+        docker_psql, "read_process_stderr", fake_read_process_stderr
+    )
 
     def wait_for_stderr(process: object) -> None:
         _ = process

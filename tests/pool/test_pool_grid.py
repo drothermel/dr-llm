@@ -62,7 +62,9 @@ def test_axis_member_holds_arbitrary_value() -> None:
         def __init__(self, label: str) -> None:
             self.label = label
 
-    member = AxisMember[Domain](id="d1", value=Domain("hi"), metadata={"label": "hi"})
+    member = AxisMember[Domain](
+        id="d1", value=Domain("hi"), metadata={"label": "hi"}
+    )
     assert member.value.label == "hi"
     assert member.metadata == {"label": "hi"}
 
@@ -186,11 +188,15 @@ def test_seed_grid_chunks_inserts() -> None:
     axes: list[Axis[Any]] = [
         Axis(
             name="axis_a",
-            members=[AxisMember[str](id=f"a{i}", value=f"a{i}") for i in range(5)],
+            members=[
+                AxisMember[str](id=f"a{i}", value=f"a{i}") for i in range(5)
+            ],
         ),
         Axis(
             name="axis_b",
-            members=[AxisMember[str](id=f"b{i}", value=f"b{i}") for i in range(3)],
+            members=[
+                AxisMember[str](id=f"b{i}", value=f"b{i}") for i in range(3)
+            ],
         ),
     ]
     seed_grid(

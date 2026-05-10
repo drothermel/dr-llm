@@ -41,7 +41,9 @@ def wait_docker_ready(
         if result.returncode == 0:
             return ContainerStatus.RUNNING
         error = docker_error(args, result.stderr.strip())
-        if isinstance(error, (DockerContainerNotFoundError, DockerUnavailableError)):
+        if isinstance(
+            error, (DockerContainerNotFoundError, DockerUnavailableError)
+        ):
             raise error
         sleep(1)
     raise DockerCommandError(
@@ -77,7 +79,9 @@ def wait_dsn_ready(
     while True:
         try:
             with (
-                psycopg.connect(dsn, connect_timeout=connect_timeout_s) as conn,
+                psycopg.connect(
+                    dsn, connect_timeout=connect_timeout_s
+                ) as conn,
                 conn.cursor() as cur,
             ):
                 cur.execute("SELECT 1")
@@ -118,7 +122,9 @@ def create_project_container(
     ]
     docker_cmd.extend(project.docker_run_args())
     docker_cmd.append(docker_image)
-    call_docker(*docker_cmd, env=os.environ | {"POSTGRES_PASSWORD": db_password})
+    call_docker(
+        *docker_cmd, env=os.environ | {"POSTGRES_PASSWORD": db_password}
+    )
 
 
 def call_docker_start(container_name: str) -> None:
@@ -145,4 +151,6 @@ def call_docker_destroy(container_name: str, volume_name: str) -> None:
             ("rm", "-f", container_name), remove_container.stderr.strip()
         )
     if remove_volume.returncode != 0:
-        raise docker_error(("volume", "rm", volume_name), remove_volume.stderr.strip())
+        raise docker_error(
+            ("volume", "rm", volume_name), remove_volume.stderr.strip()
+        )

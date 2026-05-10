@@ -3,7 +3,16 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, ClassVar, Protocol
 
-from sqlalchemy import Boolean, Column, Double, Index, Integer, MetaData, Table, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Double,
+    Index,
+    Integer,
+    MetaData,
+    Table,
+    Text,
+)
 
 from dr_llm.pool.db.names import PoolTableType
 from dr_llm.pool.db.schema import ColumnType, PoolSchema
@@ -27,11 +36,17 @@ class ColumnServerDefault(StrEnum):
 class TableDef(Protocol):
     table_type: ClassVar[PoolTableType]
 
-    def build_table(self, schema: PoolSchema, metadata: MetaData, /) -> Table: ...
+    def build_table(
+        self, schema: PoolSchema, metadata: MetaData, /
+    ) -> Table: ...
 
-    def build_indexes(self, table: Table, schema: PoolSchema, /) -> list[Index]: ...
+    def build_indexes(
+        self, table: Table, schema: PoolSchema, /
+    ) -> list[Index]: ...
 
-    def select_columns(self, table: Table, schema: PoolSchema, /) -> list[Any]: ...
+    def select_columns(
+        self, table: Table, schema: PoolSchema, /
+    ) -> list[Any]: ...
 
 
 def build_key_columns(schema: PoolSchema) -> list[Column[Any]]:

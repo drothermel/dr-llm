@@ -31,7 +31,9 @@ def test_pool_simple_stats_pie_card_renders_as_marimo_html() -> None:
     assert isinstance(rendered, (mo.Html, ActiveHtml))
 
 
-def test_pool_simple_stats_pie_card_total_matches_disjoint_card_buckets() -> None:
+def test_pool_simple_stats_pie_card_total_matches_disjoint_card_buckets() -> (
+    None
+):
     card = PoolSimpleStatsPieCard(pool=demo_pool())
 
     assert card.total_samples == 1327

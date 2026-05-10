@@ -98,7 +98,9 @@ class PoolStore:
         return completion_ops.complete_sample(
             self._runtime,
             self._tables[PoolTableType.SAMPLES],
-            self._tables[PoolTableType.LEASES] if lease_owner is not None else None,
+            self._tables[PoolTableType.LEASES]
+            if lease_owner is not None
+            else None,
             sample_id=sample_id,
             response=response,
             finish_reason=finish_reason,
@@ -202,7 +204,9 @@ class PoolStore:
             self._runtime, self._tables[PoolTableType.SAMPLES]
         )
 
-    def incomplete_count(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+    def incomplete_count(
+        self, *, key_filter: PoolKeyFilter | None = None
+    ) -> int:
         """Return the count of samples without responses."""
         return query_ops.incomplete_count(
             self._runtime,
@@ -211,7 +215,9 @@ class PoolStore:
             key_filter=key_filter,
         )
 
-    def complete_count(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+    def complete_count(
+        self, *, key_filter: PoolKeyFilter | None = None
+    ) -> int:
         """Return the count of samples with responses."""
         return query_ops.complete_count(
             self._runtime,
@@ -239,7 +245,9 @@ class PoolStore:
             key_filter=key_filter,
         )
 
-    def progress(self, *, key_filter: PoolKeyFilter | None = None) -> PoolProgress:
+    def progress(
+        self, *, key_filter: PoolKeyFilter | None = None
+    ) -> PoolProgress:
         """Return a snapshot of pool completion state."""
         return query_ops.progress(
             self._runtime, self.schema, self._tables, key_filter=key_filter

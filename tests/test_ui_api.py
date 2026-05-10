@@ -13,7 +13,9 @@ from ui.api import main as ui_api
 def test_providers_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter = FakeProvider(
         "fake-provider",
-        config=ProviderConfig(name="fake-provider", supports_structured_output=True),
+        config=ProviderConfig(
+            name="fake-provider", supports_structured_output=True
+        ),
     )
     registry = ProviderRegistry()
     registry.register(adapter)
@@ -39,7 +41,9 @@ def test_providers_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_openrouter_models_endpoint_applies_policy_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    adapter = FakeProvider("openrouter", config=ProviderConfig(name="openrouter"))
+    adapter = FakeProvider(
+        "openrouter", config=ProviderConfig(name="openrouter")
+    )
     registry = ProviderRegistry()
     registry.register(adapter)
     monkeypatch.setattr(ui_api, "build_default_registry", lambda: registry)
@@ -103,7 +107,10 @@ def test_openrouter_static_models_use_curated_policy(
     assert response.status_code == 200
     payload = response.json()
     assert payload["source"] == "static"
-    assert any(model["model"] == "openai/gpt-oss-20b" for model in payload["models"])
     assert any(
-        model["model"] == "deepseek/deepseek-chat-v3.1" for model in payload["models"]
+        model["model"] == "openai/gpt-oss-20b" for model in payload["models"]
+    )
+    assert any(
+        model["model"] == "deepseek/deepseek-chat-v3.1"
+        for model in payload["models"]
     )

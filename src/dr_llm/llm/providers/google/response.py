@@ -64,7 +64,9 @@ class GoogleResponse(BaseModel):
     candidates: list[_GoogleCandidate] = Field(default_factory=list)
     usageMetadata: _GoogleUsageMetadata | None = None
     json_error: str | None = Field(default=None, exclude=True, repr=False)
-    response_shape_error: str | None = Field(default=None, exclude=True, repr=False)
+    response_shape_error: str | None = Field(
+        default=None, exclude=True, repr=False
+    )
 
     @classmethod
     def from_http_response(cls, response: httpx.Response) -> GoogleResponse:
@@ -111,8 +113,12 @@ class GoogleResponse(BaseModel):
     ) -> LlmResponse:
         candidate = self._validated_candidate()
         parts = candidate.content.parts if candidate.content else []
-        text_chunks = [part.text for part in parts if part.text and not part.thought]
-        thought_chunks = [part.text for part in parts if part.text and part.thought]
+        text_chunks = [
+            part.text for part in parts if part.text and not part.thought
+        ]
+        thought_chunks = [
+            part.text for part in parts if part.text and part.thought
+        ]
         thought_details = [
             part.model_dump(mode="json", exclude_none=True)
             for part in parts
@@ -123,12 +129,16 @@ class GoogleResponse(BaseModel):
             if self.usageMetadata
             else None
         )
-        raw_json_dict = self.raw_json if isinstance(self.raw_json, dict) else {}
+        raw_json_dict = (
+            self.raw_json if isinstance(self.raw_json, dict) else {}
+        )
         usage, fallback_reasoning, fallback_reasoning_details = (
             build_usage_and_reasoning(
                 usage_dump=usage_dump,
                 prompt_tokens=(
-                    self.usageMetadata.promptTokenCount if self.usageMetadata else None
+                    self.usageMetadata.promptTokenCount
+                    if self.usageMetadata
+                    else None
                 ),
                 completion_tokens=(
                     self.usageMetadata.candidatesTokenCount
@@ -136,12 +146,16 @@ class GoogleResponse(BaseModel):
                     else None
                 ),
                 total_tokens=(
-                    self.usageMetadata.totalTokenCount if self.usageMetadata else None
+                    self.usageMetadata.totalTokenCount
+                    if self.usageMetadata
+                    else None
                 ),
                 reasoning_source=raw_json_dict,
             )
         )
-        reasoning = "\n".join(thought_chunks) if thought_chunks else fallback_reasoning
+        reasoning = (
+            "\n".join(thought_chunks) if thought_chunks else fallback_reasoning
+        )
         reasoning_details = thought_details or fallback_reasoning_details
         return LlmResponse(
             text="\n".join(text_chunks),

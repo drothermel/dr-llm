@@ -5,7 +5,10 @@ from typing import Any
 
 import pytest
 
-from dr_llm.llm.catalog.file_store import CatalogCacheCorruptError, FileCatalogStore
+from dr_llm.llm.catalog.file_store import (
+    CatalogCacheCorruptError,
+    FileCatalogStore,
+)
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
 
 
@@ -120,23 +123,34 @@ def test_get_model_miss(store: FileCatalogStore) -> None:
 def test_count_models(store: FileCatalogStore) -> None:
     store.replace_provider_models(
         provider="openai",
-        entries=[_entry("openai", "a"), _entry("openai", "b"), _entry("openai", "c")],
+        entries=[
+            _entry("openai", "a"),
+            _entry("openai", "b"),
+            _entry("openai", "c"),
+        ],
     )
     assert store.count_models(query=ModelCatalogQuery(provider="openai")) == 3
-    assert store.count_models(query=ModelCatalogQuery(provider="nonexistent")) == 0
+    assert (
+        store.count_models(query=ModelCatalogQuery(provider="nonexistent"))
+        == 0
+    )
 
 
 def test_limit_and_offset(store: FileCatalogStore) -> None:
     entries = [_entry("p", f"model-{i}") for i in range(10)]
     store.replace_provider_models(provider="p", entries=entries)
 
-    page = store.list_models(query=ModelCatalogQuery(provider="p", limit=3, offset=2))
+    page = store.list_models(
+        query=ModelCatalogQuery(provider="p", limit=3, offset=2)
+    )
     assert len(page) == 3
     assert page[0].model == "model-2"
 
 
 def test_snapshot_returns_id(store: FileCatalogStore) -> None:
-    sid = store.record_model_catalog_snapshot(provider="openai", status="success")
+    sid = store.record_model_catalog_snapshot(
+        provider="openai", status="success"
+    )
     assert isinstance(sid, str)
     assert len(sid) > 0
 
@@ -147,7 +161,9 @@ def test_empty_store_returns_empty(store: FileCatalogStore) -> None:
     assert store.get_model(provider="x", model="y") is None
 
 
-def test_file_exists_after_replace(store: FileCatalogStore, tmp_path: Path) -> None:
+def test_file_exists_after_replace(
+    store: FileCatalogStore, tmp_path: Path
+) -> None:
     store.replace_provider_models(
         provider="openai", entries=[_entry("openai", "gpt-4.1")]
     )
@@ -165,9 +181,12 @@ def test_read_filters_blacklisted_models(store: FileCatalogStore) -> None:
 
     result = store.list_models(query=ModelCatalogQuery(provider="anthropic"))
     assert [entry.model for entry in result] == ["claude-haiku-4-5-20251001"]
-    assert store.count_models(query=ModelCatalogQuery(provider="anthropic")) == 1
     assert (
-        store.get_model(provider="anthropic", model="claude-3-haiku-20240307") is None
+        store.count_models(query=ModelCatalogQuery(provider="anthropic")) == 1
+    )
+    assert (
+        store.get_model(provider="anthropic", model="claude-3-haiku-20240307")
+        is None
     )
 
 
@@ -186,18 +205,25 @@ def test_load_all_skips_corrupt_cache_files_with_warning(
     assert len(all_models) == 1
     assert all_models[0].provider == "openai"
     assert any(
-        "Skipping unreadable catalog cache file" in r.message for r in caplog.records
+        "Skipping unreadable catalog cache file" in r.message
+        for r in caplog.records
     )
 
 
-def test_load_single_provider_still_raises_on_corrupt_file(tmp_path: Path) -> None:
+def test_load_single_provider_still_raises_on_corrupt_file(
+    tmp_path: Path,
+) -> None:
     store = FileCatalogStore(cache_dir=tmp_path)
-    (tmp_path / "anthropic.json").write_text("not valid json", encoding="utf-8")
+    (tmp_path / "anthropic.json").write_text(
+        "not valid json", encoding="utf-8"
+    )
     with pytest.raises(CatalogCacheCorruptError):
         store.list_models(query=ModelCatalogQuery(provider="anthropic"))
 
 
-def test_read_filters_and_overrides_openrouter_models(store: FileCatalogStore) -> None:
+def test_read_filters_and_overrides_openrouter_models(
+    store: FileCatalogStore,
+) -> None:
     store.replace_provider_models(
         provider="openrouter",
         entries=[

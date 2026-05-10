@@ -33,7 +33,9 @@ class GenerationLogEvent(BaseModel):
 
     event_type: str
     stage: str
-    ts_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    ts_utc: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
     call_id: str | None = None
     run_id: str | None = None
     provider: str | None = None
@@ -74,7 +76,9 @@ def get_generation_log_context() -> dict[str, Any]:
 
 
 @contextmanager
-def generation_log_context(values: dict[str, Any]) -> Generator[None, None, None]:
+def generation_log_context(
+    values: dict[str, Any],
+) -> Generator[None, None, None]:
     merged = {**_GENERATION_LOG_CONTEXT.get(), **values}
     token = _GENERATION_LOG_CONTEXT.set(MappingProxyType(merged))
     try:

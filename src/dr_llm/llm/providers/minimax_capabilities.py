@@ -10,7 +10,9 @@ from dr_llm.llm.providers.reasoning_capability_types import (
 _MINIMAX_CAPS = ReasoningCapabilities(mode="minimax_effort")
 
 MINIMAX_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
-    ReasoningCapabilityRule(model_prefix="MiniMax-", capabilities=_MINIMAX_CAPS),
+    ReasoningCapabilityRule(
+        model_prefix="MiniMax-", capabilities=_MINIMAX_CAPS
+    ),
 )
 
 

@@ -62,10 +62,14 @@ class OpenAICompatResponse(BaseModel):
     choices: list[_OpenAICompatChoice] = Field(default_factory=list)
     usage: _OpenAICompatUsage | None = None
     json_error: str | None = Field(default=None, exclude=True, repr=False)
-    response_shape_error: str | None = Field(default=None, exclude=True, repr=False)
+    response_shape_error: str | None = Field(
+        default=None, exclude=True, repr=False
+    )
 
     @classmethod
-    def from_http_response(cls, response: httpx.Response) -> OpenAICompatResponse:
+    def from_http_response(
+        cls, response: httpx.Response
+    ) -> OpenAICompatResponse:
         raw_json, parsed, json_error, shape_error = parse_http_response_body(
             response, _OpenAICompatResponseBody
         )
@@ -100,7 +104,9 @@ class OpenAICompatResponse(BaseModel):
             response_shape_error=self.response_shape_error,
         )
         if not self.choices:
-            raise ProviderSemanticError(f"{provider_name} response missing choices")
+            raise ProviderSemanticError(
+                f"{provider_name} response missing choices"
+            )
         return self.choices[0]
 
     def to_llm_response(
@@ -120,9 +126,13 @@ class OpenAICompatResponse(BaseModel):
         usage, reasoning, reasoning_details = build_usage_and_reasoning(
             usage_dump=usage_dump,
             prompt_tokens=self.usage.prompt_tokens if self.usage else None,
-            completion_tokens=self.usage.completion_tokens if self.usage else None,
+            completion_tokens=self.usage.completion_tokens
+            if self.usage
+            else None,
             total_tokens=self.usage.total_tokens if self.usage else None,
-            reasoning_source=message.model_dump(mode="json", exclude_none=True),
+            reasoning_source=message.model_dump(
+                mode="json", exclude_none=True
+            ),
         )
         raw_json = self.raw_json if isinstance(self.raw_json, dict) else {}
         return LlmResponse(

@@ -34,7 +34,9 @@ def validate_reasoning_for_codex(
 ) -> None:
     def _validate_native(spec: CodexReasoning) -> None:
         if not codex_supports_configurable_thinking(model):
-            raise ValueError(f"codex thinking is not supported for model={model!r}")
+            raise ValueError(
+                f"codex thinking is not supported for model={model!r}"
+            )
         validate_discrete_thinking_level(
             provider="codex",
             model=model,
@@ -45,7 +47,9 @@ def validate_reasoning_for_codex(
         )
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
-        capabilities = reasoning_capabilities_for_model(provider="codex", model=model)
+        capabilities = reasoning_capabilities_for_model(
+            provider="codex", model=model
+        )
         if is_reasoning_unsupported(capabilities):
             raise ValueError(
                 f"Reasoning is not supported for provider='codex' model={model!r}"
@@ -88,7 +92,9 @@ def validate_reasoning_for_claude_code(
             f"claude-code reasoning is not supported for kind={reasoning.kind!r}"
         )
     if reasoning.display is not None:
-        raise ValueError("claude-code does not support anthropic display controls")
+        raise ValueError(
+            "claude-code does not support anthropic display controls"
+        )
     if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
         if reasoning.thinking_level != ThinkingLevel.ADAPTIVE:
             raise ValueError(
@@ -112,7 +118,9 @@ class ClaudeHeadlessReasoningConfig(BaseProviderReasoningConfig):
         if config is None:
             return cls()
         match config:
-            case AnthropicReasoning(thinking_level=ThinkingLevel.NA, display=None):
+            case AnthropicReasoning(
+                thinking_level=ThinkingLevel.NA, display=None
+            ):
                 return cls()
             case AnthropicReasoning(
                 thinking_level=ThinkingLevel.ADAPTIVE,
@@ -149,7 +157,10 @@ class CodexHeadlessReasoningConfig(BaseProviderReasoningConfig):
             ):
                 thinking_level = config.thinking_level
                 return cls(
-                    cli_args=["-c", f'model_reasoning_effort="{thinking_level}"']
+                    cli_args=[
+                        "-c",
+                        f'model_reasoning_effort="{thinking_level}"',
+                    ]
                 )
         raise HeadlessExecutionError(
             unsupported_reasoning_kind_message("codex headless", config)

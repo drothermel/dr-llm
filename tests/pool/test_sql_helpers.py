@@ -11,7 +11,11 @@ from dr_llm.pool.db.sql_helpers import (
     validate_key_filter,
 )
 from dr_llm.pool.errors import PoolSchemaError
-from dr_llm.pool.db.key_filter import PoolKeyEqClause, PoolKeyFilter, PoolKeyInClause
+from dr_llm.pool.db.key_filter import (
+    PoolKeyEqClause,
+    PoolKeyFilter,
+    PoolKeyInClause,
+)
 
 
 def test_key_filter_clause_requires_exact_key_match() -> None:

@@ -110,9 +110,13 @@ def test_sample_to_row_json_serializes_nested_values() -> None:
 
     row = _SAMPLES_DEF.sample_to_row(sample)
 
-    assert row[SampleColumn.REQUEST_JSON] == {"rich": {"when": "2024-01-02T00:00:00Z"}}
+    assert row[SampleColumn.REQUEST_JSON] == {
+        "rich": {"when": "2024-01-02T00:00:00Z"}
+    }
     assert row[SampleColumn.RESPONSE_JSON] == {"when": "2024-01-03T00:00:00Z"}
-    assert row[SampleColumn.METADATA_JSON] == {"created_at": "2024-01-04T00:00:00Z"}
+    assert row[SampleColumn.METADATA_JSON] == {
+        "created_at": "2024-01-04T00:00:00Z"
+    }
 
 
 def test_sample_from_row_parses_dynamic_columns_and_json() -> None:
@@ -199,8 +203,16 @@ def test_pool_progress_construction() -> None:
     "field_name", ["total", "incomplete", "leased", "complete", "error"]
 )
 def test_pool_progress_rejects_negative_counts(field_name: str) -> None:
-    values = {"total": 10, "incomplete": 4, "leased": 2, "complete": 6, "error": 1}
+    values = {
+        "total": 10,
+        "incomplete": 4,
+        "leased": 2,
+        "complete": 6,
+        "error": 1,
+    }
     values[field_name] = -1
 
-    with pytest.raises(ValueError, match=rf"PoolProgress\.{field_name} must be >= 0"):
+    with pytest.raises(
+        ValueError, match=rf"PoolProgress\.{field_name} must be >= 0"
+    ):
         PoolProgress(**values)

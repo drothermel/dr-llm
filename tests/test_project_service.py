@@ -63,7 +63,9 @@ def test_create_project_retries_when_docker_reports_port_collision(
         if project.port == 5500:
             raise DockerPortAllocatedError()
 
-    monkeypatch.setattr(project_service_module, "create_project_container", fake_create)
+    monkeypatch.setattr(
+        project_service_module, "create_project_container", fake_create
+    )
     monkeypatch.setattr(
         project_service_module, "_port_has_listener", lambda port: False
     )
@@ -72,7 +74,9 @@ def test_create_project_retries_when_docker_reports_port_collision(
         "wait_docker_ready",
         lambda **kwargs: ContainerStatus.RUNNING,
     )
-    monkeypatch.setattr(project_service_module, "wait_dsn_ready", lambda dsn: None)
+    monkeypatch.setattr(
+        project_service_module, "wait_dsn_ready", lambda dsn: None
+    )
 
     project = create_project(CreateProjectRequest(project_name="demo"))
 
@@ -100,13 +104,17 @@ def test_create_project_skips_ports_with_existing_listeners(
         assert isinstance(project, DockerProjectCreateMetadata)
         attempted_ports.append(project.port)
 
-    monkeypatch.setattr(project_service_module, "create_project_container", fake_create)
+    monkeypatch.setattr(
+        project_service_module, "create_project_container", fake_create
+    )
     monkeypatch.setattr(
         project_service_module,
         "wait_docker_ready",
         lambda **kwargs: ContainerStatus.RUNNING,
     )
-    monkeypatch.setattr(project_service_module, "wait_dsn_ready", lambda dsn: None)
+    monkeypatch.setattr(
+        project_service_module, "wait_dsn_ready", lambda dsn: None
+    )
 
     project = create_project(CreateProjectRequest(project_name="demo"))
 
@@ -128,7 +136,9 @@ def test_create_project_translates_container_conflict(
         _ = kwargs
         raise DockerContainerConflictError()
 
-    monkeypatch.setattr(project_service_module, "create_project_container", fake_create)
+    monkeypatch.setattr(
+        project_service_module, "create_project_container", fake_create
+    )
     monkeypatch.setattr(
         project_service_module, "_port_has_listener", lambda port: False
     )
@@ -154,7 +164,9 @@ def test_create_project_cleans_up_container_when_ready_check_fails(
         project_service_module, "_port_has_listener", lambda port: False
     )
     monkeypatch.setattr(
-        project_service_module, "create_project_container", lambda **kwargs: None
+        project_service_module,
+        "create_project_container",
+        lambda **kwargs: None,
     )
 
     def fake_wait_docker_ready(**kwargs: object) -> ContainerStatus:
@@ -167,7 +179,9 @@ def test_create_project_cleans_up_container_when_ready_check_fails(
     monkeypatch.setattr(
         project_service_module, "wait_docker_ready", fake_wait_docker_ready
     )
-    monkeypatch.setattr(project_service_module, "call_docker_destroy", fake_destroy)
+    monkeypatch.setattr(
+        project_service_module, "call_docker_destroy", fake_destroy
+    )
 
     with pytest.raises(ProjectError, match="container did not become ready"):
         create_project(CreateProjectRequest(project_name="demo"))
@@ -193,7 +207,9 @@ def test_create_project_cleans_up_container_when_dsn_probe_fails(
         project_service_module, "_port_has_listener", lambda port: False
     )
     monkeypatch.setattr(
-        project_service_module, "create_project_container", lambda **kwargs: None
+        project_service_module,
+        "create_project_container",
+        lambda **kwargs: None,
     )
     monkeypatch.setattr(
         project_service_module,
@@ -205,7 +221,9 @@ def test_create_project_cleans_up_container_when_dsn_probe_fails(
         probed_dsns.append(dsn)
         raise ProjectError("postgres did not accept SQL connections")
 
-    monkeypatch.setattr(project_service_module, "wait_dsn_ready", fake_wait_dsn_ready)
+    monkeypatch.setattr(
+        project_service_module, "wait_dsn_ready", fake_wait_dsn_ready
+    )
     monkeypatch.setattr(
         project_service_module,
         "call_docker_destroy",
@@ -217,7 +235,9 @@ def test_create_project_cleans_up_container_when_dsn_probe_fails(
     with pytest.raises(ProjectError, match="did not accept SQL connections"):
         create_project(CreateProjectRequest(project_name="demo"))
 
-    assert probed_dsns == ["postgresql://postgres:postgres@localhost:5500/dr_llm"]
+    assert probed_dsns == [
+        "postgresql://postgres:postgres@localhost:5500/dr_llm"
+    ]
     assert destroyed == [("dr-llm-pg-demo", "dr-llm-data-demo")]
 
 
@@ -227,11 +247,17 @@ def test_assess_project_creation_reports_invalid_name_existing_project_and_coold
     recent = ProjectInfo(
         name="demo",
         port=5500,
-        created_at=project_service_module.datetime.now(project_service_module.UTC),
+        created_at=project_service_module.datetime.now(
+            project_service_module.UTC
+        ),
     )
-    monkeypatch.setattr(project_service_module, "list_projects", lambda: [recent])
+    monkeypatch.setattr(
+        project_service_module, "list_projects", lambda: [recent]
+    )
 
-    readiness = assess_project_creation(CreateProjectRequest(project_name="Demo"))
+    readiness = assess_project_creation(
+        CreateProjectRequest(project_name="Demo")
+    )
 
     assert readiness.allowed is False
     assert {violation.reason for violation in readiness.violations} == {
@@ -249,7 +275,9 @@ def test_assess_project_creation_reports_duplicate_project(
         lambda: [ProjectInfo(name="demo", port=5500)],
     )
 
-    readiness = assess_project_creation(CreateProjectRequest(project_name="demo"))
+    readiness = assess_project_creation(
+        CreateProjectRequest(project_name="demo")
+    )
 
     assert readiness.allowed is False
     assert [violation.reason for violation in readiness.violations] == [
@@ -264,7 +292,9 @@ def test_inspect_projects_includes_discovered_pool_names(
         ProjectInfo(name="running", port=5500, status=ContainerStatus.RUNNING),
         ProjectInfo(name="stopped", status=ContainerStatus.STOPPED),
     ]
-    monkeypatch.setattr(project_service_module, "list_projects", lambda: projects)
+    monkeypatch.setattr(
+        project_service_module, "list_projects", lambda: projects
+    )
     monkeypatch.setattr(
         "dr_llm.pool.admin.discovery.discover_pools",
         lambda dsn: ["alpha", "beta"] if dsn.endswith(":5500/dr_llm") else [],
@@ -276,7 +306,8 @@ def test_inspect_projects_includes_discovered_pool_names(
 
     assert running_summary.project.name == "running"
     assert (
-        running_summary.pool_inspection.status == ProjectPoolInspectionStatus.discovered
+        running_summary.pool_inspection.status
+        == ProjectPoolInspectionStatus.discovered
     )
     assert running_summary.pool_inspection.reason is None
     assert running_summary.pool_inspection.pool_names == ["alpha", "beta"]
@@ -284,7 +315,10 @@ def test_inspect_projects_includes_discovered_pool_names(
     assert running_summary.pool_inspection.inspected_at is not None
 
     assert stopped_summary.project.name == "stopped"
-    assert stopped_summary.pool_inspection.status == ProjectPoolInspectionStatus.skipped
+    assert (
+        stopped_summary.pool_inspection.status
+        == ProjectPoolInspectionStatus.skipped
+    )
     assert (
         stopped_summary.pool_inspection.reason
         == ProjectPoolInspectionReason.project_not_running
@@ -298,18 +332,27 @@ def test_inspect_projects_skips_projects_with_missing_dsn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = ProjectInfo(name="running", status=ContainerStatus.RUNNING)
-    monkeypatch.setattr(project_service_module, "list_projects", lambda: [project])
+    monkeypatch.setattr(
+        project_service_module, "list_projects", lambda: [project]
+    )
     monkeypatch.setattr(
         "dr_llm.pool.admin.discovery.discover_pools",
-        lambda dsn: (_ for _ in ()).throw(AssertionError("should not inspect pools")),
+        lambda dsn: (_ for _ in ()).throw(
+            AssertionError("should not inspect pools")
+        ),
     )
 
     summaries = inspect_projects()
     summary = summaries[0]
 
     assert summary.project.name == "running"
-    assert summary.pool_inspection.status == ProjectPoolInspectionStatus.skipped
-    assert summary.pool_inspection.reason == ProjectPoolInspectionReason.missing_dsn
+    assert (
+        summary.pool_inspection.status == ProjectPoolInspectionStatus.skipped
+    )
+    assert (
+        summary.pool_inspection.reason
+        == ProjectPoolInspectionReason.missing_dsn
+    )
     assert summary.pool_inspection.pool_names == []
     assert summary.pool_inspection.pool_count == 0
 
@@ -318,11 +361,17 @@ def test_inspect_projects_reports_connection_failures(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    project = ProjectInfo(name="running", port=5500, status=ContainerStatus.RUNNING)
-    monkeypatch.setattr(project_service_module, "list_projects", lambda: [project])
+    project = ProjectInfo(
+        name="running", port=5500, status=ContainerStatus.RUNNING
+    )
+    monkeypatch.setattr(
+        project_service_module, "list_projects", lambda: [project]
+    )
     monkeypatch.setattr(
         "dr_llm.pool.admin.discovery.discover_pools",
-        lambda dsn: (_ for _ in ()).throw(TransientPersistenceError("db unavailable")),
+        lambda dsn: (_ for _ in ()).throw(
+            TransientPersistenceError("db unavailable")
+        ),
     )
 
     with caplog.at_level("WARNING", logger="dr_llm.project.project_service"):
@@ -332,7 +381,8 @@ def test_inspect_projects_reports_connection_failures(
     assert summary.project.name == "running"
     assert summary.pool_inspection.status == ProjectPoolInspectionStatus.failed
     assert (
-        summary.pool_inspection.reason == ProjectPoolInspectionReason.connection_failed
+        summary.pool_inspection.reason
+        == ProjectPoolInspectionReason.connection_failed
     )
     assert summary.pool_inspection.pool_names == []
     assert summary.pool_inspection.pool_count == 0
@@ -344,13 +394,17 @@ def test_inspect_projects_does_not_log_skipped_projects(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     project = ProjectInfo(name="stopped", status=ContainerStatus.STOPPED)
-    monkeypatch.setattr(project_service_module, "list_projects", lambda: [project])
+    monkeypatch.setattr(
+        project_service_module, "list_projects", lambda: [project]
+    )
 
     with caplog.at_level("WARNING", logger="dr_llm.project.project_service"):
         summaries = inspect_projects()
 
     summary = summaries[0]
-    assert summary.pool_inspection.status == ProjectPoolInspectionStatus.skipped
+    assert (
+        summary.pool_inspection.status == ProjectPoolInspectionStatus.skipped
+    )
     assert caplog.records == []
 
 
@@ -434,25 +488,35 @@ def test_start_project_returns_fresh_project_metadata_after_ready(
         return ContainerStatus.RUNNING
 
     def fake_get_project(name: str) -> ProjectInfo:
-        return ProjectInfo(name=name, port=5500, status=ContainerStatus.RUNNING)
+        return ProjectInfo(
+            name=name, port=5500, status=ContainerStatus.RUNNING
+        )
 
     probed_dsns: list[str] = []
 
     def fake_wait_dsn_ready(dsn: str) -> None:
         probed_dsns.append(dsn)
 
-    monkeypatch.setattr(project_service_module, "call_docker_start", fake_start)
+    monkeypatch.setattr(
+        project_service_module, "call_docker_start", fake_start
+    )
     monkeypatch.setattr(
         project_service_module, "wait_docker_ready", fake_wait_docker_ready
     )
-    monkeypatch.setattr(project_service_module, "wait_dsn_ready", fake_wait_dsn_ready)
-    monkeypatch.setattr(project_service_module, "get_project", fake_get_project)
+    monkeypatch.setattr(
+        project_service_module, "wait_dsn_ready", fake_wait_dsn_ready
+    )
+    monkeypatch.setattr(
+        project_service_module, "get_project", fake_get_project
+    )
 
     project = start_project("demo")
 
     assert started_containers == ["dr-llm-pg-demo"]
     assert waited_for == [("dr-llm-pg-demo", "postgres", "dr_llm")]
-    assert probed_dsns == ["postgresql://postgres:postgres@localhost:5500/dr_llm"]
+    assert probed_dsns == [
+        "postgresql://postgres:postgres@localhost:5500/dr_llm"
+    ]
     assert project.port == 5500
     assert project.status == ContainerStatus.RUNNING
 
@@ -562,7 +626,9 @@ def test_restore_project_does_not_precheck_cached_running_status(
             }
         )
 
-    monkeypatch.setattr(project_service_module, "docker_swap_in_db", fake_swap_in_db)
+    monkeypatch.setattr(
+        project_service_module, "docker_swap_in_db", fake_swap_in_db
+    )
 
     restore_project("demo", backup_file)
 
@@ -589,7 +655,9 @@ def test_restore_project_translates_missing_container_to_project_not_found(
         _ = (sql_stream, container_name, db_user, target_db_name)
         raise DockerContainerNotFoundError()
 
-    monkeypatch.setattr(project_service_module, "docker_swap_in_db", fake_swap_in_db)
+    monkeypatch.setattr(
+        project_service_module, "docker_swap_in_db", fake_swap_in_db
+    )
 
     with pytest.raises(ProjectNotFoundError, match="Project 'demo' not found"):
         restore_project("demo", backup_file)
@@ -613,7 +681,9 @@ def test_restore_project_translates_stopped_container_to_project_error(
         _ = (sql_stream, container_name, db_user, target_db_name)
         raise DockerContainerNotRunningError()
 
-    monkeypatch.setattr(project_service_module, "docker_swap_in_db", fake_swap_in_db)
+    monkeypatch.setattr(
+        project_service_module, "docker_swap_in_db", fake_swap_in_db
+    )
 
     with pytest.raises(
         ProjectError,
@@ -677,7 +747,9 @@ def test_delete_project_destroys_running_project_with_no_pools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     destroyed: list[tuple[str, str]] = []
-    project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
+    project = ProjectInfo(
+        name="demo", port=5500, status=ContainerStatus.RUNNING
+    )
 
     monkeypatch.setattr(
         project_service_module, "maybe_get_project", lambda name: project
@@ -713,7 +785,9 @@ def test_delete_project_autostarts_stopped_project(
     )
 
     monkeypatch.setattr(
-        project_service_module, "maybe_get_project", lambda name: stopped_project
+        project_service_module,
+        "maybe_get_project",
+        lambda name: stopped_project,
     )
     monkeypatch.setattr(
         project_service_module,
@@ -744,11 +818,15 @@ def test_delete_project_preserves_discovered_pool_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     destroyed: list[tuple[str, str]] = []
-    project = ProjectInfo(name="demo", port=5500, status=ContainerStatus.RUNNING)
+    project = ProjectInfo(
+        name="demo", port=5500, status=ContainerStatus.RUNNING
+    )
     beta_completed = threading.Event()
     gamma_completed = threading.Event()
 
-    def fake_delete_one(project_name: str, pool_name: str) -> PoolDeletionResult:
+    def fake_delete_one(
+        project_name: str, pool_name: str
+    ) -> PoolDeletionResult:
         _ = project_name
         if pool_name == "alpha":
             beta_completed.wait(timeout=1)
@@ -789,7 +867,9 @@ def test_delete_project_preserves_discovered_pool_order(
     result = delete_project(DeleteProjectRequest(project_name="demo"))
 
     assert result.status == ProjectDeletionStatus.deleted
-    assert [pool_result.request.pool_name for pool_result in result.pool_results] == [
+    assert [
+        pool_result.request.pool_name for pool_result in result.pool_results
+    ] == [
         "alpha",
         "beta",
         "gamma",
@@ -809,7 +889,9 @@ def test_delete_project_fail_fast_restores_temporary_start_state(
         name="demo", port=5500, status=ContainerStatus.RUNNING
     )
 
-    def fake_delete_one(project_name: str, pool_name: str) -> PoolDeletionResult:
+    def fake_delete_one(
+        project_name: str, pool_name: str
+    ) -> PoolDeletionResult:
         _ = project_name
         observed_calls.append(pool_name)
         if pool_name == "alpha":
@@ -831,7 +913,9 @@ def test_delete_project_fail_fast_restores_temporary_start_state(
         )
 
     monkeypatch.setattr(
-        project_service_module, "maybe_get_project", lambda name: stopped_project
+        project_service_module,
+        "maybe_get_project",
+        lambda name: stopped_project,
     )
     monkeypatch.setattr(
         project_service_module,

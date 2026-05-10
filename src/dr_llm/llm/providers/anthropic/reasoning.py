@@ -34,7 +34,9 @@ def _validate_anthropic_budget_for_provider(
             f"{provider} budget thinking requires budget_tokens when "
             "thinking_level is 'budget'"
         )
-    capabilities = reasoning_capabilities_for_model(provider=provider, model=model)
+    capabilities = reasoning_capabilities_for_model(
+        provider=provider, model=model
+    )
     if (
         capabilities is None
         or capabilities.min_budget_tokens is None
@@ -55,7 +57,9 @@ def _validate_anthropic_budget_for_provider(
 def validate_reasoning_for_anthropic(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
-    capabilities = reasoning_capabilities_for_model(provider="anthropic", model=model)
+    capabilities = reasoning_capabilities_for_model(
+        provider="anthropic", model=model
+    )
     dispatch_reasoning_validation(
         provider="anthropic",
         model=model,
@@ -65,8 +69,10 @@ def validate_reasoning_for_anthropic(
         validate_native=lambda spec: _validate_anthropic_reasoning_shape(
             model=model, reasoning=spec
         ),
-        validate_top_budget=lambda budget: _validate_anthropic_budget_for_provider(
-            provider="anthropic", model=model, budget_tokens=budget.tokens
+        validate_top_budget=lambda budget: (
+            _validate_anthropic_budget_for_provider(
+                provider="anthropic", model=model, budget_tokens=budget.tokens
+            )
         ),
     )
 
@@ -85,7 +91,9 @@ def _validate_anthropic_reasoning_shape(
         return
     if thinking_level == ThinkingLevel.BUDGET:
         _validate_anthropic_budget_for_provider(
-            provider="anthropic", model=model, budget_tokens=reasoning.budget_tokens
+            provider="anthropic",
+            model=model,
+            budget_tokens=reasoning.budget_tokens,
         )
         return
     raise ValueError(
@@ -125,7 +133,9 @@ def validate_reasoning_for_kimi_code(
             f"kimi-code reasoning is not supported for kind={reasoning.kind!r}"
         )
     if reasoning.display is not None:
-        raise ValueError("kimi-code does not support anthropic display controls")
+        raise ValueError(
+            "kimi-code does not support anthropic display controls"
+        )
     if reasoning.thinking_level not in {
         ThinkingLevel.NA,
         ThinkingLevel.OFF,
@@ -138,7 +148,9 @@ def validate_reasoning_for_kimi_code(
         )
     if reasoning.thinking_level == ThinkingLevel.BUDGET:
         _validate_anthropic_budget_for_provider(
-            provider="kimi-code", model=model, budget_tokens=reasoning.budget_tokens
+            provider="kimi-code",
+            model=model,
+            budget_tokens=reasoning.budget_tokens,
         )
 
 
@@ -178,7 +190,9 @@ class AnthropicReasoningConfig(BaseProviderReasoningConfig):
             return cls()
         match config:
             case ReasoningBudget(tokens=tokens):
-                return cls(thinking={"type": "enabled", "budget_tokens": tokens})
+                return cls(
+                    thinking={"type": "enabled", "budget_tokens": tokens}
+                )
             case AnthropicReasoning(
                 thinking_level=thinking_level,
                 budget_tokens=budget_tokens,
@@ -238,7 +252,9 @@ class KimiCodeReasoningConfig(BaseProviderReasoningConfig):
                 tokens = require_budget_tokens(
                     budget_tokens, label="kimi-code", min_value=1
                 )
-                return cls(thinking={"type": "enabled", "budget_tokens": tokens})
+                return cls(
+                    thinking={"type": "enabled", "budget_tokens": tokens}
+                )
             case _:
                 raise ProviderSemanticError(
                     unsupported_reasoning_kind_message("kimi-code", config)

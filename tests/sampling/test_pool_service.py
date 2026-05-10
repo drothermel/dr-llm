@@ -25,7 +25,9 @@ def test_acquire_or_generate_returns_early_when_satisfied() -> None:
         sample_idx=0,
     )
     sampling.acquire.return_value = AcquireResult(samples=[sample])
-    query = AcquireQuery(run_id="r1", key_values={"dim_a": "x", "dim_b": 1}, n=1)
+    query = AcquireQuery(
+        run_id="r1", key_values={"dim_a": "x", "dim_b": 1}, n=1
+    )
 
     result = service.acquire_or_generate(
         query, consumer_id="c1", generator_fn=lambda _kv, _n: []
@@ -48,12 +50,16 @@ def test_acquire_or_generate_calls_generator_on_deficit() -> None:
     reacquired_result = AcquireResult(samples=[generated_sample])
     sampling.acquire.side_effect = [empty_result, reacquired_result]
     store.insert_samples.return_value = InsertResult(inserted=1, skipped=0)
-    query = AcquireQuery(run_id="r1", key_values={"dim_a": "x", "dim_b": 1}, n=1)
+    query = AcquireQuery(
+        run_id="r1", key_values={"dim_a": "x", "dim_b": 1}, n=1
+    )
 
     def gen(_kv: dict, _n: int) -> list[PoolSample]:
         return [generated_sample]
 
-    result = service.acquire_or_generate(query, consumer_id="c1", generator_fn=gen)
+    result = service.acquire_or_generate(
+        query, consumer_id="c1", generator_fn=gen
+    )
 
     assert result.claimed == 1
     store.insert_samples.assert_called_once()
@@ -71,8 +77,12 @@ def test_acquire_or_generate_reacquires_when_nothing_inserted() -> None:
     )
     reacquired_result = AcquireResult(samples=[generated_sample])
     sampling.acquire.side_effect = [empty_result, reacquired_result]
-    store.insert_samples.return_value = InsertResult(inserted=0, skipped=1, failed=0)
-    query = AcquireQuery(run_id="r1", key_values={"dim_a": "x", "dim_b": 1}, n=1)
+    store.insert_samples.return_value = InsertResult(
+        inserted=0, skipped=1, failed=0
+    )
+    query = AcquireQuery(
+        run_id="r1", key_values={"dim_a": "x", "dim_b": 1}, n=1
+    )
 
     result = service.acquire_or_generate(
         query,

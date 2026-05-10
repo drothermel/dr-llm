@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.reasoning import OpenAIReasoning, ReasoningSpec, ThinkingLevel
-from dr_llm.llm.providers.reasoning_capability_types import ReasoningCapabilities
+from dr_llm.llm.providers.reasoning import (
+    OpenAIReasoning,
+    ReasoningSpec,
+    ThinkingLevel,
+)
+from dr_llm.llm.providers.reasoning_capability_types import (
+    ReasoningCapabilities,
+)
 from dr_llm.llm.providers.thinking_utils import matches_family
 
 OPENAI_THINKING_SUPPORTED_MODELS = [
@@ -141,10 +147,14 @@ def validate_openai_sampling_controls(
     if not openai_supports_sampling_with_reasoning_off(model):
         raise ValueError(OPENAI_TEMP_TOPP_UNSUPPORTED_MSG.format(model=model))
     if reasoning != OpenAIReasoning(thinking_level=ThinkingLevel.OFF):
-        raise ValueError(OPENAI_TEMP_TOPP_REASONING_REQUIRED_MSG.format(model=model))
+        raise ValueError(
+            OPENAI_TEMP_TOPP_REASONING_REQUIRED_MSG.format(model=model)
+        )
 
 
-def reasoning_capabilities_for_openai(model: str) -> ReasoningCapabilities | None:
+def reasoning_capabilities_for_openai(
+    model: str,
+) -> ReasoningCapabilities | None:
     if openai_supports_configurable_thinking(model):
         return ReasoningCapabilities(mode="openai_effort")
     return None

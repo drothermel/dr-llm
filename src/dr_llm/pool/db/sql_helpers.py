@@ -30,19 +30,26 @@ logger = logging.getLogger(__name__)
 def is_constraint_error(exc: BaseException) -> bool:
     orig = exc.orig if isinstance(exc, DBAPIError) else exc
     return isinstance(
-        orig, (pg_errors.UniqueViolation, pg_errors.IntegrityConstraintViolation)
+        orig,
+        (pg_errors.UniqueViolation, pg_errors.IntegrityConstraintViolation),
     )
 
 
-def validate_key_values(schema: PoolSchema, key_values: dict[str, Any]) -> None:
+def validate_key_values(
+    schema: PoolSchema, key_values: dict[str, Any]
+) -> None:
     expected = set(schema.key_column_names)
     provided = set(key_values.keys())
     missing = expected - provided
     if missing:
-        raise PoolSchemaError(f"Missing key columns: {missing}. Expected: {expected}")
+        raise PoolSchemaError(
+            f"Missing key columns: {missing}. Expected: {expected}"
+        )
     extra = provided - expected
     if extra:
-        raise PoolSchemaError(f"Unexpected key columns: {extra}. Expected: {expected}")
+        raise PoolSchemaError(
+            f"Unexpected key columns: {extra}. Expected: {expected}"
+        )
 
 
 def key_filter_clause(
@@ -51,7 +58,9 @@ def key_filter_clause(
     key_values: dict[str, Any],
 ) -> ColumnElement[bool]:
     validate_key_values(schema, dict(key_values))
-    return and_(*[table.c[kc.name] == key_values[kc.name] for kc in schema.key_columns])
+    return and_(
+        *[table.c[kc.name] == key_values[kc.name] for kc in schema.key_columns]
+    )
 
 
 def partial_key_filter_clause(

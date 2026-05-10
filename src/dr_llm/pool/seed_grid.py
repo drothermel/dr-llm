@@ -112,7 +112,8 @@ def _iter_cells(axes: list[Axis[Any]]) -> Iterator[GridCell]:
     for combo in product(*(axis.members for axis in axes)):
         yield GridCell(
             key_values={
-                name: member.id for name, member in zip(axis_names, combo, strict=True)
+                name: member.id
+                for name, member in zip(axis_names, combo, strict=True)
             },
             values={
                 name: member.value
@@ -121,7 +122,9 @@ def _iter_cells(axes: list[Axis[Any]]) -> Iterator[GridCell]:
         )
 
 
-def _validate_axes_against_schema(store: PoolStore, axes: list[Axis[Any]]) -> None:
+def _validate_axes_against_schema(
+    store: PoolStore, axes: list[Axis[Any]]
+) -> None:
     if not axes:
         raise ValueError("seed_grid requires at least one axis")
     schema_names = store.schema.key_column_names
@@ -243,7 +246,9 @@ def seed_llm_grid(
         messages, llm_config = build_request(cell)
         return {
             llm_config_key: llm_config.model_dump(mode="json"),
-            prompt_key: [message.model_dump(mode="json") for message in messages],
+            prompt_key: [
+                message.model_dump(mode="json") for message in messages
+            ],
         }
 
     return seed_grid(

@@ -52,7 +52,9 @@ class WorkerController[TBackendState: BaseModel]:
             backend_state=self._get_backend_state(),
         )
 
-    def join(self, timeout: float | None = None) -> WorkerSnapshot[TBackendState]:
+    def join(
+        self, timeout: float | None = None
+    ) -> WorkerSnapshot[TBackendState]:
         """Wait for workers to exit, returning a final snapshot.
 
         Safe to call multiple times: subsequent calls return the snapshot

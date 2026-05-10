@@ -12,7 +12,10 @@ from dr_llm.llm.providers.kimi_code import KimiCodeProvider
 from dr_llm.llm.providers.minimax import MiniMaxProvider
 from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
 from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
-from dr_llm.llm.providers.config import ProviderAvailabilityStatus, ProviderConfig
+from dr_llm.llm.providers.config import (
+    ProviderAvailabilityStatus,
+    ProviderConfig,
+)
 from dr_llm.llm.providers.registry import ProviderRegistry
 from tests.conftest import FakeProvider
 
@@ -81,7 +84,9 @@ def test_available_names_accepts_precomputed_statuses() -> None:
     registry = ProviderRegistry()
     statuses = [
         ProviderAvailabilityStatus(provider="ready-provider", available=True),
-        ProviderAvailabilityStatus(provider="missing-provider", available=False),
+        ProviderAvailabilityStatus(
+            provider="missing-provider", available=False
+        ),
     ]
 
     assert registry.available_names(statuses=statuses) == ["ready-provider"]

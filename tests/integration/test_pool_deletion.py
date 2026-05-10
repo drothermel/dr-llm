@@ -41,7 +41,9 @@ def _get_dsn() -> str:
 def _project_for_dsn(name: str, dsn: str) -> ProjectInfo:
     parsed = urlparse(dsn)
     assert parsed.port is not None
-    return ProjectInfo(name=name, port=parsed.port, status=ContainerStatus.RUNNING)
+    return ProjectInfo(
+        name=name, port=parsed.port, status=ContainerStatus.RUNNING
+    )
 
 
 def _drop_tables(dsn: str, table_names: Iterable[str]) -> None:
@@ -58,10 +60,16 @@ def _drop_tables(dsn: str, table_names: Iterable[str]) -> None:
 def _drop_pool(dsn: str, pool_name: str) -> None:
     try:
         _drop_tables(
-            dsn, [*pool_table_names(pool_name), *_claim_table_names(dsn, pool_name)]
+            dsn,
+            [
+                *pool_table_names(pool_name),
+                *_claim_table_names(dsn, pool_name),
+            ],
         )
         with psycopg.connect(dsn) as conn:
-            conn.execute("DELETE FROM pool_catalog WHERE pool_name = %s", [pool_name])
+            conn.execute(
+                "DELETE FROM pool_catalog WHERE pool_name = %s", [pool_name]
+            )
             conn.commit()
     except psycopg.errors.UndefinedTable:
         return
@@ -130,7 +138,9 @@ def test_delete_pool_reports_counts_for_normal_pool(
         try:
             store.ensure_schema()
         except (psycopg.OperationalError, TransientPersistenceError) as exc:
-            pytest.skip(f"Postgres unavailable for pool integration tests: {exc}")
+            pytest.skip(
+                f"Postgres unavailable for pool integration tests: {exc}"
+            )
 
         store.insert_sample(
             PoolSample(
@@ -185,7 +195,9 @@ def test_delete_pool_with_active_leases(
         try:
             store.ensure_schema()
         except (psycopg.OperationalError, TransientPersistenceError) as exc:
-            pytest.skip(f"Postgres unavailable for pool integration tests: {exc}")
+            pytest.skip(
+                f"Postgres unavailable for pool integration tests: {exc}"
+            )
 
         store.insert_sample(
             PoolSample(
@@ -214,8 +226,14 @@ def test_delete_pool_with_active_leases(
         )
 
         assert result.status == PoolDeletionStatus.deleted
-        assert result.pre_delete_counts[schema.table_name(PoolTableType.SAMPLES)] == 2
-        assert result.pre_delete_counts[schema.table_name(PoolTableType.LEASES)] == 1
+        assert (
+            result.pre_delete_counts[schema.table_name(PoolTableType.SAMPLES)]
+            == 2
+        )
+        assert (
+            result.pre_delete_counts[schema.table_name(PoolTableType.LEASES)]
+            == 1
+        )
         for table_name in pool_table_names(pool_name):
             assert _table_exists(dsn, table_name) is False
         assert _catalog_entry_exists(dsn, pool_name) is False
@@ -240,7 +258,9 @@ def test_delete_pool_removes_sampling_claim_tables(
         try:
             store.ensure_schema()
         except (psycopg.OperationalError, TransientPersistenceError) as exc:
-            pytest.skip(f"Postgres unavailable for pool integration tests: {exc}")
+            pytest.skip(
+                f"Postgres unavailable for pool integration tests: {exc}"
+            )
 
         sampling = SamplingStore.from_pool_store(store)
         sampling.setup_consumer(consumer_id)
@@ -273,8 +293,12 @@ def test_delete_pool_does_not_delete_longer_pool_claim_tables(
     longer_pool_name = f"{short_pool_name}_claims_bar"
     consumer_id = "baz"
     longer_claims_table = claims_table_name(longer_pool_name, consumer_id)
-    short_runtime = DbRuntime(DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=2))
-    longer_runtime = DbRuntime(DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=2))
+    short_runtime = DbRuntime(
+        DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=2)
+    )
+    longer_runtime = DbRuntime(
+        DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=2)
+    )
     short_schema = PoolSchema(
         name=short_pool_name, key_columns=[KeyColumn(name="dim_a")]
     )
@@ -289,7 +313,9 @@ def test_delete_pool_does_not_delete_longer_pool_claim_tables(
             short_store.ensure_schema()
             longer_store.ensure_schema()
         except (psycopg.OperationalError, TransientPersistenceError) as exc:
-            pytest.skip(f"Postgres unavailable for pool integration tests: {exc}")
+            pytest.skip(
+                f"Postgres unavailable for pool integration tests: {exc}"
+            )
 
         sampling = SamplingStore.from_pool_store(longer_store)
         sampling.setup_consumer(consumer_id)

@@ -69,7 +69,9 @@ class SamplesTableDef(BaseModel):
         key_columns = [table.c[name] for name in schema.key_column_names]
         return [
             Index(
-                pool_index_name(IndexNamePrefix.UNIQUE, table.name, PoolIndexName.CELL),
+                pool_index_name(
+                    IndexNamePrefix.UNIQUE, table.name, PoolIndexName.CELL
+                ),
                 *key_columns,
                 table.c[SampleColumn.SAMPLE_IDX],
                 unique=True,
@@ -118,7 +120,9 @@ class SamplesTableDef(BaseModel):
             **sample.key_values,
         }
 
-    def sample_from_row(self, schema: PoolSchema, row: Mapping[str, Any]) -> PoolSample:
+    def sample_from_row(
+        self, schema: PoolSchema, row: Mapping[str, Any]
+    ) -> PoolSample:
         row_dict = dict(row)
         return PoolSample(
             sample_id=row_dict[SampleColumn.SAMPLE_ID],

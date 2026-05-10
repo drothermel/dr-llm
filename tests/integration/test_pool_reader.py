@@ -34,7 +34,9 @@ _READER_SCHEMA = PoolSchema(
 def _get_dsn() -> str:
     dsn = os.getenv("DR_LLM_TEST_DATABASE_URL")
     if dsn is None:
-        raise RuntimeError("Set DR_LLM_TEST_DATABASE_URL to run pool integration tests")
+        raise RuntimeError(
+            "Set DR_LLM_TEST_DATABASE_URL to run pool integration tests"
+        )
     return dsn
 
 
@@ -46,7 +48,9 @@ def _drop_pool_tables(dsn: str, schema: PoolSchema) -> None:
                     sql.Identifier("public", schema.table_name(table_type))
                 )
             )
-        conn.execute("DELETE FROM pool_catalog WHERE pool_name = %s", [schema.name])
+        conn.execute(
+            "DELETE FROM pool_catalog WHERE pool_name = %s", [schema.name]
+        )
         conn.commit()
 
 
@@ -114,7 +118,9 @@ def reader_runtime() -> Generator[DbRuntime, None, None]:
     except (psycopg.OperationalError, TransientPersistenceError) as exc:
         if runtime is not None:
             runtime.close()
-        pytest.skip(f"Postgres unavailable for pool reader integration tests: {exc}")
+        pytest.skip(
+            f"Postgres unavailable for pool reader integration tests: {exc}"
+        )
 
     yield runtime
     _drop_pool_tables(dsn, _READER_SCHEMA)
@@ -131,7 +137,9 @@ def test_open_from_catalog(reader_runtime: DbRuntime) -> None:
 @pytest.mark.integration
 def test_open_raises_for_missing_pool(reader_runtime: DbRuntime) -> None:
     with pytest.raises(PoolNotFoundError):
-        PoolReader.open(f"never_created_{uuid4().hex[:8]}", runtime=reader_runtime)
+        PoolReader.open(
+            f"never_created_{uuid4().hex[:8]}", runtime=reader_runtime
+        )
 
 
 @pytest.mark.integration
@@ -165,7 +173,9 @@ def test_samples_streaming_iterator(reader_runtime: DbRuntime) -> None:
 
 
 @pytest.mark.integration
-def test_samples_list_with_completion_filter(reader_runtime: DbRuntime) -> None:
+def test_samples_list_with_completion_filter(
+    reader_runtime: DbRuntime,
+) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
 
     complete = reader.samples_list(completion="complete")
@@ -182,7 +192,9 @@ def test_samples_list_with_completion_filter(reader_runtime: DbRuntime) -> None:
 @pytest.mark.integration
 def test_samples_list_supports_in_filter(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    rows = reader.samples_list(key_filter=PoolKeyFilter.in_(dim_a=["alpha", "beta"]))
+    rows = reader.samples_list(
+        key_filter=PoolKeyFilter.in_(dim_a=["alpha", "beta"])
+    )
     assert len(rows) == 5
 
 
@@ -200,7 +212,9 @@ def test_progress_aggregates_correctly(reader_runtime: DbRuntime) -> None:
 @pytest.mark.integration
 def test_progress_with_key_filter(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    alpha_progress = reader.progress(key_filter=PoolKeyFilter.eq(dim_a="alpha"))
+    alpha_progress = reader.progress(
+        key_filter=PoolKeyFilter.eq(dim_a="alpha")
+    )
     assert alpha_progress.total == 3
     assert alpha_progress.complete == 2
     assert alpha_progress.incomplete == 1

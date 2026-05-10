@@ -73,6 +73,7 @@ markers = [
 ]
 
 [tool.ruff]
+line-length = 79
 include = ["src/**/*.py", "src/**/*.pyi", "tests/**/*.py", "scripts/**/*.py"]
 
 [tool.ty.environment]

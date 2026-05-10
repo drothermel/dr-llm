@@ -137,7 +137,9 @@ class HeadlessLlmConfig(BaseModel):
         )
 
 
-type LlmConfig = OpenAILlmConfig | ApiLlmConfig | KimiCodeLlmConfig | HeadlessLlmConfig
+type LlmConfig = (
+    OpenAILlmConfig | ApiLlmConfig | KimiCodeLlmConfig | HeadlessLlmConfig
+)
 LlmConfigSpec = Annotated[LlmConfig, Field(discriminator="provider")]
 LLM_CONFIG_ADAPTER = TypeAdapter(LlmConfigSpec)
 

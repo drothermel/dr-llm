@@ -59,12 +59,16 @@ def main() -> None:
     if unavailable:
         step("3. Missing requirements")
         for status in unavailable:
-            reasons = [f"missing env {env_var}" for env_var in status.missing_env_vars]
+            reasons = [
+                f"missing env {env_var}" for env_var in status.missing_env_vars
+            ]
             reasons.extend(
                 f"missing executable {executable}"
                 for executable in status.missing_executables
             )
-            print(f"{YELLOW}  - {status.provider}: {', '.join(reasons)}{RESET}")
+            print(
+                f"{YELLOW}  - {status.provider}: {', '.join(reasons)}{RESET}"
+            )
 
     if not available:
         raise typer.Exit(1)
@@ -82,7 +86,9 @@ def main() -> None:
             failed_providers.append(provider)
 
     step("5. Summary")
-    succeeded = [provider for provider in available if provider not in failed_providers]
+    succeeded = [
+        provider for provider in available if provider not in failed_providers
+    ]
     print(f"  succeeded: {len(succeeded)}")
     if succeeded:
         print(f"  providers: {', '.join(succeeded)}")
