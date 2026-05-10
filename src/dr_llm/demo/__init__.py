@@ -15,6 +15,7 @@ from dr_llm.demo.demo_models import (
 )
 from dr_llm.demo.projects import (
     create_demo_project,
+    require_demo_project_dsn,
     temporary_demo_project,
     temporary_demo_project_name,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "header",
     "ok",
     "print_list",
+    "require_demo_project_dsn",
     "step",
     "temporary_demo_project",
     "temporary_demo_project_name",

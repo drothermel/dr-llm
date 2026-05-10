@@ -32,6 +32,7 @@ import typer
 from dr_llm.demo import (
     demo_pool_fill_llm_configs,
     ensure_docker_available,
+    require_demo_project_dsn,
     temporary_demo_project,
     temporary_demo_project_name,
 )
@@ -293,10 +294,10 @@ def main(
     print(f"Creating temporary project '{project_name}'...")
     with temporary_demo_project(project_name) as project:
         try:
-            assert project.dsn is not None
-            print(f"Postgres ready at {project.dsn}")
+            dsn = require_demo_project_dsn(project)
+            print(f"Postgres ready at {dsn}")
             _run_demo(
-                project.dsn,
+                dsn,
                 pool_name,
                 num_workers,
                 samples_per_cell,

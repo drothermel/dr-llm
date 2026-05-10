@@ -41,6 +41,7 @@ from dr_llm.demo import (
     fail,
     header as demo_header,
     ok,
+    require_demo_project_dsn,
     step,
     warn,
 )
@@ -203,8 +204,6 @@ def store_result(
     prompt: str,
     response: dict[str, Any],
 ) -> None:
-    """Insert a query result into the pool."""
-    usage = response.get("usage") or {}
     store.insert_sample(
         PoolSample(
             key_values={"provider": provider, "model": model},
@@ -213,7 +212,7 @@ def store_result(
             finish_reason=response.get("finish_reason"),
             metadata={
                 "cost": response.get("cost") or {},
-                "usage": usage,
+                "usage": response.get("usage") or {},
                 "latency_ms": response.get("latency_ms", 0),
             },
         )
@@ -300,12 +299,12 @@ def main(
     project: ProjectInfo | None = None
     try:
         project = create_demo_project(project_name, replace_existing=True)
-        assert project.dsn is not None
-        ok(f"Project '{project_name}' created at {project.dsn}")
+        dsn = require_demo_project_dsn(project)
+        ok(f"Project '{project_name}' created at {dsn}")
 
         step("3. Initializing pool")
         runtime = DbRuntime(
-            DbConfig(dsn=project.dsn, min_pool_size=1, max_pool_size=4)
+            DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=4)
         )
         store = PoolStore(POOL_SCHEMA, runtime)
         store.ensure_schema()
@@ -375,8 +374,7 @@ def main(
     )
     command_hint(
         "Destroy permanently",
-        "uv run dr-llm project destroy "
-        f"{project_name} --yes-really-delete-everything",
+        f"uv run dr-llm project destroy {project_name} --yes-really-delete-everything",
     )
 
 

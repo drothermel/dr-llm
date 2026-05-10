@@ -98,6 +98,21 @@ def test_create_demo_project_can_preserve_existing_project(
     assert destroyed == []
 
 
+def test_require_demo_project_dsn_returns_dsn() -> None:
+    project = ProjectInfo(name="demo", port=5500)
+
+    assert demo_projects.require_demo_project_dsn(project) == (
+        "postgresql://postgres:postgres@localhost:5500/dr_llm"
+    )
+
+
+def test_require_demo_project_dsn_raises_for_missing_dsn() -> None:
+    project = ProjectInfo(name="demo")
+
+    with pytest.raises(RuntimeError, match="Demo project 'demo' has no DSN"):
+        demo_projects.require_demo_project_dsn(project)
+
+
 def test_temporary_demo_project_destroys_after_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

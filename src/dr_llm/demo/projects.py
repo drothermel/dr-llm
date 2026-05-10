@@ -31,6 +31,13 @@ def temporary_demo_project_name(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex[:8]}"
 
 
+def require_demo_project_dsn(project: ProjectInfo) -> str:
+    """Return a demo project's DSN, raising if project creation omitted it."""
+    if project.dsn is None:
+        raise RuntimeError(f"Demo project {project.name!r} has no DSN.")
+    return project.dsn
+
+
 @contextmanager
 def temporary_demo_project(project_name: str) -> Iterator[ProjectInfo]:
     """Create a demo project and always destroy it after use."""
@@ -45,6 +52,7 @@ def temporary_demo_project(project_name: str) -> Iterator[ProjectInfo]:
 
 __all__ = [
     "create_demo_project",
+    "require_demo_project_dsn",
     "temporary_demo_project",
     "temporary_demo_project_name",
 ]
