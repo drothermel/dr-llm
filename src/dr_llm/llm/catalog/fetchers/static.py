@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from dr_llm.llm.providers.headless.codex import CodexHeadlessProvider
-from dr_llm.llm.providers.headless.claude import ClaudeHeadlessProvider
+from dr_llm.llm.providers.headless.codex.provider import CodexHeadlessProvider
+from dr_llm.llm.providers.headless.claude.provider import (
+    ClaudeHeadlessProvider,
+)
 from dr_llm.llm.providers.base import Provider
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.reasoning_capabilities import (

@@ -15,8 +15,10 @@ from dr_llm.llm import (
     ReasoningBudget,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.headless.claude import ClaudeHeadlessProvider
-from dr_llm.llm.providers.headless.codex import CodexHeadlessProvider
+from dr_llm.llm.providers.headless.claude.provider import (
+    ClaudeHeadlessProvider,
+)
+from dr_llm.llm.providers.headless.codex.provider import CodexHeadlessProvider
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_subprocess_mock
 

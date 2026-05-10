@@ -10,7 +10,7 @@ from dr_llm.llm.catalog.fetchers.common import (
     require_api_key,
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.providers.kimi_code import KimiCodeProvider
+from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
 from dr_llm.llm.providers.reasoning_capabilities import (
     reasoning_capabilities_for_model,
 )

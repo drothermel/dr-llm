@@ -12,7 +12,7 @@ from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilities,
 )
 from dr_llm.llm.providers.effort import supported_effort_levels
-from dr_llm.llm.providers.headless.codex_thinking import (
+from dr_llm.llm.providers.headless.codex.capabilities import (
     codex_supports_configurable_thinking,
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,

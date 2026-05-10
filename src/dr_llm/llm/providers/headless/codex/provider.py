@@ -19,10 +19,10 @@ from dr_llm.llm.providers.headless.base import (
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
-from dr_llm.llm.providers.headless.config import CodexHeadlessProviderConfig
-from dr_llm.llm.providers.headless.reasoning import (
+from dr_llm.llm.providers.headless.codex.reasoning import (
     CodexHeadlessReasoningConfig,
 )
+from dr_llm.llm.providers.headless.config import CodexHeadlessProviderConfig
 from dr_llm.llm.request import HeadlessLlmRequest
 
 

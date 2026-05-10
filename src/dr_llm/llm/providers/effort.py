@@ -8,13 +8,13 @@ from dr_llm.llm.providers.anthropic.effort import (
 )
 from dr_llm.llm.names import EffortSpec
 from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
-from dr_llm.llm.providers.headless.claude_capabilities import (
+from dr_llm.llm.providers.headless.claude.capabilities import (
     supported_effort_levels_for_claude_code,
 )
-from dr_llm.llm.providers.kimi_code_capabilities import (
+from dr_llm.llm.providers.kimi_code.capabilities import (
     supported_effort_levels_for_kimi_code,
 )
-from dr_llm.llm.providers.minimax_capabilities import (
+from dr_llm.llm.providers.minimax.capabilities import (
     supported_effort_levels_for_minimax,
 )
 

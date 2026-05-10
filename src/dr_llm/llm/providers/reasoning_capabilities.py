@@ -15,16 +15,16 @@ from dr_llm.llm.providers.concepts.capabilities import (
 from dr_llm.llm.providers.google.capabilities import (
     reasoning_capabilities_for_google,
 )
-from dr_llm.llm.providers.headless.claude_capabilities import (
+from dr_llm.llm.providers.headless.claude.capabilities import (
     reasoning_capabilities_for_claude_code,
 )
-from dr_llm.llm.providers.headless.codex_thinking import (
+from dr_llm.llm.providers.headless.codex.capabilities import (
     reasoning_capabilities_for_codex,
 )
-from dr_llm.llm.providers.kimi_code_capabilities import (
+from dr_llm.llm.providers.kimi_code.capabilities import (
     reasoning_capabilities_for_kimi_code,
 )
-from dr_llm.llm.providers.minimax_capabilities import (
+from dr_llm.llm.providers.minimax.capabilities import (
     reasoning_capabilities_for_minimax,
 )
 from dr_llm.llm.providers.openai_compat.glm_capabilities import (

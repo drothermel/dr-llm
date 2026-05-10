@@ -14,8 +14,10 @@ from dr_llm.llm.providers.anthropic.reasoning import (
     validate_reasoning_for_minimax,
 )
 from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig
-from dr_llm.llm.providers.headless.reasoning import (
+from dr_llm.llm.providers.headless.claude.reasoning import (
     ClaudeHeadlessReasoningConfig,
+)
+from dr_llm.llm.providers.headless.codex.reasoning import (
     CodexHeadlessReasoningConfig,
 )
 from dr_llm.llm.providers.openai_compat.reasoning import (

@@ -11,7 +11,7 @@ from dr_llm.llm import LlmRequest, LlmResponse, ProviderConfig
 from dr_llm.llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.llm.providers.base import Provider
 from dr_llm.llm.providers.google.provider import GoogleProvider
-from dr_llm.llm.providers.kimi_code import KimiCodeProvider
+from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
 from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
 from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
 from tests.conftest import make_response

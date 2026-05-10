@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from dr_llm.llm.names import EffortSpec, ReasoningMode
 from dr_llm.llm.providers.anthropic.effort import (
     ANTHROPIC_EFFORT_SUPPORTED_MODELS,
 )
-from dr_llm.llm.names import EffortSpec, ReasoningMode
 from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilities,
     ReasoningCapabilityRule,

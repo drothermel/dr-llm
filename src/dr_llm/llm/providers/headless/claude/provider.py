@@ -16,10 +16,10 @@ from dr_llm.llm.providers.headless.base import (
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
-from dr_llm.llm.providers.headless.config import ClaudeHeadlessProviderConfig
-from dr_llm.llm.providers.headless.reasoning import (
+from dr_llm.llm.providers.headless.claude.reasoning import (
     ClaudeHeadlessReasoningConfig,
 )
+from dr_llm.llm.providers.headless.config import ClaudeHeadlessProviderConfig
 from dr_llm.llm.request import HeadlessLlmRequest
 
 

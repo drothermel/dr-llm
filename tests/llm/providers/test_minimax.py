@@ -4,7 +4,7 @@ from typing import Any
 
 from dr_llm.llm import AnthropicReasoning, EffortSpec, ThinkingLevel
 from dr_llm.llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.llm.providers.minimax import (
+from dr_llm.llm.providers.minimax.provider import (
     MINIMAX_BASE_URL,
     MINIMAX_PROVIDER_NAME,
     MiniMaxProvider,
