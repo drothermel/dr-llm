@@ -26,7 +26,7 @@ def format_pool_progress_line(
 ) -> str:
     """Render a single-line progress summary for a pool worker poll.
 
-    Format: ``"claimed=X completed=Y failed=Z pending=P leased=L"``.
+    Format: ``"claimed=X completed=Y failed=Z incomplete=P done=D"``.
 
     When ``snapshot.backend_state`` is ``None`` (the first poll can
     arrive before the backend has reported), the queue fields are
@@ -35,17 +35,17 @@ def format_pool_progress_line(
     worker_counts = snapshot.counts
     backend_state = snapshot.backend_state
     if backend_state is None:
-        pending: int | str = "?"
-        leased: int | str = "?"
+        incomplete: int | str = "?"
+        done: int | str = "?"
     else:
-        pending = backend_state.status_counts.pending
-        leased = backend_state.status_counts.leased
+        incomplete = backend_state.incomplete
+        done = backend_state.complete
     return (
         f"claimed={worker_counts.claimed} "
         f"completed={worker_counts.completed} "
         f"failed={worker_counts.failed} "
-        f"pending={pending} "
-        f"leased={leased}"
+        f"incomplete={incomplete} "
+        f"done={done}"
     )
 
 
@@ -74,20 +74,19 @@ def pool_progress_key(
             _UNKNOWN,
             _UNKNOWN,
         )
-    status_counts = backend_state.status_counts
     return (
         worker_counts.claimed,
         worker_counts.completed,
         worker_counts.failed,
-        status_counts.pending,
-        status_counts.leased,
+        backend_state.incomplete,
+        backend_state.complete,
     )
 
 
 def pool_is_idle(
     snapshot: WorkerSnapshot[PoolPendingBackendState],
 ) -> bool:
-    """Return ``True`` iff the pool has no in-flight work.
+    """Return ``True`` iff the pool has no incomplete work.
 
     Returns ``False`` when ``snapshot.backend_state`` is ``None`` so
     callers continue polling until the backend has actually reported
@@ -96,7 +95,7 @@ def pool_is_idle(
     backend_state = snapshot.backend_state
     if backend_state is None:
         return False
-    return backend_state.status_counts.in_flight == 0
+    return backend_state.incomplete == 0
 
 
 def drain(

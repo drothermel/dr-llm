@@ -9,7 +9,6 @@ import pytest
 
 from dr_llm.pool.pending import progress as progress_module
 from dr_llm.pool.pending.backend import PoolPendingBackendState
-from dr_llm.pool.pending.pending_status import PendingStatusCounts
 from dr_llm.pool.pending.progress import (
     drain,
     format_pool_progress_line,
@@ -33,25 +32,20 @@ def _snapshot(
 
 def _backend_state(
     *,
-    pending: int = 0,
-    leased: int = 0,
-    failed: int = 0,
+    incomplete: int = 0,
+    complete: int = 0,
 ) -> PoolPendingBackendState:
-    return PoolPendingBackendState(
-        status_counts=PendingStatusCounts(
-            pending=pending, leased=leased, failed=failed
-        ),
-    )
+    return PoolPendingBackendState(incomplete=incomplete, complete=complete)
 
 
 def test_format_pool_progress_line_with_backend_state() -> None:
     snap = _snapshot(
         counts=WorkerStatCounts(claimed=6, completed=4, failed=1),
-        backend_state=_backend_state(pending=2, leased=1, failed=1),
+        backend_state=_backend_state(incomplete=2, complete=4),
     )
     assert (
         format_pool_progress_line(snap)
-        == "claimed=6 completed=4 failed=1 pending=2 leased=1"
+        == "claimed=6 completed=4 failed=1 incomplete=2 done=4"
     )
 
 
@@ -59,16 +53,16 @@ def test_format_pool_progress_line_backend_state_none() -> None:
     snap = _snapshot(counts=WorkerStatCounts(claimed=1, completed=0, failed=0))
     assert (
         format_pool_progress_line(snap)
-        == "claimed=1 completed=0 failed=0 pending=? leased=?"
+        == "claimed=1 completed=0 failed=0 incomplete=? done=?"
     )
 
 
 def test_pool_progress_key_with_backend_state() -> None:
     snap = _snapshot(
         counts=WorkerStatCounts(claimed=6, completed=4, failed=1),
-        backend_state=_backend_state(pending=2, leased=1, failed=1),
+        backend_state=_backend_state(incomplete=2, complete=4),
     )
-    assert pool_progress_key(snap) == (6, 4, 1, 2, 1)
+    assert pool_progress_key(snap) == (6, 4, 1, 2, 4)
 
 
 def test_pool_progress_key_backend_state_none() -> None:
@@ -84,7 +78,7 @@ def test_pool_progress_key_ignores_unrelated_fields() -> None:
     """
     base = _snapshot(
         counts=WorkerStatCounts(claimed=3, completed=2, failed=0),
-        backend_state=_backend_state(pending=1, leased=0),
+        backend_state=_backend_state(incomplete=1, complete=2),
     )
     noisy = _snapshot(
         counts=WorkerStatCounts(
@@ -95,7 +89,7 @@ def test_pool_progress_key_ignores_unrelated_fields() -> None:
             process_errors=7,
             idle_polls=12345,
         ),
-        backend_state=_backend_state(pending=1, leased=0),
+        backend_state=_backend_state(incomplete=1, complete=2),
     )
     assert pool_progress_key(base) == pool_progress_key(noisy)
 
@@ -103,7 +97,7 @@ def test_pool_progress_key_ignores_unrelated_fields() -> None:
 def test_pool_is_idle_true_when_in_flight_zero() -> None:
     snap = _snapshot(
         counts=WorkerStatCounts(claimed=6, completed=5, failed=1),
-        backend_state=_backend_state(pending=0, leased=0, failed=1),
+        backend_state=_backend_state(incomplete=0, complete=6),
     )
     assert pool_is_idle(snap) is True
 
@@ -114,12 +108,7 @@ def test_pool_is_idle_false_when_backend_state_none() -> None:
 
 
 def test_pool_is_idle_false_when_pending_nonzero() -> None:
-    snap = _snapshot(backend_state=_backend_state(pending=3, leased=0))
-    assert pool_is_idle(snap) is False
-
-
-def test_pool_is_idle_false_when_leased_nonzero() -> None:
-    snap = _snapshot(backend_state=_backend_state(pending=0, leased=2))
+    snap = _snapshot(backend_state=_backend_state(incomplete=3, complete=0))
     assert pool_is_idle(snap) is False
 
 
@@ -153,15 +142,15 @@ def test_drain_returns_idle_snapshot_and_skips_sleep_at_end(
     snapshots = [
         _snapshot(
             counts=WorkerStatCounts(claimed=0, completed=0, failed=0),
-            backend_state=_backend_state(pending=2, leased=0),
+            backend_state=_backend_state(incomplete=2, complete=0),
         ),
         _snapshot(
             counts=WorkerStatCounts(claimed=1, completed=0, failed=0),
-            backend_state=_backend_state(pending=1, leased=1),
+            backend_state=_backend_state(incomplete=1, complete=0),
         ),
         _snapshot(
             counts=WorkerStatCounts(claimed=2, completed=2, failed=0),
-            backend_state=_backend_state(pending=0, leased=0),
+            backend_state=_backend_state(incomplete=0, complete=2),
         ),
     ]
     controller = _fake_controller_yielding(snapshots)
@@ -181,19 +170,19 @@ def test_drain_calls_on_change_only_on_visible_state_changes(
 
     in_flight = _snapshot(
         counts=WorkerStatCounts(claimed=1, completed=0, failed=0),
-        backend_state=_backend_state(pending=1, leased=0),
+        backend_state=_backend_state(incomplete=1, complete=0),
     )
     in_flight_noisy = _snapshot(
         counts=WorkerStatCounts(claimed=1, completed=0, failed=0, idle_polls=99),
-        backend_state=_backend_state(pending=1, leased=0),
+        backend_state=_backend_state(incomplete=1, complete=0),
     )
     progressed = _snapshot(
         counts=WorkerStatCounts(claimed=2, completed=1, failed=0),
-        backend_state=_backend_state(pending=0, leased=1),
+        backend_state=_backend_state(incomplete=1, complete=1),
     )
     idle = _snapshot(
         counts=WorkerStatCounts(claimed=2, completed=2, failed=0),
-        backend_state=_backend_state(pending=0, leased=0),
+        backend_state=_backend_state(incomplete=0, complete=2),
     )
     controller = _fake_controller_yielding(
         [in_flight, in_flight_noisy, progressed, idle]

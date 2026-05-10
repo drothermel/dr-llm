@@ -11,24 +11,24 @@ from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.registry import ProviderRegistry
 from dr_llm.logging.events import generation_log_context, get_generation_log_context
 from dr_llm.logging.sinks import emit_generation_event
-from dr_llm.pool.results import InsertResult
 from dr_llm.pool.pending.grid import Axis, GridCell, seed_grid
-from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
+from dr_llm.pool.results import InsertResult
 
-ProcessFn = Callable[[PendingSample], dict[str, Any]]
+ProcessFn = Callable[[PoolSample], dict[str, Any]]
 
 
-def _require_payload_field(sample: PendingSample, key: str) -> Any:
-    if key not in sample.payload:
+def _require_request_field(sample: PoolSample, key: str) -> Any:
+    if key not in sample.request:
         raise KeyError(
-            f"PendingSample.payload is missing key {key!r}; "
+            f"PoolSample.request is missing key {key!r}; "
             "was the pool seeded with a rich grid for this column?"
         )
-    value = sample.payload[key]
+    value = sample.request[key]
     if value is None:
         raise ValueError(
-            f"PendingSample.payload[{key!r}] is present but has explicit None value"
+            f"PoolSample.request[{key!r}] is present but has explicit None value"
         )
     return value
 
@@ -41,14 +41,14 @@ def make_llm_process_fn(
 ) -> ProcessFn:
     """Build a ``ProcessFn`` that dispatches LLM calls via the provider registry.
 
-    Expects pending samples whose ``payload`` contains serialized
+    Expects pool samples whose ``request`` contains serialized
     :class:`LlmConfig` (under *llm_config_key*) and ``list[Message]``
     (under *prompt_key*).
     """
 
-    def _process(sample: PendingSample) -> dict[str, Any]:
-        raw_config = _require_payload_field(sample, llm_config_key)
-        raw_messages = _require_payload_field(sample, prompt_key)
+    def _process(sample: PoolSample) -> dict[str, Any]:
+        raw_config = _require_request_field(sample, llm_config_key)
+        raw_messages = _require_request_field(sample, prompt_key)
 
         config = parse_llm_config(raw_config)
         messages = [Message(**message) for message in raw_messages]
@@ -59,7 +59,7 @@ def make_llm_process_fn(
         call_id = uuid4().hex
         worker_payload = {
             "pool_name": context.get("pool_name"),
-            "pending_id": sample.pending_id,
+            "sample_id": sample.sample_id,
             "sample_idx": sample.sample_idx,
             "worker_id": context.get("worker_id"),
             "key_values": sample.key_values,
@@ -122,16 +122,15 @@ def seed_llm_grid(
     axes: list[Axis[Any]],
     build_request: Callable[[GridCell], tuple[list[Message], LlmConfig]],
     n: int = 1,
-    priority: int = 0,
     build_metadata: Callable[[GridCell], dict[str, Any]] | None = None,
     chunk_size: int = 500,
     llm_config_key: str = "llm_config",
     prompt_key: str = "prompt",
 ) -> InsertResult:
-    """Seed a pending pool from a cross-product of axes for LLM workers.
+    """Seed a pool from a cross-product of axes for LLM workers.
 
-    Wraps :func:`seed_grid` with a payload shape that
-    :func:`make_llm_process_fn` can consume directly: each row's payload
+    Wraps :func:`seed_grid` with a request shape that
+    :func:`make_llm_process_fn` can consume directly: each row's request
     is ``{llm_config_key: <serialized LlmConfig>, prompt_key: <list of
     serialized Messages>}``.
 
@@ -142,12 +141,11 @@ def seed_llm_grid(
         build_request: Per-cell callback returning ``(messages, llm_config)``
             for that cell.
         n: Number of samples per cell (each gets a distinct ``sample_idx``).
-        priority: Priority assigned to all seeded rows.
         build_metadata: Optional per-cell row-metadata builder.
-        chunk_size: Maximum rows per ``insert_many`` round-trip.
-        llm_config_key: Payload key for the serialized LlmConfig. Must
+        chunk_size: Maximum rows per ``insert_samples`` round-trip.
+        llm_config_key: Request key for the serialized LlmConfig. Must
             match the value passed to :func:`make_llm_process_fn`.
-        prompt_key: Payload key for the serialized message list. Must
+        prompt_key: Request key for the serialized message list. Must
             match the value passed to :func:`make_llm_process_fn`.
 
     Returns:
@@ -166,7 +164,6 @@ def seed_llm_grid(
         axes=axes,
         build_payload=_build_payload,
         n=n,
-        priority=priority,
         build_metadata=build_metadata,
         chunk_size=chunk_size,
     )

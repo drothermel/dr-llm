@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,7 +15,8 @@ from dr_llm.pool.pending.grid import (
     GridCell,
     seed_grid,
 )
-from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pool_sample import PoolSample
+from dr_llm.pool.pool_store import PoolStore
 
 
 def _make_schema() -> PoolSchema:
@@ -27,31 +28,26 @@ def _make_schema() -> PoolSchema:
 
 def _make_store_mock(
     schema: PoolSchema | None = None,
-) -> tuple[MagicMock, list[list[PendingSample]], list[tuple[str, dict[str, Any]]]]:
-    """Build a stub PoolStore that captures inserts and metadata upserts.
+) -> tuple[PoolStore, list[list[PoolSample]]]:
+    """Build a stub PoolStore that captures inserted sample chunks.
 
-    Returns the mock plus two lists: per-call PendingSample chunks and
-    per-call ``(key, value)`` upserts. ``insert_many`` returns an
-    ``InsertResult`` reflecting the chunk size, so cumulative totals
+    ``insert_samples`` returns an ``InsertResult`` reflecting the chunk size,
+    so cumulative totals
     in :func:`seed_grid` match what the real PoolStore would report.
     """
     store = MagicMock()
     store.schema = schema or _make_schema()
-    insert_chunks: list[list[PendingSample]] = []
-    metadata_upserts: list[tuple[str, dict[str, Any]]] = []
+    insert_chunks: list[list[PoolSample]] = []
 
-    def _insert_many(
-        samples: list[PendingSample], *, ignore_conflicts: bool = True
+    def _insert_samples(
+        samples: list[PoolSample], *, ignore_conflicts: bool = True
     ) -> InsertResult:
+        assert ignore_conflicts is True
         insert_chunks.append(list(samples))
         return InsertResult(inserted=len(samples), skipped=0)
 
-    def _upsert(key: str, value: dict[str, Any]) -> None:
-        metadata_upserts.append((key, value))
-
-    store.pending.insert_many.side_effect = _insert_many
-    store.metadata.upsert.side_effect = _upsert
-    return store, insert_chunks, metadata_upserts
+    store.insert_samples.side_effect = _insert_samples
+    return cast(PoolStore, store), insert_chunks
 
 
 def test_axis_member_construction_and_defaults() -> None:
@@ -90,8 +86,8 @@ def test_axis_effective_metadata_key_prefix_override() -> None:
 
 def test_axis_rejects_duplicate_member_ids() -> None:
     """Two AxisMembers sharing an id would generate distinct cells with
-    identical key_values, leading to silent under-seeding or a confusing
-    late promote failure. Catch it at axis construction time instead."""
+    identical key_values, leading to silent under-seeding. Catch it at
+    axis construction time instead."""
     with pytest.raises(ValueError, match=r"Axis 'prompt' has duplicate"):
         Axis[str](
             name="prompt",
@@ -127,7 +123,7 @@ def test_grid_cell_holds_key_values_and_values() -> None:
 
 
 def test_seed_grid_inserts_cross_product_with_n_per_cell() -> None:
-    store, insert_chunks, _ = _make_store_mock()
+    store, insert_chunks = _make_store_mock()
     axes: list[Axis[Any]] = [
         Axis(
             name="axis_a",
@@ -177,45 +173,16 @@ def test_seed_grid_inserts_cross_product_with_n_per_cell() -> None:
             for s in all_inserted
             if (s.key_values["axis_a"], s.key_values["axis_b"]) == cell_key
         )
-        assert idxs == [0, 1, 2]
-
-
-def test_seed_grid_upserts_each_axis_member_metadata_once() -> None:
-    store, _, upserts = _make_store_mock()
-    axes: list[Axis[Any]] = [
-        Axis(
-            name="axis_a",
-            members=[
-                AxisMember[str](id="a1", value="a1", metadata={"label": "A1"}),
-                AxisMember[str](id="a2", value="a2", metadata={"label": "A2"}),
-            ],
-        ),
-        Axis(
-            name="axis_b",
-            members=[
-                AxisMember[str](id="b1", value="b1", metadata={"label": "B1"}),
-            ],
-            metadata_key_prefix="dim_b",
-        ),
-    ]
-
-    seed_grid(
-        store,
-        axes=axes,
-        build_payload=lambda _: {},
-        n=5,
+    assert idxs == [0, 1, 2]
+    assert all(s.response is None for s in all_inserted)
+    assert all(
+        s.request == {"a": s.key_values["axis_a"], "b": s.key_values["axis_b"]}
+        for s in all_inserted
     )
-
-    # 3 axis members total -> 3 metadata upserts (not 3 * 5 cells * 5 samples).
-    assert len(upserts) == 3
-    upsert_dict = dict(upserts)
-    assert upsert_dict["axis_a/a1"] == {"label": "A1"}
-    assert upsert_dict["axis_a/a2"] == {"label": "A2"}
-    assert upsert_dict["dim_b/b1"] == {"label": "B1"}
 
 
 def test_seed_grid_chunks_inserts() -> None:
-    store, insert_chunks, _ = _make_store_mock()
+    store, insert_chunks = _make_store_mock()
     axes: list[Axis[Any]] = [
         Axis(
             name="axis_a",
@@ -239,7 +206,7 @@ def test_seed_grid_chunks_inserts() -> None:
 
 
 def test_seed_grid_validates_axis_names_match_schema() -> None:
-    store, _, _ = _make_store_mock()
+    store, _ = _make_store_mock()
     bad_axes: list[Axis[Any]] = [
         Axis(
             name="wrong",
@@ -255,7 +222,7 @@ def test_seed_grid_validates_axis_names_match_schema() -> None:
 
 
 def test_seed_grid_rejects_empty_axis() -> None:
-    store, _, _ = _make_store_mock()
+    store, _ = _make_store_mock()
     axes: list[Axis[Any]] = [
         Axis(name="axis_a", members=[AxisMember[str](id="a", value="a")]),
         Axis(name="axis_b", members=[]),
@@ -265,13 +232,13 @@ def test_seed_grid_rejects_empty_axis() -> None:
 
 
 def test_seed_grid_rejects_empty_axes_list() -> None:
-    store, _, _ = _make_store_mock()
+    store, _ = _make_store_mock()
     with pytest.raises(ValueError, match="at least one axis"):
         seed_grid(store, axes=[], build_payload=lambda _: {})
 
 
 def test_seed_grid_rejects_n_below_one() -> None:
-    store, _, _ = _make_store_mock()
+    store, _ = _make_store_mock()
     axes: list[Axis[Any]] = [
         Axis(name="axis_a", members=[AxisMember[str](id="a", value="a")]),
         Axis(name="axis_b", members=[AxisMember[str](id="b", value="b")]),
@@ -281,7 +248,7 @@ def test_seed_grid_rejects_n_below_one() -> None:
 
 
 def test_seed_grid_passes_build_metadata_to_rows() -> None:
-    store, insert_chunks, _ = _make_store_mock()
+    store, insert_chunks = _make_store_mock()
     axes: list[Axis[Any]] = [
         Axis(name="axis_a", members=[AxisMember[str](id="a", value="A")]),
         Axis(name="axis_b", members=[AxisMember[str](id="b", value="B")]),

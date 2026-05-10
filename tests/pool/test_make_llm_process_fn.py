@@ -14,15 +14,16 @@ from dr_llm.llm.providers.usage import TokenUsage
 from dr_llm.llm.response import LlmResponse
 from dr_llm.pool import llm_pool_adapter
 from dr_llm.pool.db.schema import PoolSchema
-from dr_llm.pool.results import InsertResult
 from dr_llm.pool.pending.grid import Axis, AxisMember, GridCell
-from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.pool.pool_sample import PoolSample
+from dr_llm.pool.results import InsertResult
 
 
-def _make_sample(payload: dict[str, Any]) -> PendingSample:
-    return PendingSample(
+def _make_sample(request: dict[str, Any]) -> PoolSample:
+    return PoolSample(
+        sample_id="sample-1",
         key_values={"llm_config": "cfg1", "prompt": "p1"},
-        payload=payload,
+        request=request,
     )
 
 
@@ -58,7 +59,7 @@ def _make_registry(response: LlmResponse | None = None) -> MagicMock:
     return registry
 
 
-def _sample_payload() -> dict[str, Any]:
+def _sample_request() -> dict[str, Any]:
     config = LlmConfig(provider="openai", model="gpt-4.1-mini", temperature=0.5)
     messages = [Message(role="user", content="Say hello")]
     return {
@@ -70,7 +71,7 @@ def _sample_payload() -> dict[str, Any]:
 def test_dispatches_via_registry() -> None:
     registry = _make_registry()
     process_fn = llm_pool_adapter.make_llm_process_fn(registry)
-    sample = _make_sample(_sample_payload())
+    sample = _make_sample(_sample_request())
 
     result = process_fn(sample)
 
@@ -90,7 +91,7 @@ def test_returns_full_response_dump() -> None:
     response = _make_response()
     registry = _make_registry(response)
     process_fn = llm_pool_adapter.make_llm_process_fn(registry)
-    sample = _make_sample(_sample_payload())
+    sample = _make_sample(_sample_request())
 
     result = process_fn(sample)
 
@@ -101,7 +102,7 @@ def test_returns_full_response_dump() -> None:
 def test_process_result_has_no_call_id() -> None:
     registry = _make_registry()
     process_fn = llm_pool_adapter.make_llm_process_fn(registry)
-    sample = _make_sample(_sample_payload())
+    sample = _make_sample(_sample_request())
 
     result = process_fn(sample)
 
@@ -111,7 +112,7 @@ def test_process_result_has_no_call_id() -> None:
 def test_emits_worker_logging_events(monkeypatch: pytest.MonkeyPatch) -> None:
     registry = _make_registry()
     process_fn = llm_pool_adapter.make_llm_process_fn(registry)
-    sample = _make_sample(_sample_payload())
+    sample = _make_sample(_sample_request())
     events: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
@@ -133,7 +134,7 @@ def test_emits_worker_logging_events(monkeypatch: pytest.MonkeyPatch) -> None:
     for event in events:
         assert event["payload"]["pool_name"] == "demo"
         assert event["payload"]["worker_id"] == "worker-1"
-        assert event["payload"]["pending_id"] == sample.pending_id
+        assert event["payload"]["sample_id"] == sample.sample_id
         assert event["payload"]["sample_idx"] == sample.sample_idx
         assert event["payload"]["key_values"] == sample.key_values
 
@@ -147,7 +148,7 @@ def test_failed_worker_call_emits_failure_event(
     registry = MagicMock()
     registry.get.return_value = adapter
     process_fn = llm_pool_adapter.make_llm_process_fn(registry)
-    sample = _make_sample(_sample_payload())
+    sample = _make_sample(_sample_request())
     events: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
@@ -178,7 +179,7 @@ def test_error_propagates() -> None:
     registry = MagicMock()
     registry.get.return_value = adapter
     process_fn = llm_pool_adapter.make_llm_process_fn(registry)
-    sample = _make_sample(_sample_payload())
+    sample = _make_sample(_sample_request())
 
     with pytest.raises(RuntimeError, match="API down"):
         process_fn(sample)
@@ -203,14 +204,14 @@ def test_missing_prompt_key_raises() -> None:
         process_fn(sample)
 
 
-def test_explicit_none_payload_field_raises_value_error() -> None:
+def test_explicit_none_request_field_raises_value_error() -> None:
     registry = _make_registry()
     process_fn = llm_pool_adapter.make_llm_process_fn(registry)
     sample = _make_sample(
         {"llm_config": None, "prompt": [{"role": "user", "content": "hi"}]}
     )
 
-    with pytest.raises(ValueError, match=r"PendingSample\.payload\['llm_config'\]"):
+    with pytest.raises(ValueError, match=r"PoolSample\.request\['llm_config'\]"):
         process_fn(sample)
 
 
@@ -233,20 +234,20 @@ def test_custom_key_names() -> None:
     assert result["text"] == "hello world"
 
 
-def _make_seed_store(schema: PoolSchema) -> tuple[MagicMock, list[PendingSample]]:
+def _make_seed_store(schema: PoolSchema) -> tuple[MagicMock, list[PoolSample]]:
     """Stub PoolStore that captures the rows seed_llm_grid would insert."""
-    captured: list[PendingSample] = []
+    captured: list[PoolSample] = []
 
-    def _insert_many(
-        samples: list[PendingSample], *, ignore_conflicts: bool = True
+    def _insert_samples(
+        samples: list[PoolSample], *, ignore_conflicts: bool = True
     ) -> InsertResult:
+        assert ignore_conflicts is True
         captured.extend(samples)
         return InsertResult(inserted=len(samples), skipped=0)
 
     store = MagicMock()
     store.schema = schema
-    store.pending.insert_many.side_effect = _insert_many
-    store.metadata.upsert.side_effect = lambda key, value: None
+    store.insert_samples.side_effect = _insert_samples
     return store, captured
 
 
@@ -283,10 +284,10 @@ def test_seed_llm_grid_round_trips_with_make_llm_process_fn() -> None:
     assert len(captured) == 1
     seeded = captured[0]
     assert seeded.key_values == {"llm_config": "cfg1", "prompt": "p1"}
-    assert "llm_config" in seeded.payload
-    assert "prompt" in seeded.payload
+    assert "llm_config" in seeded.request
+    assert "prompt" in seeded.request
 
-    # And now: feed the seeded payload through make_llm_process_fn end-to-end.
+    # And now: feed the seeded request through make_llm_process_fn end-to-end.
     registry = _make_registry()
     process_fn = llm_pool_adapter.make_llm_process_fn(registry)
     response = process_fn(seeded)
@@ -348,7 +349,7 @@ def test_seed_llm_grid_round_trips_headless_config() -> None:
     assert not hasattr(call_args, "temperature")
 
 
-def test_seed_llm_grid_honors_custom_payload_keys() -> None:
+def test_seed_llm_grid_honors_custom_request_keys() -> None:
     schema = PoolSchema.from_axis_names("rt2", ["llm_config", "prompt"])
     store, captured = _make_seed_store(schema)
 
@@ -373,12 +374,12 @@ def test_seed_llm_grid_honors_custom_payload_keys() -> None:
     )
 
     seeded = captured[0]
-    assert "model_cfg" in seeded.payload
-    assert "msgs" in seeded.payload
-    assert "llm_config" not in seeded.payload
-    assert "prompt" not in seeded.payload
+    assert "model_cfg" in seeded.request
+    assert "msgs" in seeded.request
+    assert "llm_config" not in seeded.request
+    assert "prompt" not in seeded.request
 
-    # The custom-keyed payload must round-trip through a matching process_fn.
+    # The custom-keyed request must round-trip through a matching process_fn.
     registry = _make_registry()
     process_fn = llm_pool_adapter.make_llm_process_fn(
         registry, llm_config_key="model_cfg", prompt_key="msgs"
