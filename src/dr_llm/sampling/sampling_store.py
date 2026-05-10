@@ -10,7 +10,6 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from dr_llm.pool.db import DbRuntime, PoolSchema, PoolTableType, PoolTables
 from dr_llm.pool.db.sql_helpers import key_filter_clause, validate_key_values
-from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.sampling.acquisition import AcquireQuery, AcquireResult
 from dr_llm.sampling.db.claims_tables import ClaimsTables
 from dr_llm.sampling.db.names import ClaimColumn
@@ -131,7 +130,7 @@ class SamplingStore:
 
         with self._runtime.begin() as conn:
             rows = conn.execute(stmt).mappings().all()
-        samples = [PoolSample.from_db_row(self._schema, dict(row)) for row in rows]
+        samples = [self._pool_tables.sample_from_row(dict(row)) for row in rows]
         return AcquireResult(samples=samples)
 
     def remaining(

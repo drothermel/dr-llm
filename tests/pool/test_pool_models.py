@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 from pydantic import BaseModel
 
 from dr_llm.pool.db import SampleColumn
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
+from dr_llm.pool.db.tables import SamplesTableDef
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.results import InsertResult
 
@@ -19,6 +19,8 @@ _TEST_SCHEMA = PoolSchema(
         KeyColumn(name="dim_b", type=ColumnType.integer),
     ],
 )
+
+_SAMPLES_DEF = SamplesTableDef()
 
 
 def test_pool_sample_defaults() -> None:
@@ -39,23 +41,7 @@ def test_pool_sample_is_complete_for_response() -> None:
     assert sample.is_complete is True
 
 
-def test_pool_sample_accepts_db_json_aliases() -> None:
-    db_fields: Any = {
-        "request_json": {"messages": []},
-        "response_json": {"choices": []},
-        "metadata_json": {"source": "test"},
-    }
-    sample = PoolSample(
-        key_values={"dim_a": "alpha", "dim_b": 3},
-        **db_fields,
-    )
-
-    assert sample.request == {"messages": []}
-    assert sample.response == {"choices": []}
-    assert sample.metadata == {"source": "test"}
-
-
-def test_pool_sample_accepts_python_field_names() -> None:
+def test_pool_sample_field_names() -> None:
     sample = PoolSample(
         key_values={"dim_a": "alpha", "dim_b": 3},
         request={"messages": []},
@@ -68,7 +54,7 @@ def test_pool_sample_accepts_python_field_names() -> None:
     assert sample.metadata == {"source": "test"}
 
 
-def test_pool_sample_to_db_insert_row_splats_key_values() -> None:
+def test_sample_to_row_splats_key_values() -> None:
     sample = PoolSample(
         sample_id="sample-1",
         sample_idx=7,
@@ -81,7 +67,7 @@ def test_pool_sample_to_db_insert_row_splats_key_values() -> None:
         metadata={"source": "test"},
     )
 
-    row = sample.to_db_insert_row()
+    row = _SAMPLES_DEF.sample_to_row(sample)
 
     assert set(row.keys()) == {
         "sample_id",
@@ -109,7 +95,7 @@ def test_pool_sample_to_db_insert_row_splats_key_values() -> None:
     assert row[SampleColumn.METADATA_JSON] == {"source": "test"}
 
 
-def test_pool_sample_to_db_insert_row_json_serializes_nested_values() -> None:
+def test_sample_to_row_json_serializes_nested_values() -> None:
     class RichPayload(BaseModel):
         when: datetime
 
@@ -120,16 +106,16 @@ def test_pool_sample_to_db_insert_row_json_serializes_nested_values() -> None:
         metadata={"created_at": datetime(2024, 1, 4, tzinfo=UTC)},
     )
 
-    row = sample.to_db_insert_row()
+    row = _SAMPLES_DEF.sample_to_row(sample)
 
     assert row[SampleColumn.REQUEST_JSON] == {"rich": {"when": "2024-01-02T00:00:00Z"}}
     assert row[SampleColumn.RESPONSE_JSON] == {"when": "2024-01-03T00:00:00Z"}
     assert row[SampleColumn.METADATA_JSON] == {"created_at": "2024-01-04T00:00:00Z"}
 
 
-def test_pool_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
+def test_sample_from_row_parses_dynamic_columns_and_json() -> None:
     created_at = datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC)
-    sample = PoolSample.from_db_row(
+    sample = _SAMPLES_DEF.sample_from_row(
         _TEST_SCHEMA,
         {
             "sample_id": "sample-1",
@@ -159,8 +145,8 @@ def test_pool_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
     assert sample.is_complete is True
 
 
-def test_pool_sample_from_db_row_round_trip_insert_row() -> None:
-    sample = PoolSample.from_db_row(
+def test_sample_row_round_trip() -> None:
+    sample = _SAMPLES_DEF.sample_from_row(
         _TEST_SCHEMA,
         {
             "sample_id": "sample-1",
@@ -176,7 +162,7 @@ def test_pool_sample_from_db_row_round_trip_insert_row() -> None:
         },
     )
 
-    assert sample.to_db_insert_row() == {
+    assert _SAMPLES_DEF.sample_to_row(sample) == {
         SampleColumn.SAMPLE_ID: "sample-1",
         SampleColumn.SAMPLE_IDX: 7,
         SampleColumn.RUN_ID: None,

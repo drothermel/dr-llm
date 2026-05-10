@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, cast
 
 from sqlalchemy import Column, MetaData, Table
 from sqlalchemy.engine import Connection
@@ -12,6 +13,7 @@ from dr_llm.pool.db.tables import (
     SamplesTableDef,
     TableDef,
 )
+from dr_llm.pool.pool_sample import PoolSample
 
 
 class PoolTables:
@@ -59,6 +61,16 @@ class PoolTables:
         for table in self.all_tables:
             for index in table.indexes:
                 index.create(bind=bind, checkfirst=True)
+
+    def sample_to_row(self, sample: PoolSample) -> dict[str, Any]:
+        return self._samples_def.sample_to_row(sample)
+
+    def sample_from_row(self, row: Mapping[str, Any]) -> PoolSample:
+        return self._samples_def.sample_from_row(self.schema, row)
+
+    @property
+    def _samples_def(self) -> SamplesTableDef:
+        return cast(SamplesTableDef, self.defs[PoolTableType.SAMPLES])
 
     def _build_indexes(self) -> None:
         for table_type, table_def in self.defs.items():

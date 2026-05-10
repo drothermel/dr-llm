@@ -104,7 +104,7 @@ class PoolStore:
             self._runtime,
             samples_table,
             samples_table.c.sample_id,
-            [sample.to_db_insert_row() for sample in samples],
+            [self._tables.sample_to_row(sample) for sample in samples],
             ignore_conflicts=ignore_conflicts,
         )
         return InsertResult(inserted=inserted, skipped=len(samples) - inserted)
@@ -120,7 +120,7 @@ class PoolStore:
         key_names = self.schema.key_column_names
         base_rows: list[dict[str, Any]] = []
         for sample in samples:
-            row = sample.to_db_insert_row()
+            row = self._tables.sample_to_row(sample)
             row.pop(SampleColumn.SAMPLE_IDX, None)
             base_rows.append(row)
 
@@ -322,7 +322,7 @@ class PoolStore:
             row = conn.execute(stmt).mappings().first()
         if row is None:
             return None
-        return PoolSample.from_db_row(self.schema, dict(row))
+        return self._tables.sample_from_row(dict(row))
 
     def release_lease(self, *, sample_id: str, worker_id: str) -> bool:
         """Release a lease owned by ``worker_id``."""
@@ -429,6 +429,6 @@ class PoolStore:
             chunk_size=chunk_size,
         )
         for row in rows:
-            yield PoolSample.from_db_row(self.schema, row)
+            yield self._tables.sample_from_row(row)
 
     _AUTO_IDX_INSERT_RETRIES = 3
