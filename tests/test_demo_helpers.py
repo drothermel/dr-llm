@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import subprocess
+from typing import Any
 
 import pytest
 import typer
 
+import dr_llm.demo.cli_calls as demo_cli_calls
 import dr_llm.demo.projects as demo_projects
 import dr_llm.demo.requirements as demo_requirements
 from dr_llm.project import CreateProjectRequest, ProjectInfo
@@ -148,3 +150,239 @@ def test_temporary_demo_project_destroys_after_error(
             raise RuntimeError("boom")
 
     assert destroyed == ["demo"]
+
+
+def test_run_dr_llm_json_returns_parsed_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(
+        cmd: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(
+            {
+                "cmd": cmd,
+                "capture_output": capture_output,
+                "text": text,
+                "timeout": timeout,
+            }
+        )
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout='{"ok": true}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(demo_cli_calls.subprocess, "run", fake_run)
+
+    result = demo_cli_calls.run_dr_llm_json("models", "list", timeout=42)
+
+    assert result == {"ok": True}
+    assert calls == [
+        {
+            "cmd": ["uv", "run", "dr-llm", "models", "list"],
+            "capture_output": True,
+            "text": True,
+            "timeout": 42,
+        }
+    ]
+
+
+def test_run_dr_llm_json_raises_for_failed_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(
+        cmd: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = capture_output, text, timeout
+        return subprocess.CompletedProcess(
+            cmd,
+            1,
+            stdout="",
+            stderr="no catalog",
+        )
+
+    monkeypatch.setattr(demo_cli_calls.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="CLI command failed: models list"):
+        demo_cli_calls.run_dr_llm_json("models", "list")
+
+
+def test_run_dr_llm_streaming_uses_visible_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    commands: list[str] = []
+
+    def fake_command(cmd: str) -> None:
+        commands.append(cmd)
+
+    def fake_run(
+        cmd: list[str],
+        *,
+        check: bool,
+        text: bool,
+        stderr: int,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(
+            {
+                "cmd": cmd,
+                "check": check,
+                "text": text,
+                "stderr": stderr,
+            }
+        )
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(demo_cli_calls, "command", fake_command)
+    monkeypatch.setattr(demo_cli_calls.subprocess, "run", fake_run)
+
+    demo_cli_calls.run_dr_llm_streaming(
+        "models", "sync", "--provider", "openai"
+    )
+
+    assert commands == ["uv run dr-llm models sync --provider openai"]
+    assert calls == [
+        {
+            "cmd": [
+                "uv",
+                "run",
+                "dr-llm",
+                "models",
+                "sync",
+                "--provider",
+                "openai",
+            ],
+            "check": True,
+            "text": True,
+            "stderr": subprocess.PIPE,
+        }
+    ]
+
+
+def test_run_dr_llm_streaming_reports_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(
+        cmd: list[str],
+        *,
+        check: bool,
+        text: bool,
+        stderr: int,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = check, text, stderr
+        raise subprocess.CalledProcessError(
+            returncode=2,
+            cmd=cmd,
+            stderr="bad provider",
+        )
+
+    monkeypatch.setattr(demo_cli_calls, "command", lambda cmd: None)
+    monkeypatch.setattr(demo_cli_calls.subprocess, "run", fake_run)
+
+    with pytest.raises(
+        RuntimeError,
+        match="exited with status 2: bad provider",
+    ):
+        demo_cli_calls.run_dr_llm_streaming(
+            "models",
+            "sync",
+            "--provider",
+            "missing",
+        )
+
+
+def test_model_json_helpers_build_expected_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[str, ...], int]] = []
+
+    def fake_run_dr_llm_json(
+        *args: str,
+        timeout: int = demo_cli_calls.DEFAULT_CLI_TIMEOUT,
+    ) -> dict[str, Any]:
+        calls.append((args, timeout))
+        if args[:2] == ("models", "list"):
+            return {"models": [{"model": "gpt-demo"}]}
+        return {"ok": True}
+
+    monkeypatch.setattr(
+        demo_cli_calls,
+        "run_dr_llm_json",
+        fake_run_dr_llm_json,
+    )
+
+    assert demo_cli_calls.sync_models_json("openai") == {"ok": True}
+    assert demo_cli_calls.list_models_json("openai") == [{"model": "gpt-demo"}]
+    assert demo_cli_calls.show_model_json("openai", "gpt-demo") == {"ok": True}
+
+    assert calls == [
+        (("models", "sync", "--provider", "openai", "--verbose"), 120),
+        (("models", "list", "--provider", "openai", "--json"), 120),
+        (
+            (
+                "models",
+                "show",
+                "--provider",
+                "openai",
+                "--model",
+                "gpt-demo",
+            ),
+            120,
+        ),
+    ]
+
+
+def test_query_json_appends_caller_supplied_extra_args(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[str, ...], int]] = []
+
+    def fake_run_dr_llm_json(
+        *args: str,
+        timeout: int = demo_cli_calls.DEFAULT_CLI_TIMEOUT,
+    ) -> dict[str, Any]:
+        calls.append((args, timeout))
+        return {"text": "ok"}
+
+    monkeypatch.setattr(
+        demo_cli_calls,
+        "run_dr_llm_json",
+        fake_run_dr_llm_json,
+    )
+
+    result = demo_cli_calls.query_json(
+        "openai",
+        "gpt-demo",
+        "hello",
+        timeout=300,
+        extra_args=["--effort", "low"],
+    )
+
+    assert result == {"text": "ok"}
+    assert calls == [
+        (
+            (
+                "query",
+                "--provider",
+                "openai",
+                "--model",
+                "gpt-demo",
+                "--message",
+                "hello",
+                "--effort",
+                "low",
+            ),
+            300,
+        )
+    ]

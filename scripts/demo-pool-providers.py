@@ -27,8 +27,6 @@ Usage:
 
 from __future__ import annotations
 
-import json
-import subprocess
 from typing import Any
 
 import typer
@@ -39,9 +37,13 @@ from dr_llm.demo import (
     create_demo_project,
     ensure_docker_available,
     fail,
+    list_models_json,
     ok,
+    query_json,
     require_demo_project_dsn,
+    show_model_json,
     step,
+    sync_models_json,
     warn,
 )
 from dr_llm.llm import (
@@ -79,24 +81,6 @@ POOL_SCHEMA = PoolSchema(
 )
 
 
-# --- Helpers ---
-
-
-def run_cli(*args: str, timeout: int = API_TIMEOUT) -> dict[str, Any]:
-    """Run a dr-llm CLI command and return parsed JSON output."""
-    cmd = ["uv", "run", "dr-llm", *args]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        stderr = result.stderr.strip()[:500]
-        raise RuntimeError(f"CLI command failed: {' '.join(args)}\n{stderr}")
-    return json.loads(result.stdout)
-
-
 # --- Detection ---
 
 
@@ -123,9 +107,8 @@ def detect_providers(
 
 def resolve_model(provider: ProviderName) -> str:
     """Sync catalog, list models, pick default or first available."""
-    run_cli("models", "sync", "--provider", provider, "--verbose")
-    result = run_cli("models", "list", "--provider", provider, "--json")
-    models = result.get("models", [])
+    sync_models_json(provider)
+    models = list_models_json(provider)
     if not models:
         raise RuntimeError(f"No models found for {provider}")
 
@@ -142,11 +125,6 @@ def resolve_model(provider: ProviderName) -> str:
             f"  no default model configured for {provider}, using '{model_ids[0]}'"
         )
     return model_ids[0]
-
-
-def show_model(provider: str, model: str) -> dict[str, Any]:
-    """Show model details via CLI."""
-    return run_cli("models", "show", "--provider", provider, "--model", model)
 
 
 # --- Query ---
@@ -173,25 +151,21 @@ def query_provider(
 ) -> dict[str, Any]:
     """Query a provider via CLI, returning the response dict."""
     timeout = HEADLESS_TIMEOUT if is_headless else API_TIMEOUT
-    args = [
-        "query",
-        "--provider",
-        provider,
-        "--model",
-        model,
-        "--message",
-        prompt,
-    ]
-    if provider in {
+    provider_name = ProviderName(provider)
+    extra_args: list[str] = []
+    if provider_name in {
         ProviderName.ANTHROPIC,
         ProviderName.KIMI_CODE,
         ProviderName.MINIMAX,
     }:
-        args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
-    args.extend(provider_extra_args(provider, model))
-    return run_cli(
-        *args,
+        extra_args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
+    extra_args.extend(provider_extra_args(provider, model))
+    return query_json(
+        provider,
+        model,
+        prompt,
         timeout=timeout,
+        extra_args=extra_args,
     )
 
 
@@ -311,7 +285,7 @@ def main(
                 ok(f"Using model: {model}")
 
                 # Show model info
-                info = show_model(provider, model)
+                info = show_model_json(provider, model)
                 display = info.get("display_name", model)
                 ctx = info.get("context_window")
                 ctx_str = f", context={ctx}" if ctx else ""
