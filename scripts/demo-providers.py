@@ -18,7 +18,7 @@ import subprocess
 
 import typer
 
-from dr_llm.demo import BOLD, RESET, YELLOW, fail, ok, step
+from dr_llm.demo import command, fail, ok, step, warn
 from dr_llm.llm import build_default_registry
 
 app = typer.Typer()
@@ -26,7 +26,7 @@ app = typer.Typer()
 
 def run_cli_streaming(*args: str) -> None:
     cmd = ["uv", "run", "dr-llm", *args]
-    print(f"{BOLD}$ {' '.join(cmd)}{RESET}")
+    command(" ".join(cmd))
     try:
         subprocess.run(cmd, check=True, text=True, stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as exc:
@@ -66,9 +66,7 @@ def main() -> None:
                 f"missing executable {executable}"
                 for executable in status.missing_executables
             )
-            print(
-                f"{YELLOW}  - {status.provider}: {', '.join(reasons)}{RESET}"
-            )
+            warn(f"{status.provider}: {', '.join(reasons)}")
 
     if not available:
         raise typer.Exit(1)
@@ -93,7 +91,7 @@ def main() -> None:
     if succeeded:
         print(f"  providers: {', '.join(succeeded)}")
     if failed_providers:
-        print(f"{YELLOW}  failed: {', '.join(failed_providers)}{RESET}")
+        warn(f"failed: {', '.join(failed_providers)}")
 
 
 if __name__ == "__main__":

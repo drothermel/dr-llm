@@ -35,13 +35,9 @@ from typing import Any
 import typer
 
 from dr_llm.demo import (
-    BOLD,
-    CYAN,
-    GREEN,
-    RED,
-    RESET,
-    YELLOW,
+    command_hint,
     fail,
+    header as demo_header,
     ok,
     step,
     warn,
@@ -270,7 +266,7 @@ def print_summary(store: PoolStore) -> None:
     )
     sep = f"{'-' * prov_w}-+-{'-' * model_w}-+-{'-' * 7}-+-{'-' * 6}-+-{'-' * resp_w}"
 
-    print(f"\n{BOLD}=== Pool Summary: {POOL_SCHEMA.name} ==={RESET}\n")
+    demo_header(f"Pool Summary: {POOL_SCHEMA.name}")
     print(header)
     print(sep)
 
@@ -320,9 +316,7 @@ def main(
     registry = build_default_registry()
     available = detect_providers(registry.availability_statuses())
     if not available:
-        print(
-            f"\n{RED}No providers available. Set API keys or install CLI tools.{RESET}"
-        )
+        fail("No providers available. Set API keys or install CLI tools.")
         raise typer.Exit(1)
     print(
         f"\n  Found {len(available)} providers: "
@@ -388,9 +382,7 @@ def main(
         print_summary(store)
 
         if failed_providers:
-            print(
-                f"\n{YELLOW}Failed providers: {', '.join(failed_providers)}{RESET}"
-            )
+            warn(f"Failed providers: {', '.join(failed_providers)}")
 
         demo_succeeded = True
 
@@ -398,20 +390,22 @@ def main(
         if runtime:
             runtime.close()
         if not demo_succeeded and project is not None:
-            print(f"\n{BOLD}Cleaning up after failure...{RESET}")
+            step("Cleaning up after failure...")
             try:
                 destroy_project(project_name)
             except Exception:
                 pass
 
-    print(f"\n{BOLD}{GREEN}Demo complete!{RESET}")
+    ok("Demo complete!")
     print(f"Project '{project_name}' is still running with your data.\n")
-    print(
-        f"  Stop (preserve data):  {CYAN}uv run dr-llm project stop {project_name}{RESET}"
+    command_hint(
+        "Stop (preserve data)",
+        f"uv run dr-llm project stop {project_name}",
     )
-    print(
-        f"  Destroy permanently:   {CYAN}uv run dr-llm project destroy {project_name} "
-        f"--yes-really-delete-everything{RESET}"
+    command_hint(
+        "Destroy permanently",
+        "uv run dr-llm project destroy "
+        f"{project_name} --yes-really-delete-everything",
     )
 
 

@@ -5,14 +5,13 @@ from __future__ import annotations
 from rich.console import Console
 from rich.text import Text
 
-BOLD = "\033[1m"
-CYAN = "\033[0;36m"
-GREEN = "\033[0;32m"
-RED = "\033[0;31m"
-YELLOW = "\033[0;33m"
-RESET = "\033[0m"
-
 _console = Console()
+
+
+def header(msg: str) -> None:
+    _console.print()
+    _console.print(Text(f"=== {msg} ===", style="bold"))
+    _console.print()
 
 
 def step(msg: str) -> None:
@@ -33,14 +32,19 @@ def warn(msg: str) -> None:
     _console.print(Text(f"  warn: {msg}", style="yellow"))
 
 
+def command(cmd: str) -> None:
+    _console.print(Text(f"$ {cmd}", style="bold"))
+
+
+def command_hint(label: str, cmd: str) -> None:
+    _console.print(Text.assemble(f"  {label}:  ", (cmd, "cyan")))
+
+
 __all__ = [
-    "BOLD",
-    "CYAN",
-    "GREEN",
-    "RED",
-    "RESET",
-    "YELLOW",
+    "command",
+    "command_hint",
     "fail",
+    "header",
     "ok",
     "step",
     "warn",
