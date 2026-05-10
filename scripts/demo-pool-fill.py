@@ -11,17 +11,17 @@ project via project_service, runs the demo, and destroys it on exit.
 The demo:
   - Defines reasoning-valid LlmConfig instances for OpenAI and Google
   - Defines short prompts as Message lists
-  - Seeds the (llm_config x prompt) cross product into the pending queue
+  - Seeds the (llm_config x prompt) cross product into the samples table
     using ``seed_llm_grid``
-  - Shuffles the pending priorities so workers interleave across providers
-    instead of draining the queue in cross-product order
   - Starts background workers using ``make_llm_process_fn`` (real LLM calls)
-  - Drains the queue with ``drain``, printing progress on visible state changes
+  - Drains incomplete samples, printing progress on visible state changes
 """
 
 from __future__ import annotations
 
 import shutil
+import time
+from collections.abc import Callable
 from typing import Annotated
 from uuid import uuid4
 
@@ -38,17 +38,19 @@ from dr_llm.llm.providers.registry import build_default_registry
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.llm_pool_adapter import make_llm_process_fn, seed_llm_grid
-from dr_llm.pool.pending.backend import (
+from dr_llm.pool.backend import (
     PoolPendingBackend,
     PoolPendingBackendConfig,
+    PoolPendingBackendState,
 )
-from dr_llm.pool.pending.grid import Axis, AxisMember, GridCell
-from dr_llm.pool.pending.progress import drain, format_pool_progress_line
 from dr_llm.pool.pool_store import PoolStore
+from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.models import CreateProjectRequest
 from dr_llm.project.project_service import create_project, destroy_project
 from dr_llm.workers import WorkerConfig, start_workers
+from dr_llm.workers.models import WorkerSnapshot
+from dr_llm.workers.worker_controller import WorkerController
 
 app = typer.Typer()
 
@@ -76,6 +78,76 @@ PROMPTS: dict[str, list[Message]] = {
         Message(role="user", content="What is 17 * 23? Reply with just the number.")
     ],
 }
+
+ProgressKey = tuple[int, int, int, int, int]
+_UNKNOWN = -1
+
+
+def _format_pool_progress_line(
+    snapshot: WorkerSnapshot[PoolPendingBackendState],
+) -> str:
+    worker_counts = snapshot.counts
+    backend_state = snapshot.backend_state
+    if backend_state is None:
+        incomplete: int | str = "?"
+        complete: int | str = "?"
+    else:
+        incomplete = backend_state.incomplete
+        complete = backend_state.complete
+    return (
+        f"claimed={worker_counts.claimed} "
+        f"completed={worker_counts.completed} "
+        f"failed={worker_counts.failed} "
+        f"incomplete={incomplete} "
+        f"complete={complete}"
+    )
+
+
+def _pool_progress_key(
+    snapshot: WorkerSnapshot[PoolPendingBackendState],
+) -> ProgressKey:
+    worker_counts = snapshot.counts
+    backend_state = snapshot.backend_state
+    if backend_state is None:
+        return (
+            worker_counts.claimed,
+            worker_counts.completed,
+            worker_counts.failed,
+            _UNKNOWN,
+            _UNKNOWN,
+        )
+    return (
+        worker_counts.claimed,
+        worker_counts.completed,
+        worker_counts.failed,
+        backend_state.incomplete,
+        backend_state.complete,
+    )
+
+
+def _pool_is_idle(snapshot: WorkerSnapshot[PoolPendingBackendState]) -> bool:
+    backend_state = snapshot.backend_state
+    return backend_state is not None and backend_state.incomplete == 0
+
+
+def _drain(
+    controller: WorkerController[PoolPendingBackendState],
+    *,
+    on_change: Callable[[WorkerSnapshot[PoolPendingBackendState]], None] | None = None,
+    poll_interval_s: float = 0.5,
+) -> WorkerSnapshot[PoolPendingBackendState]:
+    if poll_interval_s <= 0:
+        raise ValueError(f"poll_interval_s must be > 0, got {poll_interval_s}")
+    last_key: ProgressKey | None = None
+    while True:
+        snapshot = controller.snapshot()
+        key = _pool_progress_key(snapshot)
+        if on_change is not None and key != last_key:
+            on_change(snapshot)
+            last_key = key
+        if _pool_is_idle(snapshot):
+            return snapshot
+        time.sleep(poll_interval_s)
 
 
 def _llm_config_axis() -> Axis[LlmConfig]:
@@ -133,14 +205,12 @@ def _run_demo(
             n=samples_per_cell,
         )
         print(
-            f"Seeded {seed_result.inserted} pending rows"
+            f"Seeded {seed_result.inserted} sample rows"
             f" (skipped {seed_result.skipped} existing rows)"
         )
 
         if shuffle:
-            shuffled = store.pending.shuffle_priorities(seed=shuffle_seed)
-            seed_note = f" (seed={shuffle_seed})" if shuffle_seed is not None else ""
-            print(f"Shuffled priorities for {shuffled} pending rows{seed_note}")
+            print("Shuffle skipped: unified pool samples do not use priorities")
 
         controller = start_workers(
             PoolPendingBackend(
@@ -156,10 +226,10 @@ def _run_demo(
             ),
         )
         try:
-            drain(
+            _drain(
                 controller,
                 on_change=lambda snap: print(
-                    f"Progress: {format_pool_progress_line(snap)}"
+                    f"Progress: {_format_pool_progress_line(snap)}"
                 ),
             )
         finally:
@@ -167,12 +237,10 @@ def _run_demo(
             final_snapshot = controller.join()
 
         assert final_snapshot.backend_state is not None
-        final_counts = final_snapshot.backend_state.status_counts
         print(
-            "Final queue counts: "
-            f"pending={final_counts.pending} "
-            f"leased={final_counts.leased} "
-            f"failed={final_counts.failed}"
+            "Final sample counts: "
+            f"incomplete={final_snapshot.backend_state.incomplete} "
+            f"complete={final_snapshot.backend_state.complete}"
         )
 
         coverage = store.coverage()
@@ -181,7 +249,8 @@ def _run_demo(
 
         samples = store.bulk_load()
         for sample in samples[:4]:
-            text = sample.payload.get("text", "")[:80]
+            response = sample.response or {}
+            text = str(response.get("text", ""))[:80]
             print(
                 f"  [{sample.key_values['llm_config']}] "
                 f"[{sample.key_values['prompt']}] "

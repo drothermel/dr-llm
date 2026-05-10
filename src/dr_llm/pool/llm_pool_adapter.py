@@ -11,7 +11,7 @@ from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.registry import ProviderRegistry
 from dr_llm.logging.events import generation_log_context, get_generation_log_context
 from dr_llm.logging.sinks import emit_generation_event
-from dr_llm.pool.pending.grid import Axis, GridCell, seed_grid
+from dr_llm.pool.seed_grid import Axis, GridCell, seed_grid
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
 from dr_llm.pool.results import InsertResult

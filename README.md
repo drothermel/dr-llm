@@ -111,15 +111,16 @@ metadata, and bulk-inserts the pending rows in one round-trip. Docker
 is used to auto-manage a Postgres project.
 
 ```python
+import time
+
 from dr_llm import DbConfig, PoolSchema, PoolStore
 from dr_llm.llm import build_default_registry
 from dr_llm.llm.config import ApiLlmConfig, LlmConfig, OpenAILlmConfig
 from dr_llm.llm.messages import Message
+from dr_llm.pool.backend import PoolPendingBackend, PoolPendingBackendConfig
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.llm_pool_adapter import make_llm_process_fn, seed_llm_grid
-from dr_llm.pool.pending.backend import PoolPendingBackend, PoolPendingBackendConfig
-from dr_llm.pool.pending.grid import Axis, AxisMember, GridCell
-from dr_llm.pool.pending.progress import drain, format_pool_progress_line
+from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell
 from dr_llm.project.project_service import create_project
 from dr_llm.workers import WorkerConfig, start_workers
 
@@ -177,9 +178,9 @@ seed_result = seed_llm_grid(
     store,
     axes=[llm_config_axis, prompt_axis],
     build_request=build_request,
-    n=2,  # 2 configs × 2 prompts × n=2 = 8 pending rows
+    n=2,  # 2 configs × 2 prompts × n=2 = 8 sample rows
 )
-print(f"Seeded {seed_result.inserted} pending rows")
+print(f"Seeded {seed_result.inserted} sample rows")
 
 # 5. Start workers — they call the real providers
 registry = build_default_registry()
@@ -189,9 +190,16 @@ controller = start_workers(
     config=WorkerConfig(num_workers=4, thread_name_prefix="pool-fill"),
 )
 
-# 6. Drain to idle, printing one line per visible state change
+# 6. Drain to idle
 try:
-    drain(controller, on_change=lambda snap: print(format_pool_progress_line(snap)))
+    while True:
+        snapshot = controller.snapshot()
+        state = snapshot.backend_state
+        if state is not None:
+            print(f"incomplete={state.incomplete} complete={state.complete}")
+            if state.incomplete == 0:
+                break
+        time.sleep(0.5)
 finally:
     controller.stop()
     controller.join()

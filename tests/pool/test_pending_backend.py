@@ -4,7 +4,7 @@ from typing import Any, cast
 
 from dr_llm.logging.events import get_generation_log_context
 from dr_llm.pool.key_filter import PoolKeyFilter
-from dr_llm.pool.pending.backend import (
+from dr_llm.pool.backend import (
     PoolPendingBackend,
     PoolPendingBackendConfig,
 )

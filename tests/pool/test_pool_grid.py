@@ -9,7 +9,7 @@ import pytest
 
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.results import InsertResult
-from dr_llm.pool.pending.grid import (
+from dr_llm.pool.seed_grid import (
     Axis,
     AxisMember,
     GridCell,
