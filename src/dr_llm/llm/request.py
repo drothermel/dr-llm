@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 from dr_llm.llm.messages import Message
 from dr_llm.llm.names import (
     ApiBackedProviderName,
-    ApiProviderName,
+    SamplingApiProviderName,
     HeadlessProviderName,
     KimiCodeProviderName,
     OpenAIProviderName,
@@ -66,7 +66,7 @@ class ApiBackedLlmRequest(BaseModel):
 
 
 class ApiLlmRequest(ApiBackedLlmRequest):
-    provider: ApiProviderName
+    provider: SamplingApiProviderName
     temperature: float | None = 1.0
     top_p: float | None = 0.95
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
+from pydantic import BaseModel, ConfigDict
+
 
 class ProviderName(StrEnum):
     OPENAI = "openai"
@@ -16,25 +18,34 @@ class ProviderName(StrEnum):
     CLAUDE_CODE = "claude-code"
 
 
-API_PROVIDER_NAMES = (
-    ProviderName.OPENAI,
-    ProviderName.OPENROUTER,
-    ProviderName.GLM,
-    ProviderName.GOOGLE,
-    ProviderName.ANTHROPIC,
-    ProviderName.MINIMAX,
-    ProviderName.KIMI_CODE,
-)
-SAMPLING_API_PROVIDER_NAMES = (
-    ProviderName.OPENROUTER,
-    ProviderName.GLM,
-    ProviderName.GOOGLE,
-    ProviderName.ANTHROPIC,
-    ProviderName.MINIMAX,
-)
-HEADLESS_PROVIDER_NAMES = (ProviderName.CODEX, ProviderName.CLAUDE_CODE)
+class ProviderCategories(BaseModel):
+    model_config = ConfigDict(frozen=True)
 
-type ApiProviderName = Literal[
+    openai: tuple[ProviderName, ...] = (ProviderName.OPENAI,)
+    sampling_api: tuple[ProviderName, ...] = (
+        ProviderName.OPENROUTER,
+        ProviderName.GLM,
+        ProviderName.GOOGLE,
+        ProviderName.ANTHROPIC,
+        ProviderName.MINIMAX,
+    )
+    kimi_code: tuple[ProviderName, ...] = (ProviderName.KIMI_CODE,)
+    api_backed: tuple[ProviderName, ...] = (
+        ProviderName.OPENAI,
+        ProviderName.OPENROUTER,
+        ProviderName.GLM,
+        ProviderName.GOOGLE,
+        ProviderName.ANTHROPIC,
+        ProviderName.MINIMAX,
+        ProviderName.KIMI_CODE,
+    )
+    headless: tuple[ProviderName, ...] = (
+        ProviderName.CODEX,
+        ProviderName.CLAUDE_CODE,
+    )
+
+
+type SamplingApiProviderName = Literal[
     ProviderName.OPENROUTER,
     ProviderName.GLM,
     ProviderName.GOOGLE,
@@ -44,7 +55,7 @@ type ApiProviderName = Literal[
 type OpenAIProviderName = Literal[ProviderName.OPENAI]
 type KimiCodeProviderName = Literal[ProviderName.KIMI_CODE]
 type ApiBackedProviderName = (
-    OpenAIProviderName | ApiProviderName | KimiCodeProviderName
+    OpenAIProviderName | SamplingApiProviderName | KimiCodeProviderName
 )
 type HeadlessProviderName = Literal[
     ProviderName.CODEX, ProviderName.CLAUDE_CODE

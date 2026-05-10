@@ -26,7 +26,7 @@ from pydantic import BaseModel, ValidationError
 from dr_llm.demo import DEMO_PROVIDER_MODELS
 from dr_llm.llm import (
     ApiLlmRequest,
-    ApiProviderName,
+    SamplingApiProviderName,
     EffortSpec,
     HeadlessLlmRequest,
     HeadlessProviderName,
@@ -35,6 +35,7 @@ from dr_llm.llm import (
     LlmRequest,
     Message,
     OpenRouterReasoning,
+    ProviderCategories,
     ProviderRegistry,
     ProviderName,
     ReasoningSpec,
@@ -161,7 +162,7 @@ def make_request(
         budget_tokens=budget_tokens_for_level(provider, model, thinking_level),
         explicit_na=explicit_reasoning,
     )
-    if provider in {ProviderName.CODEX, ProviderName.CLAUDE_CODE}:
+    if provider in ProviderCategories().headless:
         return HeadlessLlmRequest(
             provider=cast(HeadlessProviderName, provider),
             model=model,
@@ -179,7 +180,7 @@ def make_request(
             reasoning=reasoning,
         )
     return ApiLlmRequest(
-        provider=cast(ApiProviderName, provider),
+        provider=cast(SamplingApiProviderName, provider),
         model=model,
         messages=[Message(role="user", content=PROMPT)],
         max_tokens=max_tokens,
