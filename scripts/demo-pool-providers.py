@@ -28,7 +28,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from typing import Any
 
@@ -37,6 +36,8 @@ import typer
 from dr_llm.demo import (
     DEMO_QUERY_DEFAULT_MODELS,
     command_hint,
+    create_demo_project,
+    ensure_docker_available,
     fail,
     header as demo_header,
     ok,
@@ -59,13 +60,7 @@ from dr_llm.pool import (
     PoolSchema,
     PoolStore,
 )
-from dr_llm.project import (
-    CreateProjectRequest,
-    ProjectInfo,
-    create_project,
-    destroy_project,
-    maybe_get_project,
-)
+from dr_llm.project import ProjectInfo, destroy_project
 
 app = typer.Typer()
 
@@ -119,17 +114,6 @@ def detect_providers(
         )
         warn(f"{status.provider}: {', '.join(reasons)}")
     return available
-
-
-# --- Project ---
-
-
-def create_demo_project(project_name: str) -> ProjectInfo:
-    """Create a demo project, destroying any existing one first."""
-    existing = maybe_get_project(project_name)
-    if existing is not None:
-        destroy_project(project_name)
-    return create_project(CreateProjectRequest(project_name=project_name))
 
 
 # --- Model Resolution ---
@@ -294,13 +278,10 @@ def main(
     ),
 ) -> None:
     """Query all available LLM providers and store results in a typed pool."""
-    if not shutil.which("docker"):
-        fail(
-            "Docker is required but not found.\n"
-            "  This demo creates a Postgres container to store pool data.\n"
-            "  Install Docker and ensure it's running, then retry."
-        )
-        raise typer.Exit(1)
+    ensure_docker_available(
+        reason="This demo creates a Postgres container to store pool data.",
+        recovery_hint="Install Docker, start the daemon, then retry.",
+    )
 
     step("1. Detecting available providers")
     registry = build_default_registry()
@@ -318,7 +299,7 @@ def main(
     runtime: DbRuntime | None = None
     project: ProjectInfo | None = None
     try:
-        project = create_demo_project(project_name)
+        project = create_demo_project(project_name, replace_existing=True)
         assert project.dsn is not None
         ok(f"Project '{project_name}' created at {project.dsn}")
 

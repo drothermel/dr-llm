@@ -23,7 +23,7 @@ from typing import cast
 import typer
 from pydantic import BaseModel, ValidationError
 
-from dr_llm.demo import DEMO_THINKING_SWEEP_MODELS
+from dr_llm.demo import DEMO_THINKING_SWEEP_MODELS, print_list
 from dr_llm.llm import (
     ApiLlmRequest,
     SamplingApiProviderName,
@@ -137,9 +137,11 @@ def ensure_required_providers_available(providers: list[ProviderName]) -> None:
                 )
             missing.append(f"{provider}: {'; '.join(reasons)}")
         if missing:
-            print("Missing provider requirements:")
-            for detail in missing:
-                print(f"  - {detail}")
+            print_list(
+                "Missing provider requirements:",
+                missing,
+                use_step=False,
+            )
             raise typer.Exit(1)
     finally:
         registry.close()

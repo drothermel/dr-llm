@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from rich.console import Console
 from rich.text import Text
 
@@ -40,12 +42,34 @@ def command_hint(label: str, cmd: str) -> None:
     _console.print(Text.assemble(f"  {label}:  ", (cmd, "cyan")))
 
 
+def print_list(
+    header: str,
+    values: Iterable[str],
+    *,
+    empty: str = "none",
+    use_step: bool = True,
+) -> None:
+    if use_step:
+        step(header)
+    else:
+        _console.print(header)
+
+    items = list(values)
+    if not items:
+        _console.print(f"  {empty}")
+        return
+
+    for value in items:
+        _console.print(f"  - {value}")
+
+
 __all__ = [
     "command",
     "command_hint",
     "fail",
     "header",
     "ok",
+    "print_list",
     "step",
     "warn",
 ]

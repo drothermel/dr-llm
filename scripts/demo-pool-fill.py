@@ -23,15 +23,18 @@ The demo:
 
 from __future__ import annotations
 
-import shutil
 import time
 from collections.abc import Callable
 from typing import Annotated
-from uuid import uuid4
 
 import typer
 
-from dr_llm.demo import demo_pool_fill_llm_configs
+from dr_llm.demo import (
+    demo_pool_fill_llm_configs,
+    ensure_docker_available,
+    temporary_demo_project,
+    temporary_demo_project_name,
+)
 from dr_llm.llm import (
     LlmConfig,
     Message,
@@ -50,12 +53,6 @@ from dr_llm.pool import (
     PoolStore,
     make_llm_process_fn,
     seed_llm_grid,
-)
-from dr_llm.project import (
-    CreateProjectRequest,
-    ProjectInfo,
-    create_project,
-    destroy_project,
 )
 from dr_llm.workers import (
     WorkerConfig,
@@ -287,33 +284,25 @@ def main(
         )
         return
 
-    # Auto-manage a Docker Postgres project
-    if not shutil.which("docker"):
-        print("Error: Docker is required when no --dsn is provided.")
-        print(
-            "Either install Docker or pass --dsn to use an existing database."
-        )
-        raise typer.Exit(1)
+    ensure_docker_available(
+        reason="This demo creates a temporary Postgres project when no --dsn is provided.",
+        recovery_hint="Install Docker, start the daemon, or pass --dsn to use an existing database.",
+    )
 
-    project_name = f"demo_pool_fill_{uuid4().hex[:8]}"
-    project: ProjectInfo | None = None
-    try:
-        print(f"Creating temporary project '{project_name}'...")
-        project = create_project(
-            CreateProjectRequest(project_name=project_name)
-        )
-        assert project.dsn is not None
-        print(f"Postgres ready at {project.dsn}")
-        _run_demo(
-            project.dsn,
-            pool_name,
-            num_workers,
-            samples_per_cell,
-        )
-    finally:
-        if project is not None:
+    project_name = temporary_demo_project_name("demo_pool_fill")
+    print(f"Creating temporary project '{project_name}'...")
+    with temporary_demo_project(project_name) as project:
+        try:
+            assert project.dsn is not None
+            print(f"Postgres ready at {project.dsn}")
+            _run_demo(
+                project.dsn,
+                pool_name,
+                num_workers,
+                samples_per_cell,
+            )
+        finally:
             print(f"Destroying temporary project '{project_name}'...")
-            destroy_project(project_name)
 
 
 if __name__ == "__main__":

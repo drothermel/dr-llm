@@ -18,7 +18,7 @@ import subprocess
 
 import typer
 
-from dr_llm.demo import command, fail, ok, step, warn
+from dr_llm.demo import command, fail, ok, print_list, step, warn
 from dr_llm.llm import build_default_registry
 
 app = typer.Typer()
@@ -43,17 +43,10 @@ def main() -> None:
     registry = build_default_registry()
     statuses = registry.availability_statuses()
 
-    step("1. Supported providers")
-    for provider in registry.sorted_names():
-        print(f"  - {provider}")
+    print_list("1. Supported providers", registry.sorted_names())
 
-    step("2. Available providers")
     available = registry.available_names(statuses=statuses)
-    if available:
-        for provider in available:
-            print(f"  - {provider}")
-    else:
-        print("  none")
+    print_list("2. Available providers", available)
 
     unavailable = [status for status in statuses if not status.available]
     if unavailable:
