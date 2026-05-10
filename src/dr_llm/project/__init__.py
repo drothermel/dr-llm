@@ -18,6 +18,7 @@ from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import (
     assess_project_creation,
     assess_project_deletion,
+    backup_project,
     create_project,
     delete_project,
     destroy_project,
@@ -25,6 +26,9 @@ from dr_llm.project.project_service import (
     inspect_projects,
     list_projects,
     maybe_get_project,
+    restore_project,
+    start_project,
+    stop_project,
 )
 
 __all__ = [
@@ -45,6 +49,7 @@ __all__ = [
     "ProjectInspectionSummary",
     "assess_project_creation",
     "assess_project_deletion",
+    "backup_project",
     "create_project",
     "delete_project",
     "destroy_project",
@@ -52,4 +57,7 @@ __all__ = [
     "inspect_projects",
     "list_projects",
     "maybe_get_project",
+    "restore_project",
+    "start_project",
+    "stop_project",
 ]

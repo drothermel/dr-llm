@@ -19,7 +19,7 @@ import subprocess
 import typer
 
 from _demo_utils import BOLD, RESET, YELLOW, fail, ok, step
-from dr_llm.llm.providers.registry import build_default_registry
+from dr_llm.llm import build_default_registry
 
 app = typer.Typer()
 

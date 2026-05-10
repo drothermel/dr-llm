@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.0.1 - 2026-05-10
+
+### Changed
+
+- Added public `dr_llm.llm`, `dr_llm.pool`, and `dr_llm.project` imports for
+  common provider, pool, project, reasoning, and worker helpers.
+- Updated demo scripts and pool-inspection notebooks to use the public import
+  surfaces, including `PoolReader.open(...)` for catalog-backed pool reads.
+- Refocused the README around high-level usage and one-line demo commands, with
+  runnable end-to-end workflows kept in `scripts/demo-*.py`.
+- Clarified demo script prerequisites and `--help` output for pool filling and
+  reasoning/effort checks.
+
 ## 4.0.0 - 2026-05-10
 
 ### Changed

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Demo: live verification of provider thinking and effort controls.
 
+Prerequisites:
+  API keys or CLI tools for every provider under test.
+
 Usage:
   uv run python scripts/demo_thinking_and_effort.py
   uv run python scripts/demo_thinking_and_effort.py --provider openrouter
@@ -21,25 +24,36 @@ import typer
 from pydantic import BaseModel, ValidationError
 
 from _demo_thinking_models import PROVIDER_MODELS
-from dr_llm.llm.request import (
+from dr_llm.llm import (
+    AnthropicReasoning,
     ApiLlmRequest,
     ApiProviderName,
+    CodexReasoning,
+    EffortSpec,
+    GoogleReasoning,
     HeadlessLlmRequest,
     HeadlessProviderName,
     KimiCodeLlmRequest,
     KimiCodeProviderName,
     LlmRequest,
+    Message,
+    OpenAIReasoning,
+    OpenRouterReasoning,
+    ProviderRegistry,
+    ReasoningSpec,
+    ThinkingLevel,
+    build_default_registry,
+    reasoning_capabilities_for_model,
+    supported_effort_levels,
 )
 from dr_llm.llm.providers.anthropic.thinking import (
     ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
 )
-from dr_llm.llm.providers.effort import EffortSpec, supported_effort_levels
 from dr_llm.llm.providers.headless.codex_thinking import (
     codex_supports_configurable_thinking,
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
 )
-from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.openrouter.policy import (
     OpenRouterReasoningRequestStyle,
     openrouter_model_policy,
@@ -49,20 +63,10 @@ from dr_llm.llm.providers.openai_compat.thinking import (
     openai_supports_minimal_thinking,
     openai_supports_off_thinking,
 )
-from dr_llm.llm.providers.reasoning import (
-    AnthropicReasoning,
-    CodexReasoning,
-    GoogleReasoning,
-    OpenAIReasoning,
-    OpenRouterReasoning,
-    ReasoningSpec,
-    ThinkingLevel,
-)
-from dr_llm.llm.providers.reasoning_capabilities import reasoning_capabilities_for_model
-from dr_llm.llm.providers.registry import ProviderRegistry, build_default_registry
 
 app = typer.Typer()
 
+SUPPORTED_PROVIDER_NAMES = ", ".join(sorted(PROVIDER_MODELS))
 PROMPT = "Reply with exactly OK."
 GOOGLE_FIXED_BUDGET = 1024
 KIMI_CODE_FIXED_BUDGET = 1024
@@ -500,9 +504,13 @@ def main(
     provider: list[str] | None = typer.Option(
         None,
         "--provider",
-        help="Providers to include in the sweep. Repeatable.",
+        help=(
+            "Providers to include in the sweep. Repeatable. "
+            f"Supported: {SUPPORTED_PROVIDER_NAMES}."
+        ),
     ),
 ) -> None:
+    """Sweep curated models for provider-specific reasoning and effort support."""
     providers = provider or sorted(PROVIDER_MODELS)
     unsupported = [name for name in providers if name not in PROVIDER_MODELS]
     if unsupported:

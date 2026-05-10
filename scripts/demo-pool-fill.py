@@ -5,8 +5,12 @@ Usage:
   uv run python scripts/demo-pool-fill.py
   uv run python scripts/demo-pool-fill.py --dsn postgresql://postgres:postgres@localhost:5433/dr_llm_test
 
-When no --dsn is provided, the script auto-creates a Docker-managed Postgres
-project via project_service, runs the demo, and destroys it on exit.
+Prerequisites:
+  1. OpenAI and Google API keys for the default LLM configs
+  2. Docker running, unless --dsn points at an existing Postgres database
+
+When no --dsn is provided, the script auto-creates a temporary Docker-managed
+Postgres project, runs the demo, and destroys it on exit.
 
 The demo:
   - Defines reasoning-valid LlmConfig instances for OpenAI and Google
@@ -27,30 +31,37 @@ from uuid import uuid4
 
 import typer
 
-from dr_llm.llm.config import ApiLlmConfig, LlmConfig, OpenAILlmConfig
-from dr_llm.llm.messages import Message
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm import (
+    ApiLlmConfig,
     GoogleReasoning,
+    LlmConfig,
+    Message,
     OpenAIReasoning,
+    OpenAILlmConfig,
     ThinkingLevel,
+    build_default_registry,
 )
-from dr_llm.llm.providers.registry import build_default_registry
-from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.schema import PoolSchema
-from dr_llm.pool.backend import (
+from dr_llm.pool import (
+    Axis,
+    AxisMember,
+    DbConfig,
+    DbRuntime,
+    GridCell,
     LlmPoolBackend,
     LlmPoolBackendConfig,
     LlmPoolBackendState,
+    PoolSchema,
+    PoolStore,
     make_llm_process_fn,
+    seed_llm_grid,
 )
-from dr_llm.pool.pool_store import PoolStore
-from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell, seed_llm_grid
-from dr_llm.project.project_info import ProjectInfo
-from dr_llm.project.models import CreateProjectRequest
-from dr_llm.project.project_service import create_project, destroy_project
-from dr_llm.workers import WorkerConfig, start_workers
-from dr_llm.workers.models import WorkerSnapshot
-from dr_llm.workers.worker_controller import WorkerController
+from dr_llm.project import (
+    CreateProjectRequest,
+    ProjectInfo,
+    create_project,
+    destroy_project,
+)
+from dr_llm.workers import WorkerConfig, WorkerController, WorkerSnapshot, start_workers
 
 app = typer.Typer()
 
@@ -277,6 +288,7 @@ def main(
         ),
     ] = 1,
 ) -> None:
+    """Seed an LLM config x prompt pool and fill it with worker calls."""
     if dsn is not None:
         _run_demo(
             dsn,

@@ -7,14 +7,15 @@ with app.setup:
     import logging
 
     import marimo as mo
-    from dr_llm.pool.admin.creation import (
+    from dr_llm.pool import (
         CreatePoolRequest,
+        PoolInspectionRequest,
         assess_pool_creation,
         create_pool as create_pool_service,
+        inspect_pool,
     )
-    from dr_llm.pool.admin.inspection import PoolInspectionRequest, inspect_pool
-    from dr_llm.project.models import CreateProjectRequest
-    from dr_llm.project.project_service import (
+    from dr_llm.project import (
+        CreateProjectRequest,
         assess_project_creation,
         create_project as create_project_service,
         inspect_projects,
