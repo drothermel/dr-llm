@@ -62,12 +62,43 @@ DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o-mini",
     "anthropic": "claude-sonnet-4-20250514",
     "google": "gemini-2.5-flash",
-    "openrouter": "openai/gpt-4o-mini",
     "glm": "glm-4.5",
     "minimax": "MiniMax-M2",
     "claude-code": "claude-sonnet-4-6",
     "codex": "gpt-5.4-mini",
     "kimi-code": "kimi-for-coding",
+}
+
+# Per-provider extra CLI args needed to satisfy reasoning/effort validation.
+# Reasoning and effort requirements vary by provider/model on this branch;
+# we send the minimum valid config so the demo can exercise every provider
+# end to end without picking reasoning-tuned model variants.
+PROVIDER_EXTRA_ARGS: dict[str, list[str]] = {
+    "google": [
+        "--reasoning-json",
+        '{"kind":"google","thinking_level":"budget","budget_tokens":1}',
+    ],
+    "glm": ["--reasoning-json", '{"kind":"glm","thinking_level":"off"}'],
+    "codex": ["--reasoning-json", '{"kind":"codex","thinking_level":"low"}'],
+    "openrouter": ["--reasoning-json", '{"kind":"openrouter","enabled":false}'],
+    "minimax": [
+        "--reasoning-json",
+        '{"kind":"anthropic","thinking_level":"na"}',
+        "--effort",
+        "low",
+    ],
+    "kimi-code": [
+        "--reasoning-json",
+        '{"kind":"anthropic","thinking_level":"adaptive"}',
+        "--effort",
+        "low",
+    ],
+    "claude-code": [
+        "--reasoning-json",
+        '{"kind":"anthropic","thinking_level":"adaptive"}',
+        "--effort",
+        "low",
+    ],
 }
 
 POOL_SCHEMA = PoolSchema(
@@ -128,12 +159,10 @@ def create_demo_project(project_name: str) -> ProjectInfo:
 # --- Model Resolution ---
 
 
-def resolve_model(project: str, provider: str) -> str:
+def resolve_model(provider: str) -> str:
     """Sync catalog, list models, pick default or first available."""
-    run_cli("--project", project, "models", "sync", "--provider", provider, "--verbose")
-    result = run_cli(
-        "--project", project, "models", "list", "--provider", provider, "--json"
-    )
+    run_cli("models", "sync", "--provider", provider, "--verbose")
+    result = run_cli("models", "list", "--provider", provider, "--json")
     models = result.get("models", [])
     if not models:
         raise RuntimeError(f"No models found for {provider}")
@@ -149,24 +178,20 @@ def resolve_model(project: str, provider: str) -> str:
     return model_ids[0]
 
 
-def show_model(project: str, provider: str, model: str) -> dict[str, Any]:
+def show_model(provider: str, model: str) -> dict[str, Any]:
     """Show model details via CLI."""
-    return run_cli(
-        "--project", project, "models", "show", "--provider", provider, "--model", model
-    )
+    return run_cli("models", "show", "--provider", provider, "--model", model)
 
 
 # --- Query ---
 
 
 def query_provider(
-    project: str, provider: str, model: str, prompt: str, *, is_headless: bool = False
+    provider: str, model: str, prompt: str, *, is_headless: bool = False
 ) -> dict[str, Any]:
     """Query a provider via CLI, returning the response dict."""
     timeout = HEADLESS_TIMEOUT if is_headless else API_TIMEOUT
     args = [
-        "--project",
-        project,
         "query",
         "--provider",
         provider,
@@ -175,8 +200,9 @@ def query_provider(
         "--message",
         prompt,
     ]
-    if provider in {"anthropic", "kimi-code"}:
+    if provider in {"anthropic", "kimi-code", "minimax"}:
         args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
+    args.extend(PROVIDER_EXTRA_ARGS.get(provider, []))
     return run_cli(
         *args,
         timeout=timeout,
@@ -308,11 +334,11 @@ def main(
             step(f"4.{i}. Provider: {provider}")
             try:
                 # Resolve model
-                model = resolve_model(project_name, provider)
+                model = resolve_model(provider)
                 ok(f"Using model: {model}")
 
                 # Show model info
-                info = show_model(project_name, provider, model)
+                info = show_model(provider, model)
                 display = info.get("display_name", model)
                 ctx = info.get("context_window")
                 ctx_str = f", context={ctx}" if ctx else ""
@@ -322,7 +348,7 @@ def main(
                 is_headless = registry.get(provider).mode == "headless"
                 print(f"  Querying {provider}/{model}...")
                 response = query_provider(
-                    project_name, provider, model, prompt, is_headless=is_headless
+                    provider, model, prompt, is_headless=is_headless
                 )
                 text = (response.get("text") or "")[:80].replace("\n", " ")
                 latency = response.get("latency_ms", "?")
