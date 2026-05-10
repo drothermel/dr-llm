@@ -35,6 +35,7 @@ from typing import Any
 import typer
 
 from dr_llm.demo import (
+    DEMO_QUERY_DEFAULT_MODELS,
     command_hint,
     fail,
     header as demo_header,
@@ -74,17 +75,6 @@ API_TIMEOUT = 120
 HEADLESS_TIMEOUT = 300
 ANTHROPIC_MAX_TOKENS = 256
 
-
-DEFAULT_MODELS: dict[ProviderName, str] = {
-    ProviderName.OPENAI: "gpt-4o-mini",
-    ProviderName.ANTHROPIC: "claude-sonnet-4-20250514",
-    ProviderName.GOOGLE: "gemini-2.5-flash",
-    ProviderName.GLM: "glm-4.5",
-    ProviderName.MINIMAX: "MiniMax-M2",
-    ProviderName.CLAUDE_CODE: "claude-sonnet-4-6",
-    ProviderName.CODEX: "gpt-5.4-mini",
-    ProviderName.KIMI_CODE: "kimi-for-coding",
-}
 
 POOL_SCHEMA = PoolSchema(
     name="provider_queries",
@@ -154,7 +144,7 @@ def resolve_model(provider: ProviderName) -> str:
         raise RuntimeError(f"No models found for {provider}")
 
     model_ids = [m["model"] for m in models]
-    default_model = DEFAULT_MODELS.get(provider)
+    default_model = DEMO_QUERY_DEFAULT_MODELS.get(provider)
     if default_model and default_model in model_ids:
         return default_model
     if default_model:

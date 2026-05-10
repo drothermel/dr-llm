@@ -13,7 +13,7 @@ When no --dsn is provided, the script auto-creates a temporary Docker-managed
 Postgres project, runs the demo, and destroys it on exit.
 
 The demo:
-  - Defines reasoning-valid LlmConfig instances for OpenAI and Google
+  - Uses shared reasoning-valid LlmConfig instances for OpenAI and Google
   - Defines short prompts as Message lists
   - Seeds the (llm_config x prompt) cross product into the samples table
     using ``seed_llm_grid``
@@ -31,14 +31,11 @@ from uuid import uuid4
 
 import typer
 
+from dr_llm.demo import demo_pool_fill_llm_configs
 from dr_llm.llm import (
-    ApiLlmConfig,
     LlmConfig,
     Message,
-    OpenAILlmConfig,
-    ProviderName,
     build_default_registry,
-    default_reasoning,
 )
 from dr_llm.pool import (
     Axis,
@@ -68,25 +65,6 @@ from dr_llm.workers import (
 )
 
 app = typer.Typer()
-
-LLM_CONFIGS: dict[str, LlmConfig] = {
-    "gpt-5-mini-default": OpenAILlmConfig(
-        provider=ProviderName.OPENAI,
-        model="gpt-5-mini",
-        max_tokens=64,
-        reasoning=default_reasoning(
-            provider=ProviderName.OPENAI, model="gpt-5-mini"
-        ),
-    ),
-    "gemini-flash-default": ApiLlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemini-2.5-flash",
-        max_tokens=64,
-        reasoning=default_reasoning(
-            provider=ProviderName.GOOGLE, model="gemini-2.5-flash"
-        ),
-    ),
-}
 
 PROMPTS: dict[str, list[Message]] = {
     "haiku": [
@@ -172,6 +150,7 @@ def _drain(
 
 
 def _llm_config_axis() -> Axis[LlmConfig]:
+    llm_configs = demo_pool_fill_llm_configs()
     return Axis(
         name="llm_config",
         members=[
@@ -180,7 +159,7 @@ def _llm_config_axis() -> Axis[LlmConfig]:
                 value=cfg,
                 metadata={"provider": cfg.provider, "model": cfg.model},
             )
-            for cfg_id, cfg in LLM_CONFIGS.items()
+            for cfg_id, cfg in llm_configs.items()
         ],
     )
 

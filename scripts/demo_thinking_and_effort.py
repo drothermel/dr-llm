@@ -23,7 +23,7 @@ from typing import cast
 import typer
 from pydantic import BaseModel, ValidationError
 
-from dr_llm.demo import DEMO_PROVIDER_MODELS
+from dr_llm.demo import DEMO_THINKING_SWEEP_MODELS
 from dr_llm.llm import (
     ApiLlmRequest,
     SamplingApiProviderName,
@@ -53,7 +53,7 @@ from dr_llm.llm import (
 app = typer.Typer()
 
 SUPPORTED_PROVIDER_NAMES = ", ".join(
-    sorted(provider.value for provider in DEMO_PROVIDER_MODELS)
+    sorted(provider.value for provider in DEMO_THINKING_SWEEP_MODELS)
 )
 PROMPT = "Reply with exactly OK."
 KIMI_CODE_MAX_TOKENS = 2048
@@ -255,7 +255,7 @@ def run_model_sweep(
 ) -> None:
     print("\n== models ==")
     for provider in providers:
-        for model in DEMO_PROVIDER_MODELS[provider]:
+        for model in DEMO_THINKING_SWEEP_MODELS[provider]:
             run_attempt(
                 registry=registry,
                 provider=provider,
@@ -282,7 +282,7 @@ def run_thinking_sweep(
     for provider in providers:
         if provider == ProviderName.OPENROUTER:
             continue
-        for model in DEMO_PROVIDER_MODELS[provider]:
+        for model in DEMO_THINKING_SWEEP_MODELS[provider]:
             for thinking_level in supported_thinking_levels(
                 provider=provider, model=model
             ):
@@ -307,7 +307,7 @@ def run_effort_sweep(
     for provider in providers:
         if provider == ProviderName.OPENROUTER:
             continue
-        for model in DEMO_PROVIDER_MODELS[provider]:
+        for model in DEMO_THINKING_SWEEP_MODELS[provider]:
             for effort in supported_effort_levels(
                 provider=provider, model=model
             ):
@@ -356,7 +356,7 @@ def main(
 ) -> None:
     """Sweep curated models for provider-specific reasoning and effort support."""
     supported_provider_values = {
-        provider.value for provider in DEMO_PROVIDER_MODELS
+        provider.value for provider in DEMO_THINKING_SWEEP_MODELS
     }
     unsupported = [
         name
@@ -370,7 +370,7 @@ def main(
     providers = (
         [ProviderName(name) for name in provider]
         if provider
-        else sorted(DEMO_PROVIDER_MODELS)
+        else sorted(DEMO_THINKING_SWEEP_MODELS)
     )
 
     ensure_required_providers_available(providers)
