@@ -1,5 +1,45 @@
 # Changelog
 
+## 4.0.0 - 2026-05-10
+
+### Changed
+
+- Replaced the `pool/pending/` subpackage with a unified two-table design
+  (`pool_<name>_samples` plus `pool_<name>_leases`); `PoolStore` now drives
+  seeding, lease acquisition, and completion through one set of APIs.
+- Extracted no-replacement claim acquisition out of `pool/` into a new
+  `dr_llm.sampling` package with its own claims table, store, and service.
+- Rebuilt `PoolReader` and `pool.admin` (creation, deletion, discovery,
+  inspection) on top of the unified store; admin entry points are now imported
+  from `dr_llm.pool.admin.*` rather than the removed `pool.admin_service`.
+- Renamed `pool/results.py` to `pool/insert_result.py` and `pool/key_filter.py`
+  to `pool/db/key_filter.py`; the `LlmPoolAdapter` shim was removed in favor of
+  using `LlmPoolBackend` directly.
+- Added `seed_llm_grid` for declarative `(axis × axis × …)` seeding from
+  `Axis` / `AxisMember` lists.
+
+### Added
+
+- `dr-llm pool backfill-catalog PROJECT_NAME [--dry-run]` migration command:
+  for each pool in the project, derives the `PoolSchema` from the existing
+  samples table and persists it into `pool_catalog`, creating the catalog
+  table if it does not exist. Use this to migrate projects created before
+  catalog persistence shipped (the previous failure mode was an unhandled
+  `UndefinedTable` from `pool_catalog` when notebooks or `PoolReader.open()`
+  loaded an old pool). The command starts the project temporarily if it is
+  stopped and restores the original state on exit.
+- New `dr_llm.pool.admin.migration` module exposing `derive_pool_schema`,
+  `backfill_project_catalog`, `BackfillProjectCatalogRequest`/`Result`, and
+  `PoolMigrationError` for programmatic backfill.
+
+### Fixed
+
+- Several provider request validators now require explicit `reasoning` and/or
+  `effort` (google, glm, codex, openrouter, minimax, kimi-code, claude-code).
+  Updated `scripts/demo-pool-providers.py` to send the minimum valid config
+  per provider; the script was previously also passing a removed top-level
+  `--project` option to the `dr-llm` CLI.
+
 ## 3.0.0 - 2026-05-09
 
 ### Changed
