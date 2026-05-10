@@ -1,5 +1,20 @@
 # Changelog
 
+## 4.0.2 - 2026-05-10
+
+### Changed
+
+- Removed `ReasoningWarning.mode`. Warning mode is now represented by the
+  containing `LlmResponse.mode` instead.
+- Moved `Message` to `dr_llm.llm.request` and `CallMode` to
+  `dr_llm.llm.response`; both remain exported from `dr_llm.llm`.
+
+### Breaking
+
+- Code that reads or passes `ReasoningWarning.mode` must use
+  `LlmResponse.mode` instead.
+- Direct imports from the removed `dr_llm.llm.messages` module no longer work.
+
 ## 4.0.1 - 2026-05-10
 
 ### Changed
