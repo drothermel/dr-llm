@@ -22,7 +22,6 @@ class ColumnServerDefault(StrEnum):
     EMPTY_TEXT = "''"
     NOW = "now()"
     ONE = "1"
-    PENDING_STATUS = "'pending'"
     ZERO = "0"
 
 

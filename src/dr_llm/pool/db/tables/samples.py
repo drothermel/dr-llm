@@ -32,13 +32,21 @@ class SamplesTableDef(BaseModel):
             Column(SampleColumn.SAMPLE_ID, Text, primary_key=True),
             *build_key_columns(schema),
             Column(SampleColumn.SAMPLE_IDX, Integer, nullable=False),
+            Column(SampleColumn.RUN_ID, Text),
             Column(
-                SampleColumn.PAYLOAD_JSON,
+                SampleColumn.REQUEST_JSON,
                 JSONB,
                 nullable=False,
                 server_default=text(ColumnServerDefault.EMPTY_JSONB),
             ),
-            Column(SampleColumn.SOURCE_RUN_ID, Text),
+            Column(SampleColumn.RESPONSE_JSON, JSONB),
+            Column(SampleColumn.FINISH_REASON, Text),
+            Column(
+                SampleColumn.ATTEMPT_COUNT,
+                Integer,
+                nullable=False,
+                server_default=text(ColumnServerDefault.ZERO),
+            ),
             Column(
                 SampleColumn.METADATA_JSON,
                 JSONB,
@@ -68,6 +76,15 @@ class SamplesTableDef(BaseModel):
                 ),
                 *key_columns,
             ),
+            Index(
+                pool_index_name(
+                    IndexNamePrefix.STANDARD,
+                    table.name,
+                    PoolIndexName.INCOMPLETE,
+                ),
+                table.c[SampleColumn.CREATED_AT],
+                postgresql_where=table.c[SampleColumn.RESPONSE_JSON].is_(None),
+            ),
         ]
 
     def select_columns(self, table: Table, schema: PoolSchema) -> list[Any]:
@@ -75,8 +92,11 @@ class SamplesTableDef(BaseModel):
             table.c[SampleColumn.SAMPLE_ID],
             *(table.c[name] for name in schema.key_column_names),
             table.c[SampleColumn.SAMPLE_IDX],
-            table.c[SampleColumn.PAYLOAD_JSON],
-            table.c[SampleColumn.SOURCE_RUN_ID],
+            table.c[SampleColumn.RUN_ID],
+            table.c[SampleColumn.REQUEST_JSON],
+            table.c[SampleColumn.RESPONSE_JSON],
+            table.c[SampleColumn.FINISH_REASON],
+            table.c[SampleColumn.ATTEMPT_COUNT],
             table.c[SampleColumn.METADATA_JSON],
             table.c[SampleColumn.CREATED_AT],
         ]

@@ -8,9 +8,7 @@ from sqlalchemy.engine import Connection
 from dr_llm.pool.db.names import PoolTableType
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.tables import (
-    CallStatsTableDef,
-    MetadataTableDef,
-    PendingTableDef,
+    LeasesTableDef,
     SamplesTableDef,
     TableDef,
 )
@@ -22,9 +20,7 @@ class PoolTables:
         self.sa_metadata = MetaData()
         self.defs: dict[PoolTableType, TableDef] = {
             PoolTableType.SAMPLES: SamplesTableDef(),
-            PoolTableType.PENDING: PendingTableDef(),
-            PoolTableType.METADATA: MetadataTableDef(),
-            PoolTableType.CALL_STATS: CallStatsTableDef(),
+            PoolTableType.LEASES: LeasesTableDef(),
         }
         missing_table_types = set(PoolTableType).difference(self.defs)
         if missing_table_types:
@@ -49,7 +45,7 @@ class PoolTables:
         return [self.tables[table_type] for table_type in PoolTableType]
 
     def key_columns(self, table_type: PoolTableType) -> list[Column[Any]]:
-        if table_type not in {PoolTableType.SAMPLES, PoolTableType.PENDING}:
+        if table_type is not PoolTableType.SAMPLES:
             msg = f"{table_type} does not have pool key columns"
             raise ValueError(msg)
         table = self[table_type]
