@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Generator
+
 import pytest
 
 from dr_llm.llm.names import (
@@ -13,7 +15,7 @@ from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
 
 
 @pytest.fixture
-def orchestrator() -> AnthropicOrchestrator:
+def orchestrator() -> Generator[AnthropicOrchestrator]:
     provider = AnthropicProvider()
     orch = AnthropicOrchestrator(provider)
     yield orch

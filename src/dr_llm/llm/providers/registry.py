@@ -3,25 +3,40 @@ from __future__ import annotations
 from threading import RLock
 
 from dr_llm.llm.names import ProviderName
+from dr_llm.llm.providers.anthropic.orchestrator import AnthropicOrchestrator
 from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
 from dr_llm.llm.providers.api_config import APIProviderConfig
 from dr_llm.llm.providers.base import Provider
 from dr_llm.llm.providers.config import ProviderAvailabilityStatus
+from dr_llm.llm.providers.google.orchestrator import GoogleOrchestrator
 from dr_llm.llm.providers.google.provider import GoogleProvider
+from dr_llm.llm.providers.headless.claude.orchestrator import (
+    ClaudeHeadlessOrchestrator,
+)
 from dr_llm.llm.providers.headless.claude.provider import (
     ClaudeHeadlessProvider,
 )
+from dr_llm.llm.providers.headless.codex.orchestrator import (
+    CodexHeadlessOrchestrator,
+)
 from dr_llm.llm.providers.headless.codex.provider import CodexHeadlessProvider
+from dr_llm.llm.providers.kimi_code.orchestrator import KimiCodeOrchestrator
 from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
+from dr_llm.llm.providers.minimax.orchestrator import MiniMaxOrchestrator
 from dr_llm.llm.providers.minimax.provider import MiniMaxProvider
 from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
+from dr_llm.llm.providers.openai_compat.orchestrator import (
+    OpenAICompatOrchestrator,
+)
 from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
+from dr_llm.llm.providers.protocol import ProviderOrchestrator
 
 
 class ProviderRegistry:
     def __init__(self) -> None:
         self._lock = RLock()
         self._providers: dict[str, Provider] = {}
+        self._orchestrators: dict[str, ProviderOrchestrator] = {}
 
     def register(self, provider: Provider) -> None:
         raw_primary = provider.name
@@ -80,10 +95,25 @@ class ProviderRegistry:
             statuses = self.availability_statuses()
         return [status.provider for status in statuses if status.available]
 
+    def register_orchestrator(
+        self, orchestrator: ProviderOrchestrator
+    ) -> None:
+        key = orchestrator.name.lower()
+        with self._lock:
+            self._orchestrators[key] = orchestrator
+
+    def get_orchestrator(
+        self, provider_name: str
+    ) -> ProviderOrchestrator | None:
+        key = provider_name.strip().lower()
+        with self._lock:
+            return self._orchestrators.get(key)
+
     def close(self) -> None:
         with self._lock:
             providers = list(self._providers.values())
             self._providers.clear()
+            self._orchestrators.clear()
         for provider in providers:
             provider.close()
 
@@ -101,28 +131,50 @@ _OPENAI_COMPAT_PROVIDERS: tuple[tuple[ProviderName, str, str], ...] = (
 
 def build_default_registry() -> ProviderRegistry:
     registry = ProviderRegistry()
+
+    openai_compat_providers: list[OpenAICompatProvider] = []
     for name, base_url, api_key_env in _OPENAI_COMPAT_PROVIDERS:
-        registry.register(
-            OpenAICompatProvider(
-                config=OpenAICompatConfig(
-                    name=name,
-                    base_url=base_url,
-                    api_key_env=api_key_env,
-                ),
-            )
+        provider = OpenAICompatProvider(
+            config=OpenAICompatConfig(
+                name=name,
+                base_url=base_url,
+                api_key_env=api_key_env,
+            ),
         )
-    registry.register(MiniMaxProvider())
-    registry.register(AnthropicProvider())
-    registry.register(
-        GoogleProvider(
-            config=APIProviderConfig(
-                name=ProviderName.GOOGLE,
-                base_url="https://generativelanguage.googleapis.com/v1beta",
-                api_key_env="GOOGLE_API_KEY",
-            )
+        registry.register(provider)
+        openai_compat_providers.append(provider)
+
+    minimax = MiniMaxProvider()
+    registry.register(minimax)
+
+    anthropic = AnthropicProvider()
+    registry.register(anthropic)
+
+    google = GoogleProvider(
+        config=APIProviderConfig(
+            name=ProviderName.GOOGLE,
+            base_url="https://generativelanguage.googleapis.com/v1beta",
+            api_key_env="GOOGLE_API_KEY",
         )
     )
-    registry.register(CodexHeadlessProvider())
-    registry.register(ClaudeHeadlessProvider())
-    registry.register(KimiCodeProvider())
+    registry.register(google)
+
+    codex = CodexHeadlessProvider()
+    registry.register(codex)
+
+    claude_headless = ClaudeHeadlessProvider()
+    registry.register(claude_headless)
+
+    kimi_code = KimiCodeProvider()
+    registry.register(kimi_code)
+
+    for oai_provider in openai_compat_providers:
+        registry.register_orchestrator(OpenAICompatOrchestrator(oai_provider))
+    registry.register_orchestrator(MiniMaxOrchestrator(minimax))
+    registry.register_orchestrator(AnthropicOrchestrator(anthropic))
+    registry.register_orchestrator(GoogleOrchestrator(google))
+    registry.register_orchestrator(CodexHeadlessOrchestrator(codex))
+    registry.register_orchestrator(ClaudeHeadlessOrchestrator(claude_headless))
+    registry.register_orchestrator(KimiCodeOrchestrator(kimi_code))
+
     return registry
