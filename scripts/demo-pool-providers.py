@@ -6,42 +6,41 @@ Demonstrates the hybrid CLI + Python API workflow (Flow 2):
 - Python API: PoolSchema, PoolStore, PoolSample, bulk_load
 
 Prerequisites:
-  1. Docker running (used to spin up a Postgres container for the pool)
+  1. Docker running, unless --dsn points at an existing Postgres database
   2. At least one provider available:
      - API key env var (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.), or
      - CLI tool installed (claude, codex)
 
 Usage:
   uv run python scripts/demo-pool-providers.py
+  uv run python scripts/demo-pool-providers.py --keep-project
+  uv run python scripts/demo-pool-providers.py --dsn postgresql://postgres:postgres@localhost:5433/dr_llm_test
 
   The script will:
-  - Create a Docker-based Postgres project called 'demo_pool'
+  - Use an existing Postgres DSN or create a Docker-based Postgres project
   - Detect which LLM providers are available
   - Query each provider and store results in a typed pool
   - Print a summary table of all results
-  - Leave the project running so you can inspect the data
-
-  To clean up afterwards:
-    uv run dr-llm project destroy demo_pool --yes-really-delete-everything
+  - Destroy auto-created projects by default; pass --keep-project to inspect
+    the data afterward
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 import typer
 
 from dr_llm.demo import (
     DEMO_QUERY_DEFAULT_MODELS,
     DemoPrompts,
+    cleanup_demo_dsn,
     command_hint,
-    create_demo_project,
-    ensure_docker_available,
     fail,
     list_models_json,
     ok,
+    prepare_demo_dsn,
     query_json,
-    require_demo_project_dsn,
     show_model_json,
     step,
     sync_models_json,
@@ -65,12 +64,11 @@ from dr_llm.pool import (
     PoolSummaryColumn,
     print_pool_summary,
 )
-from dr_llm.project import ProjectInfo, destroy_project
 
 app = typer.Typer()
 
 DEFAULT_PROMPT = DemoPrompts.TWO_PLUS_TWO
-DEFAULT_PROJECT = "demo_pool"
+PROJECT_PREFIX = "demo_pool"
 API_TIMEOUT = 120
 HEADLESS_TIMEOUT = 300
 ANTHROPIC_MAX_TOKENS = 256
@@ -232,19 +230,36 @@ def token_cell(sample: PoolSample) -> int:
 
 @app.command()
 def main(
-    project_name: str = typer.Option(
-        DEFAULT_PROJECT, help="Project name for the demo"
-    ),
-    prompt: str = typer.Option(
-        DEFAULT_PROMPT, help="Prompt to send to each provider"
-    ),
+    dsn: Annotated[
+        str | None,
+        typer.Option(
+            help=(
+                "PostgreSQL DSN. If omitted, a Docker demo project is created."
+            )
+        ),
+    ] = None,
+    project_name: Annotated[
+        str | None,
+        typer.Option(
+            help=(
+                "Name for the auto-created Docker project. Defaults to a "
+                "unique temporary name."
+            )
+        ),
+    ] = None,
+    keep_project: Annotated[
+        bool,
+        typer.Option(
+            "--keep-project",
+            help="Keep the auto-created Docker project for inspection.",
+        ),
+    ] = False,
+    prompt: Annotated[
+        str,
+        typer.Option(help="Prompt to send to each provider"),
+    ] = DEFAULT_PROMPT,
 ) -> None:
     """Query all available LLM providers and store results in a typed pool."""
-    ensure_docker_available(
-        reason="This demo creates a Postgres container to store pool data.",
-        recovery_hint="Install Docker, start the daemon, then retry.",
-    )
-
     step("1. Detecting available providers")
     registry = build_default_registry()
     available = detect_providers(registry.availability_statuses())
@@ -256,18 +271,30 @@ def main(
         f"{', '.join(status.provider for status in available)}"
     )
 
-    step("2. Creating demo project")
-    demo_succeeded = False
-    runtime: DbRuntime | None = None
-    project: ProjectInfo | None = None
-    try:
-        project = create_demo_project(project_name, replace_existing=True)
-        dsn = require_demo_project_dsn(project)
-        ok(f"Project '{project_name}' created at {dsn}")
+    step("2. Preparing database")
+    lease = prepare_demo_dsn(
+        dsn=dsn,
+        project_prefix=PROJECT_PREFIX,
+        project_name=project_name,
+        keep_project=keep_project,
+        docker_reason=(
+            "This demo creates a Postgres container to store pool data."
+        ),
+        docker_recovery_hint=(
+            "Install Docker, start the daemon, or pass --dsn to use an "
+            "existing database."
+        ),
+    )
+    if lease.project_name is not None:
+        ok(f"Project '{lease.project_name}' ready at {lease.dsn}")
+    else:
+        ok(f"Using database at {lease.dsn}")
 
+    runtime: DbRuntime | None = None
+    try:
         step("3. Initializing pool")
         runtime = DbRuntime(
-            DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=4)
+            DbConfig(dsn=lease.dsn, min_pool_size=1, max_pool_size=4)
         )
         store = PoolStore(POOL_SCHEMA, runtime)
         store.ensure_schema()
@@ -317,28 +344,27 @@ def main(
         if failed_providers:
             warn(f"Failed providers: {', '.join(failed_providers)}")
 
-        demo_succeeded = True
-
     finally:
         if runtime:
             runtime.close()
-        if not demo_succeeded and project is not None:
-            step("Cleaning up after failure...")
-            try:
-                destroy_project(project_name)
-            except Exception:
-                pass
+        if lease.should_destroy_project and lease.project_name is not None:
+            step("Destroying temporary project")
+            cleanup_demo_dsn(lease)
 
     ok("Demo complete!")
-    print(f"Project '{project_name}' is still running with your data.\n")
-    command_hint(
-        "Stop (preserve data)",
-        f"uv run dr-llm project stop {project_name}",
-    )
-    command_hint(
-        "Destroy permanently",
-        f"uv run dr-llm project destroy {project_name} --yes-really-delete-everything",
-    )
+    if lease.project_name is not None and not lease.should_destroy_project:
+        print(
+            f"Project '{lease.project_name}' is still running with your data.\n"
+        )
+        command_hint(
+            "Stop (preserve data)",
+            f"uv run dr-llm project stop {lease.project_name}",
+        )
+        command_hint(
+            "Destroy permanently",
+            "uv run dr-llm project destroy "
+            f"{lease.project_name} --yes-really-delete-everything",
+        )
 
 
 if __name__ == "__main__":

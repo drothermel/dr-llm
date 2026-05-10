@@ -198,6 +198,166 @@ def test_require_demo_project_dsn_raises_for_missing_dsn() -> None:
         demo_projects.require_demo_project_dsn(project)
 
 
+def test_prepare_demo_dsn_uses_existing_dsn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_docker_check(
+        *, reason: str, recovery_hint: str | None = None
+    ) -> None:
+        _ = (reason, recovery_hint)
+        raise AssertionError("Docker should not be checked")
+
+    monkeypatch.setattr(
+        demo_projects,
+        "ensure_docker_available",
+        fail_docker_check,
+    )
+
+    lease = demo_projects.prepare_demo_dsn(
+        dsn="postgresql://localhost/demo",
+        project_prefix="demo",
+        docker_reason="needed for postgres",
+    )
+
+    assert lease == demo_projects.DemoDsnLease(
+        dsn="postgresql://localhost/demo"
+    )
+
+
+def test_prepare_demo_dsn_creates_disposable_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    docker_checks: list[tuple[str, str | None]] = []
+    created: list[str] = []
+
+    monkeypatch.setattr(
+        demo_projects,
+        "ensure_docker_available",
+        lambda *, reason, recovery_hint=None: docker_checks.append(
+            (reason, recovery_hint)
+        ),
+    )
+    monkeypatch.setattr(
+        demo_projects,
+        "temporary_demo_project_name",
+        lambda prefix: f"{prefix}_abc123",
+    )
+
+    def fake_create_demo_project(project_name: str) -> ProjectInfo:
+        created.append(project_name)
+        return ProjectInfo(name=project_name, port=5500)
+
+    monkeypatch.setattr(
+        demo_projects,
+        "create_demo_project",
+        fake_create_demo_project,
+    )
+
+    lease = demo_projects.prepare_demo_dsn(
+        dsn=None,
+        project_prefix="demo",
+        docker_reason="needed for postgres",
+        docker_recovery_hint="start Docker",
+    )
+
+    assert docker_checks == [("needed for postgres", "start Docker")]
+    assert created == ["demo_abc123"]
+    assert lease == demo_projects.DemoDsnLease(
+        dsn="postgresql://postgres:postgres@localhost:5500/dr_llm",
+        project_name="demo_abc123",
+        should_destroy_project=True,
+    )
+
+
+def test_prepare_demo_dsn_can_keep_named_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created: list[str] = []
+
+    monkeypatch.setattr(
+        demo_projects,
+        "ensure_docker_available",
+        lambda *, reason, recovery_hint=None: None,
+    )
+
+    def fake_create_demo_project(project_name: str) -> ProjectInfo:
+        created.append(project_name)
+        return ProjectInfo(name=project_name, port=5500)
+
+    monkeypatch.setattr(
+        demo_projects,
+        "create_demo_project",
+        fake_create_demo_project,
+    )
+
+    lease = demo_projects.prepare_demo_dsn(
+        dsn=None,
+        project_prefix="demo",
+        project_name="inspect_me",
+        keep_project=True,
+        docker_reason="needed for postgres",
+    )
+
+    assert created == ["inspect_me"]
+    assert lease.project_name == "inspect_me"
+    assert lease.should_destroy_project is False
+
+
+def test_prepare_demo_dsn_cleans_up_disposable_project_without_dsn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destroyed: list[str] = []
+
+    monkeypatch.setattr(
+        demo_projects,
+        "ensure_docker_available",
+        lambda *, reason, recovery_hint=None: None,
+    )
+    monkeypatch.setattr(
+        demo_projects,
+        "create_demo_project",
+        lambda project_name: ProjectInfo(name=project_name),
+    )
+    monkeypatch.setattr(demo_projects, "destroy_project", destroyed.append)
+
+    with pytest.raises(RuntimeError, match="Demo project 'broken' has no DSN"):
+        demo_projects.prepare_demo_dsn(
+            dsn=None,
+            project_prefix="demo",
+            project_name="broken",
+            docker_reason="needed for postgres",
+        )
+
+    assert destroyed == ["broken"]
+
+
+def test_cleanup_demo_dsn_destroys_only_owned_projects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destroyed: list[str] = []
+    monkeypatch.setattr(demo_projects, "destroy_project", destroyed.append)
+
+    demo_projects.cleanup_demo_dsn(
+        demo_projects.DemoDsnLease(
+            dsn="postgresql://localhost/demo",
+            project_name="temporary",
+            should_destroy_project=True,
+        )
+    )
+    demo_projects.cleanup_demo_dsn(
+        demo_projects.DemoDsnLease(
+            dsn="postgresql://localhost/demo",
+            project_name="kept",
+            should_destroy_project=False,
+        )
+    )
+    demo_projects.cleanup_demo_dsn(
+        demo_projects.DemoDsnLease(dsn="postgresql://localhost/demo")
+    )
+
+    assert destroyed == ["temporary"]
+
+
 def test_temporary_demo_project_destroys_after_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

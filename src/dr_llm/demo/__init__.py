@@ -31,7 +31,10 @@ from dr_llm.demo.demo_models import (
     demo_pool_fill_llm_configs,
 )
 from dr_llm.demo.projects import (
+    DemoDsnLease,
+    cleanup_demo_dsn,
     create_demo_project,
+    prepare_demo_dsn,
     require_demo_project_dsn,
     temporary_demo_project,
     temporary_demo_project_name,
@@ -42,6 +45,7 @@ from dr_llm.demo.requirements import ensure_docker_available
 __all__ = [
     "command",
     "command_hint",
+    "cleanup_demo_dsn",
     "create_demo_project",
     "DEFAULT_CLI_TIMEOUT",
     "ATTEMPT_SUMMARY_FIELDS",
@@ -49,6 +53,7 @@ __all__ = [
     "DEMO_THINKING_SWEEP_MODELS",
     "DemoCountField",
     "DemoCounts",
+    "DemoDsnLease",
     "DemoPrompts",
     "demo_pool_fill_llm_configs",
     "ensure_docker_available",
@@ -57,6 +62,7 @@ __all__ = [
     "list_models_json",
     "ok",
     "POOL_PROGRESS_FIELDS",
+    "prepare_demo_dsn",
     "print_list",
     "query_json",
     "require_demo_project_dsn",

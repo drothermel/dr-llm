@@ -3,6 +3,7 @@
 
 Usage:
   uv run python scripts/demo-pool-fill.py
+  uv run python scripts/demo-pool-fill.py --keep-project
   uv run python scripts/demo-pool-fill.py --dsn postgresql://postgres:postgres@localhost:5433/dr_llm_test
 
 Prerequisites:
@@ -10,7 +11,8 @@ Prerequisites:
   2. Docker running, unless --dsn points at an existing Postgres database
 
 When no --dsn is provided, the script auto-creates a temporary Docker-managed
-Postgres project, runs the demo, and destroys it on exit.
+Postgres project. By default the project is destroyed on exit; pass
+--keep-project to inspect the pool afterward.
 
 The demo:
   - Uses shared reasoning-valid LlmConfig instances for OpenAI and Google
@@ -30,21 +32,19 @@ from typing import Annotated
 import typer
 
 from dr_llm.demo import (
-    create_demo_project,
     DemoCounts,
     DemoPrompts,
     POOL_PROGRESS_FIELDS,
+    cleanup_demo_dsn,
+    command_hint,
     demo_pool_fill_llm_configs,
-    ensure_docker_available,
-    require_demo_project_dsn,
-    temporary_demo_project_name,
+    prepare_demo_dsn,
 )
 from dr_llm.llm import (
     LlmConfig,
     Message,
     build_default_registry,
 )
-from dr_llm.project import destroy_project
 from dr_llm.pool import (
     Axis,
     AxisMember,
@@ -211,9 +211,27 @@ def main(
     dsn: Annotated[
         str | None,
         typer.Option(
-            help="PostgreSQL DSN. If omitted, a temporary Docker project is created."
+            help=(
+                "PostgreSQL DSN. If omitted, a Docker demo project is created."
+            )
         ),
     ] = None,
+    project_name: Annotated[
+        str | None,
+        typer.Option(
+            help=(
+                "Name for the auto-created Docker project. Defaults to a "
+                "unique temporary name."
+            )
+        ),
+    ] = None,
+    keep_project: Annotated[
+        bool,
+        typer.Option(
+            "--keep-project",
+            help="Keep the auto-created Docker project for inspection.",
+        ),
+    ] = False,
     pool_name: Annotated[
         str,
         typer.Option(help="Pool name to create for the demo."),
@@ -230,39 +248,44 @@ def main(
     ] = 1,
 ) -> None:
     """Seed an LLM config x prompt pool and fill it with worker calls."""
-    temporary_project_name: str | None = None
+    lease = prepare_demo_dsn(
+        dsn=dsn,
+        project_prefix="demo_pool_fill",
+        project_name=project_name,
+        keep_project=keep_project,
+        docker_reason=(
+            "This demo creates a temporary Postgres project when no --dsn is "
+            "provided."
+        ),
+        docker_recovery_hint=(
+            "Install Docker, start the daemon, or pass --dsn to use an "
+            "existing database."
+        ),
+    )
+    if lease.project_name is not None:
+        print(f"Postgres ready at {lease.dsn}")
+
     try:
-        if dsn is None:
-            ensure_docker_available(
-                reason=(
-                    "This demo creates a temporary Postgres project when no "
-                    "--dsn is provided."
-                ),
-                recovery_hint=(
-                    "Install Docker, start the daemon, or pass --dsn to use "
-                    "an existing database."
-                ),
-            )
-
-            project_name = temporary_demo_project_name("demo_pool_fill")
-            print(f"Creating temporary project '{project_name}'...")
-            project = create_demo_project(project_name)
-            temporary_project_name = project_name
-            dsn = require_demo_project_dsn(project)
-            print(f"Postgres ready at {dsn}")
-
         _run_demo(
-            dsn,
+            lease.dsn,
             pool_name,
             num_workers,
             samples_per_cell,
         )
     finally:
-        if temporary_project_name is not None:
-            print(
-                f"Destroying temporary project '{temporary_project_name}'..."
-            )
-            destroy_project(temporary_project_name)
+        if lease.should_destroy_project and lease.project_name is not None:
+            print(f"Destroying temporary project '{lease.project_name}'...")
+            cleanup_demo_dsn(lease)
+
+    if lease.project_name is not None and not lease.should_destroy_project:
+        print(
+            f"Project '{lease.project_name}' is still running with your data."
+        )
+        command_hint(
+            "Destroy permanently",
+            "uv run dr-llm project destroy "
+            f"{lease.project_name} --yes-really-delete-everything",
+        )
 
 
 if __name__ == "__main__":
