@@ -5,7 +5,6 @@ app = marimo.App(width="columns")
 
 with app.setup:
     from contextlib import contextmanager
-    import hashlib
     import json
     import math
     from collections.abc import Callable, Sequence
@@ -14,20 +13,7 @@ with app.setup:
 
     import marimo as mo
     import pandas as pd
-    from sqlalchemy import (
-        Column,
-        DateTime,
-        Float,
-        Integer,
-        MetaData,
-        Table,
-        Text,
-        select,
-    )
-
     from marimo_utils.ui import (
-        Badge,
-        BadgeVariant,
         BarChart,
         BarItem,
         BoxPlotCard,
@@ -36,27 +22,19 @@ with app.setup:
         DataItem,
         HeatmapChart,
         HistogramCard,
-        LabeledList,
-        LineChart,
-        LineSeries,
         PieChart,
         PieSlice,
         QuantileFences,
-        ScatterChart,
-        ScatterSeries,
         FrequencyBarCard,
         ViolinPlotCard,
         compute_gini,
         skew_label,
     )
-    from dr_llm.pool.admin_service import inspect_pool
+    from dr_llm.pool.admin.inspection import PoolInspectionRequest, inspect_pool
+    from dr_llm.pool.db.catalog import load_schema
     from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-    from dr_llm.pool.models import PoolInspectionRequest
-    from dr_llm.pool.pending.pending_status import PendingStatus
-    from dr_llm.pool.reader import (
-        PoolReader,
-        _load_schema_from_db as load_schema_from_db,
-    )
+    from dr_llm.pool.reader import PoolReader
+    from dr_llm.pool.response_stats import sample_response_stats
     from dr_llm.project.project_service import (
         maybe_get_project,
         inspect_projects,
@@ -95,49 +73,8 @@ def _():
             separators=(",", ":"),
         )
 
-
-    def metadata_category(key: str) -> str:
-        if key.startswith("_"):
-            return "internal"
-        if "/" in key:
-            return key.split("/", 1)[0]
-        return "unprefixed"
-
-
     def empty_frame(columns: Sequence[str]) -> pd.DataFrame:
         return pd.DataFrame(columns=list(columns))
-
-
-    def build_claims_table(table_name: str) -> Table:
-        return Table(
-            table_name,
-            MetaData(),
-            Column("claim_id", Text),
-            Column("run_id", Text),
-            Column("request_id", Text),
-            Column("consumer_tag", Text),
-            Column("sample_id", Text),
-            Column("claim_idx", Integer),
-            Column("claimed_at", DateTime(timezone=True)),
-        )
-
-
-    def build_call_stats_table(table_name: str) -> Table:
-        return Table(
-            table_name,
-            MetaData(),
-            Column("sample_id", Text),
-            Column("latency_ms", Integer),
-            Column("total_cost_usd", Float),
-            Column("prompt_tokens", Integer),
-            Column("completion_tokens", Integer),
-            Column("reasoning_tokens", Integer),
-            Column("total_tokens", Integer),
-            Column("attempt_count", Integer),
-            Column("finish_reason", Text),
-            Column("created_at", DateTime(timezone=True)),
-        )
-
 
     def sort_frame(
         frame: pd.DataFrame,
@@ -152,7 +89,6 @@ def _():
             ascending=ascending,
             kind="stable",
         ).reset_index(drop=True)
-
 
     @contextmanager
     def pool_reader_context(
@@ -171,13 +107,14 @@ def _():
             )
         )
         try:
-            schema = load_schema_from_db(runtime, pool_name)
+            schema = load_schema(runtime, pool_name)
+            if schema is None:
+                raise ValueError(f"Pool {pool_name!r} not found in catalog")
             reader = PoolReader.from_runtime(runtime, schema=schema)
             key_columns = list(schema.key_column_names)
             yield runtime, schema, reader, key_columns
         finally:
             runtime.close()
-
 
     def load_pool_inspection(
         *,
@@ -190,7 +127,6 @@ def _():
                 pool_name=pool_name,
             )
         )
-
 
     def load_sample_frame(
         *,
@@ -206,9 +142,12 @@ def _():
                     for column_name in key_columns
                 },
                 "sample_idx": sample.sample_idx,
-                "source_run_id": sample.source_run_id,
+                "run_id": sample.run_id,
+                "is_complete": sample.is_complete,
+                "finish_reason": sample.finish_reason,
+                "attempt_count": sample.attempt_count,
                 "created_at": sample.created_at,
-                "payload_json": compact_json(sample.payload),
+                "request_json": compact_json(sample.request),
                 "metadata_json": compact_json(sample.metadata),
             }
             for sample in samples
@@ -218,9 +157,12 @@ def _():
             "sample_id",
             *key_columns,
             "sample_idx",
-            "source_run_id",
+            "run_id",
+            "is_complete",
+            "finish_reason",
+            "attempt_count",
             "created_at",
-            "payload_json",
+            "request_json",
             "metadata_json",
         ]
         if sample_frame.empty:
@@ -233,218 +175,35 @@ def _():
             ascending=[*([True] * len(key_columns)), True, True],
         )
 
-
-    def load_pending_frames(
+    def load_response_stats_frame(
         *,
         reader: PoolReader,
         key_columns: Sequence[str],
-    ) -> dict[str, pd.DataFrame]:
-        all_pending = reader.pending_list(
-            status=[
-                PendingStatus.pending,
-                PendingStatus.leased,
-                PendingStatus.promoted,
-                PendingStatus.failed,
-            ]
-        )
-
-        pending_rows = [
-            {
-                "pending_id": pending.pending_id,
-                **{
-                    column_name: pending.key_values.get(column_name)
-                    for column_name in key_columns
-                },
-                "sample_idx": pending.sample_idx,
-                "priority": pending.priority,
-                "status": pending.status.value,
-                "worker_id": pending.worker_id,
-                "lease_expires_at": pending.lease_expires_at,
-                "attempt_count": pending.attempt_count,
-                "source_run_id": pending.source_run_id,
-                "created_at": pending.created_at,
-                "payload_json": compact_json(pending.payload),
-                "metadata_json": compact_json(pending.metadata),
-                "fail_reason": pending.metadata.get("fail_reason", ""),
-                "llm_config_json": compact_json(pending.payload.get("llm_config")),
-                "prompt_json": compact_json(pending.payload.get("prompt")),
-            }
-            for pending in all_pending
-        ]
-        pending_columns = [
-            "pending_id",
-            *key_columns,
-            "sample_idx",
-            "priority",
-            "status",
-            "worker_id",
-            "lease_expires_at",
-            "attempt_count",
-            "source_run_id",
-            "created_at",
-            "payload_json",
-            "metadata_json",
-        ]
-        failure_columns = [
-            "pending_id",
-            *key_columns,
-            "sample_idx",
-            "attempt_count",
-            "created_at",
-            "fail_reason",
-            "payload_json",
-            "metadata_json",
-        ]
-        provenance_columns = [
-            *key_columns,
-            "sample_idx",
-            "status",
-            "priority",
-            "attempt_count",
-            "source_run_id",
-            "created_at",
-            "llm_config_json",
-            "prompt_json",
-            "payload_json",
-            "metadata_json",
-        ]
-
-        pending_frame = pd.DataFrame.from_records(pending_rows)
-        if pending_frame.empty:
-            return {
-                "pending_frame": empty_frame(pending_columns),
-                "failure_frame": empty_frame(failure_columns),
-                "provenance_frame": empty_frame(provenance_columns),
-            }
-
-        pending_frame = pending_frame.loc[:, pending_columns]
-        pending_frame = pending_frame.loc[
-            pending_frame["status"].isin(
-                [PendingStatus.pending.value, PendingStatus.leased.value]
+    ) -> pd.DataFrame:
+        samples = reader.samples_list(completion="complete")
+        rows = []
+        for sample in samples:
+            stats = sample_response_stats(sample)
+            rows.append(
+                {
+                    "sample_id": sample.sample_id,
+                    **{col: sample.key_values.get(col) for col in key_columns},
+                    "sample_idx": sample.sample_idx,
+                    "latency_ms": stats.latency_ms,
+                    "total_cost_usd": stats.total_cost_usd,
+                    "prompt_tokens": stats.prompt_tokens,
+                    "completion_tokens": stats.completion_tokens,
+                    "reasoning_tokens": stats.reasoning_tokens,
+                    "total_tokens": stats.total_tokens,
+                    "attempt_count": stats.attempt_count,
+                    "finish_reason": stats.finish_reason,
+                    "created_at": sample.created_at,
+                }
             )
-        ]
-        if pending_frame.empty:
-            pending_frame = empty_frame(pending_columns)
-        else:
-            pending_frame = sort_frame(
-                pending_frame,
-                by=[
-                    "status",
-                    "priority",
-                    "created_at",
-                    *key_columns,
-                    "sample_idx",
-                ],
-                ascending=[
-                    True,
-                    False,
-                    True,
-                    *([True] * len(key_columns)),
-                    True,
-                ],
-            )
-
-        failure_frame = pd.DataFrame.from_records(pending_rows)
-        failure_frame = failure_frame.loc[
-            failure_frame["status"] == PendingStatus.failed.value
-        ]
-        if failure_frame.empty:
-            failure_frame = empty_frame(failure_columns)
-        else:
-            failure_frame = failure_frame.loc[:, failure_columns]
-            failure_frame = sort_frame(
-                failure_frame,
-                by=["created_at", *key_columns, "sample_idx"],
-                ascending=[False, *([True] * len(key_columns)), True],
-            )
-
-        provenance_frame = pd.DataFrame.from_records(pending_rows)
-        provenance_frame = provenance_frame.loc[:, provenance_columns]
-        provenance_frame = sort_frame(
-            provenance_frame,
-            by=[*key_columns, "sample_idx", "created_at"],
-            ascending=[*([True] * len(key_columns)), True, True],
-        )
-
-        return {
-            "pending_frame": pending_frame,
-            "failure_frame": failure_frame,
-            "provenance_frame": provenance_frame,
-        }
-
-
-    def load_metadata_frame(*, reader: PoolReader) -> pd.DataFrame:
-        metadata_entries = reader.metadata_prefix("")
-        metadata_rows = [
-            {
-                "key": key,
-                "category": metadata_category(key),
-                "value_json": compact_json(value),
-            }
-            for key, value in metadata_entries.items()
-        ]
-        metadata_frame = pd.DataFrame.from_records(metadata_rows)
-        metadata_columns = ["key", "category", "value_json"]
-        if metadata_frame.empty:
-            return empty_frame(metadata_columns)
-
-        metadata_frame = metadata_frame.loc[:, metadata_columns]
-        return sort_frame(
-            metadata_frame,
-            by=["category", "key"],
-            ascending=[True, True],
-        )
-
-
-    def load_claims_and_call_stats_frames(
-        *,
-        runtime: DbRuntime,
-        schema: Any,
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        claims_table = build_claims_table(schema.claims_table)
-        call_stats_table = build_call_stats_table(schema.call_stats_table)
-        with runtime.connect() as conn:
-            claim_rows = (
-                conn.execute(
-                    select(claims_table).order_by(
-                        claims_table.c.claimed_at.desc(),
-                        claims_table.c.claim_idx.asc(),
-                    )
-                )
-                .mappings()
-                .all()
-            )
-            call_stats_rows = (
-                conn.execute(
-                    select(call_stats_table).order_by(
-                        call_stats_table.c.created_at.desc(),
-                        call_stats_table.c.sample_id.asc(),
-                    )
-                )
-                .mappings()
-                .all()
-            )
-
-        claims_frame = pd.DataFrame.from_records([dict(row) for row in claim_rows])
-        claim_columns = [
-            "claim_id",
-            "run_id",
-            "request_id",
-            "consumer_tag",
+        stats_columns = [
             "sample_id",
-            "claim_idx",
-            "claimed_at",
-        ]
-        if claims_frame.empty:
-            claims_frame = empty_frame(claim_columns)
-        else:
-            claims_frame = claims_frame.loc[:, claim_columns]
-
-        call_stats_frame = pd.DataFrame.from_records(
-            [dict(row) for row in call_stats_rows]
-        )
-        call_stats_columns = [
-            "sample_id",
+            *key_columns,
+            "sample_idx",
             "latency_ms",
             "total_cost_usd",
             "prompt_tokens",
@@ -455,21 +214,52 @@ def _():
             "finish_reason",
             "created_at",
         ]
-        if call_stats_frame.empty:
-            call_stats_frame = empty_frame(call_stats_columns)
-        else:
-            call_stats_frame = call_stats_frame.loc[:, call_stats_columns]
+        frame = pd.DataFrame.from_records(rows)
+        if frame.empty:
+            return empty_frame(stats_columns)
+        return frame.loc[:, stats_columns]
 
-        return claims_frame, call_stats_frame
-
+    def load_error_frame(
+        *,
+        reader: PoolReader,
+        key_columns: Sequence[str],
+    ) -> pd.DataFrame:
+        samples = reader.samples_list(completion="error")
+        rows = [
+            {
+                "sample_id": sample.sample_id,
+                **{col: sample.key_values.get(col) for col in key_columns},
+                "sample_idx": sample.sample_idx,
+                "attempt_count": sample.attempt_count,
+                "finish_reason": sample.finish_reason,
+                "created_at": sample.created_at,
+                "metadata_json": compact_json(sample.metadata),
+            }
+            for sample in samples
+        ]
+        error_columns = [
+            "sample_id",
+            *key_columns,
+            "sample_idx",
+            "attempt_count",
+            "finish_reason",
+            "created_at",
+            "metadata_json",
+        ]
+        frame = pd.DataFrame.from_records(rows)
+        if frame.empty:
+            return empty_frame(error_columns)
+        return sort_frame(
+            frame.loc[:, error_columns],
+            by=["created_at", *key_columns, "sample_idx"],
+            ascending=[False, *([True] * len(key_columns)), True],
+        )
 
     CacheGetter = Callable[[], dict[str, Any]]
     CacheSetter = Callable[[Callable[[dict[str, Any]], dict[str, Any]]], None]
 
-
     def _cache_put(set_cache: CacheSetter, **updates: Any) -> None:
         set_cache(lambda c: {**c, **updates})
-
 
     def ensure_pool_inspection(
         *,
@@ -487,7 +277,6 @@ def _():
         )
         _cache_put(set_cache, pool_inspection=inspection)
         return inspection
-
 
     def ensure_sample_frame(
         *,
@@ -511,31 +300,7 @@ def _():
         _cache_put(set_cache, sample_frame=sample_frame, key_columns=kc)
         return sample_frame, kc
 
-
-    def ensure_pending_frames(
-        *,
-        project_name: str,
-        pool_name: str,
-        get_cache: CacheGetter,
-        set_cache: CacheSetter,
-    ) -> tuple[dict[str, pd.DataFrame], list[str]]:
-        cache = get_cache()
-        if "pending_frames" in cache and "key_columns" in cache:
-            return cache["pending_frames"], cache["key_columns"]
-        with pool_reader_context(
-            project_name=project_name,
-            pool_name=pool_name,
-        ) as (_, _, reader, key_columns):
-            pending_frames = load_pending_frames(
-                reader=reader,
-                key_columns=key_columns,
-            )
-            kc = list(key_columns)
-        _cache_put(set_cache, pending_frames=pending_frames, key_columns=kc)
-        return pending_frames, kc
-
-
-    def ensure_metadata_frame(
+    def ensure_response_stats_frame(
         *,
         project_name: str,
         pool_name: str,
@@ -543,58 +308,46 @@ def _():
         set_cache: CacheSetter,
     ) -> tuple[pd.DataFrame, list[str]]:
         cache = get_cache()
-        if "metadata_frame" in cache and "key_columns" in cache:
-            return cache["metadata_frame"], cache["key_columns"]
+        if "response_stats_frame" in cache and "key_columns" in cache:
+            return cache["response_stats_frame"], cache["key_columns"]
         with pool_reader_context(
             project_name=project_name,
             pool_name=pool_name,
         ) as (_, _, reader, key_columns):
-            metadata_frame = load_metadata_frame(reader=reader)
+            frame = load_response_stats_frame(
+                reader=reader,
+                key_columns=key_columns,
+            )
             kc = list(key_columns)
-        _cache_put(set_cache, metadata_frame=metadata_frame, key_columns=kc)
-        return metadata_frame, kc
+        _cache_put(set_cache, response_stats_frame=frame, key_columns=kc)
+        return frame, kc
 
-
-    def ensure_claims_and_call_stats(
+    def ensure_error_frame(
         *,
         project_name: str,
         pool_name: str,
         get_cache: CacheGetter,
         set_cache: CacheSetter,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+    ) -> tuple[pd.DataFrame, list[str]]:
         cache = get_cache()
-        if (
-            "claims_frame" in cache
-            and "call_stats_frame" in cache
-            and "key_columns" in cache
-        ):
-            return (
-                cache["claims_frame"],
-                cache["call_stats_frame"],
-                cache["key_columns"],
-            )
+        if "error_frame" in cache and "key_columns" in cache:
+            return cache["error_frame"], cache["key_columns"]
         with pool_reader_context(
             project_name=project_name,
             pool_name=pool_name,
-        ) as (runtime, schema, _, key_columns):
-            claims_frame, call_stats_frame = load_claims_and_call_stats_frames(
-                runtime=runtime,
-                schema=schema,
+        ) as (_, _, reader, key_columns):
+            frame = load_error_frame(
+                reader=reader,
+                key_columns=key_columns,
             )
             kc = list(key_columns)
-        _cache_put(
-            set_cache,
-            claims_frame=claims_frame,
-            call_stats_frame=call_stats_frame,
-            key_columns=kc,
-        )
-        return claims_frame, call_stats_frame, kc
+        _cache_put(set_cache, error_frame=frame, key_columns=kc)
+        return frame, kc
 
     return (
-        ensure_claims_and_call_stats,
-        ensure_metadata_frame,
-        ensure_pending_frames,
+        ensure_error_frame,
         ensure_pool_inspection,
+        ensure_response_stats_frame,
         ensure_sample_frame,
     )
 
@@ -749,7 +502,6 @@ def _(project_summaries):
                 )
         return rows
 
-
     target_project_names = {
         project_name.strip().lower() for project_name in TARGET_PROJECT_NAMES
     }
@@ -778,9 +530,7 @@ def _(pool_rows):
             [
                 mo.md("## Detailed Pool Inspection"),
                 mo.md(f"Configured projects: {target_projects}"),
-                mo.md(
-                    "No discovered pools are available for the configured projects."
-                ),
+                mo.md("No discovered pools are available for the configured projects."),
             ],
             gap=0.75,
         )
@@ -798,9 +548,7 @@ def _(pool_rows):
             [
                 mo.md("## Detailed Pool Inspection"),
                 mo.md(f"Configured projects: {target_projects}"),
-                mo.md(
-                    "One dataframe per question for the currently selected pool."
-                ),
+                mo.md("One dataframe per question for the currently selected pool."),
                 pool_selector,
             ],
             gap=0.75,
@@ -834,23 +582,15 @@ def _():
     health_run_button = mo.ui.run_button(label="Run", kind="success")
     coverage_run_button = mo.ui.run_button(label="Run", kind="success")
     sample_run_button = mo.ui.run_button(label="Run", kind="success")
-    pending_run_button = mo.ui.run_button(label="Run", kind="success")
-    failure_run_button = mo.ui.run_button(label="Run", kind="success")
-    provenance_run_button = mo.ui.run_button(label="Run", kind="success")
-    metadata_run_button = mo.ui.run_button(label="Run", kind="success")
-    call_stats_run_button = mo.ui.run_button(label="Run", kind="success")
+    error_run_button = mo.ui.run_button(label="Run", kind="success")
+    response_stats_run_button = mo.ui.run_button(label="Run", kind="success")
     trend_run_button = mo.ui.run_button(label="Run", kind="success")
-    throughput_run_button = mo.ui.run_button(label="Run", kind="success")
     return (
-        call_stats_run_button,
         coverage_run_button,
-        failure_run_button,
+        error_run_button,
         health_run_button,
-        metadata_run_button,
-        pending_run_button,
-        provenance_run_button,
+        response_stats_run_button,
         sample_run_button,
-        throughput_run_button,
         trend_run_button,
     )
 
@@ -866,8 +606,8 @@ def _(selected_pool):
 
 @app.cell(hide_code=True)
 def _(
-    ensure_claims_and_call_stats,
     ensure_pool_inspection,
+    ensure_response_stats_frame,
     get_raw_frames,
     get_section_results,
     health_run_button,
@@ -881,10 +621,8 @@ def _(
             values = values * scale
         return values
 
-
     def range_line(series: pd.Series, template: str) -> str:
         return template.format(lo=float(series.min()), hi=float(series.max()))
-
 
     def build_health_data(
         *,
@@ -899,7 +637,7 @@ def _(
             get_cache=get_cache,
             set_cache=set_cache,
         )
-        _, call_stats_frame, key_columns = ensure_claims_and_call_stats(
+        response_stats_frame, key_columns = ensure_response_stats_frame(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,
@@ -909,16 +647,14 @@ def _(
             "pool_label": f"{project_name} / {pool_name}",
             "pool_inspection": pool_inspection,
             "key_columns": key_columns,
-            "call_stats_frame": call_stats_frame,
+            "call_stats_frame": response_stats_frame,
         }
-
 
     def make_pool_health_pie_card(inspection: Any) -> PoolSimpleStatsPieCard:
         return PoolSimpleStatsPieCard(
             pool=inspection,
             width="20rem",
         )
-
 
     def make_pool_finish_reason_card(
         call_stats_frame: pd.DataFrame,
@@ -932,15 +668,12 @@ def _(
             title="Finish reasons",
             description="Distribution of finish_reason",
             content=PieChart(
-                slices=[
-                    PieSlice(label=lab, value=cnt) for lab, cnt in finish_counts
-                ],
+                slices=[PieSlice(label=lab, value=cnt) for lab, cnt in finish_counts],
                 height=220,
                 show_legend=True,
             ),
             width="w-80",
         )
-
 
     def make_pool_cost_distribution_plot(
         call_stats_frame: pd.DataFrame,
@@ -949,9 +682,7 @@ def _(
         if column not in call_stats_frame.columns:
             return None
         cost_series = scaled_series(call_stats_frame, column, 1.0)
-        cost_range = range_line(
-            cost_series, "**True Range:** ${lo:,.4f} - ${hi:,.4f}"
-        )
+        cost_range = range_line(cost_series, "**True Range:** ${lo:,.4f} - ${hi:,.4f}")
         return BoxPlotCard(
             column=column,
             data=call_stats_frame,
@@ -962,7 +693,6 @@ def _(
             y_label="Cost (USD)",
         )
 
-
     def make_pool_cost_shape_plot(
         call_stats_frame: pd.DataFrame,
         column: str = "total_cost_usd",
@@ -970,9 +700,7 @@ def _(
         if column not in call_stats_frame.columns:
             return None
         cost_series = scaled_series(call_stats_frame, column, 1.0)
-        cost_range = range_line(
-            cost_series, "**True Range:** ${lo:,.4f} - ${hi:,.4f}"
-        )
+        cost_range = range_line(cost_series, "**True Range:** ${lo:,.4f} - ${hi:,.4f}")
         shape_primary = "KDE on p1-p99 bulk; <=2k sampled points"
         return ViolinPlotCard(
             column=column,
@@ -984,7 +712,6 @@ def _(
             tick_format="$.4f",
             y_label="Cost (USD)",
         )
-
 
     def make_pool_latency_distribution_plot(
         call_stats_frame: pd.DataFrame,
@@ -1007,7 +734,6 @@ def _(
             tick_format=".2f",
             y_label="Latency (s)",
         )
-
 
     def make_pool_latency_shape_plot(
         call_stats_frame: pd.DataFrame,
@@ -1032,7 +758,6 @@ def _(
             tick_format=".2f",
             y_label="Latency (s)",
         )
-
 
     mo.stop(selected_pool is None)
 
@@ -1124,7 +849,6 @@ def _(
             kind="stable",
         ).reset_index(drop=True)
 
-
     def build_coverage_data(
         *,
         project_name: str,
@@ -1146,7 +870,6 @@ def _(
             ),
         }
 
-
     def per_key_count_series(
         coverage_frame: pd.DataFrame,
         key_column: str,
@@ -1157,7 +880,6 @@ def _(
             .sort_values(ascending=False)
         )
 
-
     def make_labeled_coverage_frame(
         coverage_frame: pd.DataFrame,
         key_columns: Sequence[str],
@@ -1167,17 +889,13 @@ def _(
 
             def label_row(row: pd.Series) -> str:
                 return " · ".join(
-                    str(row[col]) if pd.notna(row[col]) else "—"
-                    for col in key_columns
+                    str(row[col]) if pd.notna(row[col]) else "—" for col in key_columns
                 )
 
             labeled_frame["_label"] = labeled_frame.apply(label_row, axis=1)
         else:
-            labeled_frame["_label"] = [
-                f"cell {i}" for i in range(len(labeled_frame))
-            ]
+            labeled_frame["_label"] = [f"cell {i}" for i in range(len(labeled_frame))]
         return labeled_frame
-
 
     def make_coverage_distribution_card(
         coverage_frame: pd.DataFrame,
@@ -1210,7 +928,6 @@ def _(
             ),
             width="w-96",
         )
-
 
     def make_coverage_heatmap_card(
         coverage_frame: pd.DataFrame,
@@ -1248,7 +965,6 @@ def _(
             ),
             width="w-96",
         )
-
 
     def make_per_key_coverage_cards(
         *,
@@ -1295,7 +1011,6 @@ def _(
                     )
                 )
         return _cards
-
 
     mo.stop(selected_pool is None)
 
@@ -1387,11 +1102,8 @@ def _(
             "sample_frame": sample_frame,
         }
 
-
     def make_sample_timeline_card(sample_frame: pd.DataFrame) -> HistogramCard:
-        created_series = pd.to_datetime(
-            sample_frame["created_at"], errors="coerce"
-        )
+        created_series = pd.to_datetime(sample_frame["created_at"], errors="coerce")
         earliest = created_series.min()
         latest = created_series.max()
         return HistogramCard(
@@ -1409,7 +1121,6 @@ def _(
             x_label="Unix seconds",
             y_label="Samples",
         )
-
 
     mo.stop(selected_pool is None)
 
@@ -1452,22 +1163,22 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
-    ensure_pending_frames,
+    ensure_error_frame,
+    error_run_button,
     get_raw_frames,
     get_section_results,
-    pending_run_button,
     selected_pool,
     set_raw_frames,
     set_section_results,
 ):
-    def build_pending_data(
+    def build_error_data(
         *,
         project_name: str,
         pool_name: str,
         get_cache,
         set_cache,
     ) -> dict[str, Any]:
-        pending_frames, key_columns = ensure_pending_frames(
+        error_frame, key_columns = ensure_error_frame(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,
@@ -1475,291 +1186,76 @@ def _(
         )
         return {
             "key_columns": key_columns,
-            "pending_frame": pending_frames["pending_frame"],
+            "error_frame": error_frame,
         }
 
-
-    def make_pending_summary_card(pending_frame: pd.DataFrame) -> Card:
-        total = len(pending_frame)
+    def make_error_summary_card(error_frame: pd.DataFrame) -> Card:
+        total = len(error_frame)
         if total == 0:
-            return stat_card("Pending summary", [("Total", "0")])
-        pending_count = int(
-            (pending_frame["status"] == PendingStatus.pending.value).sum()
-        )
-        leased_count = int(
-            (pending_frame["status"] == PendingStatus.leased.value).sum()
-        )
-        unique_workers = int(pending_frame["worker_id"].dropna().nunique())
-
-        now = pd.Timestamp.utcnow()
-        expires = pd.to_datetime(
-            pending_frame["lease_expires_at"], utc=True, errors="coerce"
-        )
-        stale = int(((expires < now) & expires.notna()).sum())
-
-        return stat_card(
-            "Pending summary",
-            [
-                ("Total open", fmt_int(total)),
-                ("Pending", fmt_int(pending_count)),
-                ("Leased", fmt_int(leased_count)),
-                ("Unique workers", fmt_int(unique_workers)),
-                ("Stale leases", fmt_int(stale)),
-            ],
-        )
-
-
-    def make_pending_status_card(pending_frame: pd.DataFrame) -> Card:
-        pending_count = int(
-            (pending_frame["status"] == PendingStatus.pending.value).sum()
-        )
-        leased_count = int(
-            (pending_frame["status"] == PendingStatus.leased.value).sum()
-        )
-        return Card(
-            title="Status split",
-            description="Pending vs leased",
-            content=PieChart(
-                slices=[
-                    PieSlice(label="pending", value=pending_count),
-                    PieSlice(label="leased", value=leased_count),
-                ],
-                height=220,
-                show_legend=True,
-            ),
-            width="w-80",
-        )
-
-
-    def make_pending_priority_card(
-        pending_frame: pd.DataFrame,
-    ) -> HistogramCard:
-        return HistogramCard(
-            data=pending_frame,
-            column="priority",
-            title="Priority distribution",
-            description="Counts by priority value",
-            color=ChartColor.FOUR,
-            x_label="Priority",
-            y_label="Count",
-        )
-
-
-    def make_pending_retries_card(pending_frame: pd.DataFrame) -> Card:
-        attempt_counts = value_counts(pending_frame["attempt_count"])
-        return Card(
-            title="Retry pressure",
-            description="Pending items by attempt_count",
-            content=BarChart(
-                items=[
-                    BarItem(label=str(lab), value=cnt)
-                    for lab, cnt in attempt_counts
-                ],
-                height=220,
-                x_label="attempt_count",
-                y_label="Items",
-            ),
-            width="w-80",
-        )
-
-
-    mo.stop(selected_pool is None)
-
-    _section_results = get_section_results()
-    pending_data = _section_results.get("pending")
-    if pending_run_button.value:
-        pending_data = build_pending_data(
-            project_name=selected_pool["project_name"],
-            pool_name=selected_pool["pool_name"],
-            get_cache=get_raw_frames,
-            set_cache=set_raw_frames,
-        )
-        set_section_results(lambda results: {**results, "pending": pending_data})
-
-    mo.stop(
-        pending_data is None,
-        render_section(
-            "What pending work exists right now?",
-            pending_run_button,
-        ),
-    )
-
-    _pending_frame: pd.DataFrame = pending_data["pending_frame"]
-    _summary_card = make_pending_summary_card(_pending_frame)
-    _status_card = make_pending_status_card(_pending_frame)
-    _priority_card = make_pending_priority_card(_pending_frame)
-    _retries_card = make_pending_retries_card(_pending_frame)
-    _rendered_cards = [
-        card.render()
-        for card in [
-            _summary_card,
-            _status_card,
-            _priority_card,
-            _retries_card,
-        ]
-    ]
-    _body = mo.vstack(
-        [
-            mo.hstack(_rendered_cards, wrap=True, align="start"),
-            mo.accordion({"Show dataframe": _pending_frame}),
-        ]
-    )
-
-    render_section(
-        "What pending work exists right now?",
-        pending_run_button,
-        _body,
-    )
-    return
-
-
-@app.cell(hide_code=True)
-def _(
-    ensure_pending_frames,
-    failure_run_button,
-    get_raw_frames,
-    get_section_results,
-    selected_pool,
-    set_raw_frames,
-    set_section_results,
-):
-    def build_failure_data(
-        *,
-        project_name: str,
-        pool_name: str,
-        get_cache,
-        set_cache,
-    ) -> dict[str, Any]:
-        pending_frames, key_columns = ensure_pending_frames(
-            project_name=project_name,
-            pool_name=pool_name,
-            get_cache=get_cache,
-            set_cache=set_cache,
-        )
-        return {
-            "key_columns": key_columns,
-            "failure_frame": pending_frames["failure_frame"],
-        }
-
-
-    def make_failure_summary_card(failure_frame: pd.DataFrame) -> Card:
-        total = len(failure_frame)
-        if total == 0:
-            return stat_card("Failure summary", [("Total", "0")])
-        unique_reasons = int(failure_frame["fail_reason"].dropna().nunique())
+            return stat_card("Error summary", [("Total", "0")])
         max_attempts_value = pd.to_numeric(
-            failure_frame["attempt_count"], errors="coerce"
+            error_frame["attempt_count"], errors="coerce"
         ).max()
-        max_attempts = (
-            int(max_attempts_value) if pd.notna(max_attempts_value) else 0
-        )
-        latest = pd.to_datetime(failure_frame["created_at"], errors="coerce").max()
+        max_attempts = int(max_attempts_value) if pd.notna(max_attempts_value) else 0
+        latest = pd.to_datetime(error_frame["created_at"], errors="coerce").max()
 
         return stat_card(
-            "Failure summary",
+            "Error summary",
             [
-                ("Total failed", fmt_int(total)),
-                ("Unique reasons", fmt_int(unique_reasons)),
+                ("Total errors", fmt_int(total)),
                 ("Max attempts", fmt_int(max_attempts)),
                 ("Most recent", fmt_ts(latest)),
             ],
         )
 
-
-    def make_failure_reasons_card(failure_frame: pd.DataFrame) -> Card:
-        reason_counts = value_counts(failure_frame["fail_reason"])[:10]
-        return Card(
-            title="Top failure reasons",
-            description=f"Top {len(reason_counts)} fail_reason values",
-            content=BarChart(
-                items=[
-                    BarItem(label=truncate(lab, 30), value=cnt)
-                    for lab, cnt in reason_counts
-                ],
-                height=220,
-                orientation="h",
-                x_label="Failures",
-                y_label="Reason",
-            ),
-            width="w-96",
-        )
-
-
-    def make_failure_attempts_card(
-        failure_frame: pd.DataFrame,
+    def make_error_attempts_card(
+        error_frame: pd.DataFrame,
     ) -> HistogramCard:
         return HistogramCard(
-            data=failure_frame,
+            data=error_frame,
             column="attempt_count",
-            title="Attempts before fail",
-            description="Distribution of attempt_count for failed items",
+            title="Attempts before error",
+            description="Distribution of attempt_count for errored samples",
             color=ChartColor.ONE,
             x_label="attempt_count",
             y_label="Count",
         )
 
-
-    def make_failure_timeline_card(
-        failure_frame: pd.DataFrame,
-    ) -> HistogramCard:
-        return HistogramCard(
-            data=ts_to_unix(failure_frame, "created_at"),
-            column="created_at",
-            title="Failures over time",
-            description="Histogram of created_at (unix seconds)",
-            color=ChartColor.ONE,
-            binning="continuous",
-            nbins=24,
-            x_label="Unix seconds",
-            y_label="Failures",
-        )
-
-
     mo.stop(selected_pool is None)
 
     _section_results = get_section_results()
-    failure_data = _section_results.get("failure")
-    if failure_run_button.value:
-        failure_data = build_failure_data(
+    error_data = _section_results.get("error")
+    if error_run_button.value:
+        error_data = build_error_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
             get_cache=get_raw_frames,
             set_cache=set_raw_frames,
         )
-        set_section_results(lambda results: {**results, "failure": failure_data})
+        set_section_results(lambda results: {**results, "error": error_data})
 
     mo.stop(
-        failure_data is None,
+        error_data is None,
         render_section(
-            "What failures have happened?",
-            failure_run_button,
+            "What errors have occurred?",
+            error_run_button,
         ),
     )
 
-    _failure_frame: pd.DataFrame = failure_data["failure_frame"]
-    _summary_card = make_failure_summary_card(_failure_frame)
-    _reasons_card = make_failure_reasons_card(_failure_frame)
-    _attempts_card = make_failure_attempts_card(_failure_frame)
-    _timeline_card = make_failure_timeline_card(_failure_frame)
-    _rendered_cards = [
-        card.render()
-        for card in [
-            _summary_card,
-            _reasons_card,
-            _attempts_card,
-            _timeline_card,
-        ]
-    ]
+    _error_frame: pd.DataFrame = error_data["error_frame"]
+    _summary_card = make_error_summary_card(_error_frame)
+    _attempts_card = make_error_attempts_card(_error_frame)
+    _rendered_cards = [card.render() for card in [_summary_card, _attempts_card]]
     _body = mo.vstack(
         [
             mo.hstack(_rendered_cards, wrap=True, align="start", justify="start"),
-            mo.accordion({"Show dataframe": _failure_frame}),
+            mo.accordion({"Show dataframe": _error_frame}),
         ]
     )
 
     render_section(
-        "What failures have happened?",
-        failure_run_button,
+        "What errors have occurred?",
+        error_run_button,
         _body,
     )
     return
@@ -1767,26 +1263,22 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
-    ensure_pending_frames,
+    ensure_response_stats_frame,
     get_raw_frames,
     get_section_results,
-    provenance_run_button,
+    response_stats_run_button,
     selected_pool,
     set_raw_frames,
     set_section_results,
 ):
-    def hash_short(s: str, n: int = 6) -> str:
-        return hashlib.sha256(s.encode("utf-8")).hexdigest()[:n]
-
-
-    def build_provenance_data(
+    def build_response_stats_data(
         *,
         project_name: str,
         pool_name: str,
         get_cache,
         set_cache,
     ) -> dict[str, Any]:
-        pending_frames, key_columns = ensure_pending_frames(
+        frame, key_columns = ensure_response_stats_frame(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,
@@ -1794,235 +1286,13 @@ def _(
         )
         return {
             "key_columns": key_columns,
-            "provenance_frame": pending_frames["provenance_frame"],
+            "response_stats_frame": frame,
         }
-
-
-    def make_provenance_summary_card(provenance_frame: pd.DataFrame) -> Card:
-        total = len(provenance_frame)
-        if total == 0:
-            return stat_card("Provenance", [("Rows", "0")])
-        unique_runs = int(provenance_frame["source_run_id"].dropna().nunique())
-        unique_configs = int(
-            provenance_frame["llm_config_json"].dropna().nunique()
-        )
-        unique_prompts = int(provenance_frame["prompt_json"].dropna().nunique())
-
-        return stat_card(
-            "Provenance summary",
-            [
-                ("Rows", fmt_int(total)),
-                ("Source runs", fmt_int(unique_runs)),
-                ("LLM configs", fmt_int(unique_configs)),
-                ("Prompt variants", fmt_int(unique_prompts)),
-            ],
-        )
-
-
-    def make_provenance_runs_card(provenance_frame: pd.DataFrame) -> Card:
-        run_counts = value_counts(provenance_frame["source_run_id"])[:10]
-        return Card(
-            title="Samples per source run",
-            description=f"Top {len(run_counts)} runs",
-            content=BarChart(
-                items=[
-                    BarItem(label=truncate(lab, 24), value=cnt)
-                    for lab, cnt in run_counts
-                ],
-                height=220,
-                orientation="h",
-                x_label="Rows",
-                y_label="Run",
-            ),
-            width="w-96",
-        )
-
-
-    mo.stop(selected_pool is None)
-
-    _section_results = get_section_results()
-    provenance_data = _section_results.get("provenance")
-    if provenance_run_button.value:
-        provenance_data = build_provenance_data(
-            project_name=selected_pool["project_name"],
-            pool_name=selected_pool["pool_name"],
-            get_cache=get_raw_frames,
-            set_cache=set_raw_frames,
-        )
-        set_section_results(
-            lambda results: {**results, "provenance": provenance_data}
-        )
-
-    mo.stop(
-        provenance_data is None,
-        render_section(
-            "What seed or fill provenance defines this pool?",
-            provenance_run_button,
-        ),
-    )
-
-    _provenance_frame: pd.DataFrame = provenance_data["provenance_frame"]
-    _summary_card = make_provenance_summary_card(_provenance_frame)
-    _runs_card = make_provenance_runs_card(_provenance_frame)
-    _rendered_cards = [card.render() for card in [_summary_card, _runs_card]]
-    _body = mo.vstack(
-        [
-            mo.hstack(_rendered_cards, wrap=True, align="start", justify="start"),
-            mo.accordion({"Show dataframe": _provenance_frame}),
-        ]
-    )
-
-    render_section(
-        "What seed or fill provenance defines this pool?",
-        provenance_run_button,
-        _body,
-    )
-    return
-
-
-@app.cell(hide_code=True)
-def _(
-    ensure_metadata_frame,
-    get_raw_frames,
-    get_section_results,
-    metadata_run_button,
-    selected_pool,
-    set_raw_frames,
-    set_section_results,
-):
-    def build_metadata_data(
-        *,
-        project_name: str,
-        pool_name: str,
-        get_cache,
-        set_cache,
-    ) -> dict[str, Any]:
-        metadata_frame, key_columns = ensure_metadata_frame(
-            project_name=project_name,
-            pool_name=pool_name,
-            get_cache=get_cache,
-            set_cache=set_cache,
-        )
-        return {
-            "key_columns": key_columns,
-            "metadata_frame": metadata_frame,
-        }
-
-
-    def make_metadata_summary_card(metadata_frame: pd.DataFrame) -> Card:
-        total = len(metadata_frame)
-        if total == 0:
-            return stat_card("Metadata", [("Keys", "0")])
-        categories = metadata_frame["category"].dropna().astype(str)
-        unique_categories = int(categories.nunique())
-        internal_count = int((categories == "internal").sum())
-        user_count = total - internal_count
-
-        return stat_card(
-            "Metadata summary",
-            [
-                ("Keys", fmt_int(total)),
-                ("Categories", fmt_int(unique_categories)),
-                ("Internal", fmt_int(internal_count)),
-                ("User-prefixed", fmt_int(user_count)),
-            ],
-        )
-
-
-    def make_metadata_category_card(metadata_frame: pd.DataFrame) -> Card:
-        category_counts = value_counts(metadata_frame["category"])
-        return Card(
-            title="Category split",
-            description="Metadata keys grouped by category",
-            content=PieChart(
-                slices=[
-                    PieSlice(label=lab, value=cnt) for lab, cnt in category_counts
-                ],
-                height=220,
-            ),
-            width="w-80",
-        )
-
-
-    mo.stop(selected_pool is None)
-
-    _section_results = get_section_results()
-    metadata_data = _section_results.get("metadata")
-    if metadata_run_button.value:
-        metadata_data = build_metadata_data(
-            project_name=selected_pool["project_name"],
-            pool_name=selected_pool["pool_name"],
-            get_cache=get_raw_frames,
-            set_cache=set_raw_frames,
-        )
-        set_section_results(lambda results: {**results, "metadata": metadata_data})
-
-    mo.stop(
-        metadata_data is None,
-        render_section(
-            "What metadata is attached to this pool?",
-            metadata_run_button,
-        ),
-    )
-
-    _metadata_frame: pd.DataFrame = metadata_data["metadata_frame"]
-    _summary_card = make_metadata_summary_card(_metadata_frame)
-    _category_card = make_metadata_category_card(_metadata_frame)
-    _rendered_cards = [card.render() for card in [_summary_card, _category_card]]
-    _body = mo.vstack(
-        [
-            mo.hstack(_rendered_cards, wrap=True, align="start"),
-            mo.accordion({"Show dataframe": _metadata_frame}),
-        ],
-        align="start",
-        justify="start",
-    )
-
-    render_section(
-        "What metadata is attached to this pool?",
-        metadata_run_button,
-        _body,
-    )
-    return
-
-
-@app.cell(hide_code=True)
-def _(
-    call_stats_run_button,
-    ensure_claims_and_call_stats,
-    get_raw_frames,
-    get_section_results,
-    selected_pool,
-    set_raw_frames,
-    set_section_results,
-):
-    def build_call_stats_data(
-        *,
-        project_name: str,
-        pool_name: str,
-        get_cache,
-        set_cache,
-    ) -> dict[str, Any]:
-        _, _call_stats_frame, key_columns = ensure_claims_and_call_stats(
-            project_name=project_name,
-            pool_name=pool_name,
-            get_cache=get_cache,
-            set_cache=set_cache,
-        )
-        return {
-            "key_columns": key_columns,
-            "call_stats_frame": _call_stats_frame,
-        }
-
 
     def make_token_mix_card(cs: pd.DataFrame) -> Card:
         prompt_mean = pd.to_numeric(cs["prompt_tokens"], errors="coerce").mean()
-        completion_mean = pd.to_numeric(
-            cs["completion_tokens"], errors="coerce"
-        ).mean()
-        reasoning_mean = pd.to_numeric(
-            cs["reasoning_tokens"], errors="coerce"
-        ).mean()
+        completion_mean = pd.to_numeric(cs["completion_tokens"], errors="coerce").mean()
+        reasoning_mean = pd.to_numeric(cs["reasoning_tokens"], errors="coerce").mean()
         return Card(
             title="Token mix (mean)",
             description="Mean tokens per call across prompt / completion / reasoning",
@@ -2055,7 +1325,6 @@ def _(
             width="w-80",
         )
 
-
     def make_token_distribution_pair(
         cs: pd.DataFrame,
         *,
@@ -2069,7 +1338,9 @@ def _(
         if series.empty:
             return None, None
 
-        token_range = f"**True Range:** {float(series.min()):,.0f} - {float(series.max()):,.0f}"
+        token_range = (
+            f"**True Range:** {float(series.min()):,.0f} - {float(series.max()):,.0f}"
+        )
         distribution_card = BoxPlotCard(
             column=column,
             data=cs,
@@ -2091,53 +1362,48 @@ def _(
         )
         return distribution_card, shape_card
 
-
     mo.stop(selected_pool is None)
 
     _section_results = get_section_results()
-    call_stats_data = _section_results.get("call_stats")
-    if call_stats_run_button.value:
-        call_stats_data = build_call_stats_data(
+    stats_data = _section_results.get("response_stats")
+    if response_stats_run_button.value:
+        stats_data = build_response_stats_data(
             project_name=selected_pool["project_name"],
             pool_name=selected_pool["pool_name"],
             get_cache=get_raw_frames,
             set_cache=set_raw_frames,
         )
-        set_section_results(
-            lambda results: {**results, "call_stats": call_stats_data}
-        )
+        set_section_results(lambda results: {**results, "response_stats": stats_data})
 
     mo.stop(
-        call_stats_data is None,
+        stats_data is None,
         render_section(
             "What is the token distribution?",
-            call_stats_run_button,
+            response_stats_run_button,
         ),
     )
 
-    _call_stats_frame: pd.DataFrame = call_stats_data["call_stats_frame"]
-    total = len(_call_stats_frame)
+    _stats_frame: pd.DataFrame = stats_data["response_stats_frame"]
+    total = len(_stats_frame)
     if total == 0:
         _cards = [stat_card("Token distribution", [("Rows", "0")])]
     else:
-        _token_mix_card = make_token_mix_card(_call_stats_frame)
-        _prompt_distribution_card, _prompt_shape_card = (
-            make_token_distribution_pair(
-                _call_stats_frame,
-                column="prompt_tokens",
-                label="Prompt",
-            )
+        _token_mix_card = make_token_mix_card(_stats_frame)
+        _prompt_distribution_card, _prompt_shape_card = make_token_distribution_pair(
+            _stats_frame,
+            column="prompt_tokens",
+            label="Prompt",
         )
         _completion_distribution_card, _completion_shape_card = (
             make_token_distribution_pair(
-                _call_stats_frame,
+                _stats_frame,
                 column="completion_tokens",
                 label="Completion",
             )
         )
         _reasoning_distribution_card, _reasoning_shape_card = (
             make_token_distribution_pair(
-                _call_stats_frame,
+                _stats_frame,
                 column="reasoning_tokens",
                 label="Reasoning",
             )
@@ -2160,16 +1426,14 @@ def _(
     _body = mo.vstack(
         [
             _rendered_cards[0],
-            mo.hstack(
-                _rendered_cards[1:], wrap=True, align="start", justify="start"
-            ),
-            mo.accordion({"Show dataframe": _call_stats_frame}),
+            mo.hstack(_rendered_cards[1:], wrap=True, align="start", justify="start"),
+            mo.accordion({"Show dataframe": _stats_frame}),
         ],
     )
 
     render_section(
         "What is the token distribution?",
-        call_stats_run_button,
+        response_stats_run_button,
         _body,
     )
     return
@@ -2177,7 +1441,7 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
-    ensure_claims_and_call_stats,
+    ensure_response_stats_frame,
     get_raw_frames,
     get_section_results,
     selected_pool,
@@ -2192,7 +1456,7 @@ def _(
         get_cache,
         set_cache,
     ) -> dict[str, Any]:
-        _, _call_stats_frame, key_columns = ensure_claims_and_call_stats(
+        frame, key_columns = ensure_response_stats_frame(
             project_name=project_name,
             pool_name=pool_name,
             get_cache=get_cache,
@@ -2200,9 +1464,8 @@ def _(
         )
         return {
             "key_columns": key_columns,
-            "call_stats_frame": _call_stats_frame,
+            "response_stats_frame": frame,
         }
-
 
     def make_cumulative_cost_card() -> Card:
         return Card(
@@ -2211,7 +1474,6 @@ def _(
             width="w-96",
         )
 
-
     def make_latency_trend_card() -> Card:
         return Card(
             title="Latency over time",
@@ -2219,14 +1481,12 @@ def _(
             width="w-96",
         )
 
-
     def make_tokens_trend_card() -> Card:
         return Card(
             title="Tokens over time",
             description="Would show the rolling mean (window=20) of total_tokens over time. Plot temporarily disabled while we fix notebook performance for large pools.",
             width="w-96",
         )
-
 
     mo.stop(selected_pool is None)
 
@@ -2249,7 +1509,7 @@ def _(
         ),
     )
 
-    _trend_frame: pd.DataFrame = trend_data["call_stats_frame"]
+    _trend_frame: pd.DataFrame = trend_data["response_stats_frame"]
     if _trend_frame.empty or "created_at" not in _trend_frame.columns:
         _cards = [stat_card("Trends", [("Calls", "0")])]
     else:
@@ -2269,144 +1529,6 @@ def _(
     render_section(
         "What are the cost and latency trends over time?",
         trend_run_button,
-        _body,
-    )
-    return
-
-
-@app.cell(hide_code=True)
-def _(
-    ensure_claims_and_call_stats,
-    ensure_sample_frame,
-    get_raw_frames,
-    get_section_results,
-    selected_pool,
-    set_raw_frames,
-    set_section_results,
-    throughput_run_button,
-):
-    def build_throughput_data(
-        *,
-        project_name: str,
-        pool_name: str,
-        get_cache,
-        set_cache,
-    ) -> dict[str, Any]:
-        _sample_frame, key_columns = ensure_sample_frame(
-            project_name=project_name,
-            pool_name=pool_name,
-            get_cache=get_cache,
-            set_cache=set_cache,
-        )
-        _claims_frame, _, _ = ensure_claims_and_call_stats(
-            project_name=project_name,
-            pool_name=pool_name,
-            get_cache=get_cache,
-            set_cache=set_cache,
-        )
-        return {
-            "key_columns": key_columns,
-            "sample_frame": _sample_frame,
-            "claims_frame": _claims_frame,
-        }
-
-
-    def make_samples_throughput_card(
-        sample_frame: pd.DataFrame,
-    ) -> HistogramCard:
-        sample_ts = ts_to_unix(sample_frame, "created_at")
-        return HistogramCard(
-            data=sample_ts,
-            column="created_at",
-            title="Samples per bucket",
-            description=f"Histogram of {len(sample_ts)} sample timestamps",
-            color=ChartColor.TWO,
-            binning="continuous",
-            nbins=24,
-            x_label="Unix seconds",
-            y_label="Samples",
-        )
-
-
-    def make_claims_throughput_card(
-        claims_frame: pd.DataFrame,
-    ) -> HistogramCard:
-        claim_ts = ts_to_unix(claims_frame, "claimed_at")
-        return HistogramCard(
-            data=claim_ts,
-            column="claimed_at",
-            title="Claims per bucket",
-            description=f"Histogram of {len(claim_ts)} claim timestamps",
-            color=ChartColor.FOUR,
-            binning="continuous",
-            nbins=24,
-            x_label="Unix seconds",
-            y_label="Claims",
-        )
-
-
-    def make_workers_throughput_card(claims_frame: pd.DataFrame) -> Card:
-        worker_counts: list[tuple[str, int]] = []
-        if not claims_frame.empty and "consumer_tag" in claims_frame.columns:
-            worker_counts = value_counts(claims_frame["consumer_tag"])[:10]
-        return Card(
-            title="Workers by activity",
-            description=f"Top {len(worker_counts)} consumer_tag values",
-            content=BarChart(
-                items=[
-                    BarItem(label=truncate(lab, 24), value=cnt)
-                    for lab, cnt in worker_counts
-                ],
-                height=220,
-                orientation="h",
-                x_label="Claims",
-                y_label="Worker",
-            ),
-            width="w-96",
-        )
-
-
-    mo.stop(selected_pool is None)
-
-    _section_results = get_section_results()
-    throughput_data = _section_results.get("throughput")
-    if throughput_run_button.value:
-        throughput_data = build_throughput_data(
-            project_name=selected_pool["project_name"],
-            pool_name=selected_pool["pool_name"],
-            get_cache=get_raw_frames,
-            set_cache=set_raw_frames,
-        )
-        set_section_results(
-            lambda results: {**results, "throughput": throughput_data}
-        )
-
-    mo.stop(
-        throughput_data is None,
-        render_section(
-            "What does recent activity and throughput look like?",
-            throughput_run_button,
-        ),
-    )
-
-    _sample_frame: pd.DataFrame = throughput_data["sample_frame"]
-    _claims_frame: pd.DataFrame = throughput_data["claims_frame"]
-    _samples_card = make_samples_throughput_card(_sample_frame)
-    _claims_card = make_claims_throughput_card(_claims_frame)
-    _workers_card = make_workers_throughput_card(_claims_frame)
-    _rendered_cards = [
-        card.render() for card in [_samples_card, _claims_card, _workers_card]
-    ]
-    _body = mo.vstack(
-        [
-            mo.hstack(_rendered_cards, wrap=True, align="start", justify="start"),
-            mo.accordion({"Show dataframe": _claims_frame}),
-        ]
-    )
-
-    render_section(
-        "What does recent activity and throughput look like?",
-        throughput_run_button,
         _body,
     )
     return

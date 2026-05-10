@@ -7,8 +7,11 @@ with app.setup:
     import marimo as mo
     from marimo_utils import add_marimo_display
 
-    from dr_llm.pool.admin_service import inspect_pool
-    from dr_llm.pool.models import PoolInspection, PoolInspectionRequest
+    from dr_llm.pool.admin.inspection import (
+        PoolInspection,
+        PoolInspectionRequest,
+        inspect_pool,
+    )
 
     add_marimo_display()(PoolInspection)
 
