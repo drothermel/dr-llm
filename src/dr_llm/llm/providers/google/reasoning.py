@@ -109,7 +109,7 @@ def _validate_google_reasoning_shape(
         )
         return
     raise ValueError(
-        f"{ProviderName.GOOGLE} reasoning is not supported for provider='{ProviderName.GOOGLE}' model={model!r}"
+        f"Reasoning is not supported for provider='{ProviderName.GOOGLE}' model={model!r}"
     )
 
 

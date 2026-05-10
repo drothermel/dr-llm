@@ -280,7 +280,7 @@ class MiniMaxReasoningConfig(BaseProviderReasoningConfig):
     ) -> MiniMaxReasoningConfig:
         if config is None:
             raise ProviderSemanticError(
-                "minimax requires explicit AnthropicReasoning(thinking_level='na')"
+                f"{ProviderName.MINIMAX} requires explicit AnthropicReasoning(thinking_level='na')"
             )
         match config:
             case AnthropicReasoning(

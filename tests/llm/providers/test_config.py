@@ -139,7 +139,7 @@ def test_available_names_accepts_precomputed_statuses() -> None:
         "openai_compat",
         ProviderName.ANTHROPIC,
         ProviderName.GOOGLE,
-        "kimi_code",
+        ProviderName.KIMI_CODE,
         ProviderName.MINIMAX,
     ],
 )

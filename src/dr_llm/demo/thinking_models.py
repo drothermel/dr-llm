@@ -46,7 +46,7 @@ DEMO_GOOGLE_MODELS = [
     "gemma-4-31b-it",
 ]
 DEMO_OPENROUTER_MODELS = list(openrouter_allowed_models())
-DEMO_PROVIDER_MODELS: dict[str, list[str]] = {
+DEMO_PROVIDER_MODELS: dict[ProviderName, list[str]] = {
     ProviderName.CLAUDE_CODE: DEMO_CLAUDE_MODELS,
     ProviderName.MINIMAX: DEMO_MINIMAX_MODELS,
     ProviderName.KIMI_CODE: DEMO_KIMI_CODE_MODELS,

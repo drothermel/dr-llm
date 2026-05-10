@@ -79,7 +79,7 @@ HEADLESS_TIMEOUT = 300
 ANTHROPIC_MAX_TOKENS = 256
 
 
-DEFAULT_MODELS: dict[str, str] = {
+DEFAULT_MODELS: dict[ProviderName, str] = {
     ProviderName.OPENAI: "gpt-4o-mini",
     ProviderName.ANTHROPIC: "claude-sonnet-4-20250514",
     ProviderName.GOOGLE: "gemini-2.5-flash",
@@ -149,7 +149,7 @@ def create_demo_project(project_name: str) -> ProjectInfo:
 # --- Model Resolution ---
 
 
-def resolve_model(provider: str) -> str:
+def resolve_model(provider: ProviderName) -> str:
     """Sync catalog, list models, pick default or first available."""
     run_cli("models", "sync", "--provider", provider, "--verbose")
     result = run_cli("models", "list", "--provider", provider, "--json")
@@ -351,10 +351,11 @@ def main(
 
         for i, status in enumerate(available, 1):
             provider = status.provider
+            provider_name = ProviderName(provider)
             step(f"4.{i}. Provider: {provider}")
             try:
                 # Resolve model
-                model = resolve_model(provider)
+                model = resolve_model(provider_name)
                 ok(f"Using model: {model}")
 
                 # Show model info

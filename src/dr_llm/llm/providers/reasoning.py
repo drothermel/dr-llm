@@ -111,8 +111,13 @@ class AnthropicReasoning(BaseModel):
 
     @model_validator(mode="after")
     def _validate_shape(self) -> AnthropicReasoning:
-        if self.thinking_level == ThinkingLevel.BUDGET and self.budget_tokens is None:
-            raise ValueError("anthropic budget thinking requires budget_tokens")
+        if (
+            self.thinking_level == ThinkingLevel.BUDGET
+            and self.budget_tokens is None
+        ):
+            raise ValueError(
+                "anthropic budget thinking requires budget_tokens"
+            )
         if (
             self.thinking_level != ThinkingLevel.BUDGET
             and self.budget_tokens is not None
@@ -195,7 +200,10 @@ class GoogleReasoning(BaseModel):
 
     @model_validator(mode="after")
     def _validate_shape(self) -> GoogleReasoning:
-        if self.thinking_level == ThinkingLevel.BUDGET and self.budget_tokens is None:
+        if (
+            self.thinking_level == ThinkingLevel.BUDGET
+            and self.budget_tokens is None
+        ):
             raise ValueError("google budget thinking requires budget_tokens")
         if (
             self.thinking_level != ThinkingLevel.BUDGET
@@ -336,7 +344,9 @@ _GOOGLE_LITERAL_TO_THINKING_LEVEL: dict[str, ThinkingLevel] = {
 def google_literal_to_thinking_level(level: str) -> ThinkingLevel:
     mapped = _GOOGLE_LITERAL_TO_THINKING_LEVEL.get(level)
     if mapped is None:
-        expected_literals = ", ".join(sorted(_GOOGLE_LITERAL_TO_THINKING_LEVEL))
+        expected_literals = ", ".join(
+            sorted(_GOOGLE_LITERAL_TO_THINKING_LEVEL)
+        )
         expected_members = ", ".join(
             e.name
             for e in sorted(
@@ -361,7 +371,10 @@ def validate_budget_range(
     tokens: int,
     capabilities: ReasoningCapabilities,
 ) -> None:
-    if capabilities.min_budget_tokens is None or capabilities.max_budget_tokens is None:
+    if (
+        capabilities.min_budget_tokens is None
+        or capabilities.max_budget_tokens is None
+    ):
         raise ValueError(
             f"{label} is not supported for provider={provider!r} model={model!r}"
         )
@@ -402,7 +415,9 @@ class BaseProviderReasoningConfig(BaseModel):
     warnings: list[ReasoningWarning] = Field(default_factory=list)
 
 
-def unsupported_reasoning_kind_message(prefix: str, config: ReasoningSpec) -> str:
+def unsupported_reasoning_kind_message(
+    prefix: str, config: ReasoningSpec
+) -> str:
     return f"{prefix} reasoning serializer received unsupported config kind={config.kind!r}"
 
 

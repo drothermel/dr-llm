@@ -52,7 +52,9 @@ from dr_llm.llm import (
 
 app = typer.Typer()
 
-SUPPORTED_PROVIDER_NAMES = ", ".join(sorted(DEMO_PROVIDER_MODELS))
+SUPPORTED_PROVIDER_NAMES = ", ".join(
+    sorted(provider.value for provider in DEMO_PROVIDER_MODELS)
+)
 PROMPT = "Reply with exactly OK."
 KIMI_CODE_MAX_TOKENS = 2048
 PHASES = ["models", "thinking", "effort"]
@@ -115,7 +117,7 @@ def availability_detail(missing: tuple[str, ...]) -> str:
     return ", ".join(missing)
 
 
-def ensure_required_providers_available(providers: list[str]) -> None:
+def ensure_required_providers_available(providers: list[ProviderName]) -> None:
     registry = build_default_registry()
     try:
         missing: list[str] = []
@@ -249,7 +251,7 @@ def requires_explicit_reasoning(provider: str) -> bool:
 def run_model_sweep(
     registry: ProviderRegistry,
     counts: dict[tuple[str, str], SummaryCounts],
-    providers: list[str],
+    providers: list[ProviderName],
 ) -> None:
     print("\n== models ==")
     for provider in providers:
@@ -274,7 +276,7 @@ def run_model_sweep(
 def run_thinking_sweep(
     registry: ProviderRegistry,
     counts: dict[tuple[str, str], SummaryCounts],
-    providers: list[str],
+    providers: list[ProviderName],
 ) -> None:
     print("\n== thinking ==")
     for provider in providers:
@@ -299,7 +301,7 @@ def run_thinking_sweep(
 def run_effort_sweep(
     registry: ProviderRegistry,
     counts: dict[tuple[str, str], SummaryCounts],
-    providers: list[str],
+    providers: list[ProviderName],
 ) -> None:
     print("\n== effort ==")
     for provider in providers:
@@ -325,7 +327,7 @@ def run_effort_sweep(
 
 def print_summary(
     counts: dict[tuple[str, str], SummaryCounts],
-    providers: list[str],
+    providers: list[ProviderName],
 ) -> None:
     print("\n== summary ==")
     for provider in providers:
@@ -353,14 +355,23 @@ def main(
     ),
 ) -> None:
     """Sweep curated models for provider-specific reasoning and effort support."""
-    providers = provider or sorted(DEMO_PROVIDER_MODELS)
+    supported_provider_values = {
+        provider.value for provider in DEMO_PROVIDER_MODELS
+    }
     unsupported = [
-        name for name in providers if name not in DEMO_PROVIDER_MODELS
+        name
+        for name in provider or []
+        if name not in supported_provider_values
     ]
     if unsupported:
         raise typer.BadParameter(
             f"Unsupported provider(s): {', '.join(sorted(unsupported))}"
         )
+    providers = (
+        [ProviderName(name) for name in provider]
+        if provider
+        else sorted(DEMO_PROVIDER_MODELS)
+    )
 
     ensure_required_providers_available(providers)
     counts: dict[tuple[str, str], SummaryCounts] = defaultdict(SummaryCounts)
