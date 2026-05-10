@@ -39,7 +39,6 @@ from dr_llm.demo import (
     create_demo_project,
     ensure_docker_available,
     fail,
-    header as demo_header,
     ok,
     require_demo_project_dsn,
     step,
@@ -60,6 +59,8 @@ from dr_llm.pool import (
     PoolSample,
     PoolSchema,
     PoolStore,
+    PoolSummaryColumn,
+    print_pool_summary,
 )
 from dr_llm.project import ProjectInfo, destroy_project
 
@@ -221,47 +222,34 @@ def store_result(
 
 def print_summary(store: PoolStore) -> None:
     """Print a summary table of all pool samples."""
-    samples = store.bulk_load()
-    if not samples:
-        print("\nNo samples in pool.")
-        return
-
-    # Column widths
-    prov_w = max(len(s.key_values["provider"]) for s in samples)
-    prov_w = max(prov_w, len("Provider"))
-    model_w = max(len(s.key_values["model"]) for s in samples)
-    model_w = max(model_w, len("Model"))
-    resp_w = 50
-
-    header = (
-        f"{'Provider':<{prov_w}} | {'Model':<{model_w}} | "
-        f"{'Latency':>7} | {'Tokens':>6} | Response"
+    print_pool_summary(
+        store,
+        extra_columns=[
+            PoolSummaryColumn(
+                header="Latency",
+                value=latency_cell,
+                justify="right",
+            ),
+            PoolSummaryColumn(
+                header="Tokens",
+                value=token_cell,
+                justify="right",
+            ),
+        ],
+        response_max_chars=50,
     )
-    sep = f"{'-' * prov_w}-+-{'-' * model_w}-+-{'-' * 7}-+-{'-' * 6}-+-{'-' * resp_w}"
 
-    demo_header(f"Pool Summary: {POOL_SCHEMA.name}")
-    print(header)
-    print(sep)
 
-    for s in samples:
-        provider = s.key_values["provider"]
-        model = s.key_values["model"]
-        latency = (s.metadata or {}).get("latency_ms", 0)
-        usage = (s.metadata or {}).get("usage", {})
-        tokens = usage.get("total_tokens", 0)
-        text = (s.response or {}).get("text", "")
-        text_trunc = text[: resp_w - 3] + "..." if len(text) > resp_w else text
-        text_trunc = text_trunc.replace("\n", " ")
+def latency_cell(sample: PoolSample) -> str:
+    latency = sample.metadata.get("latency_ms", 0)
+    return f"{latency}ms"
 
-        print(
-            f"{provider:<{prov_w}} | {model:<{model_w}} | "
-            f"{latency:>5}ms | {tokens:>6} | {text_trunc}"
-        )
 
-    print(
-        f"\nTotal: {len(samples)} samples from "
-        f"{len({s.key_values['provider'] for s in samples})} providers"
-    )
+def token_cell(sample: PoolSample) -> int:
+    usage = sample.metadata.get("usage", {})
+    if not isinstance(usage, dict):
+        return 0
+    return int(usage.get("total_tokens", 0) or 0)
 
 
 # --- Main ---
