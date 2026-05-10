@@ -27,6 +27,7 @@ from dr_llm.demo import (
     ATTEMPT_SUMMARY_FIELDS,
     DEMO_THINKING_SWEEP_MODELS,
     DemoCounts,
+    DemoPrompts,
     print_list,
 )
 from dr_llm.llm import (
@@ -60,7 +61,7 @@ app = typer.Typer()
 SUPPORTED_PROVIDER_NAMES = ", ".join(
     sorted(provider.value for provider in DEMO_THINKING_SWEEP_MODELS)
 )
-PROMPT = "Reply with exactly OK."
+PROMPT = DemoPrompts.EXACT_OK
 KIMI_CODE_MAX_TOKENS = 2048
 PHASES = ["models", "thinking", "effort"]
 

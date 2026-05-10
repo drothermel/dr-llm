@@ -33,6 +33,7 @@ import typer
 
 from dr_llm.demo import (
     DEMO_QUERY_DEFAULT_MODELS,
+    DemoPrompts,
     command_hint,
     create_demo_project,
     ensure_docker_available,
@@ -68,7 +69,7 @@ from dr_llm.project import ProjectInfo, destroy_project
 
 app = typer.Typer()
 
-DEFAULT_PROMPT = "What is 2+2? Answer in one sentence."
+DEFAULT_PROMPT = DemoPrompts.TWO_PLUS_TWO
 DEFAULT_PROJECT = "demo_pool"
 API_TIMEOUT = 120
 HEADLESS_TIMEOUT = 300

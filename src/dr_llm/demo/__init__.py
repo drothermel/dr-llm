@@ -36,6 +36,7 @@ from dr_llm.demo.projects import (
     temporary_demo_project,
     temporary_demo_project_name,
 )
+from dr_llm.demo.prompts import DemoPrompts
 from dr_llm.demo.requirements import ensure_docker_available
 
 __all__ = [
@@ -48,6 +49,7 @@ __all__ = [
     "DEMO_THINKING_SWEEP_MODELS",
     "DemoCountField",
     "DemoCounts",
+    "DemoPrompts",
     "demo_pool_fill_llm_configs",
     "ensure_docker_available",
     "fail",

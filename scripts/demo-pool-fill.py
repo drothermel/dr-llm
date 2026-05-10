@@ -30,12 +30,13 @@ from typing import Annotated
 import typer
 
 from dr_llm.demo import (
+    create_demo_project,
     DemoCounts,
+    DemoPrompts,
     POOL_PROGRESS_FIELDS,
     demo_pool_fill_llm_configs,
     ensure_docker_available,
     require_demo_project_dsn,
-    temporary_demo_project,
     temporary_demo_project_name,
 )
 from dr_llm.llm import (
@@ -43,6 +44,7 @@ from dr_llm.llm import (
     Message,
     build_default_registry,
 )
+from dr_llm.project import destroy_project
 from dr_llm.pool import (
     Axis,
     AxisMember,
@@ -67,14 +69,8 @@ from dr_llm.workers import (
 app = typer.Typer()
 
 PROMPTS: dict[str, list[Message]] = {
-    "haiku": [
-        Message(role="user", content="Write a haiku about programming.")
-    ],
-    "math": [
-        Message(
-            role="user", content="What is 17 * 23? Reply with just the number."
-        )
-    ],
+    "haiku": [Message(role="user", content=DemoPrompts.PROGRAMMING_HAIKU)],
+    "math": [Message(role="user", content=DemoPrompts.TWO_PLUS_TWO)],
 }
 
 
@@ -234,34 +230,39 @@ def main(
     ] = 1,
 ) -> None:
     """Seed an LLM config x prompt pool and fill it with worker calls."""
-    if dsn is not None:
+    temporary_project_name: str | None = None
+    try:
+        if dsn is None:
+            ensure_docker_available(
+                reason=(
+                    "This demo creates a temporary Postgres project when no "
+                    "--dsn is provided."
+                ),
+                recovery_hint=(
+                    "Install Docker, start the daemon, or pass --dsn to use "
+                    "an existing database."
+                ),
+            )
+
+            project_name = temporary_demo_project_name("demo_pool_fill")
+            print(f"Creating temporary project '{project_name}'...")
+            project = create_demo_project(project_name)
+            temporary_project_name = project_name
+            dsn = require_demo_project_dsn(project)
+            print(f"Postgres ready at {dsn}")
+
         _run_demo(
             dsn,
             pool_name,
             num_workers,
             samples_per_cell,
         )
-        return
-
-    ensure_docker_available(
-        reason="This demo creates a temporary Postgres project when no --dsn is provided.",
-        recovery_hint="Install Docker, start the daemon, or pass --dsn to use an existing database.",
-    )
-
-    project_name = temporary_demo_project_name("demo_pool_fill")
-    print(f"Creating temporary project '{project_name}'...")
-    with temporary_demo_project(project_name) as project:
-        try:
-            dsn = require_demo_project_dsn(project)
-            print(f"Postgres ready at {dsn}")
-            _run_demo(
-                dsn,
-                pool_name,
-                num_workers,
-                samples_per_cell,
+    finally:
+        if temporary_project_name is not None:
+            print(
+                f"Destroying temporary project '{temporary_project_name}'..."
             )
-        finally:
-            print(f"Destroying temporary project '{project_name}'...")
+            destroy_project(temporary_project_name)
 
 
 if __name__ == "__main__":
