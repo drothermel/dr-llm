@@ -187,8 +187,6 @@ def _run_demo(
     pool_name: str,
     num_workers: int,
     samples_per_cell: int,
-    shuffle: bool,
-    shuffle_seed: int | None,
 ) -> None:
     schema = PoolSchema.from_axis_names(pool_name, ["llm_config", "prompt"])
     runtime = DbRuntime(DbConfig(dsn=dsn))
@@ -208,9 +206,6 @@ def _run_demo(
             f"Seeded {seed_result.inserted} sample rows"
             f" (skipped {seed_result.skipped} existing rows)"
         )
-
-        if shuffle:
-            print("Shuffle skipped: unified pool samples do not use priorities")
 
         controller = start_workers(
             LlmPoolBackend(
@@ -281,23 +276,6 @@ def main(
             help="Number of samples to queue for each (llm_config, prompt) cell."
         ),
     ] = 1,
-    shuffle: Annotated[
-        bool,
-        typer.Option(
-            "--shuffle/--no-shuffle",
-            help=(
-                "Shuffle pending priorities after seeding so workers "
-                "interleave across providers instead of draining the queue "
-                "in cross-product order."
-            ),
-        ),
-    ] = True,
-    shuffle_seed: Annotated[
-        int | None,
-        typer.Option(
-            help="Optional seed for reproducible shuffles. Ignored when --no-shuffle."
-        ),
-    ] = None,
 ) -> None:
     if dsn is not None:
         _run_demo(
@@ -305,8 +283,6 @@ def main(
             pool_name,
             num_workers,
             samples_per_cell,
-            shuffle,
-            shuffle_seed,
         )
         return
 
@@ -328,8 +304,6 @@ def main(
             pool_name,
             num_workers,
             samples_per_cell,
-            shuffle,
-            shuffle_seed,
         )
     finally:
         if project is not None:

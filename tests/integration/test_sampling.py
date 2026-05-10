@@ -62,6 +62,8 @@ def _sample(dim_a: str = "a", dim_b: int = 1, **kwargs: Any) -> PoolSample:
     return PoolSample(
         key_values={"dim_a": dim_a, "dim_b": dim_b},
         request=kwargs.get("request", {"data": "test"}),
+        response=kwargs.get("response", {"text": "done"}),
+        finish_reason=kwargs.get("finish_reason", "stop"),
         run_id=kwargs.get("run_id"),
         metadata=kwargs.get("metadata", {}),
         sample_idx=kwargs.get("sample_idx"),
@@ -99,7 +101,7 @@ def pool_store() -> Generator[PoolStore, None, None]:
 
 @pytest.fixture(scope="module")
 def sampling_store(pool_store: PoolStore) -> Generator[SamplingStore, None, None]:
-    store = SamplingStore(pool_store.schema, pool_store._runtime, pool_store._tables)
+    store = SamplingStore.from_pool_store(pool_store)
     store.setup_consumer(_CONSUMER_ID)
     yield store
     store.teardown_consumer(_CONSUMER_ID)
@@ -152,6 +154,32 @@ def test_acquire_no_replacement(
 
 
 @pytest.mark.integration
+def test_acquire_skips_incomplete_samples(
+    pool_store: PoolStore, sampling_store: SamplingStore
+) -> None:
+    pool_store.insert_sample(
+        _sample(
+            dim_a="incomplete",
+            dim_b=1,
+            sample_idx=0,
+            response=None,
+            finish_reason=None,
+        )
+    )
+    pool_store.insert_sample(_sample(dim_a="incomplete", dim_b=1, sample_idx=1))
+
+    q = AcquireQuery(
+        run_id="run_incomplete",
+        key_values={"dim_a": "incomplete", "dim_b": 1},
+        n=2,
+    )
+    result = sampling_store.acquire(q, _CONSUMER_ID)
+
+    assert result.claimed == 1
+    assert result.samples[0].sample_idx == 1
+
+
+@pytest.mark.integration
 def test_remaining(pool_store: PoolStore, sampling_store: SamplingStore) -> None:
     for i in range(3):
         pool_store.insert_sample(_sample(dim_a="rem", dim_b=1, sample_idx=i))
@@ -181,9 +209,7 @@ def test_remaining(pool_store: PoolStore, sampling_store: SamplingStore) -> None
 
 @pytest.mark.integration
 def test_service_acquire_or_generate(pool_store: PoolStore) -> None:
-    svc_sampling = SamplingStore(
-        pool_store.schema, pool_store._runtime, pool_store._tables
-    )
+    svc_sampling = SamplingStore.from_pool_store(pool_store)
     svc_consumer = "svc_sweep"
     svc_sampling.setup_consumer(svc_consumer)
     try:
@@ -192,7 +218,12 @@ def test_service_acquire_or_generate(pool_store: PoolStore) -> None:
 
         def generator(key_values: dict[str, Any], deficit: int) -> list[PoolSample]:
             return [
-                PoolSample(key_values=key_values, request={"generated": True})
+                PoolSample(
+                    key_values=key_values,
+                    request={"generated": True},
+                    response={"text": "generated"},
+                    finish_reason="stop",
+                )
                 for _ in range(deficit)
             ]
 
@@ -214,9 +245,7 @@ def test_service_acquire_or_generate(pool_store: PoolStore) -> None:
 
 @pytest.mark.integration
 def test_service_generator_error_wraps_as_topup_error(pool_store: PoolStore) -> None:
-    svc_sampling = SamplingStore(
-        pool_store.schema, pool_store._runtime, pool_store._tables
-    )
+    svc_sampling = SamplingStore.from_pool_store(pool_store)
     svc_consumer = "svc_err_sweep"
     svc_sampling.setup_consumer(svc_consumer)
     try:

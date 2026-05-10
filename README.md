@@ -205,13 +205,13 @@ finally:
     controller.stop()
     controller.join()
 
-# 7. Acquire samples (no-replacement, per-consumer)
+# 7. Acquire completed samples (no-replacement, per-consumer)
 #    Sample acquisition lives in dr_llm.sampling. Each consumer gets its
 #    own claims table; setup_consumer/teardown_consumer manages it.
 from dr_llm.sampling.acquisition import AcquireQuery
 from dr_llm.sampling.sampling_store import SamplingStore
 
-sampling = SamplingStore(store.schema, runtime, store._tables)
+sampling = SamplingStore.from_pool_store(store)
 sampling.setup_consumer("eval_consumer_1")
 result = sampling.acquire(
     AcquireQuery(
@@ -229,6 +229,26 @@ runtime.close()
 ```
 
 See `scripts/demo-pool-fill.py` for a complete runnable example.
+
+### Fair worker claiming
+
+`LlmPoolBackend` claims incomplete samples in creation order by default. When a
+worker pool should interleave work across a key dimension, use
+`RoundRobinClaimer` from `dr_llm.pool.claim_strategy` to cycle through explicit
+key values while still relying on `PoolStore.claim_lease(...)` for lease safety.
+
+```python
+from dr_llm.pool.claim_strategy import ClaimOrder, RoundRobinClaimer
+
+claimer = RoundRobinClaimer(
+    store,
+    round_robin_key="llm_config",
+    round_robin_values=["gpt-4.1-mini", "gemini-flash"],
+    order=ClaimOrder(kind="random", seed=7),
+)
+
+sample = claimer.claim(worker_id="worker-1", lease_seconds=60)
+```
 
 ### Reading an existing pool
 
@@ -314,7 +334,8 @@ Deletion now uses one standard primitive: pool deletion.
 
 - `dr-llm pool destroy PROJECT_NAME POOL_NAME --yes-really-delete-everything`
   deletes the fixed pool table set for that pool name (`pool_<name>_samples`
-  and `pool_<name>_leases`) and removes the pool's row from `pool_catalog`.
+  and `pool_<name>_leases`), any consumer claim tables
+  (`pool_<name>_claims_<consumer_id>`), and the pool's row from `pool_catalog`.
 - `dr-llm pool destroy-testish PROJECT_NAME --yes-really-delete-everything`
   discovers pools in that project and deletes only the ones whose
   underscore-delimited lowercase name tokens include `test`, `tst`, `smoke`, or `demo`
@@ -421,5 +442,5 @@ requires `{"kind":"anthropic","thinking_level":"na"}` together with an explicit
 `{"kind":"openrouter", ...}` with either `enabled` or `effort` depending on the
 repo's curated model policy.
 
-See [`OPEN_ROUTER_REASONING_NOTES.md`](/Users/daniellerothermel/drotherm/repos/dr-llm/OPEN_ROUTER_REASONING_NOTES.md)
-for the direct API observations that informed the OpenRouter policy layer.
+The OpenRouter policy layer is based on direct API observations from the
+provider endpoint.

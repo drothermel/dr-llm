@@ -21,6 +21,8 @@ def test_acquire_or_generate_returns_early_when_satisfied() -> None:
     sample = PoolSample(
         key_values={"dim_a": "x", "dim_b": 1},
         request={"prompt": "hi"},
+        response={"text": "ok"},
+        finish_reason="stop",
         sample_idx=0,
     )
     sampling.acquire.return_value = AcquireResult(samples=[sample])
@@ -40,6 +42,8 @@ def test_acquire_or_generate_calls_generator_on_deficit() -> None:
     generated_sample = PoolSample(
         key_values={"dim_a": "x", "dim_b": 1},
         request={"prompt": "hi"},
+        response={"text": "ok"},
+        finish_reason="stop",
         sample_idx=0,
     )
     reacquired_result = AcquireResult(samples=[generated_sample])

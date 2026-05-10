@@ -249,7 +249,11 @@ def delete_pool(request: DeletePoolRequest) -> PoolDeletionResult:
             for table_name in existing_table_names:
                 pre_delete_counts[table_name] = _table_row_count(conn, table_name)
             for table_name in existing_table_names:
-                conn.execute(text(f'DROP TABLE IF EXISTS "{table_name}" CASCADE'))
+                conn.execute(
+                    text(
+                        f"DROP TABLE IF EXISTS {_quote_identifier(conn, table_name)} CASCADE"
+                    )
+                )
         delete_catalog_entry(runtime, request.pool_name)
         remaining_table_names = _existing_pool_table_names(runtime, request.pool_name)
         status = (
@@ -422,6 +426,21 @@ def _existing_pool_table_names(runtime: DbRuntime, pool_name: str) -> list[str]:
             ).scalar_one()
             if bool(exists):
                 existing.append(table_name)
+        claims_prefix = f"pool_{pool_name}_claims_"
+        claim_rows = conn.execute(
+            text(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'public' "
+                "AND table_name LIKE :table_name_prefix "
+                "ORDER BY table_name"
+            ),
+            {"table_name_prefix": f"{claims_prefix}%"},
+        ).scalars()
+        existing.extend(
+            table_name
+            for table_name in claim_rows
+            if table_name.startswith(claims_prefix)
+        )
     return existing
 
 
@@ -434,7 +453,12 @@ def _count_in_progress_samples(runtime: DbRuntime, pool_name: str) -> int:
 
 
 def _table_row_count(conn: Connection, table_name: str) -> int:
-    from dr_llm.project.docker_psql import validate_pg_identifier
+    return int(
+        conn.execute(
+            text(f"SELECT count(*) FROM {_quote_identifier(conn, table_name)}")
+        ).scalar_one()
+    )
 
-    validate_pg_identifier(table_name, "table name")
-    return int(conn.execute(text(f'SELECT count(*) FROM "{table_name}"')).scalar_one())
+
+def _quote_identifier(conn: Connection, identifier: str) -> str:
+    return conn.dialect.identifier_preparer.quote(identifier)

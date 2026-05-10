@@ -17,6 +17,9 @@
   using `LlmPoolBackend` directly.
 - Added `seed_llm_grid` for declarative `(axis × axis × …)` seeding from
   `Axis` / `AxisMember` lists.
+- Pool deletion now drops consumer-scoped sampling claim tables for the target
+  pool, and sampling acquisition only claims completed samples.
+- Documented `RoundRobinClaimer` for worker claiming across explicit key values.
 
 ### Fixed
 

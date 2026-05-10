@@ -8,8 +8,15 @@ from sqlalchemy import Text, exists, func, literal, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql.elements import ColumnElement
 
-from dr_llm.pool.db import DbRuntime, PoolSchema, PoolTableType, PoolTables
+from dr_llm.pool.db import (
+    DbRuntime,
+    PoolSchema,
+    PoolTableType,
+    PoolTables,
+    SampleColumn,
+)
 from dr_llm.pool.db.sql_helpers import key_filter_clause, validate_key_values
+from dr_llm.pool.pool_store import PoolStore
 from dr_llm.sampling.acquisition import AcquireQuery, AcquireResult
 from dr_llm.sampling.db.claims_tables import ClaimsTables
 from dr_llm.sampling.db.names import ClaimColumn
@@ -30,6 +37,11 @@ class SamplingStore:
         self._pool_tables = pool_tables
         self._consumers: dict[str, ClaimsTables] = {}
 
+    @classmethod
+    def from_pool_store(cls, store: PoolStore) -> "SamplingStore":
+        """Create a sampling store from an initialized pool store."""
+        return cls(store.schema, store._runtime, store._tables)
+
     def setup_consumer(self, consumer_id: str) -> None:
         claims = ClaimsTables(self._schema.name, consumer_id)
         claims.ensure_table(self._runtime)
@@ -49,7 +61,7 @@ class SamplingStore:
         return claims
 
     def acquire(self, query: AcquireQuery, consumer_id: str) -> AcquireResult:
-        """Acquire up to query.n unclaimed samples for given key dimensions.
+        """Acquire up to query.n completed, unclaimed samples for given keys.
 
         Single round-trip via data-modifying CTE: lock candidate sample rows
         with FOR UPDATE SKIP LOCKED, insert claim rows for them, then return
@@ -71,6 +83,7 @@ class SamplingStore:
             )
             .where(
                 key_filter_clause(self._schema, samples_table, query.key_values),
+                samples_table.c[SampleColumn.RESPONSE_JSON].is_not(None),
                 self._unclaimed_predicate(query.run_id, consumer_id),
             )
             .order_by(
@@ -136,11 +149,12 @@ class SamplingStore:
     def remaining(
         self, *, run_id: str, key_values: dict[str, Any], consumer_id: str
     ) -> int:
-        """Count unclaimed samples for given key dimensions and run."""
+        """Count completed, unclaimed samples for given key dimensions and run."""
         validate_key_values(self._schema, key_values)
         samples_table = self._pool_tables[PoolTableType.SAMPLES]
         stmt = select(func.count()).where(
             key_filter_clause(self._schema, samples_table, key_values),
+            samples_table.c[SampleColumn.RESPONSE_JSON].is_not(None),
             self._unclaimed_predicate(run_id, consumer_id),
         )
         with self._runtime.connect() as conn:

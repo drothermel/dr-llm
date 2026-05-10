@@ -18,14 +18,12 @@ logger = logging.getLogger(__name__)
 class PoolService:
     """Top-up orchestration: acquire from pool, generate missing, re-acquire."""
 
-    _INITIAL_POLL_INTERVAL_S = 0.05
-
     def __init__(
         self,
         store: PoolStore,
     ) -> None:
         self._store = store
-        self._sampling = SamplingStore(store.schema, store._runtime, store._tables)
+        self._sampling = SamplingStore.from_pool_store(store)
 
     @property
     def store(self) -> PoolStore:
@@ -43,13 +41,15 @@ class PoolService:
         generator_fn: Callable[[dict[str, Any], int], list[PoolSample]],
     ) -> AcquireResult:
         """
-        Acquire samples with automatic top-up on deficit.
+        Acquire completed samples with automatic top-up on deficit.
 
-        1. Try to acquire from pool
-        2. If deficit: wait for relevant pending samples to be promoted
-        3. If still deficit: invoke generator_fn(key_values, deficit)
-        4. Insert generated samples
-        5. Re-acquire and return combined result
+        1. Try to acquire completed samples from the pool
+        2. If still deficit: invoke generator_fn(key_values, deficit)
+        3. Insert generated samples
+        4. Re-acquire and return combined result
+
+        ``generator_fn`` should return completed ``PoolSample`` rows, because
+        sampling deliberately does not claim unfilled samples.
         """
         result = self._sampling.acquire(query, consumer_id)
         if self._is_satisfied(result, query):

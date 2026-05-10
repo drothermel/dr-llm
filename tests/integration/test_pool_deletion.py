@@ -22,6 +22,8 @@ from dr_llm.pool.pool_store import PoolStore
 from dr_llm.project.docker_project_metadata import ContainerStatus
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project import project_service as project_service_module
+from dr_llm.sampling.db.names import claims_table_name
+from dr_llm.sampling.sampling_store import SamplingStore
 
 
 def _get_dsn() -> str:
@@ -51,10 +53,15 @@ def _drop_tables(dsn: str, table_names: Iterable[str]) -> None:
 
 
 def _drop_pool(dsn: str, pool_name: str) -> None:
-    _drop_tables(dsn, pool_table_names(pool_name))
-    with psycopg.connect(dsn) as conn:
-        conn.execute("DELETE FROM pool_catalog WHERE pool_name = %s", [pool_name])
-        conn.commit()
+    try:
+        _drop_tables(
+            dsn, [*pool_table_names(pool_name), *_claim_table_names(dsn, pool_name)]
+        )
+        with psycopg.connect(dsn) as conn:
+            conn.execute("DELETE FROM pool_catalog WHERE pool_name = %s", [pool_name])
+            conn.commit()
+    except psycopg.OperationalError:
+        return
 
 
 def _table_exists(dsn: str, table_name: str) -> bool:
@@ -80,6 +87,24 @@ def _catalog_entry_exists(dsn: str, pool_name: str) -> bool:
         ).fetchone()
     assert row is not None
     return bool(row[0])
+
+
+def _claim_table_names(dsn: str, pool_name: str) -> list[str]:
+    prefix = f"pool_{pool_name}_claims_"
+    try:
+        with psycopg.connect(dsn) as conn:
+            rows = conn.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name LIKE %s
+                ORDER BY table_name
+                """,
+                [f"{prefix}%"],
+            ).fetchall()
+    except psycopg.OperationalError:
+        return []
+    return [str(row[0]) for row in rows if str(row[0]).startswith(prefix)]
 
 
 @pytest.mark.integration
@@ -185,6 +210,46 @@ def test_delete_pool_with_active_leases(
         for table_name in pool_table_names(pool_name):
             assert _table_exists(dsn, table_name) is False
         assert _catalog_entry_exists(dsn, pool_name) is False
+    finally:
+        runtime.close()
+        _drop_pool(dsn, pool_name)
+
+
+@pytest.mark.integration
+def test_delete_pool_removes_sampling_claim_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dsn = _get_dsn()
+    pool_name = f"del_claims_{uuid4().hex[:8]}"
+    consumer_id = "consumer_a"
+    claims_table = claims_table_name(pool_name, consumer_id)
+    runtime = DbRuntime(DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=2))
+    schema = PoolSchema(name=pool_name, key_columns=[KeyColumn(name="dim_a")])
+    store = PoolStore(schema, runtime)
+
+    try:
+        try:
+            store.ensure_schema()
+        except (psycopg.OperationalError, TransientPersistenceError) as exc:
+            pytest.skip(f"Postgres unavailable for pool integration tests: {exc}")
+
+        sampling = SamplingStore.from_pool_store(store)
+        sampling.setup_consumer(consumer_id)
+        assert _table_exists(dsn, claims_table) is True
+
+        monkeypatch.setattr(
+            project_service_module,
+            "maybe_get_project",
+            lambda name: _project_for_dsn(name, dsn),
+        )
+
+        result = deletion.delete_pool(
+            DeletePoolRequest(project_name="demo", pool_name=pool_name)
+        )
+
+        assert result.status == PoolDeletionStatus.deleted
+        assert claims_table in result.deleted_table_names
+        assert _table_exists(dsn, claims_table) is False
     finally:
         runtime.close()
         _drop_pool(dsn, pool_name)
