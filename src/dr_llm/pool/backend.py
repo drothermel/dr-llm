@@ -7,8 +7,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.logging.events import generation_log_context
+from dr_llm.pool.db.key_filter import PoolKeyFilter
 from dr_llm.pool.db.sql_helpers import validate_key_filter
-from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
 from dr_llm.workers import ErrorDecision, WorkerBackend

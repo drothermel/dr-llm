@@ -1,4 +1,4 @@
-"""Pool sample storage: CRUD and coverage."""
+"""Pool sample storage and leasing."""
 
 from __future__ import annotations
 
@@ -28,8 +28,7 @@ from dr_llm.pool.db.sql_helpers import (
     stream_select_rows,
     validate_key_values,
 )
-from dr_llm.pool.coverage import CoverageRow
-from dr_llm.pool.key_filter import PoolKeyFilter
+from dr_llm.pool.db.key_filter import PoolKeyFilter
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.results import InsertResult
 
@@ -382,23 +381,6 @@ class PoolStore:
             stmt = stmt.where(partial_filter)
         with self._runtime.connect() as conn:
             return int(conn.execute(stmt).scalar_one())
-
-    def coverage(self) -> list[CoverageRow]:
-        """Return sample counts grouped by all key dimensions."""
-        samples_key_columns = self._tables.key_columns(PoolTableType.SAMPLES)
-        stmt = select(
-            *samples_key_columns,
-            func.count().label("cnt"),
-        ).group_by(*samples_key_columns)
-        with self._runtime.connect() as conn:
-            rows = conn.execute(stmt).mappings().all()
-        return [
-            CoverageRow(
-                key_values={name: row[name] for name in self.schema.key_column_names},
-                count=int(row["cnt"]),
-            )
-            for row in rows
-        ]
 
     def cell_depth(self, *, key_values: dict[str, Any]) -> int:
         """Count total samples for a specific cell."""

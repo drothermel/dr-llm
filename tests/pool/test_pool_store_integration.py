@@ -13,7 +13,7 @@ from psycopg import sql
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.db import ColumnType, KeyColumn, PoolSchema, PoolTableType
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.key_filter import PoolKeyFilter
+from dr_llm.pool.db.key_filter import PoolKeyFilter
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
 

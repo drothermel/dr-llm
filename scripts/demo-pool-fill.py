@@ -243,9 +243,7 @@ def _run_demo(
             f"complete={final_snapshot.backend_state.complete}"
         )
 
-        coverage = store.coverage()
-        total_samples = sum(row.count for row in coverage)
-        print(f"Stored {total_samples} samples across {len(coverage)} cells")
+        print(f"Stored {store.sample_count()} samples")
 
         samples = store.bulk_load()
         for sample in samples[:4]:

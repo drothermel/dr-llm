@@ -23,7 +23,7 @@ from dr_llm.pool.db.names import (
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.errors import PoolSchemaError
-from dr_llm.pool.key_filter import PoolKeyFilter
+from dr_llm.pool.db.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
 from dr_llm.pool.pool_sample import PoolSample
@@ -827,16 +827,6 @@ def test_metadata_upsert_and_get(pool_store: PoolStore) -> None:
 @pytest.mark.integration
 def test_metadata_get_missing(pool_store: PoolStore) -> None:
     assert pool_store.metadata.get("nonexistent_key") is None
-
-
-# --- Coverage ---
-
-
-@pytest.mark.integration
-def test_coverage(pool_store: PoolStore) -> None:
-    cov = pool_store.coverage()
-    assert isinstance(cov, list)
-    assert all(hasattr(c, "key_values") and hasattr(c, "count") for c in cov)
 
 
 # --- Bulk Load ---

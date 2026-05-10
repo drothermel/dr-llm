@@ -30,8 +30,8 @@ from dr_llm.pool.db.schema import (
     _VALID_NAME_RE,
     pool_table_name,
 )
+from dr_llm.pool.db.key_filter import PoolKeyFilter
 from dr_llm.pool.errors import PoolNotFoundError, PoolSchemaNotPersistedError
-from dr_llm.pool.key_filter import PoolKeyFilter
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample

@@ -5,6 +5,11 @@ from dr_llm.pool.db.names import (
     PoolTableType,
     SampleColumn,
 )
+from dr_llm.pool.db.key_filter import (
+    PoolKeyEqClause,
+    PoolKeyFilter,
+    PoolKeyInClause,
+)
 from dr_llm.pool.db.pool_tables import PoolTables
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
@@ -15,6 +20,9 @@ __all__ = [
     "DbRuntime",
     "KeyColumn",
     "LeaseColumn",
+    "PoolKeyEqClause",
+    "PoolKeyFilter",
+    "PoolKeyInClause",
     "PoolSchema",
     "PoolTableType",
     "PoolTables",
