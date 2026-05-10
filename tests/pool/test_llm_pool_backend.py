@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from dr_llm.llm.messages import CallMode
+from dr_llm.llm.providers.usage import TokenUsage
+from dr_llm.llm.response import LlmResponse
 from dr_llm.logging.events import get_generation_log_context
 from dr_llm.pool.db.key_filter import PoolKeyFilter
 from dr_llm.pool.backend import (
-    PoolPendingBackend,
-    PoolPendingBackendConfig,
+    LlmPoolBackend,
+    LlmPoolBackendConfig,
 )
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
@@ -87,6 +90,19 @@ def _sample(*, sample_id: str = "sample-1") -> PoolSample:
     )
 
 
+def _response(**overrides: Any) -> LlmResponse:
+    defaults: dict[str, Any] = {
+        "text": "ok",
+        "finish_reason": "stop",
+        "usage": TokenUsage(prompt_tokens=5, completion_tokens=3, total_tokens=8),
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "mode": CallMode.api,
+    }
+    defaults.update(overrides)
+    return LlmResponse(**defaults)
+
+
 def _eq_filter(**key_values: object) -> PoolKeyFilter:
     return PoolKeyFilter.eq(**key_values)
 
@@ -95,9 +111,9 @@ def test_backend_claims_one_item_and_tracks_attempt() -> None:
     store = _FakeStore()
     sample = _sample()
     store.claimed = sample
-    backend = PoolPendingBackend(
+    backend = LlmPoolBackend(
         cast(PoolStore, store),
-        config=PoolPendingBackendConfig(key_filter=_eq_filter(model="m1")),
+        config=LlmPoolBackendConfig(key_filter=_eq_filter(model="m1")),
     )
 
     claimed = backend.claim(worker_id="worker-1", lease_seconds=30)
@@ -108,15 +124,15 @@ def test_backend_claims_one_item_and_tracks_attempt() -> None:
         "lease_seconds": 30,
         "key_filter": _eq_filter(model="m1"),
     }
-    backend.complete(item=sample, result={"text": "ok"}, worker_id="worker-1")
+    backend.complete(item=sample, result=_response(), worker_id="worker-1")
     assert store.complete_calls[-1]["attempt_count"] == 1
 
 
 def test_backend_claim_returns_none_when_store_is_empty() -> None:
     store = _FakeStore()
-    backend = PoolPendingBackend(
+    backend = LlmPoolBackend(
         cast(PoolStore, store),
-        config=PoolPendingBackendConfig(),
+        config=LlmPoolBackendConfig(),
     )
 
     assert backend.claim(worker_id="worker-1", lease_seconds=30) is None
@@ -126,12 +142,12 @@ def test_backend_complete_writes_response_then_releases_lease() -> None:
     store = _FakeStore()
     sample = _sample()
     store.claimed = sample
-    backend = PoolPendingBackend(
+    backend = LlmPoolBackend(
         cast(PoolStore, store),
-        config=PoolPendingBackendConfig(),
+        config=LlmPoolBackendConfig(),
     )
     assert backend.claim(worker_id="worker-1", lease_seconds=30) == sample
-    result = {"text": "ok", "finish_reason": "stop"}
+    result = _response(finish_reason="stop")
 
     backend.complete(
         item=sample,
@@ -143,7 +159,7 @@ def test_backend_complete_writes_response_then_releases_lease() -> None:
     assert store.complete_calls == [
         {
             "sample_id": "sample-1",
-            "response": result,
+            "response": result.model_dump(),
             "finish_reason": "stop",
             "attempt_count": 1,
         }
@@ -155,9 +171,9 @@ def test_backend_retries_while_attempts_are_within_limit() -> None:
     store = _FakeStore()
     sample = _sample()
     store.claimed = sample
-    backend = PoolPendingBackend(
+    backend = LlmPoolBackend(
         cast(PoolStore, store),
-        config=PoolPendingBackendConfig(max_retries=1),
+        config=LlmPoolBackendConfig(max_retries=1),
     )
     assert backend.claim(worker_id="worker-1", lease_seconds=30) == sample
 
@@ -176,9 +192,9 @@ def test_backend_fails_when_retries_are_exhausted() -> None:
     store = _FakeStore()
     sample = _sample()
     store.claimed = sample
-    backend = PoolPendingBackend(
+    backend = LlmPoolBackend(
         cast(PoolStore, store),
-        config=PoolPendingBackendConfig(max_retries=1),
+        config=LlmPoolBackendConfig(max_retries=1),
     )
     assert backend.claim(worker_id="worker-1", lease_seconds=30) == sample
     assert (
@@ -217,9 +233,9 @@ def test_reclaiming_same_sample_id_increments_attempt_counter() -> None:
     store = _FakeStore()
     sample = _sample()
     store.claimed = sample
-    backend = PoolPendingBackend(
+    backend = LlmPoolBackend(
         cast(PoolStore, store),
-        config=PoolPendingBackendConfig(max_retries=2),
+        config=LlmPoolBackendConfig(max_retries=2),
     )
 
     assert backend.claim(worker_id="worker-1", lease_seconds=30) == sample
@@ -232,7 +248,7 @@ def test_reclaiming_same_sample_id_increments_attempt_counter() -> None:
         == ErrorDecision.retry
     )
     assert backend.claim(worker_id="worker-1", lease_seconds=30) == sample
-    backend.complete(item=sample, result={"text": "ok"}, worker_id="worker-1")
+    backend.complete(item=sample, result=_response(), worker_id="worker-1")
 
     assert store.complete_calls[-1]["attempt_count"] == 2
 
@@ -241,9 +257,9 @@ def test_backend_snapshot_exposes_pool_specific_state() -> None:
     store = _FakeStore()
     store.incomplete = 2
     store.complete = 5
-    backend = PoolPendingBackend(
+    backend = LlmPoolBackend(
         cast(PoolStore, store),
-        config=PoolPendingBackendConfig(
+        config=LlmPoolBackendConfig(
             max_retries=3,
             key_filter=_eq_filter(model="m1"),
         ),
@@ -259,9 +275,9 @@ def test_backend_snapshot_exposes_pool_specific_state() -> None:
 
 def test_backend_process_context_sets_pool_logging_context() -> None:
     store = _FakeStore()
-    backend = PoolPendingBackend(
+    backend = LlmPoolBackend(
         cast(PoolStore, store),
-        config=PoolPendingBackendConfig(),
+        config=LlmPoolBackendConfig(),
     )
 
     with backend.process_context(item=_sample(), worker_id="worker-9"):

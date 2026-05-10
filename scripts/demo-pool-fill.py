@@ -37,14 +37,14 @@ from dr_llm.llm.providers.reasoning import (
 from dr_llm.llm.providers.registry import build_default_registry
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
-from dr_llm.pool.llm_pool_adapter import make_llm_process_fn, seed_llm_grid
 from dr_llm.pool.backend import (
-    PoolPendingBackend,
-    PoolPendingBackendConfig,
-    PoolPendingBackendState,
+    LlmPoolBackend,
+    LlmPoolBackendConfig,
+    LlmPoolBackendState,
+    make_llm_process_fn,
 )
 from dr_llm.pool.pool_store import PoolStore
-from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell
+from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell, seed_llm_grid
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.models import CreateProjectRequest
 from dr_llm.project.project_service import create_project, destroy_project
@@ -84,7 +84,7 @@ _UNKNOWN = -1
 
 
 def _format_pool_progress_line(
-    snapshot: WorkerSnapshot[PoolPendingBackendState],
+    snapshot: WorkerSnapshot[LlmPoolBackendState],
 ) -> str:
     worker_counts = snapshot.counts
     backend_state = snapshot.backend_state
@@ -104,7 +104,7 @@ def _format_pool_progress_line(
 
 
 def _pool_progress_key(
-    snapshot: WorkerSnapshot[PoolPendingBackendState],
+    snapshot: WorkerSnapshot[LlmPoolBackendState],
 ) -> ProgressKey:
     worker_counts = snapshot.counts
     backend_state = snapshot.backend_state
@@ -125,17 +125,17 @@ def _pool_progress_key(
     )
 
 
-def _pool_is_idle(snapshot: WorkerSnapshot[PoolPendingBackendState]) -> bool:
+def _pool_is_idle(snapshot: WorkerSnapshot[LlmPoolBackendState]) -> bool:
     backend_state = snapshot.backend_state
     return backend_state is not None and backend_state.incomplete == 0
 
 
 def _drain(
-    controller: WorkerController[PoolPendingBackendState],
+    controller: WorkerController[LlmPoolBackendState],
     *,
-    on_change: Callable[[WorkerSnapshot[PoolPendingBackendState]], None] | None = None,
+    on_change: Callable[[WorkerSnapshot[LlmPoolBackendState]], None] | None = None,
     poll_interval_s: float = 0.5,
-) -> WorkerSnapshot[PoolPendingBackendState]:
+) -> WorkerSnapshot[LlmPoolBackendState]:
     if poll_interval_s <= 0:
         raise ValueError(f"poll_interval_s must be > 0, got {poll_interval_s}")
     last_key: ProgressKey | None = None
@@ -213,9 +213,9 @@ def _run_demo(
             print("Shuffle skipped: unified pool samples do not use priorities")
 
         controller = start_workers(
-            PoolPendingBackend(
+            LlmPoolBackend(
                 store,
-                config=PoolPendingBackendConfig(max_retries=1),
+                config=LlmPoolBackendConfig(max_retries=1),
             ),
             process_fn=make_llm_process_fn(registry),
             config=WorkerConfig(

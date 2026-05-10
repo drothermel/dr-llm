@@ -3,27 +3,33 @@ from __future__ import annotations
 import logging
 from contextlib import AbstractContextManager
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.logging.events import generation_log_context
+from dr_llm.llm.config import parse_llm_config
+from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.registry import ProviderRegistry
+from dr_llm.llm.response import LlmResponse
+from dr_llm.logging.events import generation_log_context, get_generation_log_context
+from dr_llm.logging.sinks import emit_generation_event
 from dr_llm.pool.db.key_filter import PoolKeyFilter
 from dr_llm.pool.db.sql_helpers import validate_key_filter
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
-from dr_llm.workers import ErrorDecision, WorkerBackend
+from dr_llm.workers import ErrorDecision, ProcessFn, WorkerBackend
 
 logger = logging.getLogger(__name__)
 
 
-class PoolPendingBackendConfig(BaseModel):
+class LlmPoolBackendConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     max_retries: int = Field(default=0, ge=0)
     key_filter: PoolKeyFilter | None = None
 
 
-class PoolPendingBackendState(BaseModel):
+class LlmPoolBackendState(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     incomplete: int = 0
@@ -32,12 +38,14 @@ class PoolPendingBackendState(BaseModel):
     max_retries: int = 0
 
 
-class PoolPendingBackend(
-    WorkerBackend[PoolSample, dict[str, Any], PoolPendingBackendState]
-):
-    """Pool-specific backend for the generic worker runtime."""
+LlmWorkerBackend = WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]
+LlmProcessFn = ProcessFn[PoolSample, LlmResponse]
 
-    def __init__(self, store: PoolStore, *, config: PoolPendingBackendConfig) -> None:
+
+class LlmPoolBackend(WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]):
+    """LLM-specific backend for the generic worker runtime."""
+
+    def __init__(self, store: PoolStore, *, config: LlmPoolBackendConfig) -> None:
         self._store = store
         self._config = config
         self._attempt_counts: dict[str, int] = {}
@@ -60,14 +68,14 @@ class PoolPendingBackend(
         self,
         *,
         item: PoolSample,
-        result: dict[str, Any],
+        result: LlmResponse,
         worker_id: str,
     ) -> None:
         attempt_count = self._attempt_count(item)
         completed = self._store.complete_sample(
             sample_id=item.sample_id,
-            response=result,
-            finish_reason=_finish_reason(result),
+            response=result.model_dump(),
+            finish_reason=result.finish_reason,
             attempt_count=attempt_count,
         )
         released = self._store.release_lease(
@@ -138,8 +146,8 @@ class PoolPendingBackend(
             )
         return ErrorDecision.fail
 
-    def snapshot(self) -> PoolPendingBackendState:
-        return PoolPendingBackendState(
+    def snapshot(self) -> LlmPoolBackendState:
+        return LlmPoolBackendState(
             incomplete=self._store.incomplete_count(key_filter=self._config.key_filter),
             complete=self._store.complete_count(key_filter=self._config.key_filter),
             key_filter=(
@@ -167,6 +175,103 @@ class PoolPendingBackend(
         return self._attempt_counts.get(item.sample_id, max(item.attempt_count, 1))
 
 
-def _finish_reason(result: dict[str, Any]) -> str | None:
-    value = result.get("finish_reason")
-    return value if isinstance(value, str) else None
+# ---------------------------------------------------------------------------
+# LLM process function
+# ---------------------------------------------------------------------------
+
+
+def _require_request_field(sample: PoolSample, key: str) -> Any:
+    if key not in sample.request:
+        raise KeyError(
+            f"PoolSample.request is missing key {key!r}; "
+            "was the pool seeded with a rich grid for this column?"
+        )
+    value = sample.request[key]
+    if value is None:
+        raise ValueError(
+            f"PoolSample.request[{key!r}] is present but has explicit None value"
+        )
+    return value
+
+
+def make_llm_process_fn(
+    registry: ProviderRegistry,
+    *,
+    llm_config_key: str = "llm_config",
+    prompt_key: str = "prompt",
+) -> LlmProcessFn:
+    """Build a process function that dispatches LLM calls via the provider registry.
+
+    Expects pool samples whose ``request`` contains serialized
+    :class:`LlmConfig` (under *llm_config_key*) and ``list[Message]``
+    (under *prompt_key*).
+    """
+
+    def _process(sample: PoolSample) -> LlmResponse:
+        raw_config = _require_request_field(sample, llm_config_key)
+        raw_messages = _require_request_field(sample, prompt_key)
+
+        config = parse_llm_config(raw_config)
+        messages = [Message(**message) for message in raw_messages]
+        request = config.to_request(messages)
+
+        context = get_generation_log_context()
+        model_provider = registry.get(request.provider)
+        call_id = uuid4().hex
+        worker_payload = {
+            "pool_name": context.get("pool_name"),
+            "sample_id": sample.sample_id,
+            "sample_idx": sample.sample_idx,
+            "worker_id": context.get("worker_id"),
+            "key_values": sample.key_values,
+        }
+
+        with generation_log_context(
+            {
+                "call_id": call_id,
+                "provider": request.provider,
+                "model": request.model,
+                "mode": model_provider.mode,
+            }
+        ):
+            emit_generation_event(
+                event_type="llm_call.started",
+                stage="pool_worker.before_provider",
+                payload={
+                    **worker_payload,
+                    "request": request.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                        exclude_computed_fields=True,
+                    ),
+                },
+            )
+            try:
+                response = model_provider.generate(request)
+            except Exception as exc:  # noqa: BLE001
+                emit_generation_event(
+                    event_type="llm_call.failed",
+                    stage="pool_worker.provider_exception",
+                    payload={
+                        **worker_payload,
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                )
+                raise
+
+            emit_generation_event(
+                event_type="llm_call.succeeded",
+                stage="pool_worker.after_provider",
+                payload={
+                    **worker_payload,
+                    "response": response.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                        exclude_computed_fields=True,
+                    ),
+                },
+            )
+            return response
+
+    return _process

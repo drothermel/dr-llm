@@ -7,8 +7,8 @@ an id, a value (opaque to dr-llm), and metadata available to callers.
 The cross-product walk is generic over request shape: callers supply a
 ``build_payload`` callback that turns a :class:`GridCell` into the per-row
 ``PoolSample.request`` dict. For LLM-flavored seeding, see
-:func:`dr_llm.pool.llm_pool_adapter.seed_llm_grid`, which wraps this
-function with the request contract :func:`make_llm_process_fn` consumes.
+:func:`seed_llm_grid`, which wraps :func:`seed_grid` with the request
+contract :func:`dr_llm.pool.backend.make_llm_process_fn` consumes.
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.messages import Message
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.results import InsertResult
 from dr_llm.pool.pool_store import PoolStore
@@ -192,3 +194,63 @@ def seed_grid(
     if chunk:
         total += store.insert_samples(chunk, ignore_conflicts=True)
     return total
+
+
+# ---------------------------------------------------------------------------
+# LLM-specific seeding
+# ---------------------------------------------------------------------------
+
+
+def seed_llm_grid(
+    store: PoolStore,
+    *,
+    axes: list[Axis[Any]],
+    build_request: Callable[[GridCell], tuple[list[Message], LlmConfig]],
+    n: int = 1,
+    build_metadata: Callable[[GridCell], dict[str, Any]] | None = None,
+    chunk_size: int = 500,
+    llm_config_key: str = "llm_config",
+    prompt_key: str = "prompt",
+) -> InsertResult:
+    """Seed a pool from a cross-product of axes for LLM workers.
+
+    Wraps :func:`seed_grid` with a request shape that
+    :func:`dr_llm.pool.backend.make_llm_process_fn` can consume directly:
+    each row's request is ``{llm_config_key: <serialized LlmConfig>,
+    prompt_key: <list of serialized Messages>}``.
+
+    Args:
+        store: Target pool store. Its schema's key columns must match
+            the axis names in order.
+        axes: Ordered list of variant axes.
+        build_request: Per-cell callback returning ``(messages, llm_config)``
+            for that cell.
+        n: Number of samples per cell (each gets a distinct ``sample_idx``).
+        build_metadata: Optional per-cell row-metadata builder.
+        chunk_size: Maximum rows per ``insert_samples`` round-trip.
+        llm_config_key: Request key for the serialized LlmConfig. Must
+            match the value passed to
+            :func:`~dr_llm.pool.backend.make_llm_process_fn`.
+        prompt_key: Request key for the serialized message list. Must
+            match the value passed to
+            :func:`~dr_llm.pool.backend.make_llm_process_fn`.
+
+    Returns:
+        Cumulative :class:`InsertResult` summed across all chunks.
+    """
+
+    def _build_payload(cell: GridCell) -> dict[str, Any]:
+        messages, llm_config = build_request(cell)
+        return {
+            llm_config_key: llm_config.model_dump(mode="json"),
+            prompt_key: [message.model_dump(mode="json") for message in messages],
+        }
+
+    return seed_grid(
+        store,
+        axes=axes,
+        build_payload=_build_payload,
+        n=n,
+        build_metadata=build_metadata,
+        chunk_size=chunk_size,
+    )

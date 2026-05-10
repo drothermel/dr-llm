@@ -117,10 +117,9 @@ from dr_llm import DbConfig, PoolSchema, PoolStore
 from dr_llm.llm import build_default_registry
 from dr_llm.llm.config import ApiLlmConfig, LlmConfig, OpenAILlmConfig
 from dr_llm.llm.messages import Message
-from dr_llm.pool.backend import PoolPendingBackend, PoolPendingBackendConfig
+from dr_llm.pool.backend import LlmPoolBackend, LlmPoolBackendConfig, make_llm_process_fn
 from dr_llm.pool.db.runtime import DbRuntime
-from dr_llm.pool.llm_pool_adapter import make_llm_process_fn, seed_llm_grid
-from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell
+from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell, seed_llm_grid
 from dr_llm.project.project_service import create_project
 from dr_llm.workers import WorkerConfig, start_workers
 
@@ -185,7 +184,7 @@ print(f"Seeded {seed_result.inserted} sample rows")
 # 5. Start workers — they call the real providers
 registry = build_default_registry()
 controller = start_workers(
-    PoolPendingBackend(store, config=PoolPendingBackendConfig(max_retries=1)),
+    LlmPoolBackend(store, config=LlmPoolBackendConfig(max_retries=1)),
     process_fn=make_llm_process_fn(registry),
     config=WorkerConfig(num_workers=4, thread_name_prefix="pool-fill"),
 )

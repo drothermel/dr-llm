@@ -12,9 +12,9 @@ from dr_llm.llm.messages import CallMode, Message
 from dr_llm.llm.providers.reasoning import CodexReasoning, ThinkingLevel
 from dr_llm.llm.providers.usage import TokenUsage
 from dr_llm.llm.response import LlmResponse
-from dr_llm.pool import llm_pool_adapter
+from dr_llm.pool import backend as pool_backend
 from dr_llm.pool.db.schema import PoolSchema
-from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell
+from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell, seed_llm_grid
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.results import InsertResult
 
@@ -70,7 +70,7 @@ def _sample_request() -> dict[str, Any]:
 
 def test_dispatches_via_registry() -> None:
     registry = _make_registry()
-    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    process_fn = pool_backend.make_llm_process_fn(registry)
     sample = _make_sample(_sample_request())
 
     result = process_fn(sample)
@@ -83,40 +83,29 @@ def test_dispatches_via_registry() -> None:
     assert call_args.temperature == 0.5
     assert len(call_args.messages) == 1
     assert call_args.messages[0].content == "Say hello"
-    assert result["text"] == "hello world"
-    assert result["provider"] == "openai"
+    assert result.text == "hello world"
+    assert result.provider == "openai"
 
 
-def test_returns_full_response_dump() -> None:
+def test_returns_llm_response_object() -> None:
     response = _make_response()
     registry = _make_registry(response)
-    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    process_fn = pool_backend.make_llm_process_fn(registry)
     sample = _make_sample(_sample_request())
 
     result = process_fn(sample)
 
-    expected = response.model_dump()
-    assert result == expected
-
-
-def test_process_result_has_no_call_id() -> None:
-    registry = _make_registry()
-    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
-    sample = _make_sample(_sample_request())
-
-    result = process_fn(sample)
-
-    assert "call_id" not in result
+    assert result == response
 
 
 def test_emits_worker_logging_events(monkeypatch: pytest.MonkeyPatch) -> None:
     registry = _make_registry()
-    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    process_fn = pool_backend.make_llm_process_fn(registry)
     sample = _make_sample(_sample_request())
     events: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        llm_pool_adapter,
+        pool_backend,
         "emit_generation_event",
         lambda *, event_type, stage, payload: events.append(
             {"event_type": event_type, "stage": stage, "payload": payload}
@@ -126,7 +115,7 @@ def test_emits_worker_logging_events(monkeypatch: pytest.MonkeyPatch) -> None:
     with generation_log_context({"pool_name": "demo", "worker_id": "worker-1"}):
         result = process_fn(sample)
 
-    assert result["text"] == "hello world"
+    assert result.text == "hello world"
     assert [event["event_type"] for event in events] == [
         "llm_call.started",
         "llm_call.succeeded",
@@ -147,12 +136,12 @@ def test_failed_worker_call_emits_failure_event(
     adapter.mode = CallMode.api
     registry = MagicMock()
     registry.get.return_value = adapter
-    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    process_fn = pool_backend.make_llm_process_fn(registry)
     sample = _make_sample(_sample_request())
     events: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        llm_pool_adapter,
+        pool_backend,
         "emit_generation_event",
         lambda *, event_type, stage, payload: events.append(
             {"event_type": event_type, "stage": stage, "payload": payload}
@@ -178,7 +167,7 @@ def test_error_propagates() -> None:
     adapter.mode = CallMode.api
     registry = MagicMock()
     registry.get.return_value = adapter
-    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    process_fn = pool_backend.make_llm_process_fn(registry)
     sample = _make_sample(_sample_request())
 
     with pytest.raises(RuntimeError, match="API down"):
@@ -187,7 +176,7 @@ def test_error_propagates() -> None:
 
 def test_missing_llm_config_key_raises() -> None:
     registry = _make_registry()
-    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    process_fn = pool_backend.make_llm_process_fn(registry)
     sample = _make_sample({"prompt": [{"role": "user", "content": "hi"}]})
 
     with pytest.raises(KeyError, match="llm_config"):
@@ -196,7 +185,7 @@ def test_missing_llm_config_key_raises() -> None:
 
 def test_missing_prompt_key_raises() -> None:
     registry = _make_registry()
-    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    process_fn = pool_backend.make_llm_process_fn(registry)
     config = LlmConfig(provider="openai", model="gpt-4.1-mini")
     sample = _make_sample({"llm_config": config.model_dump()})
 
@@ -206,7 +195,7 @@ def test_missing_prompt_key_raises() -> None:
 
 def test_explicit_none_request_field_raises_value_error() -> None:
     registry = _make_registry()
-    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    process_fn = pool_backend.make_llm_process_fn(registry)
     sample = _make_sample(
         {"llm_config": None, "prompt": [{"role": "user", "content": "hi"}]}
     )
@@ -219,7 +208,7 @@ def test_custom_key_names() -> None:
     registry = _make_registry()
     config = LlmConfig(provider="openai", model="gpt-4.1-mini")
     messages = [Message(role="user", content="custom")]
-    process_fn = llm_pool_adapter.make_llm_process_fn(
+    process_fn = pool_backend.make_llm_process_fn(
         registry, llm_config_key="model_cfg", prompt_key="msgs"
     )
     sample = _make_sample(
@@ -231,7 +220,7 @@ def test_custom_key_names() -> None:
 
     result = process_fn(sample)
 
-    assert result["text"] == "hello world"
+    assert result.text == "hello world"
 
 
 def _make_seed_store(schema: PoolSchema) -> tuple[MagicMock, list[PoolSample]]:
@@ -264,7 +253,7 @@ def test_seed_llm_grid_round_trips_with_make_llm_process_fn() -> None:
         assert cell.values["prompt"] == msgs
         return msgs, cfg
 
-    result = llm_pool_adapter.seed_llm_grid(
+    result = seed_llm_grid(
         store,
         axes=[
             Axis(
@@ -287,12 +276,11 @@ def test_seed_llm_grid_round_trips_with_make_llm_process_fn() -> None:
     assert "llm_config" in seeded.request
     assert "prompt" in seeded.request
 
-    # And now: feed the seeded request through make_llm_process_fn end-to-end.
     registry = _make_registry()
-    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    process_fn = pool_backend.make_llm_process_fn(registry)
     response = process_fn(seeded)
 
-    assert response["text"] == "hello world"
+    assert response.text == "hello world"
     call_args = registry.get.return_value.generate.call_args[0][0]
     assert call_args.provider == "openai"
     assert call_args.model == "gpt-4.1-mini"
@@ -317,7 +305,7 @@ def test_seed_llm_grid_round_trips_headless_config() -> None:
         assert cell.values["prompt"] == msgs
         return msgs, cfg
 
-    result = llm_pool_adapter.seed_llm_grid(
+    result = seed_llm_grid(
         store,
         axes=[
             Axis(
@@ -337,10 +325,10 @@ def test_seed_llm_grid_round_trips_headless_config() -> None:
     seeded = captured[0]
 
     registry = _make_registry(_make_headless_response())
-    process_fn = llm_pool_adapter.make_llm_process_fn(registry)
+    process_fn = pool_backend.make_llm_process_fn(registry)
     response = process_fn(seeded)
 
-    assert response["text"] == "hello from codex"
+    assert response.text == "hello from codex"
     call_args = registry.get.return_value.generate.call_args[0][0]
     assert call_args.provider == "codex"
     assert call_args.model == "gpt-5.4-mini"
@@ -356,7 +344,7 @@ def test_seed_llm_grid_honors_custom_request_keys() -> None:
     cfg = LlmConfig(provider="openai", model="gpt-4.1-mini")
     msgs = [Message(role="user", content="hi")]
 
-    llm_pool_adapter.seed_llm_grid(
+    seed_llm_grid(
         store,
         axes=[
             Axis(
@@ -379,10 +367,9 @@ def test_seed_llm_grid_honors_custom_request_keys() -> None:
     assert "llm_config" not in seeded.request
     assert "prompt" not in seeded.request
 
-    # The custom-keyed request must round-trip through a matching process_fn.
     registry = _make_registry()
-    process_fn = llm_pool_adapter.make_llm_process_fn(
+    process_fn = pool_backend.make_llm_process_fn(
         registry, llm_config_key="model_cfg", prompt_key="msgs"
     )
     response = process_fn(seeded)
-    assert response["text"] == "hello world"
+    assert response.text == "hello world"
