@@ -47,6 +47,10 @@ class _FakeStore:
             "lease_seconds": lease_seconds,
             "key_filter": key_filter,
         }
+        if self.claimed is not None:
+            self.claimed = self.claimed.model_copy(
+                update={"attempt_count": self.claimed.attempt_count + 1}
+            )
         return self.claimed
 
     def complete_sample(
@@ -56,6 +60,7 @@ class _FakeStore:
         response: dict[str, Any],
         finish_reason: str | None,
         attempt_count: int,
+        lease_owner: str | None = None,
     ) -> bool:
         self.calls.append("complete_sample")
         self.complete_calls.append(
@@ -64,6 +69,7 @@ class _FakeStore:
                 "response": response,
                 "finish_reason": finish_reason,
                 "attempt_count": attempt_count,
+                "lease_owner": lease_owner,
             }
         )
         return self.complete_result
@@ -118,14 +124,17 @@ def test_backend_claims_one_item_and_tracks_attempt() -> None:
 
     claimed = backend.claim(worker_id="worker-1", lease_seconds=30)
 
-    assert claimed == sample
+    assert claimed is not None
+    assert claimed.sample_id == sample.sample_id
+    assert claimed.attempt_count == 1
     assert store.last_claim_args == {
         "worker_id": "worker-1",
         "lease_seconds": 30,
         "key_filter": _eq_filter(model="m1"),
     }
-    backend.complete(item=sample, result=_response(), worker_id="worker-1")
+    backend.complete(item=claimed, result=_response(), worker_id="worker-1")
     assert store.complete_calls[-1]["attempt_count"] == 1
+    assert store.complete_calls[-1]["lease_owner"] == "worker-1"
 
 
 def test_backend_claim_returns_none_when_store_is_empty() -> None:
@@ -146,11 +155,12 @@ def test_backend_complete_writes_response_then_releases_lease() -> None:
         cast(PoolStore, store),
         config=LlmPoolBackendConfig(),
     )
-    assert backend.claim(worker_id="worker-1", lease_seconds=30) == sample
+    claimed = backend.claim(worker_id="worker-1", lease_seconds=30)
+    assert claimed is not None
     result = _response(finish_reason="stop")
 
     backend.complete(
-        item=sample,
+        item=claimed,
         result=result,
         worker_id="worker-1",
     )
@@ -162,6 +172,7 @@ def test_backend_complete_writes_response_then_releases_lease() -> None:
             "response": result.model_dump(),
             "finish_reason": "stop",
             "attempt_count": 1,
+            "lease_owner": "worker-1",
         }
     ]
     assert store.release_calls == [{"sample_id": "sample-1", "worker_id": "worker-1"}]
@@ -175,10 +186,11 @@ def test_backend_retries_while_attempts_are_within_limit() -> None:
         cast(PoolStore, store),
         config=LlmPoolBackendConfig(max_retries=1),
     )
-    assert backend.claim(worker_id="worker-1", lease_seconds=30) == sample
+    claimed = backend.claim(worker_id="worker-1", lease_seconds=30)
+    assert claimed is not None
 
     action = backend.handle_process_error(
-        item=sample,
+        item=claimed,
         worker_id="worker-1",
         exc=RuntimeError("temporary"),
     )
@@ -196,19 +208,21 @@ def test_backend_fails_when_retries_are_exhausted() -> None:
         cast(PoolStore, store),
         config=LlmPoolBackendConfig(max_retries=1),
     )
-    assert backend.claim(worker_id="worker-1", lease_seconds=30) == sample
+    first_claim = backend.claim(worker_id="worker-1", lease_seconds=30)
+    assert first_claim is not None
     assert (
         backend.handle_process_error(
-            item=sample,
+            item=first_claim,
             worker_id="worker-1",
             exc=RuntimeError("temporary"),
         )
         == ErrorDecision.retry
     )
-    assert backend.claim(worker_id="worker-1", lease_seconds=30) == sample
+    second_claim = backend.claim(worker_id="worker-1", lease_seconds=30)
+    assert second_claim is not None
 
     action = backend.handle_process_error(
-        item=sample,
+        item=second_claim,
         worker_id="worker-1",
         exc=RuntimeError("boom"),
     )
@@ -225,6 +239,7 @@ def test_backend_fails_when_retries_are_exhausted() -> None:
             "response": {"error": "RuntimeError: boom"},
             "finish_reason": "error",
             "attempt_count": 2,
+            "lease_owner": "worker-1",
         }
     ]
 
@@ -238,17 +253,19 @@ def test_reclaiming_same_sample_id_increments_attempt_counter() -> None:
         config=LlmPoolBackendConfig(max_retries=2),
     )
 
-    assert backend.claim(worker_id="worker-1", lease_seconds=30) == sample
+    first_claim = backend.claim(worker_id="worker-1", lease_seconds=30)
+    assert first_claim is not None
     assert (
         backend.handle_process_error(
-            item=sample,
+            item=first_claim,
             worker_id="worker-1",
             exc=RuntimeError("temporary"),
         )
         == ErrorDecision.retry
     )
-    assert backend.claim(worker_id="worker-1", lease_seconds=30) == sample
-    backend.complete(item=sample, result=_response(), worker_id="worker-1")
+    second_claim = backend.claim(worker_id="worker-1", lease_seconds=30)
+    assert second_claim is not None
+    backend.complete(item=second_claim, result=_response(), worker_id="worker-1")
 
     assert store.complete_calls[-1]["attempt_count"] == 2
 

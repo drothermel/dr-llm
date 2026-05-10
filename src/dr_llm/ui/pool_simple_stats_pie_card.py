@@ -42,16 +42,16 @@ class PoolSimpleStatsPieCard(BaseModel):
         return [
             PieSlice(
                 label="Complete",
-                value=p.complete - p.error,
+                value=max(0, p.complete - p.error),
                 color=ChartColor.TWO,
             ),
             PieSlice(
                 label="Incomplete",
-                value=p.incomplete - p.leased,
+                value=max(0, p.incomplete - p.leased),
             ),
             PieSlice(
                 label="Leased",
-                value=p.leased,
+                value=max(0, p.leased),
             ),
             PieSlice(
                 label="Error",

@@ -74,15 +74,6 @@ class PoolService:
 
         if generated:
             insert_result = self._store.insert_samples(generated, ignore_conflicts=True)
-            if insert_result.inserted == 0:
-                logger.info(
-                    "Top-up: no samples persisted (skipped=%d, failed=%d); "
-                    "returning initial acquire without re-acquire",
-                    insert_result.skipped,
-                    insert_result.failed,
-                )
-                return result
-
             logger.info(
                 "Top-up inserted %d samples (skipped %d, failed %d)",
                 insert_result.inserted,

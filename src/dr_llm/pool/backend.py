@@ -48,7 +48,6 @@ class LlmPoolBackend(WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]
     def __init__(self, store: PoolStore, *, config: LlmPoolBackendConfig) -> None:
         self._store = store
         self._config = config
-        self._attempt_counts: dict[str, int] = {}
         if config.key_filter is not None:
             validate_key_filter(self._store.schema, config.key_filter)
 
@@ -58,12 +57,6 @@ class LlmPoolBackend(WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]
             lease_seconds=lease_seconds,
             key_filter=self._config.key_filter,
         )
-        if sample is not None:
-            prior = max(
-                sample.attempt_count,
-                self._attempt_counts.get(sample.sample_id, 0),
-            )
-            self._attempt_counts[sample.sample_id] = prior + 1
         return sample
 
     def complete(
@@ -79,12 +72,12 @@ class LlmPoolBackend(WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]
             response=result.model_dump(),
             finish_reason=result.finish_reason,
             attempt_count=attempt_count,
+            lease_owner=worker_id,
         )
         released = self._store.release_lease(
             sample_id=item.sample_id,
             worker_id=worker_id,
         )
-        self._attempt_counts.pop(item.sample_id, None)
         if not completed:
             raise RuntimeError(
                 f"Failed to complete leased pool sample {item.sample_id}"
@@ -126,12 +119,12 @@ class LlmPoolBackend(WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]
             response={"error": reason},
             finish_reason="error",
             attempt_count=attempt_count,
+            lease_owner=worker_id,
         )
         released = self._store.release_lease(
             sample_id=item.sample_id,
             worker_id=worker_id,
         )
-        self._attempt_counts.pop(item.sample_id, None)
         if not completed:
             logger.warning(
                 "complete_sample no-op: sample_id=%s worker_id=%s "
@@ -174,7 +167,7 @@ class LlmPoolBackend(WorkerBackend[PoolSample, LlmResponse, LlmPoolBackendState]
         )
 
     def _attempt_count(self, item: PoolSample) -> int:
-        return self._attempt_counts.get(item.sample_id, max(item.attempt_count, 1))
+        return max(item.attempt_count, 1)
 
 
 # ---------------------------------------------------------------------------

@@ -67,6 +67,27 @@ def test_parse_missing_cost() -> None:
     assert stats.prompt_tokens == 50
 
 
+def test_parse_malformed_usage_and_cost_as_absent() -> None:
+    stats = parse_response_stats(
+        {
+            "latency_ms": 100,
+            "usage": "n/a",
+            "cost": 1,
+        },
+        finish_reason="stop",
+        attempt_count=1,
+    )
+
+    assert stats.latency_ms == 100
+    assert stats.total_cost_usd is None
+    assert stats.prompt_tokens is None
+    assert stats.completion_tokens is None
+    assert stats.reasoning_tokens is None
+    assert stats.total_tokens is None
+    assert stats.finish_reason == "stop"
+    assert stats.attempt_count == 1
+
+
 def test_sample_response_stats_delegates() -> None:
     sample = PoolSample(
         key_values={"x": "a"},

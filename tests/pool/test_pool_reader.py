@@ -50,3 +50,4 @@ def test_open_raises_when_pool_not_in_catalog(mock_load: MagicMock) -> None:
     runtime = MagicMock()
     with pytest.raises(PoolNotFoundError):
         PoolReader.open("nonexistent_pool", runtime=runtime)
+    mock_load.assert_called_once_with(runtime, "nonexistent_pool")

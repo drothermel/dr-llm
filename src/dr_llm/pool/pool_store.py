@@ -92,15 +92,18 @@ class PoolStore:
         response: dict[str, Any],
         finish_reason: str | None,
         attempt_count: int,
+        lease_owner: str | None = None,
     ) -> bool:
         """Fill in the response fields for one incomplete sample."""
         return completion_ops.complete_sample(
             self._runtime,
             self._tables[PoolTableType.SAMPLES],
+            self._tables[PoolTableType.LEASES] if lease_owner is not None else None,
             sample_id=sample_id,
             response=response,
             finish_reason=finish_reason,
             attempt_count=attempt_count,
+            lease_owner=lease_owner,
         )
 
     def update_incomplete_request(

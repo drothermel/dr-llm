@@ -185,10 +185,7 @@ def _cell_lock_id(schema: PoolSchema, cell_key: tuple[Any, ...]) -> int:
     lock_payload = json.dumps(
         {
             "pool": schema.table_name(PoolTableType.SAMPLES),
-            "key_values": {
-                name: value
-                for name, value in zip(schema.key_column_names, cell_key, strict=True)
-            },
+            "key_values": dict(zip(schema.key_column_names, cell_key, strict=True)),
         },
         sort_keys=True,
         separators=(",", ":"),

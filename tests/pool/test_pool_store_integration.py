@@ -181,6 +181,42 @@ def test_insert_samples_and_complete_sample(pool_store: PoolStore) -> None:
     assert completed.attempt_count == 2
 
 
+def test_complete_sample_with_lease_owner_requires_active_owner(
+    pool_store: PoolStore,
+) -> None:
+    sample = _sample(dim_a="lease_complete", sample_id="lease-complete-1")
+    assert pool_store.insert_sample(sample) is True
+    claimed = pool_store.claim_lease(worker_id="worker-a", lease_seconds=60)
+    assert claimed is not None
+
+    assert (
+        pool_store.complete_sample(
+            sample_id=claimed.sample_id,
+            response={"text": "wrong worker"},
+            finish_reason="stop",
+            attempt_count=claimed.attempt_count,
+            lease_owner="worker-b",
+        )
+        is False
+    )
+    assert (
+        pool_store.complete_sample(
+            sample_id=claimed.sample_id,
+            response={"text": "done"},
+            finish_reason="stop",
+            attempt_count=claimed.attempt_count,
+            lease_owner="worker-a",
+        )
+        is True
+    )
+
+    [completed] = pool_store.bulk_load(
+        key_filter=PoolKeyFilter.eq(dim_a="lease_complete")
+    )
+    assert completed.response == {"text": "done"}
+    assert completed.attempt_count == 1
+
+
 def test_claim_lease_skips_active_leases(pool_store: PoolStore) -> None:
     samples = [
         _sample(dim_a="claim", dim_b=1, sample_id="claim-1", sample_idx=0),
@@ -194,6 +230,8 @@ def test_claim_lease_skips_active_leases(pool_store: PoolStore) -> None:
 
     assert first is not None
     assert second is not None
+    assert first.attempt_count == 1
+    assert second.attempt_count == 1
     assert first.sample_id != second.sample_id
     assert third is None
     dsn = _get_dsn()

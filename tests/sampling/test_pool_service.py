@@ -10,9 +10,8 @@ from dr_llm.sampling.pool_service import PoolService
 
 def _make_service() -> tuple[PoolService, MagicMock, MagicMock]:
     store = MagicMock()
-    service = PoolService(store)
     sampling = MagicMock()
-    service._sampling = sampling
+    service = PoolService(store, sampling_store=sampling)
     return service, store, sampling
 
 
@@ -29,7 +28,7 @@ def test_acquire_or_generate_returns_early_when_satisfied() -> None:
     query = AcquireQuery(run_id="r1", key_values={"dim_a": "x", "dim_b": 1}, n=1)
 
     result = service.acquire_or_generate(
-        query, consumer_id="c1", generator_fn=lambda kv, n: []
+        query, consumer_id="c1", generator_fn=lambda _kv, _n: []
     )
 
     assert result.claimed == 1
@@ -51,7 +50,7 @@ def test_acquire_or_generate_calls_generator_on_deficit() -> None:
     store.insert_samples.return_value = InsertResult(inserted=1, skipped=0)
     query = AcquireQuery(run_id="r1", key_values={"dim_a": "x", "dim_b": 1}, n=1)
 
-    def gen(kv: dict, n: int) -> list[PoolSample]:
+    def gen(_kv: dict, _n: int) -> list[PoolSample]:
         return [generated_sample]
 
     result = service.acquire_or_generate(query, consumer_id="c1", generator_fn=gen)
@@ -60,7 +59,7 @@ def test_acquire_or_generate_calls_generator_on_deficit() -> None:
     store.insert_samples.assert_called_once()
 
 
-def test_acquire_or_generate_skips_reacquire_when_nothing_inserted() -> None:
+def test_acquire_or_generate_reacquires_when_nothing_inserted() -> None:
     service, store, sampling = _make_service()
     empty_result = AcquireResult()
     generated_sample = PoolSample(
@@ -70,16 +69,17 @@ def test_acquire_or_generate_skips_reacquire_when_nothing_inserted() -> None:
         finish_reason="stop",
         sample_idx=0,
     )
-    sampling.acquire.return_value = empty_result
+    reacquired_result = AcquireResult(samples=[generated_sample])
+    sampling.acquire.side_effect = [empty_result, reacquired_result]
     store.insert_samples.return_value = InsertResult(inserted=0, skipped=1, failed=0)
     query = AcquireQuery(run_id="r1", key_values={"dim_a": "x", "dim_b": 1}, n=1)
 
     result = service.acquire_or_generate(
         query,
         consumer_id="c1",
-        generator_fn=lambda kv, n: [generated_sample],
+        generator_fn=lambda _kv, _n: [generated_sample],
     )
 
-    assert result.claimed == 0
-    sampling.acquire.assert_called_once()
+    assert result.claimed == 1
+    assert sampling.acquire.call_count == 2
     store.insert_samples.assert_called_once()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from pydantic import BaseModel
 
 from dr_llm.pool.db import SampleColumn
@@ -192,3 +193,14 @@ def test_pool_progress_construction() -> None:
     assert p.leased == 2
     assert p.complete == 6
     assert p.error == 1
+
+
+@pytest.mark.parametrize(
+    "field_name", ["total", "incomplete", "leased", "complete", "error"]
+)
+def test_pool_progress_rejects_negative_counts(field_name: str) -> None:
+    values = {"total": 10, "incomplete": 4, "leased": 2, "complete": 6, "error": 1}
+    values[field_name] = -1
+
+    with pytest.raises(ValueError, match=rf"PoolProgress\.{field_name} must be >= 0"):
+        PoolProgress(**values)

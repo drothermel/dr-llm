@@ -54,9 +54,14 @@ def _drop_tables(dsn: str) -> None:
                     sql.Identifier("public", tbl)
                 )
             )
-        conn.execute(
-            "DELETE FROM pool_catalog WHERE pool_name = %s", [_TEST_SCHEMA.name]
-        )
+        conn.commit()
+        try:
+            conn.execute(
+                "DELETE FROM pool_catalog WHERE pool_name = %s", [_TEST_SCHEMA.name]
+            )
+        except psycopg.errors.UndefinedTable:
+            conn.rollback()
+            return
         conn.commit()
 
 
@@ -290,9 +295,9 @@ def test_bulk_load_with_filter(pool_store: PoolStore) -> None:
     filtered = pool_store.bulk_load(key_filter=_eq_filter(dim_a="bload", dim_b=99))
     assert len(filtered) == 3
     assert all(s.key_values["dim_a"] == "bload" for s in filtered)
-    assert filtered[0].request == {"loaded": 0}
-    assert filtered[0].run_id == "bulk-run-0"
-    assert filtered[0].metadata == {"batch": 0}
+    first_batch = next(s for s in filtered if s.run_id == "bulk-run-0")
+    assert first_batch.request == {"loaded": 0}
+    assert first_batch.metadata == {"batch": 0}
 
 
 # --- Validation ---

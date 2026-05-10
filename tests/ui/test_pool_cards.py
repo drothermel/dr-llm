@@ -41,3 +41,18 @@ def test_pool_simple_stats_pie_card_uses_pie_chart_content() -> None:
     card = PoolSimpleStatsPieCard(pool=demo_pool())
 
     assert isinstance(card.pie_chart(), PieChart)
+
+
+def test_pool_simple_stats_pie_card_uses_progress_buckets() -> None:
+    card = PoolSimpleStatsPieCard(pool=demo_pool())
+
+    values_by_label = {
+        slice_.label.lower(): slice_.value for slice_ in card.pie_slices()
+    }
+
+    assert values_by_label == {
+        "complete": 1280,
+        "incomplete": 36,
+        "leased": 8,
+        "error": 3,
+    }

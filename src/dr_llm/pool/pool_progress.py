@@ -21,6 +21,12 @@ class PoolProgress(BaseModel):
 
     @model_validator(mode="after")
     def _validate_invariants(self) -> PoolProgress:
+        for field_name in ("total", "incomplete", "leased", "complete", "error"):
+            value = getattr(self, field_name)
+            if value < 0:
+                raise ValueError(
+                    f"PoolProgress.{field_name} must be >= 0 ({field_name}={value})"
+                )
         if self.total != self.incomplete + self.complete:
             raise ValueError(
                 "PoolProgress.total must equal incomplete + complete "

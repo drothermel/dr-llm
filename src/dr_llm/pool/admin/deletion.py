@@ -464,7 +464,7 @@ def _known_pool_names(runtime: DbRuntime) -> set[str]:
     try:
         pool_names.update(list_pool_names(runtime))
     except Exception:
-        logger.debug("Could not load pool names from pool_catalog", exc_info=True)
+        logger.warning("Could not load pool names from pool_catalog", exc_info=True)
     return pool_names
 
 

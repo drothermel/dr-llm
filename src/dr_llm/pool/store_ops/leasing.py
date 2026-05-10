@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import delete, func, literal, or_, select
+from sqlalchemy import delete, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql.schema import Table
 
@@ -88,12 +88,22 @@ def claim_lease(
         .returning(leases_table.c[LeaseColumn.SAMPLE_ID])
         .cte("leased_sample")
     )
-    stmt = select(*(locked.c[column.name] for column in sample_columns)).select_from(
-        locked.join(
-            leased,
-            locked.c[SampleColumn.SAMPLE_ID] == leased.c[LeaseColumn.SAMPLE_ID],
+    updated = (
+        update(samples_table)
+        .where(
+            samples_table.c[SampleColumn.SAMPLE_ID]
+            == select(leased.c[LeaseColumn.SAMPLE_ID]).scalar_subquery()
         )
+        .values(
+            {
+                SampleColumn.ATTEMPT_COUNT: samples_table.c[SampleColumn.ATTEMPT_COUNT]
+                + 1
+            }
+        )
+        .returning(*sample_columns)
+        .cte("updated_sample")
     )
+    stmt = select(*(updated.c[column.name] for column in sample_columns))
 
     with runtime.begin() as conn:
         row = conn.execute(stmt).mappings().first()

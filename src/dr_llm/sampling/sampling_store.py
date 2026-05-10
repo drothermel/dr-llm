@@ -40,6 +40,8 @@ class SamplingStore:
     @classmethod
     def from_pool_store(cls, store: PoolStore) -> Self:
         """Create a sampling store from an initialized pool store."""
+        # Intentionally reaches into PoolStore._runtime and PoolStore._tables;
+        # update this if PoolStore exposes public accessors or changes internals.
         return cls(store.schema, store._runtime, store._tables)
 
     def setup_consumer(self, consumer_id: str) -> None:

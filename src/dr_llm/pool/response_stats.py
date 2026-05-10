@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -34,8 +35,10 @@ def parse_response_stats(
             attempt_count=attempt_count,
         )
 
-    usage = response_json.get("usage") or {}
-    cost = response_json.get("cost") or {}
+    raw_usage = response_json.get("usage")
+    raw_cost = response_json.get("cost")
+    usage = raw_usage if isinstance(raw_usage, Mapping) else {}
+    cost = raw_cost if isinstance(raw_cost, Mapping) else {}
 
     return LlmResponseStats(
         latency_ms=response_json.get("latency_ms"),
