@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.reasoning import (
     validate_reasoning_for_anthropic,
     validate_reasoning_for_kimi_code,
@@ -22,15 +23,15 @@ from dr_llm.llm.providers.reasoning import ReasoningSpec
 ReasoningValidator = Callable[..., None]
 
 _REASONING_VALIDATORS: dict[str, ReasoningValidator] = {
-    "anthropic": validate_reasoning_for_anthropic,
-    "claude-code": validate_reasoning_for_claude_code,
-    "codex": validate_reasoning_for_codex,
-    "glm": validate_reasoning_for_glm,
-    "google": validate_reasoning_for_google,
-    "kimi-code": validate_reasoning_for_kimi_code,
-    "minimax": validate_reasoning_for_minimax,
-    "openai": validate_reasoning_for_openai,
-    "openrouter": validate_reasoning_for_openrouter,
+    ProviderName.ANTHROPIC: validate_reasoning_for_anthropic,
+    ProviderName.CLAUDE_CODE: validate_reasoning_for_claude_code,
+    ProviderName.CODEX: validate_reasoning_for_codex,
+    ProviderName.GLM: validate_reasoning_for_glm,
+    ProviderName.GOOGLE: validate_reasoning_for_google,
+    ProviderName.KIMI_CODE: validate_reasoning_for_kimi_code,
+    ProviderName.MINIMAX: validate_reasoning_for_minimax,
+    ProviderName.OPENAI: validate_reasoning_for_openai,
+    ProviderName.OPENROUTER: validate_reasoning_for_openrouter,
 }
 
 

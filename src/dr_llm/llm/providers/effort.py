@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.effort import (
     supported_effort_levels_for_anthropic,
 )
@@ -27,10 +28,10 @@ __all__ = [
 EffortResolver = Callable[[str], tuple[EffortSpec, ...]]
 
 _EFFORT_RESOLVERS: dict[str, EffortResolver] = {
-    "anthropic": supported_effort_levels_for_anthropic,
-    "claude-code": supported_effort_levels_for_claude_code,
-    "kimi-code": supported_effort_levels_for_kimi_code,
-    "minimax": supported_effort_levels_for_minimax,
+    ProviderName.ANTHROPIC: supported_effort_levels_for_anthropic,
+    ProviderName.CLAUDE_CODE: supported_effort_levels_for_claude_code,
+    ProviderName.KIMI_CODE: supported_effort_levels_for_kimi_code,
+    ProviderName.MINIMAX: supported_effort_levels_for_minimax,
 }
 
 

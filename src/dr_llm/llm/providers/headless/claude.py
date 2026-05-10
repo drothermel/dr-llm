@@ -7,6 +7,7 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.headless.base import (
     BaseHeadlessProvider,
@@ -138,7 +139,7 @@ class ClaudeHeadlessProvider(BaseHeadlessProvider):
         self,
         command: list[str] | None = None,
         *,
-        name: str = "claude-code",
+        name: str = ProviderName.CLAUDE_CODE,
         env_overrides: dict[str, str] | None = None,
         api_key_env: str | None = None,
     ) -> None:
@@ -172,11 +173,12 @@ class ClaudeHeadlessProvider(BaseHeadlessProvider):
         reasoning_mapping: HeadlessReasoningResult,
     ) -> list[str]:
         del payload
-        if self.name == "claude-code" and not request.model.startswith(
-            CLAUDE_CANONICAL_MODEL_PREFIX
+        if (
+            self.name == ProviderName.CLAUDE_CODE
+            and not request.model.startswith(CLAUDE_CANONICAL_MODEL_PREFIX)
         ):
             raise HeadlessExecutionError(
-                "claude-code requires canonical model ids like 'claude-sonnet-4-6'"
+                f"{ProviderName.CLAUDE_CODE} requires canonical model ids like 'claude-sonnet-4-6'"
             )
         command = [*self._config.command]
         command.extend(["--model", request.model])

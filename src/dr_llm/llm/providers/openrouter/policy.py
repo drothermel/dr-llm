@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict
 
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.reasoning_capability_types import (
     ReasoningCapabilities,
 )
@@ -71,7 +72,7 @@ def apply_openrouter_model_policies(
 ) -> list[ModelCatalogEntry]:
     filtered: list[ModelCatalogEntry] = []
     for entry in entries:
-        if entry.provider != "openrouter":
+        if entry.provider != ProviderName.OPENROUTER:
             filtered.append(entry)
             continue
         policy = openrouter_model_policy(entry.model)

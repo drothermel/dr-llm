@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import httpx
 
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.api_config import APIProviderConfig
 from dr_llm.llm.providers.api_provider import ApiProvider
 from dr_llm.llm.providers.google.request import GoogleRequest
@@ -10,7 +11,7 @@ from dr_llm.llm.request import ApiBackedLlmRequest
 
 
 DEFAULT_GOOGLE_CONFIG = APIProviderConfig(
-    name="google",
+    name=ProviderName.GOOGLE,
     base_url="https://generativelanguage.googleapis.com/v1beta",
     api_key_env="GOOGLE_API_KEY",
 )

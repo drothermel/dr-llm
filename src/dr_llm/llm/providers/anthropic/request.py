@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.llm.providers.anthropic.reasoning import (
     AnthropicReasoningConfig,
@@ -53,13 +54,16 @@ class AnthropicRequest(BaseModel):
         request: ApiBackedLlmRequest,
         config: AnthropicConfig,
     ) -> AnthropicRequest:
-        if request.max_tokens is None and request.provider != "minimax":
+        if (
+            request.max_tokens is None
+            and request.provider != ProviderName.MINIMAX
+        ):
             raise cls._missing_max_tokens_error(request.provider)
-        if request.provider == "kimi-code":
+        if request.provider == ProviderName.KIMI_CODE:
             reasoning_mapping = KimiCodeReasoningConfig.from_base(
                 request.reasoning
             )
-        elif request.provider == "minimax":
+        elif request.provider == ProviderName.MINIMAX:
             reasoning_mapping = MiniMaxReasoningConfig.from_base(
                 request.reasoning
             )

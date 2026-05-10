@@ -5,18 +5,20 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from dr_llm.llm.messages import Message
+from dr_llm.llm.names import (
+    ApiProviderName,
+    HeadlessProviderName,
+    KimiCodeProviderName,
+    OpenAIProviderName,
+)
 from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.reasoning import ReasoningSpec
 from dr_llm.llm.request import (
     ApiBackedLlmRequest,
     ApiLlmRequest,
-    ApiProviderName,
     HeadlessLlmRequest,
-    HeadlessProviderName,
     KimiCodeLlmRequest,
-    KimiCodeProviderName,
     OpenAILlmRequest,
-    OpenAIProviderName,
     validate_llm_constraints,
 )
 from dr_llm.llm.providers.openai_compat.thinking import (

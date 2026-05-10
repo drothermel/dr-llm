@@ -47,6 +47,7 @@ from pydantic import (
 )
 
 from dr_llm.llm.messages import CallMode
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.openrouter.policy import OpenRouterEffortLevel
 from dr_llm.llm.providers.reasoning_capability_types import (
     ReasoningCapabilities,
@@ -98,7 +99,7 @@ class ReasoningBudget(BaseModel):
 class AnthropicReasoning(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["anthropic"] = "anthropic"
+    kind: Literal[ProviderName.ANTHROPIC] = ProviderName.ANTHROPIC
     thinking_level: ThinkingLevel = ThinkingLevel.NA
     budget_tokens: int | None = None
     display: Literal["summarized", "omitted"] | None = None
@@ -139,27 +140,27 @@ class AnthropicReasoning(BaseModel):
 class OpenAIReasoning(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["openai"] = "openai"
+    kind: Literal[ProviderName.OPENAI] = ProviderName.OPENAI
     thinking_level: ThinkingLevel = ThinkingLevel.NA
 
 
 class CodexReasoning(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["codex"] = "codex"
+    kind: Literal[ProviderName.CODEX] = ProviderName.CODEX
     thinking_level: ThinkingLevel = ThinkingLevel.NA
 
 
 class GlmReasoning(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["glm"] = "glm"
+    kind: Literal[ProviderName.GLM] = ProviderName.GLM
     thinking_level: ThinkingLevel = ThinkingLevel.NA
 
     @model_validator(mode="after")
     def _validate_shape(self) -> GlmReasoning:
         validate_allowed_thinking_levels(
-            provider="glm",
+            provider=ProviderName.GLM,
             model="<config-shape>",
             thinking_level=self.thinking_level,
             allowed_levels={ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE},
@@ -171,7 +172,7 @@ class GlmReasoning(BaseModel):
 class OpenRouterReasoning(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["openrouter"] = "openrouter"
+    kind: Literal[ProviderName.OPENROUTER] = ProviderName.OPENROUTER
     enabled: bool | None = None
     effort: OpenRouterEffortLevel | None = None
 
@@ -187,7 +188,7 @@ class OpenRouterReasoning(BaseModel):
 class GoogleReasoning(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["google"] = "google"
+    kind: Literal[ProviderName.GOOGLE] = ProviderName.GOOGLE
     thinking_level: ThinkingLevel = ThinkingLevel.NA
     budget_tokens: int | None = None
     include_thoughts: bool | None = None

@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from pydantic import BaseModel, ConfigDict
 
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.thinking import (
     ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
 )
@@ -90,12 +91,14 @@ def supported_thinking_levels(
         )
 
     dispatch: dict[str, Callable[[], tuple[ThinkingLevel, ...]]] = {
-        "openai": lambda: _supported_openai_thinking_levels(model),
-        "codex": lambda: _supported_codex_thinking_levels(model),
-        "claude-code": lambda: _supported_claude_code_thinking_levels(model),
-        "minimax": lambda: (ThinkingLevel.NA,),
-        "kimi-code": supported_kimi_code_thinking_levels,
-        "openrouter": lambda: (ThinkingLevel.NA,),
+        ProviderName.OPENAI: lambda: _supported_openai_thinking_levels(model),
+        ProviderName.CODEX: lambda: _supported_codex_thinking_levels(model),
+        ProviderName.CLAUDE_CODE: lambda: (
+            _supported_claude_code_thinking_levels(model)
+        ),
+        ProviderName.MINIMAX: lambda: (ThinkingLevel.NA,),
+        ProviderName.KIMI_CODE: supported_kimi_code_thinking_levels,
+        ProviderName.OPENROUTER: lambda: (ThinkingLevel.NA,),
     }
     return dispatch.get(
         provider,
@@ -129,7 +132,7 @@ def default_effort(*, provider: str, model: str) -> EffortSpec:
 
 
 def default_reasoning(*, provider: str, model: str) -> ReasoningSpec | None:
-    if provider == "openrouter":
+    if provider == ProviderName.OPENROUTER:
         return _default_openrouter_reasoning(model)
     thinking_level = default_thinking_level(provider=provider, model=model)
     capabilities = reasoning_capabilities_for_model(
@@ -141,7 +144,7 @@ def default_reasoning(*, provider: str, model: str) -> ReasoningSpec | None:
         model=model,
         thinking_level=thinking_level,
         budget_tokens=budget_tokens,
-        explicit_na=provider == "minimax",
+        explicit_na=provider == ProviderName.MINIMAX,
     )
 
 
@@ -153,31 +156,31 @@ def reasoning_for_thinking_level(
     budget_tokens: int | None = None,
     explicit_na: bool = False,
 ) -> ReasoningSpec | None:
-    if provider == "openai":
+    if provider == ProviderName.OPENAI:
         return _reasoning_for_openai(thinking_level)
-    if provider == "codex":
+    if provider == ProviderName.CODEX:
         return _reasoning_for_codex(thinking_level)
-    if provider == "google":
+    if provider == ProviderName.GOOGLE:
         return _reasoning_for_google(
             thinking_level=thinking_level, budget_tokens=budget_tokens
         )
-    if provider == "glm":
+    if provider == ProviderName.GLM:
         return _reasoning_for_glm(thinking_level)
-    if provider in {"anthropic", "kimi-code"}:
+    if provider in {ProviderName.ANTHROPIC, ProviderName.KIMI_CODE}:
         return _reasoning_for_anthropic_style(
             provider=provider,
             thinking_level=thinking_level,
             budget_tokens=budget_tokens,
             explicit_na=explicit_na,
         )
-    if provider in {"claude-code", "minimax"}:
+    if provider in {ProviderName.CLAUDE_CODE, ProviderName.MINIMAX}:
         return _reasoning_for_headless_anthropic_style(
             provider=provider,
             model=model,
             thinking_level=thinking_level,
             explicit_na=explicit_na,
         )
-    if provider == "openrouter":
+    if provider == ProviderName.OPENROUTER:
         if thinking_level == ThinkingLevel.NA:
             return None
         raise ValueError(
@@ -260,7 +263,7 @@ def _supported_capability_thinking_levels(
             google_literal_to_thinking_level(level)
             for level in capabilities.google_levels
         )
-    if capabilities.mode == "glm":
+    if capabilities.mode == ProviderName.GLM:
         return (ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE)
     if capabilities.mode == "anthropic_budget":
         return (ThinkingLevel.OFF, ThinkingLevel.BUDGET)
@@ -326,7 +329,7 @@ def _reasoning_for_google(
         return GoogleReasoning(
             thinking_level=thinking_level,
             budget_tokens=_require_budget_tokens(
-                provider="google", budget_tokens=budget_tokens
+                provider=ProviderName.GOOGLE, budget_tokens=budget_tokens
             ),
         )
     return GoogleReasoning(thinking_level=thinking_level)

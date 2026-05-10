@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.request import AnthropicRequest
 from dr_llm.llm.providers.response_validation import (
     parse_http_response_body,
@@ -82,7 +83,7 @@ class AnthropicResponse(BaseModel):
 
     def _validate(self) -> None:
         validate_http_response(
-            provider_label="anthropic",
+            provider_label=ProviderName.ANTHROPIC,
             status_code=self.status_code,
             response_text_preview=self.response_text_preview,
             json_error=self.json_error,

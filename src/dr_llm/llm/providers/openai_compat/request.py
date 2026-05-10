@@ -6,6 +6,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.api_config import resolve_api_key
 from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
@@ -110,7 +111,7 @@ class OpenAICompatRequest(BaseModel):
             mode="json", exclude_none=True, exclude={"extra_body"}
         )
         if (
-            self.provider == "openai"
+            self.provider == ProviderName.OPENAI
             and "max_tokens" in payload
             and openai_uses_max_completion_tokens(self.model)
         ):

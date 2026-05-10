@@ -10,6 +10,7 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
+from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.headless.base import (
     BaseHeadlessProvider,
     HEADLESS_DEFAULT_EMPTY_PROMPT,
@@ -26,7 +27,7 @@ from dr_llm.llm.request import HeadlessLlmRequest
 
 
 CODEX_DEFAULT_COMMAND = [
-    "codex",
+    ProviderName.CODEX,
     "exec",
     "--json",
     "--ephemeral",
@@ -214,7 +215,7 @@ class CodexHeadlessProvider(BaseHeadlessProvider):
     def __init__(self, command: list[str] | None = None) -> None:
         super().__init__(
             config=CodexHeadlessProviderConfig(
-                name="codex",
+                name=ProviderName.CODEX,
                 command=command or CODEX_DEFAULT_COMMAND,
             ),
         )
