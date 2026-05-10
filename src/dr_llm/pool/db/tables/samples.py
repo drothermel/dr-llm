@@ -39,7 +39,7 @@ class SamplesTableDef(BaseModel):
                 nullable=False,
                 server_default=text(ColumnServerDefault.EMPTY_JSONB),
             ),
-            Column(SampleColumn.RESPONSE_JSON, JSONB),
+            Column(SampleColumn.RESPONSE_JSON, JSONB(none_as_null=True)),
             Column(SampleColumn.FINISH_REASON, Text),
             Column(
                 SampleColumn.ATTEMPT_COUNT,

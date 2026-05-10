@@ -82,6 +82,7 @@ def test_samples_table_def_builds_expected_columns() -> None:
     assert str(samples.c.dim_b.type) == "INTEGER"
     assert isinstance(samples.c.request_json.type, JSONB)
     assert isinstance(samples.c.response_json.type, JSONB)
+    assert samples.c.response_json.type.none_as_null is True
     assert isinstance(samples.c.metadata_json.type, JSONB)
     assert isinstance(samples.c.created_at.type, TIMESTAMP)
     assert samples.c.created_at.type.timezone is True

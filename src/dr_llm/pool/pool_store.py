@@ -7,13 +7,14 @@ import json
 from collections.abc import Iterable, Iterator
 from typing import Any
 
-from sqlalchemy import func, select
-from sqlalchemy.engine import Connection
+from pydantic_core import to_jsonable_python
+from sqlalchemy import delete, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import Connection
 
 from dr_llm.pool.db import (
-    CallStatsColumn,
     DbRuntime,
+    LeaseColumn,
     PoolSchema,
     PoolTables,
     PoolTableType,
@@ -23,21 +24,14 @@ from dr_llm.pool.db.sql_helpers import (
     insert_keyed_samples,
     is_constraint_error,
     key_filter_clause,
+    partial_key_filter_clause,
     stream_select_rows,
     validate_key_values,
 )
-from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.coverage import CoverageRow
 from dr_llm.pool.key_filter import PoolKeyFilter
-from dr_llm.pool.metadata_store import MetadataStore
-from dr_llm.pool.pending.store import PendingStore
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.results import InsertResult
-
-SCHEMA_METADATA_KEY = "_schema"
-"""Reserved metadata key under which ``ensure_schema`` persists the pool's
-``PoolSchema`` so consumers can reconstruct it via :class:`PoolReader`.
-"""
 
 
 class PoolStore:
@@ -51,8 +45,6 @@ class PoolStore:
         self.schema = schema
         self._runtime = runtime
         self._tables = PoolTables(schema)
-        self.pending = PendingStore(schema, runtime, self._tables)
-        self.metadata = MetadataStore(schema, runtime, self._tables)
 
     def close(self) -> None:
         """Dispose the underlying runtime owned by this store."""
@@ -65,13 +57,7 @@ class PoolStore:
         from PoolSchema. Alembic intentionally excludes them until the pool
         schema design moves away from per-pool table sets. Safe to call
         multiple times, but each call issues several pg_catalog round-trips
-        plus one metadata upsert, so prefer calling exactly once at startup.
-
-        After creating tables, the pool's ``PoolSchema`` is serialized into
-        the metadata table under :data:`SCHEMA_METADATA_KEY` so that
-        :class:`PoolReader` can later reconstruct it from the database alone.
-        The upsert runs in a separate transaction (it must, because the
-        metadata store opens its own connection) and is idempotent.
+        so prefer calling exactly once at startup.
         """
         with self._runtime.begin() as conn:
             self._tables.sa_metadata.create_all(
@@ -80,26 +66,6 @@ class PoolStore:
                 checkfirst=True,
             )
             self._tables.ensure_indexes(conn)
-        self.metadata.upsert(SCHEMA_METADATA_KEY, self.schema.model_dump(mode="json"))
-
-    def insert_call_stats(self, stats: CallStats) -> None:
-        """Insert a call-stats row for a promoted sample."""
-        row = {
-            CallStatsColumn.SAMPLE_ID: stats.sample_id,
-            CallStatsColumn.LATENCY_MS: stats.latency_ms,
-            CallStatsColumn.TOTAL_COST_USD: stats.total_cost_usd,
-            CallStatsColumn.PROMPT_TOKENS: stats.prompt_tokens,
-            CallStatsColumn.COMPLETION_TOKENS: stats.completion_tokens,
-            CallStatsColumn.REASONING_TOKENS: stats.reasoning_tokens,
-            CallStatsColumn.TOTAL_TOKENS: stats.total_tokens,
-            CallStatsColumn.ATTEMPT_COUNT: stats.attempt_count,
-            CallStatsColumn.FINISH_REASON: stats.finish_reason,
-        }
-        call_stats_table = self._tables[PoolTableType.CALL_STATS]
-        with self._runtime.begin() as conn:
-            conn.execute(
-                pg_insert(call_stats_table).values(row).on_conflict_do_nothing()
-            )
 
     def insert_sample(
         self, sample: PoolSample, *, ignore_conflicts: bool = True
@@ -244,10 +210,176 @@ class PoolStore:
         digest = hashlib.blake2b(lock_payload.encode("utf-8"), digest_size=8).digest()
         return int.from_bytes(digest, byteorder="big", signed=True)
 
+    def complete_sample(
+        self,
+        *,
+        sample_id: str,
+        response: dict[str, Any],
+        finish_reason: str | None,
+        attempt_count: int,
+    ) -> bool:
+        """Fill in the response fields for one incomplete sample."""
+        samples_table = self._tables[PoolTableType.SAMPLES]
+        stmt = (
+            update(samples_table)
+            .where(
+                samples_table.c[SampleColumn.SAMPLE_ID] == sample_id,
+                samples_table.c[SampleColumn.RESPONSE_JSON].is_(None),
+            )
+            .values(
+                {
+                    SampleColumn.RESPONSE_JSON: to_jsonable_python(response),
+                    SampleColumn.FINISH_REASON: finish_reason,
+                    SampleColumn.ATTEMPT_COUNT: attempt_count,
+                }
+            )
+            .returning(samples_table.c[SampleColumn.SAMPLE_ID])
+        )
+        with self._runtime.begin() as conn:
+            return conn.execute(stmt).scalar_one_or_none() is not None
+
+    def claim_lease(
+        self,
+        *,
+        worker_id: str,
+        lease_seconds: int,
+        key_filter: PoolKeyFilter | None = None,
+    ) -> PoolSample | None:
+        """Lease one incomplete sample via ``FOR UPDATE SKIP LOCKED``."""
+        if lease_seconds <= 0:
+            raise ValueError(
+                f"lease_seconds must be a positive integer; got {lease_seconds}"
+            )
+
+        samples_table = self._tables[PoolTableType.SAMPLES]
+        leases_table = self._tables[PoolTableType.LEASES]
+        sample_columns = self._tables.select_columns(PoolTableType.SAMPLES)
+        predicates = [
+            samples_table.c[SampleColumn.RESPONSE_JSON].is_(None),
+            or_(
+                leases_table.c[LeaseColumn.SAMPLE_ID].is_(None),
+                leases_table.c[LeaseColumn.LEASE_EXPIRES_AT] < func.now(),
+            ),
+        ]
+        partial_filter = partial_key_filter_clause(
+            self.schema, samples_table, key_filter
+        )
+        if partial_filter is not None:
+            predicates.append(partial_filter)
+
+        locked = (
+            select(*sample_columns)
+            .select_from(
+                samples_table.outerjoin(
+                    leases_table,
+                    samples_table.c[SampleColumn.SAMPLE_ID]
+                    == leases_table.c[LeaseColumn.SAMPLE_ID],
+                )
+            )
+            .where(*predicates)
+            .order_by(samples_table.c[SampleColumn.CREATED_AT].asc())
+            .limit(1)
+            .with_for_update(of=samples_table, skip_locked=True)
+            .cte("locked_sample")
+        )
+        lease_expires_at = func.now() + func.make_interval(
+            0, 0, 0, 0, 0, 0, lease_seconds
+        )
+        leased = (
+            pg_insert(leases_table)
+            .from_select(
+                [
+                    LeaseColumn.SAMPLE_ID,
+                    LeaseColumn.WORKER_ID,
+                    LeaseColumn.LEASE_EXPIRES_AT,
+                ],
+                select(
+                    locked.c[SampleColumn.SAMPLE_ID],
+                    literal(worker_id),
+                    lease_expires_at,
+                ),
+            )
+            .on_conflict_do_update(
+                index_elements=[leases_table.c[LeaseColumn.SAMPLE_ID]],
+                set_={
+                    LeaseColumn.WORKER_ID: worker_id,
+                    LeaseColumn.LEASE_EXPIRES_AT: lease_expires_at,
+                },
+                where=leases_table.c[LeaseColumn.LEASE_EXPIRES_AT] < func.now(),
+            )
+            .returning(leases_table.c[LeaseColumn.SAMPLE_ID])
+            .cte("leased_sample")
+        )
+        stmt = select(
+            *(locked.c[column.name] for column in sample_columns)
+        ).select_from(
+            locked.join(
+                leased,
+                locked.c[SampleColumn.SAMPLE_ID] == leased.c[LeaseColumn.SAMPLE_ID],
+            )
+        )
+
+        with self._runtime.begin() as conn:
+            row = conn.execute(stmt).mappings().first()
+        if row is None:
+            return None
+        return PoolSample.from_db_row(self.schema, dict(row))
+
+    def release_lease(self, *, sample_id: str, worker_id: str) -> bool:
+        """Release a lease owned by ``worker_id``."""
+        leases_table = self._tables[PoolTableType.LEASES]
+        stmt = (
+            delete(leases_table)
+            .where(
+                leases_table.c[LeaseColumn.SAMPLE_ID] == sample_id,
+                leases_table.c[LeaseColumn.WORKER_ID] == worker_id,
+            )
+            .returning(leases_table.c[LeaseColumn.SAMPLE_ID])
+        )
+        with self._runtime.begin() as conn:
+            return conn.execute(stmt).scalar_one_or_none() is not None
+
+    def expire_leases(self) -> int:
+        """Delete expired lease rows and return the number removed."""
+        leases_table = self._tables[PoolTableType.LEASES]
+        stmt = (
+            delete(leases_table)
+            .where(leases_table.c[LeaseColumn.LEASE_EXPIRES_AT] < func.now())
+            .returning(leases_table.c[LeaseColumn.SAMPLE_ID])
+        )
+        with self._runtime.begin() as conn:
+            return sum(1 for _ in conn.execute(stmt).scalars())
+
     def sample_count(self) -> int:
         """Return the total number of rows in the pool's samples table."""
         samples_table = self._tables[PoolTableType.SAMPLES]
         stmt = select(func.count()).select_from(samples_table)
+        with self._runtime.connect() as conn:
+            return int(conn.execute(stmt).scalar_one())
+
+    def incomplete_count(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+        """Return the count of samples without responses."""
+        return self._completion_count(is_complete=False, key_filter=key_filter)
+
+    def complete_count(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+        """Return the count of samples with responses."""
+        return self._completion_count(is_complete=True, key_filter=key_filter)
+
+    def _completion_count(
+        self, *, is_complete: bool, key_filter: PoolKeyFilter | None
+    ) -> int:
+        samples_table = self._tables[PoolTableType.SAMPLES]
+        response_predicate = (
+            samples_table.c[SampleColumn.RESPONSE_JSON].is_not(None)
+            if is_complete
+            else samples_table.c[SampleColumn.RESPONSE_JSON].is_(None)
+        )
+        stmt = select(func.count()).select_from(samples_table).where(response_predicate)
+        partial_filter = partial_key_filter_clause(
+            self.schema, samples_table, key_filter
+        )
+        if partial_filter is not None:
+            stmt = stmt.where(partial_filter)
         with self._runtime.connect() as conn:
             return int(conn.execute(stmt).scalar_one())
 
