@@ -13,8 +13,7 @@ from rich.table import Table
 
 from dr_llm.llm.catalog.model_blacklist import BlacklistedModel
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogSyncResult
-from dr_llm.llm.messages import Message
-from dr_llm.llm.providers.config import ProviderAvailabilityStatus
+from dr_llm.llm import Message, ProviderAvailabilityStatus
 
 
 def _emit(payload: Any) -> None:

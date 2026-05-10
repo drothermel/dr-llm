@@ -7,23 +7,21 @@ import httpx
 import pytest
 
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
-from dr_llm.llm.messages import Message
-from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
-from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
-from dr_llm.llm.providers.openai_compat.request import OpenAICompatRequest
-from dr_llm.llm.providers.openai_compat.response import OpenAICompatResponse
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm import (
+    ApiLlmRequest,
+    EffortSpec,
     GlmReasoning,
+    KimiCodeLlmRequest,
+    Message,
+    OpenAILlmRequest,
     OpenAIReasoning,
     OpenRouterReasoning,
     ThinkingLevel,
 )
-from dr_llm.llm.request import (
-    ApiLlmRequest,
-    KimiCodeLlmRequest,
-    OpenAILlmRequest,
-)
+from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
+from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
+from dr_llm.llm.providers.openai_compat.request import OpenAICompatRequest
+from dr_llm.llm.providers.openai_compat.response import OpenAICompatResponse
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 

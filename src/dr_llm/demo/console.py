@@ -1,10 +1,4 @@
-"""Shared helpers for dr-llm demo scripts.
-
-Provides ANSI color constants and small status helpers used by the
-``demo-providers.py`` and ``demo-pool-providers.py`` scripts. Living in
-``scripts/`` because each demo runs as ``python scripts/demo-*.py``, which puts
-this directory on ``sys.path[0]`` so ``import _demo_utils`` resolves.
-"""
+"""Console formatting helpers for dr-llm demos."""
 
 from __future__ import annotations
 
@@ -30,3 +24,17 @@ def fail(msg: str) -> None:
 
 def warn(msg: str) -> None:
     print(f"{YELLOW}  warn: {msg}{RESET}")
+
+
+__all__ = [
+    "BOLD",
+    "CYAN",
+    "GREEN",
+    "RED",
+    "RESET",
+    "YELLOW",
+    "fail",
+    "ok",
+    "step",
+    "warn",
+]

@@ -23,7 +23,7 @@ from typing import cast
 import typer
 from pydantic import BaseModel, ValidationError
 
-from _demo_thinking_models import PROVIDER_MODELS
+from dr_llm.demo import DEMO_PROVIDER_MODELS
 from dr_llm.llm import (
     AnthropicReasoning,
     ApiLlmRequest,
@@ -39,10 +39,12 @@ from dr_llm.llm import (
     Message,
     OpenAIReasoning,
     OpenRouterReasoning,
+    OpenRouterReasoningRequestStyle,
     ProviderRegistry,
     ReasoningSpec,
     ThinkingLevel,
     build_default_registry,
+    openrouter_model_policy,
     reasoning_capabilities_for_model,
     supported_effort_levels,
 )
@@ -54,10 +56,6 @@ from dr_llm.llm.providers.headless.codex_thinking import (
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
 )
-from dr_llm.llm.providers.openrouter.policy import (
-    OpenRouterReasoningRequestStyle,
-    openrouter_model_policy,
-)
 from dr_llm.llm.providers.openai_compat.thinking import (
     openai_supports_configurable_thinking,
     openai_supports_minimal_thinking,
@@ -66,7 +64,7 @@ from dr_llm.llm.providers.openai_compat.thinking import (
 
 app = typer.Typer()
 
-SUPPORTED_PROVIDER_NAMES = ", ".join(sorted(PROVIDER_MODELS))
+SUPPORTED_PROVIDER_NAMES = ", ".join(sorted(DEMO_PROVIDER_MODELS))
 PROMPT = "Reply with exactly OK."
 GOOGLE_FIXED_BUDGET = 1024
 KIMI_CODE_FIXED_BUDGET = 1024
@@ -445,7 +443,7 @@ def run_model_sweep(
 ) -> None:
     print("\n== models ==")
     for provider in providers:
-        for model in PROVIDER_MODELS[provider]:
+        for model in DEMO_PROVIDER_MODELS[provider]:
             run_attempt(
                 registry=registry,
                 provider=provider,
@@ -468,7 +466,7 @@ def run_thinking_sweep(
     for provider in providers:
         if provider == "openrouter":
             continue
-        for model in PROVIDER_MODELS[provider]:
+        for model in DEMO_PROVIDER_MODELS[provider]:
             for thinking_level in supported_thinking_levels(provider, model):
                 run_attempt(
                     registry=registry,
@@ -491,7 +489,7 @@ def run_effort_sweep(
     for provider in providers:
         if provider == "openrouter":
             continue
-        for model in PROVIDER_MODELS[provider]:
+        for model in DEMO_PROVIDER_MODELS[provider]:
             for effort in supported_effort_levels(
                 provider=provider, model=model
             ):
@@ -537,8 +535,10 @@ def main(
     ),
 ) -> None:
     """Sweep curated models for provider-specific reasoning and effort support."""
-    providers = provider or sorted(PROVIDER_MODELS)
-    unsupported = [name for name in providers if name not in PROVIDER_MODELS]
+    providers = provider or sorted(DEMO_PROVIDER_MODELS)
+    unsupported = [
+        name for name in providers if name not in DEMO_PROVIDER_MODELS
+    ]
     if unsupported:
         raise typer.BadParameter(
             f"Unsupported provider(s): {', '.join(sorted(unsupported))}"

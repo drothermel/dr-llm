@@ -7,11 +7,13 @@ import pytest
 
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.catalog.service import ModelCatalogService
-from dr_llm.llm.request import LlmRequest
-from dr_llm.llm.response import LlmResponse
+from dr_llm.llm import (
+    LlmRequest,
+    LlmResponse,
+    ProviderConfig,
+    ProviderRegistry,
+)
 from dr_llm.llm.providers.base import Provider
-from dr_llm.llm.providers.config import ProviderConfig
-from dr_llm.llm.providers.registry import ProviderRegistry
 from tests.conftest import make_response
 
 

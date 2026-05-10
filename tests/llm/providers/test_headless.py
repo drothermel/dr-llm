@@ -7,15 +7,15 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.providers.headless.claude import ClaudeHeadlessProvider
-from dr_llm.llm.providers.headless.codex import CodexHeadlessProvider
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm import (
     AnthropicReasoning,
     CodexReasoning,
+    EffortSpec,
     ReasoningBudget,
     ThinkingLevel,
 )
+from dr_llm.llm.providers.headless.claude import ClaudeHeadlessProvider
+from dr_llm.llm.providers.headless.codex import CodexHeadlessProvider
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_subprocess_mock
 

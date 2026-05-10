@@ -9,8 +9,7 @@ from dr_llm.llm.catalog.file_store import FileCatalogStore
 from dr_llm.llm.catalog.model_blacklist import blacklisted_models
 from dr_llm.llm.catalog.models import ModelCatalogQuery, ModelCatalogSyncResult
 from dr_llm.llm.catalog.service import ModelCatalogService
-from dr_llm.llm.providers.registry import ProviderRegistry
-from dr_llm.llm.providers.registry import build_default_registry
+from dr_llm.llm import ProviderRegistry, build_default_registry
 
 from . import common
 
