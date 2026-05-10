@@ -5,12 +5,12 @@ import pytest
 
 from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
 from dr_llm.llm.providers.anthropic.reasoning import AnthropicReasoningConfig
-from dr_llm.llm.providers.anthropic.reasoning import KimiCodeReasoningConfig
-from dr_llm.llm.providers.anthropic.reasoning import MiniMaxReasoningConfig
-from dr_llm.llm.providers.anthropic.reasoning import (
+from dr_llm.llm.providers.kimi_code.reasoning import KimiCodeReasoningConfig
+from dr_llm.llm.providers.kimi_code.reasoning import (
     validate_reasoning_for_kimi_code,
 )
-from dr_llm.llm.providers.anthropic.reasoning import (
+from dr_llm.llm.providers.minimax.reasoning import MiniMaxReasoningConfig
+from dr_llm.llm.providers.minimax.reasoning import (
     validate_reasoning_for_minimax,
 )
 from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig

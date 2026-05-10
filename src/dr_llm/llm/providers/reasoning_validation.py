@@ -5,7 +5,11 @@ from collections.abc import Callable
 from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.reasoning import (
     validate_reasoning_for_anthropic,
+)
+from dr_llm.llm.providers.kimi_code.reasoning import (
     validate_reasoning_for_kimi_code,
+)
+from dr_llm.llm.providers.minimax.reasoning import (
     validate_reasoning_for_minimax,
 )
 from dr_llm.llm.providers.google.reasoning import validate_reasoning_for_google
