@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import pytest
 from pydantic import BaseModel
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Index
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 
-from dr_llm.pool.db import ColumnType, KeyColumn, PoolSchema, PoolTableType, PoolTables
+from dr_llm.pool.db import (
+    ColumnType,
+    KeyColumn,
+    LeaseColumn,
+    PoolSchema,
+    PoolTableType,
+    PoolTables,
+    SampleColumn,
+)
 from dr_llm.pool.db.names import (
     IndexNamePrefix,
     PoolIndexName,
@@ -16,13 +25,7 @@ from dr_llm.pool.db.schema import (
     pool_table_name,
     pool_table_names,
 )
-from dr_llm.pool.db.tables import (
-    CallStatsTableDef,
-    ClaimsTableDef,
-    MetadataTableDef,
-    PendingTableDef,
-    SamplesTableDef,
-)
+from dr_llm.pool.db.tables import LeasesTableDef, SamplesTableDef
 
 
 def _simple_schema() -> PoolSchema:
@@ -35,58 +38,114 @@ def _simple_schema() -> PoolSchema:
     )
 
 
-def test_pool_tables_contains_all_tables() -> None:
+def _index_by_name(tables: PoolTables, table_type: PoolTableType) -> dict[str, Index]:
+    return {str(index.name): index for index in tables[table_type].indexes}
+
+
+def _expression_names(index: Index) -> list[str]:
+    return [str(expr).split(".")[-1] for expr in index.expressions]
+
+
+def test_pool_tables_contains_new_tables_only() -> None:
     tables = PoolTables(_simple_schema())
     assert list(tables.tables) == list(PoolTableType)
     assert tables[PoolTableType.SAMPLES].name == "pool_test_samples"
-    assert tables[PoolTableType.CLAIMS].name == "pool_test_claims"
-    assert tables[PoolTableType.PENDING].name == "pool_test_pending"
-    assert tables[PoolTableType.METADATA].name == "pool_test_metadata"
-    assert tables[PoolTableType.CALL_STATS].name == "pool_test_call_stats"
+    assert tables[PoolTableType.LEASES].name == "pool_test_leases"
     assert tables.all_tables == [tables[table_type] for table_type in PoolTableType]
 
 
-def test_pool_tables_key_columns_appear() -> None:
+def test_samples_table_def_builds_expected_columns() -> None:
     tables = PoolTables(_simple_schema())
-    assert str(tables[PoolTableType.SAMPLES].c.dim_a.type) == "TEXT"
-    assert str(tables[PoolTableType.SAMPLES].c.dim_b.type) == "INTEGER"
-    assert str(tables[PoolTableType.PENDING].c.dim_a.type) == "TEXT"
-    assert str(tables[PoolTableType.PENDING].c.dim_b.type) == "INTEGER"
-    assert [column.name for column in tables.key_columns(PoolTableType.SAMPLES)] == [
+    samples = tables[PoolTableType.SAMPLES]
+
+    assert list(samples.c.keys()) == [
+        "sample_id",
         "dim_a",
         "dim_b",
+        "sample_idx",
+        "run_id",
+        "request_json",
+        "response_json",
+        "finish_reason",
+        "attempt_count",
+        "metadata_json",
+        "created_at",
     ]
-    assert [column.name for column in tables.key_columns(PoolTableType.PENDING)] == [
-        "dim_a",
-        "dim_b",
-    ]
+    assert samples.c.sample_id.primary_key
+    assert not samples.c.sample_idx.nullable
+    assert not samples.c.request_json.nullable
+    assert samples.c.response_json.nullable
+    assert not samples.c.attempt_count.nullable
+    assert not samples.c.metadata_json.nullable
+    assert not samples.c.created_at.nullable
+    assert str(samples.c.dim_a.type) == "TEXT"
+    assert str(samples.c.dim_b.type) == "INTEGER"
+    assert isinstance(samples.c.request_json.type, JSONB)
+    assert isinstance(samples.c.response_json.type, JSONB)
+    assert samples.c.response_json.type.none_as_null is True
+    assert isinstance(samples.c.metadata_json.type, JSONB)
+    assert isinstance(samples.c.created_at.type, TIMESTAMP)
+    assert samples.c.created_at.type.timezone is True
 
 
-def test_pool_tables_unique_index_includes_keys() -> None:
+def test_samples_table_def_builds_expected_indexes() -> None:
     tables = PoolTables(_simple_schema())
-    sample_indexes = {
-        str(index.name): [str(expr).split(".")[-1] for expr in index.expressions]
-        for index in tables[PoolTableType.SAMPLES].indexes
-    }
-    index_name = pool_index_name(
-        IndexNamePrefix.UNIQUE,
-        tables[PoolTableType.SAMPLES].name,
-        PoolIndexName.CELL,
-    )
-    assert sample_indexes[index_name] == [
+    samples = tables[PoolTableType.SAMPLES]
+    indexes = _index_by_name(tables, PoolTableType.SAMPLES)
+
+    cell_index = indexes[
+        pool_index_name(IndexNamePrefix.UNIQUE, samples.name, PoolIndexName.CELL)
+    ]
+    assert cell_index.unique is True
+    assert _expression_names(cell_index) == [
         "dim_a",
         "dim_b",
         "sample_idx",
     ]
 
+    key_index = indexes[
+        pool_index_name(IndexNamePrefix.STANDARD, samples.name, PoolIndexName.KEY)
+    ]
+    assert _expression_names(key_index) == ["dim_a", "dim_b"]
 
-def test_pool_tables_json_columns_are_jsonb() -> None:
+    incomplete_index = indexes[
+        pool_index_name(
+            IndexNamePrefix.STANDARD,
+            samples.name,
+            PoolIndexName.INCOMPLETE,
+        )
+    ]
+    assert _expression_names(incomplete_index) == ["created_at"]
+    where_clause = incomplete_index.dialect_options["postgresql"]["where"]
+    assert "response_json IS NULL" in str(where_clause)
+
+
+def test_leases_table_def_builds_expected_columns() -> None:
     tables = PoolTables(_simple_schema())
-    assert isinstance(tables[PoolTableType.SAMPLES].c.payload_json.type, JSONB)
-    assert isinstance(tables[PoolTableType.SAMPLES].c.metadata_json.type, JSONB)
-    assert isinstance(tables[PoolTableType.PENDING].c.payload_json.type, JSONB)
-    assert isinstance(tables[PoolTableType.PENDING].c.metadata_json.type, JSONB)
-    assert isinstance(tables[PoolTableType.METADATA].c.value_json.type, JSONB)
+    leases = tables[PoolTableType.LEASES]
+
+    assert list(leases.c.keys()) == [
+        "sample_id",
+        "worker_id",
+        "lease_expires_at",
+    ]
+    assert leases.c.sample_id.primary_key
+    assert not leases.c.worker_id.nullable
+    assert not leases.c.lease_expires_at.nullable
+    assert isinstance(leases.c.lease_expires_at.type, TIMESTAMP)
+    assert leases.c.lease_expires_at.type.timezone is True
+    assert leases.indexes == set()
+
+
+def test_pool_tables_key_columns_only_for_samples() -> None:
+    tables = PoolTables(_simple_schema())
+
+    assert [column.name for column in tables.key_columns(PoolTableType.SAMPLES)] == [
+        "dim_a",
+        "dim_b",
+    ]
+    with pytest.raises(ValueError, match="leases does not have pool key columns"):
+        tables.key_columns(PoolTableType.LEASES)
 
 
 def test_pool_tables_select_columns_are_table_type_specific() -> None:
@@ -97,50 +156,26 @@ def test_pool_tables_select_columns_are_table_type_specific() -> None:
         "dim_a",
         "dim_b",
         "sample_idx",
-        "payload_json",
-        "source_run_id",
+        "run_id",
+        "request_json",
+        "response_json",
+        "finish_reason",
+        "attempt_count",
         "metadata_json",
         "created_at",
     ]
-    assert [column.name for column in tables.select_columns(PoolTableType.PENDING)] == [
-        "pending_id",
-        "dim_a",
-        "dim_b",
-        "sample_idx",
-        "payload_json",
-        "source_run_id",
-        "metadata_json",
-        "priority",
-        "status",
+    assert [column.name for column in tables.select_columns(PoolTableType.LEASES)] == [
+        "sample_id",
         "worker_id",
         "lease_expires_at",
-        "attempt_count",
-        "created_at",
     ]
-    for table_type in (
-        PoolTableType.CLAIMS,
-        PoolTableType.METADATA,
-        PoolTableType.CALL_STATS,
-    ):
-        assert [column.name for column in tables.select_columns(table_type)] == list(
-            tables[table_type].c.keys()
-        )
-
-
-def test_pool_tables_reject_missing_table_type_helpers() -> None:
-    tables = PoolTables(_simple_schema())
-    with pytest.raises(ValueError, match="key columns"):
-        tables.key_columns(PoolTableType.CLAIMS)
 
 
 def test_pool_tables_registers_pydantic_table_defs() -> None:
     tables = PoolTables(_simple_schema())
     expected_def_types: dict[PoolTableType, type[BaseModel]] = {
         PoolTableType.SAMPLES: SamplesTableDef,
-        PoolTableType.CLAIMS: ClaimsTableDef,
-        PoolTableType.PENDING: PendingTableDef,
-        PoolTableType.METADATA: MetadataTableDef,
-        PoolTableType.CALL_STATS: CallStatsTableDef,
+        PoolTableType.LEASES: LeasesTableDef,
     }
 
     assert list(tables.defs) == list(PoolTableType)
@@ -171,25 +206,23 @@ def test_schema_table_names() -> None:
     schema = _simple_schema()
     assert {table_type.value for table_type in PoolTableType} == {
         "samples",
-        "claims",
-        "pending",
-        "metadata",
-        "call_stats",
+        "leases",
     }
     assert pool_table_name("test", PoolTableType.SAMPLES) == "pool_test_samples"
+    assert pool_table_name("test", PoolTableType.LEASES) == "pool_test_leases"
     assert schema.table_name(PoolTableType.SAMPLES) == "pool_test_samples"
-    assert schema.table_name(PoolTableType.CLAIMS) == "pool_test_claims"
-    assert schema.table_name(PoolTableType.PENDING) == "pool_test_pending"
-    assert schema.table_name(PoolTableType.METADATA) == "pool_test_metadata"
-    assert schema.table_name(PoolTableType.CALL_STATS) == "pool_test_call_stats"
+    assert schema.table_name(PoolTableType.LEASES) == "pool_test_leases"
     assert schema.table_names() == pool_table_names("test")
     assert schema.table_names() == [
         "pool_test_samples",
-        "pool_test_claims",
-        "pool_test_pending",
-        "pool_test_metadata",
-        "pool_test_call_stats",
+        "pool_test_leases",
     ]
+
+
+def test_column_enums() -> None:
+    assert SampleColumn.REQUEST_JSON == "request_json"
+    assert SampleColumn.RESPONSE_JSON == "response_json"
+    assert LeaseColumn.LEASE_EXPIRES_AT == "lease_expires_at"
 
 
 def test_pool_index_name() -> None:

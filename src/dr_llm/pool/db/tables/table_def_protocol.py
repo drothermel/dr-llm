@@ -21,8 +21,6 @@ class ColumnServerDefault(StrEnum):
     EMPTY_JSONB = "'{}'::jsonb"
     EMPTY_TEXT = "''"
     NOW = "now()"
-    ONE = "1"
-    PENDING_STATUS = "'pending'"
     ZERO = "0"
 
 

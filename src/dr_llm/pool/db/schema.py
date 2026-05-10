@@ -77,7 +77,7 @@ class PoolSchema(BaseModel):
         """Build a schema from a list of axis names, all typed as text.
 
         Convenience for the common case where the schema's key columns are
-        the names of cross-product axes (see ``dr_llm.pool.pending.grid``).
+        the names of cross-product axes (see ``dr_llm.pool.seed_grid``).
         Each axis name becomes one ``KeyColumn`` with default ``ColumnType.text``;
         names are validated through the same regex as the regular constructor.
         """

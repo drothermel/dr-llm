@@ -5,7 +5,7 @@ from dr_widget.inline import ActiveHtml
 
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.admin.inspection import PoolInspection
-from dr_llm.pool.pending.pending_status import PendingStatusCounts
+from dr_llm.pool.pool_progress import PoolProgress
 from dr_llm.ui import PieChart, PoolSimpleStatsPieCard
 
 
@@ -17,8 +17,9 @@ def demo_pool() -> PoolInspection:
             name="demo_pool",
             key_columns=[KeyColumn(name="provider"), KeyColumn(name="model")],
         ),
-        sample_count=1280,
-        pending_counts=PendingStatusCounts(pending=36, leased=8, failed=3),
+        progress=PoolProgress(
+            total=1327, incomplete=44, leased=8, complete=1283, error=3
+        ),
     )
 
 
@@ -40,3 +41,18 @@ def test_pool_simple_stats_pie_card_uses_pie_chart_content() -> None:
     card = PoolSimpleStatsPieCard(pool=demo_pool())
 
     assert isinstance(card.pie_chart(), PieChart)
+
+
+def test_pool_simple_stats_pie_card_uses_progress_buckets() -> None:
+    card = PoolSimpleStatsPieCard(pool=demo_pool())
+
+    values_by_label = {
+        slice_.label.lower(): slice_.value for slice_ in card.pie_slices()
+    }
+
+    assert values_by_label == {
+        "complete": 1280,
+        "incomplete": 36,
+        "leased": 8,
+        "error": 3,
+    }

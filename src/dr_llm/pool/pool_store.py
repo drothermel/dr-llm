@@ -1,46 +1,29 @@
-"""Pool sample storage: CRUD, no-replacement acquisition, coverage."""
+"""Pool sample storage and leasing."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
-from sqlalchemy import Text, exists, func, literal, select
-from sqlalchemy.engine import Connection
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.sql.elements import ColumnElement
-
 from dr_llm.pool.db import (
-    CallStatsColumn,
-    ClaimColumn,
     DbRuntime,
     PoolSchema,
     PoolTables,
     PoolTableType,
-    SampleColumn,
 )
-from dr_llm.pool.db.sql_helpers import (
-    insert_keyed_samples,
-    is_constraint_error,
-    key_filter_clause,
-    stream_select_rows,
-    validate_key_values,
-)
-from dr_llm.pool.acquisition import AcquireQuery, AcquireResult
-from dr_llm.pool.call_stats import CallStats
-from dr_llm.pool.coverage import CoverageRow
-from dr_llm.pool.key_filter import PoolKeyFilter
-from dr_llm.pool.metadata_store import MetadataStore
-from dr_llm.pool.pending.store import PendingStore
+from dr_llm.pool.completion_filter import CompletionFilter
+from dr_llm.pool.db.key_filter import PoolKeyFilter
+from dr_llm.pool.insert_result import InsertResult
+from dr_llm.pool.pool_progress import PoolProgress
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.pool.results import InsertResult
-
-SCHEMA_METADATA_KEY = "_schema"
-"""Reserved metadata key under which ``ensure_schema`` persists the pool's
-``PoolSchema`` so consumers can reconstruct it via :class:`PoolReader`.
-"""
+from dr_llm.pool.db import catalog
+from dr_llm.pool.store_ops import completion as completion_ops
+from dr_llm.pool.store_ops import insert as insert_ops
+from dr_llm.pool.store_ops import leasing as leasing_ops
+from dr_llm.pool.store_ops import queries as query_ops
+from dr_llm.pool.store_ops import requeue as requeue_ops
+from dr_llm.pool.store_ops import request_update as request_update_ops
+from dr_llm.pool.store_ops.request_update import RequestUpdate
 
 
 class PoolStore:
@@ -54,8 +37,6 @@ class PoolStore:
         self.schema = schema
         self._runtime = runtime
         self._tables = PoolTables(schema)
-        self.pending = PendingStore(schema, runtime, self._tables)
-        self.metadata = MetadataStore(schema, runtime, self._tables)
 
     def close(self) -> None:
         """Dispose the underlying runtime owned by this store."""
@@ -68,13 +49,7 @@ class PoolStore:
         from PoolSchema. Alembic intentionally excludes them until the pool
         schema design moves away from per-pool table sets. Safe to call
         multiple times, but each call issues several pg_catalog round-trips
-        plus one metadata upsert, so prefer calling exactly once at startup.
-
-        After creating tables, the pool's ``PoolSchema`` is serialized into
-        the metadata table under :data:`SCHEMA_METADATA_KEY` so that
-        :class:`PoolReader` can later reconstruct it from the database alone.
-        The upsert runs in a separate transaction (it must, because the
-        metadata store opens its own connection) and is idempotent.
+        so prefer calling exactly once at startup.
         """
         with self._runtime.begin() as conn:
             self._tables.sa_metadata.create_all(
@@ -83,348 +58,230 @@ class PoolStore:
                 checkfirst=True,
             )
             self._tables.ensure_indexes(conn)
-        self.metadata.upsert(SCHEMA_METADATA_KEY, self.schema.model_dump(mode="json"))
-
-    def insert_call_stats(self, stats: CallStats) -> None:
-        """Insert a call-stats row for a promoted sample."""
-        row = {
-            CallStatsColumn.SAMPLE_ID: stats.sample_id,
-            CallStatsColumn.LATENCY_MS: stats.latency_ms,
-            CallStatsColumn.TOTAL_COST_USD: stats.total_cost_usd,
-            CallStatsColumn.PROMPT_TOKENS: stats.prompt_tokens,
-            CallStatsColumn.COMPLETION_TOKENS: stats.completion_tokens,
-            CallStatsColumn.REASONING_TOKENS: stats.reasoning_tokens,
-            CallStatsColumn.TOTAL_TOKENS: stats.total_tokens,
-            CallStatsColumn.ATTEMPT_COUNT: stats.attempt_count,
-            CallStatsColumn.FINISH_REASON: stats.finish_reason,
-        }
-        call_stats_table = self._tables[PoolTableType.CALL_STATS]
-        with self._runtime.begin() as conn:
-            conn.execute(
-                pg_insert(call_stats_table).values(row).on_conflict_do_nothing()
-            )
+        catalog.ensure_catalog_table(self._runtime)
+        catalog.upsert_schema(self._runtime, self.schema)
 
     def insert_sample(
         self, sample: PoolSample, *, ignore_conflicts: bool = True
     ) -> bool:
         """Insert a single sample. Auto-assigns sample_idx if None."""
-        result = self.insert_samples([sample], ignore_conflicts=ignore_conflicts)
-        return result.inserted == 1
+        return insert_ops.insert_sample(
+            self._runtime,
+            self.schema,
+            self._tables,
+            sample,
+            ignore_conflicts=ignore_conflicts,
+        )
 
     def insert_samples(
         self, samples: Iterable[PoolSample], *, ignore_conflicts: bool = True
     ) -> InsertResult:
         """Bulk insert samples."""
-        explicit: list[PoolSample] = []
-        auto_idx: list[PoolSample] = []
-        for sample in samples:
-            validate_key_values(self.schema, sample.key_values)
-            if sample.sample_idx is None:
-                auto_idx.append(sample)
-            else:
-                explicit.append(sample)
-
-        result = InsertResult()
-        if explicit:
-            result += self._insert_explicit(explicit, ignore_conflicts=ignore_conflicts)
-        if auto_idx:
-            result += self._batch_insert_auto_idx(
-                auto_idx, ignore_conflicts=ignore_conflicts
-            )
-        return result
-
-    def _insert_explicit(
-        self, samples: list[PoolSample], *, ignore_conflicts: bool
-    ) -> InsertResult:
-        """Insert samples that already carry an explicit ``sample_idx``."""
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        inserted = insert_keyed_samples(
+        return insert_ops.insert_samples(
             self._runtime,
-            samples_table,
-            samples_table.c.sample_id,
-            [sample.to_db_insert_row() for sample in samples],
+            self.schema,
+            self._tables,
+            samples,
             ignore_conflicts=ignore_conflicts,
         )
-        return InsertResult(inserted=inserted, skipped=len(samples) - inserted)
 
-    def _batch_insert_auto_idx(
-        self, samples: list[PoolSample], *, ignore_conflicts: bool = True
-    ) -> InsertResult:
-        """Insert auto-idx samples with transaction-scoped per-cell allocation."""
-        if not samples:
-            return InsertResult()
-
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        key_names = self.schema.key_column_names
-        base_rows: list[dict[str, Any]] = []
-        for sample in samples:
-            row = sample.to_db_insert_row()
-            row.pop(SampleColumn.SAMPLE_IDX, None)
-            base_rows.append(row)
-
-        for attempt in range(1, self._AUTO_IDX_INSERT_RETRIES + 1):
-            try:
-                with self._runtime.begin() as conn:
-                    rows = self._allocate_auto_idx_rows(
-                        conn, base_rows=base_rows, key_names=key_names
-                    )
-                    stmt = pg_insert(samples_table)
-                    if ignore_conflicts:
-                        stmt = stmt.on_conflict_do_nothing()
-                    stmt = stmt.returning(samples_table.c.sample_id)
-                    result = (
-                        conn.execute(stmt.values(rows[0]))
-                        if len(rows) == 1
-                        else conn.execute(stmt, rows)
-                    )
-                    inserted = 0
-                    for _ in result.scalars():
-                        inserted += 1
-                return InsertResult(inserted=inserted, skipped=len(samples) - inserted)
-            except Exception as exc:
-                if is_constraint_error(exc):
-                    if attempt < self._AUTO_IDX_INSERT_RETRIES:
-                        continue
-                    if ignore_conflicts:
-                        return InsertResult(inserted=0, skipped=len(samples))
-                raise
-        raise AssertionError("auto-idx insert retry loop exhausted unexpectedly")
-
-    def _allocate_auto_idx_rows(
+    def complete_sample(
         self,
-        conn: Connection,
         *,
-        base_rows: list[dict[str, Any]],
-        key_names: list[str],
-    ) -> list[dict[str, Any]]:
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        cell_keys = sorted(
-            {tuple(row[name] for name in key_names) for row in base_rows},
-            key=repr,
-        )
-        for cell_key in cell_keys:
-            conn.execute(
-                select(func.pg_advisory_xact_lock(self._cell_lock_id(cell_key)))
-            )
-
-        max_sample_idx_by_cell: dict[tuple[Any, ...], int] = {}
-        for cell_key in cell_keys:
-            key_values = dict(zip(key_names, cell_key, strict=True))
-            max_sample_idx_by_cell[cell_key] = int(
-                conn.execute(
-                    select(
-                        func.coalesce(func.max(samples_table.c.sample_idx), -1)
-                    ).where(key_filter_clause(self.schema, samples_table, key_values))
-                ).scalar_one()
-            )
-
-        cell_offsets: dict[tuple[Any, ...], int] = {}
-        rows: list[dict[str, Any]] = []
-        for base_row in base_rows:
-            row = dict(base_row)
-            cell_key = tuple(row[name] for name in key_names)
-            cell_offsets[cell_key] = cell_offsets.get(cell_key, 0) + 1
-            row[SampleColumn.SAMPLE_IDX] = (
-                max_sample_idx_by_cell[cell_key] + cell_offsets[cell_key]
-            )
-            rows.append(row)
-        return rows
-
-    def _cell_lock_id(self, cell_key: tuple[Any, ...]) -> int:
-        lock_payload = json.dumps(
-            {
-                "pool": self.schema.table_name(PoolTableType.SAMPLES),
-                "key_values": {
-                    name: value
-                    for name, value in zip(
-                        self.schema.key_column_names, cell_key, strict=True
-                    )
-                },
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        digest = hashlib.blake2b(lock_payload.encode("utf-8"), digest_size=8).digest()
-        return int.from_bytes(digest, byteorder="big", signed=True)
-
-    def acquire(self, query: AcquireQuery) -> AcquireResult:
-        """Acquire up to query.n unclaimed samples for given key dimensions.
-
-        Single round-trip via data-modifying CTE: lock candidate sample rows
-        with FOR UPDATE SKIP LOCKED, insert claim rows for them, then return
-        the joined sample data. ON CONFLICT DO NOTHING tolerates the rare
-        race where a row was claimed between the lock and the insert.
-        """
-        validate_key_values(self.schema, query.key_values)
-        if query.n == 0:
-            return AcquireResult()
-
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        claims_table = self._tables[PoolTableType.CLAIMS]
-
-        locked = (
-            select(
-                samples_table.c.sample_id,
-                samples_table.c.sample_idx,
-                samples_table.c.created_at,
-            )
-            .where(
-                key_filter_clause(self.schema, samples_table, query.key_values),
-                self._unclaimed_predicate(query.run_id),
-            )
-            .order_by(
-                samples_table.c.sample_idx.asc(),
-                samples_table.c.created_at.asc(),
-            )
-            .limit(query.n)
-            .with_for_update(skip_locked=True)
-            .cte("locked")
+        sample_id: str,
+        response: dict[str, Any],
+        finish_reason: str | None,
+        attempt_count: int,
+        lease_owner: str | None = None,
+    ) -> bool:
+        """Fill in the response fields for one incomplete sample."""
+        return completion_ops.complete_sample(
+            self._runtime,
+            self._tables[PoolTableType.SAMPLES],
+            self._tables[PoolTableType.LEASES] if lease_owner is not None else None,
+            sample_id=sample_id,
+            response=response,
+            finish_reason=finish_reason,
+            attempt_count=attempt_count,
+            lease_owner=lease_owner,
         )
 
-        claim_source = select(
-            func.cast(func.gen_random_uuid(), Text).label(ClaimColumn.CLAIM_ID),
-            literal(query.run_id, type_=Text).label(ClaimColumn.RUN_ID),
-            literal(query.request_id, type_=Text).label(ClaimColumn.REQUEST_ID),
-            literal(query.consumer_tag, type_=Text).label(ClaimColumn.CONSUMER_TAG),
-            locked.c.sample_id.label(ClaimColumn.SAMPLE_ID),
-            (
-                func.row_number().over(
-                    order_by=[
-                        locked.c.sample_idx.asc(),
-                        locked.c.created_at.asc(),
-                    ]
-                )
-                - 1
-            ).label(ClaimColumn.CLAIM_IDX),
-        ).select_from(locked)
-
-        inserted = (
-            pg_insert(claims_table)
-            .from_select(
-                [
-                    ClaimColumn.CLAIM_ID,
-                    ClaimColumn.RUN_ID,
-                    ClaimColumn.REQUEST_ID,
-                    ClaimColumn.CONSUMER_TAG,
-                    ClaimColumn.SAMPLE_ID,
-                    ClaimColumn.CLAIM_IDX,
-                ],
-                claim_source,
-            )
-            .on_conflict_do_nothing(
-                index_elements=[claims_table.c.run_id, claims_table.c.sample_id]
-            )
-            .returning(claims_table.c.sample_id)
-            .cte("inserted")
+    def update_incomplete_request(
+        self,
+        *,
+        sample_id: str,
+        request: dict[str, Any],
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        """Update request_json for an incomplete sample. No-op if already complete."""
+        return request_update_ops.update_incomplete_request(
+            self._runtime,
+            self._tables[PoolTableType.SAMPLES],
+            sample_id=sample_id,
+            request=request,
+            metadata=metadata,
         )
 
-        stmt = (
-            select(*self._tables.select_columns(PoolTableType.SAMPLES))
-            .join(inserted, samples_table.c.sample_id == inserted.c.sample_id)
-            .order_by(
-                samples_table.c.sample_idx.asc(),
-                samples_table.c.created_at.asc(),
-            )
+    def update_incomplete_requests(
+        self,
+        rows: Iterable[RequestUpdate],
+    ) -> int:
+        """Batch-update request_json for incomplete samples. Returns updated count."""
+        return request_update_ops.update_incomplete_requests(
+            self._runtime,
+            self._tables[PoolTableType.SAMPLES],
+            rows=rows,
         )
 
-        with self._runtime.begin() as conn:
-            rows = conn.execute(stmt).mappings().all()
-        samples = [PoolSample.from_db_row(self.schema, dict(row)) for row in rows]
-        return AcquireResult(samples=samples)
-
-    def remaining(self, *, run_id: str, key_values: dict[str, Any]) -> int:
-        """Count unclaimed samples for given key dimensions and run."""
-        validate_key_values(self.schema, key_values)
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        stmt = select(func.count()).where(
-            key_filter_clause(self.schema, samples_table, key_values),
-            self._unclaimed_predicate(run_id),
+    def requeue_errors(
+        self,
+        *,
+        key_filter: PoolKeyFilter | None = None,
+        reset_attempt_count: bool = True,
+    ) -> int:
+        """Reset error rows to incomplete, clearing response and deleting leases."""
+        return requeue_ops.requeue_errors(
+            self._runtime,
+            self.schema,
+            self._tables,
+            key_filter=key_filter,
+            reset_attempt_count=reset_attempt_count,
         )
-        with self._runtime.connect() as conn:
-            return int(conn.execute(stmt).scalar_one())
 
-    def _unclaimed_predicate(self, run_id: str) -> ColumnElement[bool]:
-        """Predicate matching samples with no claim row for the given run."""
-        claims_table = self._tables[PoolTableType.CLAIMS]
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        return ~exists(
-            select(1).where(
-                claims_table.c.run_id == run_id,
-                claims_table.c.sample_id == samples_table.c.sample_id,
-            )
+    def reset_samples(
+        self,
+        *,
+        sample_ids: Sequence[str],
+        reset_request: dict[str, Any] | None = None,
+        reset_metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Administratively reset specific samples to incomplete."""
+        return requeue_ops.reset_samples(
+            self._runtime,
+            self._tables,
+            sample_ids=sample_ids,
+            reset_request=reset_request,
+            reset_metadata=reset_metadata,
+        )
+
+    def claim_lease(
+        self,
+        *,
+        worker_id: str,
+        lease_seconds: int,
+        key_filter: PoolKeyFilter | None = None,
+    ) -> PoolSample | None:
+        """Lease one incomplete sample via ``FOR UPDATE SKIP LOCKED``."""
+        return leasing_ops.claim_lease(
+            self._runtime,
+            self.schema,
+            self._tables,
+            worker_id=worker_id,
+            lease_seconds=lease_seconds,
+            key_filter=key_filter,
+        )
+
+    def release_lease(self, *, sample_id: str, worker_id: str) -> bool:
+        """Release a lease owned by ``worker_id``."""
+        return leasing_ops.release_lease(
+            self._runtime,
+            self._tables[PoolTableType.LEASES],
+            sample_id=sample_id,
+            worker_id=worker_id,
+        )
+
+    def expire_leases(self) -> int:
+        """Delete expired lease rows and return the number removed."""
+        return leasing_ops.expire_leases(
+            self._runtime, self._tables[PoolTableType.LEASES]
         )
 
     def sample_count(self) -> int:
         """Return the total number of rows in the pool's samples table."""
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        stmt = select(func.count()).select_from(samples_table)
-        with self._runtime.connect() as conn:
-            return int(conn.execute(stmt).scalar_one())
+        return query_ops.sample_count(
+            self._runtime, self._tables[PoolTableType.SAMPLES]
+        )
 
-    def coverage(self) -> list[CoverageRow]:
-        """Return sample counts grouped by all key dimensions."""
-        samples_key_columns = self._tables.key_columns(PoolTableType.SAMPLES)
-        stmt = select(
-            *samples_key_columns,
-            func.count().label("cnt"),
-        ).group_by(*samples_key_columns)
-        with self._runtime.connect() as conn:
-            rows = conn.execute(stmt).mappings().all()
-        return [
-            CoverageRow(
-                key_values={name: row[name] for name in self.schema.key_column_names},
-                count=int(row["cnt"]),
-            )
-            for row in rows
-        ]
+    def incomplete_count(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+        """Return the count of samples without responses."""
+        return query_ops.incomplete_count(
+            self._runtime,
+            self.schema,
+            self._tables[PoolTableType.SAMPLES],
+            key_filter=key_filter,
+        )
+
+    def complete_count(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+        """Return the count of samples with responses."""
+        return query_ops.complete_count(
+            self._runtime,
+            self.schema,
+            self._tables[PoolTableType.SAMPLES],
+            key_filter=key_filter,
+        )
+
+    def error_count(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+        """Return the count of samples completed with finish_reason='error'."""
+        return query_ops.error_count(
+            self._runtime,
+            self.schema,
+            self._tables[PoolTableType.SAMPLES],
+            key_filter=key_filter,
+        )
+
+    def leased_count(self, *, key_filter: PoolKeyFilter | None = None) -> int:
+        """Return the count of samples with active (non-expired) leases."""
+        return query_ops.leased_count(
+            self._runtime,
+            self.schema,
+            self._tables[PoolTableType.SAMPLES],
+            self._tables[PoolTableType.LEASES],
+            key_filter=key_filter,
+        )
+
+    def progress(self, *, key_filter: PoolKeyFilter | None = None) -> PoolProgress:
+        """Return a snapshot of pool completion state."""
+        return query_ops.progress(
+            self._runtime, self.schema, self._tables, key_filter=key_filter
+        )
 
     def cell_depth(self, *, key_values: dict[str, Any]) -> int:
         """Count total samples for a specific cell."""
-        validate_key_values(self.schema, key_values)
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        stmt = select(func.count()).where(
-            key_filter_clause(self.schema, samples_table, key_values)
+        return query_ops.cell_depth(
+            self._runtime,
+            self.schema,
+            self._tables[PoolTableType.SAMPLES],
+            key_values=key_values,
         )
-        with self._runtime.connect() as conn:
-            return int(conn.execute(stmt).scalar_one())
 
     def bulk_load(
         self,
         *,
         key_filter: PoolKeyFilter | None = None,
+        completion: CompletionFilter = "all",
     ) -> list[PoolSample]:
-        """Load all samples, optionally filtered by partial key match.
-
-        Materializes the full result set in memory; for pools with 100k+ rows
-        prefer ``iter_samples`` to stream in chunks.
-        """
-        return list(self.iter_samples(key_filter=key_filter))
+        """Load all samples, optionally filtered by partial key match and completion state."""
+        return query_ops.bulk_load(
+            self._runtime,
+            self.schema,
+            self._tables,
+            key_filter=key_filter,
+            completion=completion,
+        )
 
     def iter_samples(
         self,
         *,
         key_filter: PoolKeyFilter | None = None,
+        completion: CompletionFilter = "all",
         chunk_size: int = 1000,
     ) -> Iterator[PoolSample]:
-        """Stream samples in chunks via server-side cursoring.
-
-        Uses SQLAlchemy's ``yield_per`` so the driver fetches ``chunk_size``
-        rows at a time instead of materializing the entire result set. Safe
-        for pools far larger than memory. The underlying connection is held
-        open for the lifetime of the iterator — fully consume or close it
-        promptly.
-        """
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        rows = stream_select_rows(
+        """Stream samples in chunks via server-side cursoring."""
+        return query_ops.iter_samples(
             self._runtime,
             self.schema,
-            samples_table,
-            self._tables.select_columns(PoolTableType.SAMPLES),
-            order_by=[samples_table.c.sample_idx.asc()],
+            self._tables,
             key_filter=key_filter,
+            completion=completion,
             chunk_size=chunk_size,
         )
-        for row in rows:
-            yield PoolSample.from_db_row(self.schema, row)
-
-    _AUTO_IDX_INSERT_RETRIES = 3

@@ -18,7 +18,7 @@ from sqlalchemy.sql.schema import Table
 from dr_llm.pool.db.runtime import DbRuntime
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.errors import PoolSchemaError
-from dr_llm.pool.key_filter import (
+from dr_llm.pool.db.key_filter import (
     PoolKeyEqClause,
     PoolKeyFilter,
     PoolKeyInClause,

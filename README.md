@@ -10,7 +10,9 @@ Domain-neutral by design — shared across repos like `nl_latents` and `unitbenc
 Call providers, sync model catalogs, browse available models. File-based catalog cache, zero infrastructure.
 
 **Flow 2 — Pool (Postgres-backed):**
-Schema-driven sample pools with no-replacement acquisition, pending sample lifecycle, and per-project isolated databases via Docker.
+Schema-driven sample pools with a unified two-table design
+(`pool_<name>_samples` + `pool_<name>_leases`), no-replacement acquisition,
+and per-project isolated databases via Docker.
 
 ## Install
 
@@ -18,8 +20,8 @@ Schema-driven sample pools with no-replacement acquisition, pending sample lifec
 uv add dr-llm
 ```
 
-For the optional marimo notebook in [`nbs/pool_inspect.py`](nbs/pool_inspect.py), install the
-notebook extra:
+For the optional marimo pool-inspection notebooks in
+[`nbs/inspect/`](nbs/inspect), install the notebook extra:
 
 ```bash
 uv add "dr-llm[notebooks]"
@@ -106,25 +108,27 @@ The recommended way to populate a pool: declare each variant axis (LLM
 configs, prompts, datasets, …), pass them to `seed_llm_grid`, and let
 parallel workers make the actual provider calls. `seed_llm_grid` walks
 the cross product, builds per-cell payloads in the shape
-`make_llm_process_fn` consumes, deduplicates and upserts per-axis
-metadata, and bulk-inserts the pending rows in one round-trip. Docker
-is used to auto-manage a Postgres project.
+`make_llm_process_fn` consumes, and bulk-inserts the unfilled sample
+rows in one round-trip. Docker is used to auto-manage a Postgres
+project.
 
 ```python
+import time
+
 from dr_llm import DbConfig, PoolSchema, PoolStore
 from dr_llm.llm import build_default_registry
 from dr_llm.llm.config import ApiLlmConfig, LlmConfig, OpenAILlmConfig
 from dr_llm.llm.messages import Message
+from dr_llm.llm.providers.reasoning import GoogleReasoning, ThinkingLevel
+from dr_llm.pool.backend import LlmPoolBackend, LlmPoolBackendConfig, make_llm_process_fn
 from dr_llm.pool.db.runtime import DbRuntime
-from dr_llm.pool.llm_pool_adapter import make_llm_process_fn, seed_llm_grid
-from dr_llm.pool.pending.backend import PoolPendingBackend, PoolPendingBackendConfig
-from dr_llm.pool.pending.grid import Axis, AxisMember, GridCell
-from dr_llm.pool.pending.progress import drain, format_pool_progress_line
+from dr_llm.pool.seed_grid import Axis, AxisMember, GridCell, seed_llm_grid
+from dr_llm.project.models import CreateProjectRequest
 from dr_llm.project.project_service import create_project
 from dr_llm.workers import WorkerConfig, start_workers
 
 # 1. Create a Docker-managed Postgres project
-project = create_project("my_eval")
+project = create_project(CreateProjectRequest(project_name="my_eval"))
 
 # 2. Build a schema whose key columns match the axis names
 schema = PoolSchema.from_axis_names("my_eval", ["llm_config", "prompt"])
@@ -150,6 +154,10 @@ llm_config_axis = Axis[LlmConfig](
                 provider="google",
                 model="gemini-2.5-flash",
                 max_tokens=64,
+                reasoning=GoogleReasoning(
+                    thinking_level=ThinkingLevel.BUDGET,
+                    budget_tokens=512,
+                ),
             ),
         ),
     ],
@@ -169,7 +177,7 @@ prompt_axis = Axis[list[Message]](
 )
 
 # 4. Seed the cross product. seed_llm_grid handles payload shaping,
-#    sample_idx expansion, axis-metadata upserts, and bulk insert.
+#    sample_idx expansion, and bulk insert.
 def build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
     return cell.values["prompt"], cell.values["llm_config"]
 
@@ -177,39 +185,76 @@ seed_result = seed_llm_grid(
     store,
     axes=[llm_config_axis, prompt_axis],
     build_request=build_request,
-    n=2,  # 2 configs × 2 prompts × n=2 = 8 pending rows
+    n=2,  # 2 configs × 2 prompts × n=2 = 8 sample rows
 )
-print(f"Seeded {seed_result.inserted} pending rows")
+print(f"Seeded {seed_result.inserted} sample rows")
 
 # 5. Start workers — they call the real providers
 registry = build_default_registry()
 controller = start_workers(
-    PoolPendingBackend(store, config=PoolPendingBackendConfig(max_retries=1)),
+    LlmPoolBackend(store, config=LlmPoolBackendConfig(max_retries=1)),
     process_fn=make_llm_process_fn(registry),
     config=WorkerConfig(num_workers=4, thread_name_prefix="pool-fill"),
 )
 
-# 6. Drain to idle, printing one line per visible state change
+# 6. Drain to idle
 try:
-    drain(controller, on_change=lambda snap: print(format_pool_progress_line(snap)))
+    while True:
+        snapshot = controller.snapshot()
+        state = snapshot.backend_state
+        if state is not None:
+            print(f"incomplete={state.incomplete} complete={state.complete}")
+            if state.incomplete == 0:
+                break
+        time.sleep(0.5)
 finally:
     controller.stop()
     controller.join()
 
-# 7. Acquire samples (no-replacement within a run)
-from dr_llm.pool.acquisition import AcquireQuery
-result = store.acquire(AcquireQuery(
-    run_id="eval_run_1",
-    key_values={"llm_config": "gpt-4.1-mini", "prompt": "math"},
-    n=2,
-))
+# 7. Acquire completed samples (no-replacement, per-consumer)
+#    Sample acquisition lives in dr_llm.sampling. Each consumer gets its
+#    own claims table; setup_consumer/teardown_consumer manages it.
+from dr_llm.sampling.acquisition import AcquireQuery
+from dr_llm.sampling.sampling_store import SamplingStore
+
+sampling = SamplingStore.from_pool_store(store)
+sampling.setup_consumer("eval_consumer_1")
+result = sampling.acquire(
+    AcquireQuery(
+        run_id="eval_run_1",
+        key_values={"llm_config": "gpt-4.1-mini", "prompt": "math"},
+        n=2,
+    ),
+    "eval_consumer_1",
+)
 
 # 8. Clean up when done
+sampling.teardown_consumer("eval_consumer_1")
 registry.close()
 runtime.close()
 ```
 
 See `scripts/demo-pool-fill.py` for a complete runnable example.
+
+### Fair worker claiming
+
+`LlmPoolBackend` claims incomplete samples in creation order by default. When a
+worker pool should interleave work across a key dimension, use
+`RoundRobinClaimer` from `dr_llm.pool.claim_strategy` to cycle through explicit
+key values while still relying on `PoolStore.claim_lease(...)` for lease safety.
+
+```python
+from dr_llm.pool.claim_strategy import ClaimOrder, RoundRobinClaimer
+
+claimer = RoundRobinClaimer(
+    store,
+    round_robin_key="llm_config",
+    round_robin_values=["gpt-4.1-mini", "gemini-flash"],
+    order=ClaimOrder(kind="random", seed=7),
+)
+
+sample = claimer.claim(worker_id="worker-1", lease_seconds=60)
+```
 
 ### Reading an existing pool
 
@@ -220,51 +265,35 @@ typed read-only handle for inspection without re-wiring `DbRuntime` /
 
 ```python
 from dr_llm import PoolReader
+from dr_llm.pool.db.runtime import DbConfig, DbRuntime
+from dr_llm.project.project_service import maybe_get_project
 
-with PoolReader.open("my_eval", "my_eval") as reader:
-    progress = reader.progress()
-    print(
-        f"{progress.samples_total} promoted, "
-        f"{progress.in_flight} in-flight, "
-        f"{progress.pending_counts.failed} failed"
-    )
+project = maybe_get_project("my_eval")
+runtime = DbRuntime(DbConfig(dsn=project.dsn))
+try:
+    with PoolReader.open("provider_queries", runtime=runtime) as reader:
+        progress = reader.progress()
+        print(
+            f"total={progress.total} "
+            f"complete={progress.complete} "
+            f"incomplete={progress.incomplete} "
+            f"leased={progress.leased} "
+            f"error={progress.error}"
+        )
 
-    # Typed PoolSample iterator/list with optional key + status filters
-    for sample in reader.samples_list(key_filter={"llm_config": "gpt-4.1-mini"}):
-        print(sample.sample_id, sample.payload)
-
-    # Scan consumer-owned axis metadata by key prefix
-    templates = reader.metadata_prefix("prompt_template/")
+        # Typed PoolSample iterator/list with optional key + completion filters
+        for sample in reader.samples_list(
+            key_filter={"llm_config": "gpt-4.1-mini"},
+        ):
+            print(sample.sample_id, sample.request, sample.response)
+finally:
+    runtime.close()
 ```
 
-`PoolReader.open(project, pool)` resolves the project DSN, constructs a
-`DbRuntime`, and reads the pool's `PoolSchema` from the metadata table
-where `PoolStore.ensure_schema()` persists it under the reserved key
-`_schema`. Pools created before this feature shipped raise
-`PoolSchemaNotPersistedError` on `open()`; use
-`PoolReader.from_runtime(runtime, schema=...)` to inspect them with an
-explicit schema, or re-run `ensure_schema()` once to backfill the row.
-
-### Migrating existing pools to `call_stats`
-
-New pools get `pool_{name}_call_stats` automatically when `store.ensure_schema()`
-runs. Existing pools created before this change can create the missing table by
-opening the pool with its schema and running `ensure_schema()` once.
-
-```python
-from dr_llm.pool.db import DbConfig, DbRuntime, PoolSchema
-from dr_llm.pool.pool_store import PoolStore
-
-runtime = DbRuntime(DbConfig())
-schema = PoolSchema.from_axis_names("my_eval", ["llm_config", "prompt"])
-store = PoolStore(schema, runtime)
-store.ensure_schema()
-runtime.close()
-```
-
-This creates any missing runtime-owned pool tables and indexes while preserving
-existing table names and rows. Historical response metrics are not backfilled
-automatically; future pending promotions write `call_stats` rows.
+`PoolReader.open(pool, runtime=runtime)` reads the pool's `PoolSchema` from
+the project-global `pool_catalog` table, where `PoolStore.ensure_schema()`
+persists it. Use `PoolReader.from_runtime(runtime, schema=...)` when you
+already have the schema in hand or want to control schema construction in tests.
 
 ## CLI Reference
 
@@ -310,18 +339,19 @@ dr-llm project destroy NAME --yes-really-delete-everything
 Deletion now uses one standard primitive: pool deletion.
 
 - `dr-llm pool destroy PROJECT_NAME POOL_NAME --yes-really-delete-everything`
-  deletes the fixed pool table set for that pool name: `samples`, `claims`,
-  `pending`, `metadata`, and `call_stats`.
+  deletes the fixed pool table set for that pool name (`pool_<name>_samples`
+  and `pool_<name>_leases`), any consumer claim tables
+  (`pool_<name>_claims_<consumer_id>`), and the pool's row from `pool_catalog`.
 - `dr-llm pool destroy-testish PROJECT_NAME --yes-really-delete-everything`
   discovers pools in that project and deletes only the ones whose
   underscore-delimited lowercase name tokens include `test`, `tst`, `smoke`, or `demo`
 - `dr-llm pool destroy-testish PROJECT_NAME --dry-run` previews the matched
   pools and returns the same structured result shape without deleting anything
-- direct pool deletion requires the project to be running, but pending or
-  leased rows do not block deletion
-- legacy pools without persisted `_schema` metadata can still be deleted,
+- direct pool deletion requires the project to be running, but leased rows
+  do not block deletion
+- legacy pools without persisted `pool_catalog` metadata can still be deleted,
   because deletion targets the derived table names directly rather than loading
-  `PoolSchema` from metadata
+  `PoolSchema` from `pool_catalog`
 
 `dr-llm project destroy` is now an orchestrator over pool deletion rather than a
 blind Docker destroy.
@@ -418,5 +448,5 @@ requires `{"kind":"anthropic","thinking_level":"na"}` together with an explicit
 `{"kind":"openrouter", ...}` with either `enabled` or `effort` depending on the
 repo's curated model policy.
 
-See [`OPEN_ROUTER_REASONING_NOTES.md`](/Users/daniellerothermel/drotherm/repos/dr-llm/OPEN_ROUTER_REASONING_NOTES.md)
-for the direct API observations that informed the OpenRouter policy layer.
+The OpenRouter policy layer is based on direct API observations from the
+provider endpoint.

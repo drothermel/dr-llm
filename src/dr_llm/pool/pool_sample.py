@@ -4,26 +4,26 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from pydantic import Field
-
-from dr_llm.pool.db import SampleColumn
-from dr_llm.pool.keyed_sample_base import KeyedSampleBase
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
-class PoolSample(KeyedSampleBase):
+class PoolSample(BaseModel):
     """A single pool sample row."""
 
+    model_config = ConfigDict(frozen=True)
+
     sample_id: str = Field(default_factory=lambda: uuid4().hex)
+    key_values: dict[str, Any] = Field(default_factory=dict)
     sample_idx: int | None = None
+    run_id: str | None = None
+    request: dict[str, Any] = Field(default_factory=dict)
+    response: dict[str, Any] | None = None
+    finish_reason: str | None = None
+    attempt_count: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime | None = None
 
-    def to_db_insert_row(self) -> dict[str, Any]:
-        return {
-            SampleColumn.SAMPLE_ID: self.sample_id,
-            SampleColumn.SAMPLE_IDX: self.sample_idx,
-            **self._base_insert_row(
-                payload_column=SampleColumn.PAYLOAD_JSON,
-                metadata_column=SampleColumn.METADATA_JSON,
-                source_run_id_column=SampleColumn.SOURCE_RUN_ID,
-            ),
-        }
+    @computed_field
+    @property
+    def is_complete(self) -> bool:
+        return self.response is not None

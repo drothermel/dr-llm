@@ -3,20 +3,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pydantic import BaseModel
 
 import pytest
+from pydantic import BaseModel
 
+from dr_llm.pool.db import SampleColumn
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
-from dr_llm.pool.acquisition import AcquireQuery, AcquireResult
-from dr_llm.pool.admin.deletion import DeletePoolRequest, DeletePoolsByTokenRequest
-from dr_llm.pool.results import InsertResult
-from dr_llm.pool.pending.backend import PoolPendingBackendState
-from dr_llm.pool.pending.pending_sample import PendingSample
-from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts
+from dr_llm.pool.db.tables import SamplesTableDef
+from dr_llm.pool.insert_result import InsertResult
+from dr_llm.pool.pool_progress import PoolProgress
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.workers import WorkerSnapshot
-from pydantic import ValidationError
 
 _TEST_SCHEMA = PoolSchema(
     name="modeltest",
@@ -26,90 +22,113 @@ _TEST_SCHEMA = PoolSchema(
     ],
 )
 
+_SAMPLES_DEF = SamplesTableDef()
+
 
 def test_pool_sample_defaults() -> None:
-    s = PoolSample(key_values={"x": "a"})
-    assert s.sample_id  # auto-generated
-    assert s.sample_idx is None
-    assert s.payload == {}
+    sample = PoolSample(key_values={"x": "a"})
+    assert sample.sample_id
+    assert sample.sample_idx is None
+    assert sample.run_id is None
+    assert sample.request == {}
+    assert sample.response is None
+    assert sample.finish_reason is None
+    assert sample.attempt_count == 0
+    assert sample.metadata == {}
+    assert sample.is_complete is False
 
 
-def test_acquire_result_deficit() -> None:
-    r = AcquireResult(samples=[])
-    assert r.claimed == 0
-    assert r.deficit(5) == 5
-
-    r2 = AcquireResult(samples=[PoolSample(key_values={"x": "a"})] * 3)
-    assert r2.claimed == 3
-    assert r2.deficit(5) == 2
-    assert r2.deficit(3) == 0
-    assert r2.deficit(1) == 0
+def test_pool_sample_is_complete_for_response() -> None:
+    sample = PoolSample(key_values={"x": "a"}, response={"id": "response-1"})
+    assert sample.is_complete is True
 
 
-def test_pending_sample_defaults() -> None:
-    p = PendingSample(key_values={"x": "a"})
-    assert p.status == PendingStatus.pending
-    assert p.priority == 0
-    assert p.attempt_count == 0
+def test_pool_sample_field_names() -> None:
+    sample = PoolSample(
+        key_values={"dim_a": "alpha", "dim_b": 3},
+        request={"messages": []},
+        response={"choices": []},
+        metadata={"source": "test"},
+    )
+
+    assert sample.request == {"messages": []}
+    assert sample.response == {"choices": []}
+    assert sample.metadata == {"source": "test"}
 
 
-def test_pool_sample_to_db_insert_row_splats_key_values() -> None:
+def test_sample_to_row_splats_key_values() -> None:
     sample = PoolSample(
         sample_id="sample-1",
         sample_idx=7,
         key_values={"dim_b": 3, "dim_a": "alpha"},
-        payload={"score": 0.9},
-        source_run_id="run-1",
+        run_id="run-1",
+        request={"messages": [{"role": "user", "content": "Hi"}]},
+        response={"finish_reason": "stop"},
+        finish_reason="stop",
+        attempt_count=2,
         metadata={"source": "test"},
     )
 
-    row = sample.to_db_insert_row()
+    row = _SAMPLES_DEF.sample_to_row(sample)
 
     assert set(row.keys()) == {
         "sample_id",
         "dim_a",
         "dim_b",
         "sample_idx",
-        "payload_json",
-        "source_run_id",
+        "run_id",
+        "request_json",
+        "response_json",
+        "finish_reason",
+        "attempt_count",
         "metadata_json",
     }
-    assert row["sample_id"] == "sample-1"
-    assert row["sample_idx"] == 7
+    assert row[SampleColumn.SAMPLE_ID] == "sample-1"
+    assert row[SampleColumn.SAMPLE_IDX] == 7
     assert row["dim_a"] == "alpha"
     assert row["dim_b"] == 3
-    assert row["payload_json"] == {"score": 0.9}
-    assert row["source_run_id"] == "run-1"
-    assert row["metadata_json"] == {"source": "test"}
+    assert row[SampleColumn.RUN_ID] == "run-1"
+    assert row[SampleColumn.REQUEST_JSON] == {
+        "messages": [{"role": "user", "content": "Hi"}]
+    }
+    assert row[SampleColumn.RESPONSE_JSON] == {"finish_reason": "stop"}
+    assert row[SampleColumn.FINISH_REASON] == "stop"
+    assert row[SampleColumn.ATTEMPT_COUNT] == 2
+    assert row[SampleColumn.METADATA_JSON] == {"source": "test"}
 
 
-def test_pool_sample_to_db_insert_row_json_serializes_nested_values() -> None:
+def test_sample_to_row_json_serializes_nested_values() -> None:
     class RichPayload(BaseModel):
         when: datetime
 
     sample = PoolSample(
         key_values={"dim_a": "alpha", "dim_b": 3},
-        payload={"rich": RichPayload(when=datetime(2024, 1, 2, tzinfo=UTC))},
-        metadata={"created_at": datetime(2024, 1, 3, tzinfo=UTC)},
+        request={"rich": RichPayload(when=datetime(2024, 1, 2, tzinfo=UTC))},
+        response={"when": datetime(2024, 1, 3, tzinfo=UTC)},
+        metadata={"created_at": datetime(2024, 1, 4, tzinfo=UTC)},
     )
 
-    row = sample.to_db_insert_row()
+    row = _SAMPLES_DEF.sample_to_row(sample)
 
-    assert row["payload_json"] == {"rich": {"when": "2024-01-02T00:00:00Z"}}
-    assert row["metadata_json"] == {"created_at": "2024-01-03T00:00:00Z"}
+    assert row[SampleColumn.REQUEST_JSON] == {"rich": {"when": "2024-01-02T00:00:00Z"}}
+    assert row[SampleColumn.RESPONSE_JSON] == {"when": "2024-01-03T00:00:00Z"}
+    assert row[SampleColumn.METADATA_JSON] == {"created_at": "2024-01-04T00:00:00Z"}
 
 
-def test_pool_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
+def test_sample_from_row_parses_dynamic_columns_and_json() -> None:
     created_at = datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC)
-    sample = PoolSample.from_db_row(
+    sample = _SAMPLES_DEF.sample_from_row(
         _TEST_SCHEMA,
         {
             "sample_id": "sample-1",
             "dim_a": "alpha",
             "dim_b": 3,
             "sample_idx": 7,
-            "payload_json": {"score": 0.9},
-            "source_run_id": "run-1",
+            "run_id": "run-1",
+            "request_json": {"messages": []},
+            "response_json": {"finish_reason": "stop"},
+            "finish_reason": "stop",
+            "attempt_count": 2,
             "metadata_json": {"source": "test"},
             "created_at": created_at,
         },
@@ -117,173 +136,71 @@ def test_pool_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
 
     assert sample.sample_id == "sample-1"
     assert sample.key_values == {"dim_a": "alpha", "dim_b": 3}
-    assert sample.payload == {"score": 0.9}
+    assert sample.sample_idx == 7
+    assert sample.run_id == "run-1"
+    assert sample.request == {"messages": []}
+    assert sample.response == {"finish_reason": "stop"}
+    assert sample.finish_reason == "stop"
+    assert sample.attempt_count == 2
     assert sample.metadata == {"source": "test"}
     assert sample.created_at == created_at
+    assert sample.is_complete is True
 
 
-def test_pending_sample_to_db_insert_row_splats_key_values() -> None:
-    sample = PendingSample(
-        pending_id="pending-1",
-        key_values={"dim_b": 4, "dim_a": "beta"},
-        sample_idx=2,
-        payload={"partial": True},
-        source_run_id="run-2",
-        metadata={"attempt": 1},
-        priority=9,
-        status=PendingStatus.leased,
-    )
-
-    row = sample.to_db_insert_row()
-
-    assert set(row.keys()) == {
-        "pending_id",
-        "dim_a",
-        "dim_b",
-        "sample_idx",
-        "payload_json",
-        "source_run_id",
-        "metadata_json",
-        "priority",
-        "status",
-    }
-    assert row["pending_id"] == "pending-1"
-    assert row["sample_idx"] == 2
-    assert row["dim_a"] == "beta"
-    assert row["dim_b"] == 4
-    assert row["payload_json"] == {"partial": True}
-    assert row["source_run_id"] == "run-2"
-    assert row["metadata_json"] == {"attempt": 1}
-    assert row["priority"] == 9
-    assert row["status"] == PendingStatus.leased.value
-
-
-def test_pending_sample_to_db_insert_row_json_serializes_nested_values() -> None:
-    class RichPayload(BaseModel):
-        when: datetime
-
-    sample = PendingSample(
-        key_values={"dim_a": "beta", "dim_b": 4},
-        payload={"rich": RichPayload(when=datetime(2024, 6, 7, tzinfo=UTC))},
-        metadata={"updated_at": datetime(2024, 6, 8, tzinfo=UTC)},
-    )
-
-    row = sample.to_db_insert_row()
-
-    assert row["payload_json"] == {"rich": {"when": "2024-06-07T00:00:00Z"}}
-    assert row["metadata_json"] == {"updated_at": "2024-06-08T00:00:00Z"}
-
-
-def test_pending_sample_from_db_row_parses_dynamic_columns_and_json() -> None:
-    created_at = datetime(2024, 6, 7, 8, 9, 10, tzinfo=UTC)
-    lease_expires_at = datetime(2024, 6, 7, 8, 14, 10, tzinfo=UTC)
-    sample = PendingSample.from_db_row(
+def test_sample_row_round_trip() -> None:
+    sample = _SAMPLES_DEF.sample_from_row(
         _TEST_SCHEMA,
         {
-            "pending_id": "pending-1",
-            "dim_a": "beta",
-            "dim_b": 4,
-            "sample_idx": 2,
-            "payload_json": {"partial": True},
-            "source_run_id": "run-2",
-            "metadata_json": {"attempt": 1},
-            "priority": 9,
-            "status": "leased",
-            "worker_id": "worker-1",
-            "lease_expires_at": lease_expires_at,
-            "attempt_count": 3,
-            "created_at": created_at,
+            "sample_id": "sample-1",
+            "dim_a": "alpha",
+            "dim_b": 3,
+            "sample_idx": 7,
+            "run_id": None,
+            "request_json": {"messages": []},
+            "response_json": None,
+            "finish_reason": None,
+            "attempt_count": 0,
+            "metadata_json": {},
         },
     )
 
-    assert sample.pending_id == "pending-1"
-    assert sample.key_values == {"dim_a": "beta", "dim_b": 4}
-    assert sample.payload == {"partial": True}
-    assert sample.metadata == {"attempt": 1}
-    assert sample.priority == 9
-    assert sample.status == PendingStatus.leased
-    assert sample.worker_id == "worker-1"
-    assert sample.lease_expires_at == lease_expires_at
-    assert sample.attempt_count == 3
-    assert sample.created_at == created_at
+    assert _SAMPLES_DEF.sample_to_row(sample) == {
+        SampleColumn.SAMPLE_ID: "sample-1",
+        SampleColumn.SAMPLE_IDX: 7,
+        SampleColumn.RUN_ID: None,
+        SampleColumn.REQUEST_JSON: {"messages": []},
+        SampleColumn.RESPONSE_JSON: None,
+        SampleColumn.FINISH_REASON: None,
+        SampleColumn.ATTEMPT_COUNT: 0,
+        SampleColumn.METADATA_JSON: {},
+        "dim_a": "alpha",
+        "dim_b": 3,
+    }
+    assert sample.is_complete is False
 
 
 def test_insert_result_defaults() -> None:
-    r = InsertResult()
-    assert r.inserted == 0
-    assert r.skipped == 0
-    assert r.failed == 0
+    result = InsertResult()
+    assert result.inserted == 0
+    assert result.skipped == 0
+    assert result.failed == 0
 
 
-def test_pending_status_counts_total() -> None:
-    counts = PendingStatusCounts(pending=1, leased=2, failed=4)
-    assert counts.total == 7
+def test_pool_progress_construction() -> None:
+    p = PoolProgress(total=10, incomplete=4, leased=2, complete=6, error=1)
+    assert p.total == 10
+    assert p.incomplete == 4
+    assert p.leased == 2
+    assert p.complete == 6
+    assert p.error == 1
 
 
-def test_pending_status_counts_in_flight() -> None:
-    counts = PendingStatusCounts(pending=3, leased=2, failed=1)
-    assert counts.in_flight == 5
+@pytest.mark.parametrize(
+    "field_name", ["total", "incomplete", "leased", "complete", "error"]
+)
+def test_pool_progress_rejects_negative_counts(field_name: str) -> None:
+    values = {"total": 10, "incomplete": 4, "leased": 2, "complete": 6, "error": 1}
+    values[field_name] = -1
 
-
-def test_pending_status_counts_from_rows() -> None:
-    rows = [
-        {"status": "pending", "cnt": 3},
-        {"status": "leased", "cnt": 2},
-        {"status": "promoted", "cnt": 5},
-        {"status": "failed", "cnt": 1},
-    ]
-    counts = PendingStatusCounts.from_rows(rows)
-    assert counts.pending == 3
-    assert counts.leased == 2
-    assert counts.failed == 1
-
-
-def test_pending_status_counts_from_rows_handles_partial_and_unknown() -> None:
-    rows = [
-        {"status": "pending", "cnt": 4},
-        {"status": "unknown_status", "cnt": 99},
-    ]
-    counts = PendingStatusCounts.from_rows(rows)
-    assert counts.pending == 4
-    assert counts.leased == 0
-    assert counts.failed == 0
-
-
-def test_acquire_query_auto_request_id() -> None:
-    q = AcquireQuery(run_id="r1", key_values={"x": "a"}, n=5)
-    assert q.request_id  # auto-generated
-
-
-def test_acquire_query_rejects_negative_n() -> None:
-    with pytest.raises(ValidationError, match="greater than or equal to 0"):
-        AcquireQuery(run_id="r1", key_values={"x": "a"}, n=-1)
-
-
-def test_worker_snapshot_defaults() -> None:
-    snapshot = WorkerSnapshot[PoolPendingBackendState](
-        worker_count=2,
-        backend_state=PoolPendingBackendState(),
-    )
-    assert snapshot.stop_requested is False
-    assert snapshot.counts.claimed == 0
-    assert snapshot.backend_state is not None
-    assert snapshot.backend_state.status_counts.total == 0
-
-
-def test_delete_pool_request_normalizes_names() -> None:
-    request = DeletePoolRequest(project_name=" demo ", pool_name=" sample_pool ")
-
-    assert request.project_name == "demo"
-    assert request.pool_name == "sample_pool"
-
-
-def test_delete_pools_by_token_request_normalizes_tokens() -> None:
-    request = DeletePoolsByTokenRequest(
-        project_name=" demo ",
-        match_tokens=[" Test ", "smoke", "", "TST"],
-        dry_run=True,
-    )
-
-    assert request.project_name == "demo"
-    assert request.match_tokens == ["test", "smoke", "tst"]
-    assert request.dry_run is True
+    with pytest.raises(ValueError, match=rf"PoolProgress\.{field_name} must be >= 0"):
+        PoolProgress(**values)

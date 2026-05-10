@@ -1,15 +1,14 @@
-"""Grid-based seeding for pool pending queues.
+"""Grid-based seeding for pool samples.
 
 Helpers for seeding the cross-product of N variant axes into a pool's
-pending queue. Each axis is a named list of "members"; each member has
-an id, a value (opaque to dr-llm), and metadata that gets upserted to
-the pool's :class:`MetadataStore` exactly once per seed call.
+samples table. Each axis is a named list of "members"; each member has
+an id, a value (opaque to dr-llm), and metadata available to callers.
 
-The cross-product walk is generic over payload shape: callers supply a
+The cross-product walk is generic over request shape: callers supply a
 ``build_payload`` callback that turns a :class:`GridCell` into the per-row
-``PendingSample.payload`` dict. For LLM-flavored seeding, see
-:func:`dr_llm.pool.llm_pool_adapter.seed_llm_grid`, which wraps this
-function with the payload contract :func:`make_llm_process_fn` consumes.
+``PoolSample.request`` dict. For LLM-flavored seeding, see
+:func:`seed_llm_grid`, which wraps :func:`seed_grid` with the request
+contract :func:`dr_llm.pool.backend.make_llm_process_fn` consumes.
 """
 
 from __future__ import annotations
@@ -20,8 +19,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from dr_llm.pool.results import InsertResult
-from dr_llm.pool.pending.pending_sample import PendingSample
+from dr_llm.llm.config import LlmConfig
+from dr_llm.llm.messages import Message
+from dr_llm.pool.pool_sample import PoolSample
+from dr_llm.pool.insert_result import InsertResult
 from dr_llm.pool.pool_store import PoolStore
 
 
@@ -30,13 +31,10 @@ class AxisMember[T](BaseModel):
 
     Attributes:
         id: Stable identifier for this member. Becomes part of every
-            seeded :attr:`PendingSample.key_values` dict that contains it.
+            seeded :attr:`PoolSample.key_values` dict that contains it.
         value: Opaque per-member value handed back to ``build_payload``
             via :class:`GridCell`. dr-llm never inspects it.
-        metadata: Self-describing metadata for this member. Upserted
-            once per :func:`seed_grid` call into the pool's
-            :class:`MetadataStore`, keyed by
-            ``f"{axis.metadata_key_prefix or axis.name}/{id}"``.
+        metadata: Self-describing metadata for this member.
     """
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
@@ -52,7 +50,8 @@ class Axis[T](BaseModel):
     The ``name`` becomes a key column in the pool schema (callers can
     use :meth:`PoolSchema.from_axis_names` to derive the schema from a
     list of axis names). ``metadata_key_prefix`` controls the namespace
-    used when upserting member metadata; defaults to ``name`` when omitted.
+    used by callers who need a member metadata namespace; defaults to
+    ``name`` when omitted.
     """
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
@@ -71,13 +70,11 @@ class Axis[T](BaseModel):
 
         Without this check, two members sharing an id would each generate
         a distinct GridCell with identical ``key_values`` but different
-        ``values``. The resulting PendingSample rows would either be
-        silently deduped at insert time (under-seeding) or surface as a
-        confusing late "Failed to promote leased pending sample" error
-        when the second worker tries to write to the unique
-        ``(key_columns..., sample_idx)`` index on the samples table.
-        Failing fast at construction time points the error at the actual
-        line declaring the bad axis.
+        ``values``. The resulting PoolSample rows would either be
+        silently deduped at insert time (under-seeding) or fail against
+        the unique ``(key_columns..., sample_idx)`` index on the samples
+        table. Failing fast at construction time points the error at the
+        actual line declaring the bad axis.
         """
         seen: set[str] = set()
         duplicates: list[str] = []
@@ -99,7 +96,7 @@ class GridCell(BaseModel):
 
     Attributes:
         key_values: Mapping of axis name -> member id. Becomes the
-            :attr:`PendingSample.key_values` of the resulting row(s).
+            :attr:`PoolSample.key_values` of the resulting row(s).
         values: Mapping of axis name -> :attr:`AxisMember.value`. The
             opaque per-member values, ready for use in payload assembly.
     """
@@ -145,16 +142,14 @@ def seed_grid(
     axes: list[Axis[Any]],
     build_payload: Callable[[GridCell], dict[str, Any]],
     n: int = 1,
-    priority: int = 0,
     build_metadata: Callable[[GridCell], dict[str, Any]] | None = None,
     chunk_size: int = 500,
 ) -> InsertResult:
-    """Seed the cross-product of ``axes`` into ``store``'s pending queue.
+    """Seed the cross-product of ``axes`` into ``store``'s samples table.
 
     For each cell in the cross-product, calls ``build_payload(cell)`` to
-    obtain the row payload, then inserts ``n`` :class:`PendingSample` rows
-    (one per ``sample_idx`` in ``range(n)``). Each axis member's metadata
-    is upserted to the pool's :class:`MetadataStore` exactly once.
+    obtain the row request, then inserts ``n`` :class:`PoolSample` rows
+    (one per ``sample_idx`` in ``range(n)``).
 
     Args:
         store: Target pool store. ``store.schema.key_column_names`` must
@@ -162,15 +157,13 @@ def seed_grid(
         axes: Ordered list of variant axes. Their ``name`` fields define
             the schema's key columns; their members enumerate the values.
         build_payload: Per-cell callback that returns the
-            :attr:`PendingSample.payload` dict. Must be JSON-serializable.
+            :attr:`PoolSample.request` dict. Must be JSON-serializable.
         n: Number of samples to seed per cell. Each gets a distinct
             ``sample_idx`` in ``range(n)``.
-        priority: Priority assigned to all seeded rows.
         build_metadata: Optional per-cell callback for the
-            :attr:`PendingSample.metadata` dict. When omitted, per-row
-            metadata is empty (axis-member metadata is still upserted
-            to the pool's :class:`MetadataStore`).
-        chunk_size: Maximum number of rows per ``insert_many`` round-trip.
+            :attr:`PoolSample.metadata` dict. When omitted, per-row
+            metadata is empty.
+        chunk_size: Maximum number of rows per ``insert_samples`` round-trip.
 
     Returns:
         Cumulative :class:`InsertResult` summed across all chunks.
@@ -181,32 +174,83 @@ def seed_grid(
         raise ValueError(f"chunk_size must be >= 1, got {chunk_size}")
     _validate_axes_against_schema(store, axes)
 
-    for axis in axes:
-        prefix = axis.effective_metadata_key_prefix
-        for member in axis.members:
-            store.metadata.upsert(
-                f"{prefix}/{member.id}",
-                member.metadata,
-            )
-
     total = InsertResult()
-    chunk: list[PendingSample] = []
+    chunk: list[PoolSample] = []
     for cell in _iter_cells(axes):
         payload = build_payload(cell)
         metadata = build_metadata(cell) if build_metadata is not None else {}
         for sample_idx in range(n):
             chunk.append(
-                PendingSample(
+                PoolSample(
                     key_values=dict(cell.key_values),
                     sample_idx=sample_idx,
-                    priority=priority,
-                    payload=payload,
+                    request=payload,
                     metadata=metadata,
                 )
             )
             if len(chunk) >= chunk_size:
-                total += store.pending.insert_many(chunk, ignore_conflicts=True)
+                total += store.insert_samples(chunk, ignore_conflicts=True)
                 chunk = []
     if chunk:
-        total += store.pending.insert_many(chunk, ignore_conflicts=True)
+        total += store.insert_samples(chunk, ignore_conflicts=True)
     return total
+
+
+# ---------------------------------------------------------------------------
+# LLM-specific seeding
+# ---------------------------------------------------------------------------
+
+
+def seed_llm_grid(
+    store: PoolStore,
+    *,
+    axes: list[Axis[Any]],
+    build_request: Callable[[GridCell], tuple[list[Message], LlmConfig]],
+    n: int = 1,
+    build_metadata: Callable[[GridCell], dict[str, Any]] | None = None,
+    chunk_size: int = 500,
+    llm_config_key: str = "llm_config",
+    prompt_key: str = "prompt",
+) -> InsertResult:
+    """Seed a pool from a cross-product of axes for LLM workers.
+
+    Wraps :func:`seed_grid` with a request shape that
+    :func:`dr_llm.pool.backend.make_llm_process_fn` can consume directly:
+    each row's request is ``{llm_config_key: <serialized LlmConfig>,
+    prompt_key: <list of serialized Messages>}``.
+
+    Args:
+        store: Target pool store. Its schema's key columns must match
+            the axis names in order.
+        axes: Ordered list of variant axes.
+        build_request: Per-cell callback returning ``(messages, llm_config)``
+            for that cell.
+        n: Number of samples per cell (each gets a distinct ``sample_idx``).
+        build_metadata: Optional per-cell row-metadata builder.
+        chunk_size: Maximum rows per ``insert_samples`` round-trip.
+        llm_config_key: Request key for the serialized LlmConfig. Must
+            match the value passed to
+            :func:`~dr_llm.pool.backend.make_llm_process_fn`.
+        prompt_key: Request key for the serialized message list. Must
+            match the value passed to
+            :func:`~dr_llm.pool.backend.make_llm_process_fn`.
+
+    Returns:
+        Cumulative :class:`InsertResult` summed across all chunks.
+    """
+
+    def _build_payload(cell: GridCell) -> dict[str, Any]:
+        messages, llm_config = build_request(cell)
+        return {
+            llm_config_key: llm_config.model_dump(mode="json"),
+            prompt_key: [message.model_dump(mode="json") for message in messages],
+        }
+
+    return seed_grid(
+        store,
+        axes=axes,
+        build_payload=_build_payload,
+        n=n,
+        build_metadata=build_metadata,
+        chunk_size=chunk_size,
+    )
