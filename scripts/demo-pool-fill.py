@@ -73,6 +73,30 @@ PROMPTS: dict[str, list[Message]] = {
     "math": [Message(role="user", content=DemoPrompts.TWO_PLUS_TWO)],
 }
 
+LLM_CONFIG_AXIS: Axis[LlmConfig] = Axis(
+    name="llm_config",
+    members=[
+        AxisMember[LlmConfig](
+            id=cfg_id,
+            value=cfg,
+            metadata={"provider": cfg.provider, "model": cfg.model},
+        )
+        for cfg_id, cfg in demo_pool_fill_llm_configs().items()
+    ],
+)
+
+PROMPT_AXIS: Axis[list[Message]] = Axis(
+    name="prompt",
+    members=[
+        AxisMember[list[Message]](
+            id=prompt_id,
+            value=messages,
+            metadata={"first_user_text": messages[0].content},
+        )
+        for prompt_id, messages in PROMPTS.items()
+    ],
+)
+
 
 def _pool_is_idle(snapshot: WorkerSnapshot[LlmPoolBackendState]) -> bool:
     backend_state = snapshot.backend_state
@@ -101,40 +125,11 @@ def _drain(
         time.sleep(poll_interval_s)
 
 
-def _llm_config_axis() -> Axis[LlmConfig]:
-    llm_configs = demo_pool_fill_llm_configs()
-    return Axis(
-        name="llm_config",
-        members=[
-            AxisMember[LlmConfig](
-                id=cfg_id,
-                value=cfg,
-                metadata={"provider": cfg.provider, "model": cfg.model},
-            )
-            for cfg_id, cfg in llm_configs.items()
-        ],
-    )
-
-
-def _prompt_axis() -> Axis[list[Message]]:
-    return Axis(
-        name="prompt",
-        members=[
-            AxisMember[list[Message]](
-                id=prompt_id,
-                value=messages,
-                metadata={"first_user_text": messages[0].content},
-            )
-            for prompt_id, messages in PROMPTS.items()
-        ],
-    )
-
-
 def _build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
     return cell.values["prompt"], cell.values["llm_config"]
 
 
-def _run_demo(
+def _seed_fill_pool(
     dsn: str,
     pool_name: str,
     num_workers: int,
@@ -150,7 +145,7 @@ def _run_demo(
     try:
         seed_result = seed_llm_grid(
             store,
-            axes=[_llm_config_axis(), _prompt_axis()],
+            axes=[LLM_CONFIG_AXIS, PROMPT_AXIS],
             build_request=_build_request,
             n=samples_per_cell,
         )
@@ -206,6 +201,47 @@ def _run_demo(
         runtime.close()
 
 
+def _ensure_dsn_and_seed_fill_pool(
+    *,
+    dsn: str | None,
+    project_name: str | None,
+    keep_project: bool,
+    pool_name: str,
+    num_workers: int,
+    samples_per_cell: int,
+) -> None:
+    lease = prepare_demo_dsn(
+        dsn=dsn,
+        project_prefix="demo_pool_fill",
+        project_name=project_name,
+        keep_project=keep_project,
+    )
+    if lease.project_name is not None:
+        print(f"Postgres ready at {lease.dsn}")
+
+    try:
+        _seed_fill_pool(
+            lease.dsn,
+            pool_name,
+            num_workers,
+            samples_per_cell,
+        )
+    finally:
+        if lease.should_destroy_project and lease.project_name is not None:
+            print(f"Destroying temporary project '{lease.project_name}'...")
+            cleanup_demo_dsn(lease)
+
+    if lease.project_name is not None and not lease.should_destroy_project:
+        print(
+            f"Project '{lease.project_name}' is still running with your data."
+        )
+        command_hint(
+            "Destroy permanently",
+            "uv run dr-llm project destroy "
+            f"{lease.project_name} --yes-really-delete-everything",
+        )
+
+
 @app.command()
 def main(
     dsn: Annotated[
@@ -248,36 +284,14 @@ def main(
     ] = 1,
 ) -> None:
     """Seed an LLM config x prompt pool and fill it with worker calls."""
-    lease = prepare_demo_dsn(
+    _ensure_dsn_and_seed_fill_pool(
         dsn=dsn,
-        project_prefix="demo_pool_fill",
         project_name=project_name,
         keep_project=keep_project,
+        pool_name=pool_name,
+        num_workers=num_workers,
+        samples_per_cell=samples_per_cell,
     )
-    if lease.project_name is not None:
-        print(f"Postgres ready at {lease.dsn}")
-
-    try:
-        _run_demo(
-            lease.dsn,
-            pool_name,
-            num_workers,
-            samples_per_cell,
-        )
-    finally:
-        if lease.should_destroy_project and lease.project_name is not None:
-            print(f"Destroying temporary project '{lease.project_name}'...")
-            cleanup_demo_dsn(lease)
-
-    if lease.project_name is not None and not lease.should_destroy_project:
-        print(
-            f"Project '{lease.project_name}' is still running with your data."
-        )
-        command_hint(
-            "Destroy permanently",
-            "uv run dr-llm project destroy "
-            f"{lease.project_name} --yes-really-delete-everything",
-        )
 
 
 if __name__ == "__main__":
