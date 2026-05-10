@@ -7,8 +7,7 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
-from dr_llm.llm.names import ProviderName
-from dr_llm.llm.providers.effort import EffortSpec
+from dr_llm.llm.names import EffortSpec, ProviderName
 from dr_llm.llm.providers.headless.base import (
     BaseHeadlessProvider,
     HEADLESS_DEFAULT_EMPTY_PROMPT,

@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from dr_llm.llm.names import ProviderName
+from dr_llm.llm.names import ProviderName, ReasoningMode
 from dr_llm.llm.providers.anthropic.capabilities import (
     reasoning_capabilities_for_anthropic,
+)
+from dr_llm.llm.providers.concepts.capabilities import (
+    GoogleThinkingLevel,
+    ReasoningCapabilities,
+    ReasoningCapabilityRule,
+    resolve_capability_rules,
 )
 from dr_llm.llm.providers.google.capabilities import (
     reasoning_capabilities_for_google,
@@ -29,13 +35,6 @@ from dr_llm.llm.providers.openai_compat.thinking import (
 )
 from dr_llm.llm.providers.openrouter.policy import (
     reasoning_capabilities_for_openrouter,
-)
-from dr_llm.llm.providers.reasoning_capability_types import (
-    GoogleThinkingLevel,
-    ReasoningCapabilities,
-    ReasoningCapabilityRule,
-    ReasoningMode,
-    resolve_capability_rules,
 )
 
 __all__ = [

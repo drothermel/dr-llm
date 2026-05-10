@@ -5,13 +5,13 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from dr_llm.llm.names import (
-    SamplingApiProviderName,
+    EffortSpec,
     HeadlessProviderName,
     KimiCodeProviderName,
     OpenAIProviderName,
+    SamplingApiProviderName,
 )
-from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.providers.reasoning import ReasoningSpec
+from dr_llm.llm.providers.concepts.reasoning import ReasoningSpec
 from dr_llm.llm.request import (
     ApiBackedLlmRequest,
     ApiLlmRequest,

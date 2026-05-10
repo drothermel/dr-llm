@@ -1,23 +1,28 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.reasoning_capability_types import (
+from dr_llm.llm.names import ReasoningMode
+from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilities,
     ReasoningCapabilityRule,
     resolve_capability_rules,
 )
 
 _ANTHROPIC_BUDGET_CAPS = ReasoningCapabilities(
-    mode="anthropic_budget",
+    mode=ReasoningMode.ANTHROPIC_BUDGET,
     min_budget_tokens=1024,
     max_budget_tokens=128000,
 )
-_ANTHROPIC_SONNET_46_CAPS = ReasoningCapabilities(mode="anthropic_effort")
+_ANTHROPIC_SONNET_46_CAPS = ReasoningCapabilities(
+    mode=ReasoningMode.ANTHROPIC_EFFORT
+)
 _ANTHROPIC_OPUS_45_CAPS = ReasoningCapabilities(
-    mode="anthropic_effort_and_budget",
+    mode=ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET,
     min_budget_tokens=1024,
     max_budget_tokens=128000,
 )
-_ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(mode="anthropic_effort")
+_ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(
+    mode=ReasoningMode.ANTHROPIC_EFFORT
+)
 
 ANTHROPIC_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(

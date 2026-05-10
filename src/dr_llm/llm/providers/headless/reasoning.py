@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from dr_llm.errors import HeadlessExecutionError
-from dr_llm.llm.names import ProviderName
+from dr_llm.llm.names import ProviderName, ThinkingLevel
 from dr_llm.llm.providers.anthropic.thinking import (
     ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
 )
@@ -12,13 +12,12 @@ from dr_llm.llm.providers.headless.codex_thinking import (
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
 )
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     BaseProviderReasoningConfig,
     CodexReasoning,
     ReasoningBudget,
     ReasoningSpec,
-    ThinkingLevel,
     dispatch_reasoning_validation,
     is_reasoning_unsupported,
     unsupported_reasoning_kind_message,

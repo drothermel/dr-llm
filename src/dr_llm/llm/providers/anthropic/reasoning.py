@@ -5,17 +5,16 @@ from typing import Any
 from pydantic import Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.llm.names import ProviderName
+from dr_llm.llm.names import ProviderName, ThinkingLevel
 from dr_llm.llm.providers.anthropic.thinking import (
     ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
     ANTHROPIC_BUDGET_THINKING_SUPPORTED,
 )
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     BaseProviderReasoningConfig,
     ReasoningBudget,
     ReasoningSpec,
-    ThinkingLevel,
     dispatch_reasoning_validation,
     is_reasoning_unsupported,
     require_budget_tokens,

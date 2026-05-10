@@ -4,31 +4,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from dr_llm.llm.names import ProviderName
+from dr_llm.llm.names import ControlStrategy, EffortSpec, ReasoningMode
 
 GoogleThinkingLevel = Literal["minimal", "low", "medium", "high"]
-ReasoningMode = Literal[
-    "unsupported",
-    "openai_effort",
-    "openrouter_toggle",
-    "openrouter_effort",
-    ProviderName.GLM,
-    "google_budget",
-    "google_level",
-    "anthropic_budget",
-    "anthropic_effort",
-    "anthropic_effort_and_budget",
-    "claude_cli_effort",
-    "codex_cli_effort",
-    "kimi_code_effort_and_budget",
-    "minimax_effort",
-]
 
 
 class ReasoningCapabilities(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    mode: ReasoningMode = "unsupported"
+    mode: ReasoningMode = ReasoningMode.UNSUPPORTED
     google_levels: tuple[GoogleThinkingLevel, ...] = ()
     min_budget_tokens: int | None = None
     max_budget_tokens: int | None = None
@@ -36,7 +20,7 @@ class ReasoningCapabilities(BaseModel):
 
     @property
     def supports_reasoning(self) -> bool:
-        return self.mode != "unsupported"
+        return self.mode != ReasoningMode.UNSUPPORTED
 
 
 class ReasoningCapabilityRule(BaseModel):
@@ -71,3 +55,13 @@ def resolve_capability_rules(
         if model.startswith(prefix):
             return rule.capabilities
     return None
+
+
+class ModelCapabilities(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    control_strategy: ControlStrategy
+    reasoning: ReasoningCapabilities = ReasoningCapabilities(
+        mode=ReasoningMode.UNSUPPORTED
+    )
+    supported_effort_levels: tuple[EffortSpec, ...] = ()

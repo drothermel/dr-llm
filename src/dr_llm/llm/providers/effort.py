@@ -6,7 +6,8 @@ from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.effort import (
     supported_effort_levels_for_anthropic,
 )
-from dr_llm.llm.providers.effort_types import FULL_EFFORT, EffortSpec
+from dr_llm.llm.names import EffortSpec
+from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
 from dr_llm.llm.providers.headless.claude_capabilities import (
     supported_effort_levels_for_claude_code,
 )

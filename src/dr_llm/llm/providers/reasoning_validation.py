@@ -18,7 +18,7 @@ from dr_llm.llm.providers.openai_compat.reasoning import (
     validate_reasoning_for_openai,
     validate_reasoning_for_openrouter,
 )
-from dr_llm.llm.providers.reasoning import ReasoningSpec
+from dr_llm.llm.providers.concepts.reasoning import ReasoningSpec
 
 ReasoningValidator = Callable[..., None]
 

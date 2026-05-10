@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.llm.providers.reasoning import ReasoningWarning
+from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
 from dr_llm.llm.providers.usage import CostInfo, TokenUsage
 
 

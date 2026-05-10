@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.reasoning_capability_types import (
-    ReasoningCapabilities,
-)
-from dr_llm.llm.providers.thinking_utils import matches_family
+from dr_llm.llm.names import ReasoningMode
+from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.concepts.thinking_utils import matches_family
 
-_CODEX_CLI_EFFORT_CAPS = ReasoningCapabilities(mode="codex_cli_effort")
+_CODEX_CLI_EFFORT_CAPS = ReasoningCapabilities(
+    mode=ReasoningMode.CODEX_CLI_EFFORT
+)
 
 CODEX_THINKING_SUPPORTED_MODELS = [
     "gpt-5",

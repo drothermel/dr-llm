@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.effort_types import EffortSpec
+from dr_llm.llm.names import EffortSpec
 
 ANTHROPIC_EFFORT_SUPPORTED_MODELS = [
     "claude-sonnet-4-6",

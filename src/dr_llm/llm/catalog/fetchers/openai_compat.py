@@ -9,6 +9,7 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogPricing
 from dr_llm.llm.coercion import as_float, as_int
+from dr_llm.llm.names import ReasoningMode
 from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
 from dr_llm.llm.providers.reasoning_capabilities import (
     ReasoningCapabilities,
@@ -89,7 +90,9 @@ def _resolve_reasoning_support(
         "reasoning" in normalized or "reasoning.effort" in normalized
     )
     if supports_reasoning and reasoning_capabilities is None:
-        reasoning_capabilities = ReasoningCapabilities(mode="openai_effort")
+        reasoning_capabilities = ReasoningCapabilities(
+            mode=ReasoningMode.OPENAI_EFFORT
+        )
     return supports_reasoning, reasoning_capabilities
 
 

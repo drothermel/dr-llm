@@ -4,11 +4,14 @@ from collections.abc import Callable
 
 from pydantic import BaseModel, ConfigDict
 
-from dr_llm.llm.names import ProviderName
+from dr_llm.llm.names import EffortSpec, ProviderName, ThinkingLevel
 from dr_llm.llm.providers.anthropic.thinking import (
     ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
 )
-from dr_llm.llm.providers.effort import EffortSpec, supported_effort_levels
+from dr_llm.llm.providers.concepts.capabilities import (
+    ReasoningCapabilities,
+)
+from dr_llm.llm.providers.effort import supported_effort_levels
 from dr_llm.llm.providers.headless.codex_thinking import (
     codex_supports_configurable_thinking,
     codex_supports_minimal_thinking,
@@ -23,7 +26,7 @@ from dr_llm.llm.providers.openrouter.policy import (
     OpenRouterReasoningRequestStyle,
     openrouter_model_policy,
 )
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
     GlmReasoning,
@@ -31,14 +34,10 @@ from dr_llm.llm.providers.reasoning import (
     OpenAIReasoning,
     OpenRouterReasoning,
     ReasoningSpec,
-    ThinkingLevel,
     google_literal_to_thinking_level,
 )
 from dr_llm.llm.providers.reasoning_capabilities import (
     reasoning_capabilities_for_model,
-)
-from dr_llm.llm.providers.reasoning_capability_types import (
-    ReasoningCapabilities,
 )
 
 

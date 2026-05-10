@@ -21,7 +21,8 @@ from dr_llm.llm.providers.headless.reasoning import (
 from dr_llm.llm.providers.openai_compat.reasoning import (
     OpenAICompatReasoningConfig,
 )
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm.names import ThinkingLevel
+from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
     GlmReasoning,
@@ -29,7 +30,6 @@ from dr_llm.llm.providers.reasoning import (
     OpenAIReasoning,
     OpenRouterReasoning,
     ReasoningBudget,
-    ThinkingLevel,
 )
 
 

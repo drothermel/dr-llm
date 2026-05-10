@@ -3,20 +3,18 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import cache
 from importlib.resources import files
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-from dr_llm.llm.names import ProviderName
-from dr_llm.llm.providers.reasoning_capability_types import (
+from dr_llm.llm.names import OpenRouterEffortLevel, ProviderName, ReasoningMode
+from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilities,
 )
 
 if TYPE_CHECKING:
     from dr_llm.llm.catalog.models import ModelCatalogEntry
-
-OpenRouterEffortLevel = Literal["low", "medium", "high"]
 
 
 class OpenRouterReasoningRequestStyle(StrEnum):
@@ -94,7 +92,7 @@ def _capabilities_for_policy(
     request_style: OpenRouterReasoningRequestStyle,
 ) -> ReasoningCapabilities:
     if request_style == OpenRouterReasoningRequestStyle.ENABLED_FLAG:
-        return ReasoningCapabilities(mode="openrouter_toggle")
+        return ReasoningCapabilities(mode=ReasoningMode.OPENROUTER_TOGGLE)
     if request_style == OpenRouterReasoningRequestStyle.EFFORT:
-        return ReasoningCapabilities(mode="openrouter_effort")
-    return ReasoningCapabilities(mode="unsupported")
+        return ReasoningCapabilities(mode=ReasoningMode.OPENROUTER_EFFORT)
+    return ReasoningCapabilities(mode=ReasoningMode.UNSUPPORTED)

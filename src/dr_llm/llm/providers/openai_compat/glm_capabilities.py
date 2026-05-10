@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dr_llm.llm.names import ProviderName
-from dr_llm.llm.providers.reasoning_capability_types import (
+from dr_llm.llm.names import ReasoningMode
+from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilities,
     ReasoningCapabilityRule,
     resolve_capability_rules,
 )
 
-_GLM_THINKING_CAPS = ReasoningCapabilities(mode=ProviderName.GLM)
+_GLM_THINKING_CAPS = ReasoningCapabilities(mode=ReasoningMode.GLM)
 
 GLM_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(

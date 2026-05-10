@@ -21,7 +21,7 @@ from tenacity import (
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm.providers.api_config import APIProviderConfig
 from dr_llm.llm.providers.base import Provider
-from dr_llm.llm.providers.reasoning import ReasoningWarning
+from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
 from dr_llm.llm.request import ApiBackedLlmRequest, LlmRequest
 from dr_llm.llm.response import LlmResponse
 from dr_llm.logging.sinks import emit_generation_event

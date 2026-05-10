@@ -1,35 +1,36 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.reasoning_capability_types import (
+from dr_llm.llm.names import ReasoningMode
+from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilities,
     ReasoningCapabilityRule,
     resolve_capability_rules,
 )
 
 _GOOGLE_25_FLASH_CAPS = ReasoningCapabilities(
-    mode="google_budget",
+    mode=ReasoningMode.GOOGLE_BUDGET,
     min_budget_tokens=1,
     max_budget_tokens=24576,
     supports_dynamic=True,
 )
 _GOOGLE_25_FLASH_LITE_CAPS = ReasoningCapabilities(
-    mode="google_budget",
+    mode=ReasoningMode.GOOGLE_BUDGET,
     min_budget_tokens=512,
     max_budget_tokens=24576,
     supports_dynamic=True,
 )
 _GOOGLE_25_PRO_CAPS = ReasoningCapabilities(
-    mode="google_budget",
+    mode=ReasoningMode.GOOGLE_BUDGET,
     min_budget_tokens=128,
     max_budget_tokens=32768,
     supports_dynamic=True,
 )
 _GOOGLE_3_CAPS = ReasoningCapabilities(
-    mode="google_level",
+    mode=ReasoningMode.GOOGLE_LEVEL,
     google_levels=("minimal", "low", "medium", "high"),
 )
 _GEMMA_4_CAPS = ReasoningCapabilities(
-    mode="google_level",
+    mode=ReasoningMode.GOOGLE_LEVEL,
     google_levels=("minimal", "high"),
 )
 

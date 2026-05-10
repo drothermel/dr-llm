@@ -1,40 +1,6 @@
-"""Reasoning configuration shared across LLM providers.
-
-Three terms coexist in this codebase and they are NOT synonyms:
-
-* **Reasoning** (this module) — the cross-provider abstraction. Callers
-  attach a :class:`ReasoningSpec` to an :class:`~dr_llm.llm.request.LlmRequest`
-  to describe how a model should think. ``ReasoningSpec`` is a discriminated
-  union: either a portable :class:`ReasoningBudget` (numeric token budget) or
-  one of the provider-native shapes (:class:`AnthropicReasoning`,
-  :class:`OpenAIReasoning`, :class:`CodexReasoning`, :class:`GlmReasoning`,
-  :class:`OpenRouterReasoning`, :class:`GoogleReasoning`).
-
-* **Thinking level** (:class:`ThinkingLevel`) — the discrete enum used inside
-  most provider-native specs. Values like ``OFF``, ``MINIMAL``, ``LOW``,
-  ``MEDIUM``, ``HIGH``, ``BUDGET``, and ``ADAPTIVE`` describe *how much* the
-  provider should think; the exact semantics of each level are
-  provider-specific and validated per-model.
-
-* **Effort** (``providers/effort.py`` / :class:`~dr_llm.llm.providers.effort_types.EffortSpec`)
-  — a parallel system used by headless / CLI providers (claude-code,
-  kimi-code, minimax, native anthropic CLI) where models advertise an effort
-  tier instead of a thinking level.
-
-A given model supports **either** an effort axis **or** a reasoning axis,
-never both. ``LlmRequest`` exposes both fields (``effort`` and ``reasoning``)
-and the per-provider validators reject the combination that does not apply.
-
-The validation helpers in this module are shared across providers that use
-the discrete-tier convention (OpenAI, Codex, OpenRouter), so they are named
-generically (e.g. :func:`validate_discrete_thinking_level`) rather than
-after a single provider.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
-from enum import StrEnum
 from typing import Any, Annotated, Literal, Never
 
 from pydantic import (
@@ -46,17 +12,14 @@ from pydantic import (
     model_validator,
 )
 
-from dr_llm.llm.names import ProviderName
-from dr_llm.llm.providers.openrouter.policy import OpenRouterEffortLevel
-from dr_llm.llm.providers.reasoning_capability_types import (
-    ReasoningCapabilities,
+from dr_llm.llm.names import (
+    OpenRouterEffortLevel,
+    ProviderName,
+    ReasoningMode,
+    ReasoningWarningCode,
+    ThinkingLevel,
 )
-
-
-class ReasoningWarningCode(StrEnum):
-    unsupported_for_provider = "unsupported_for_provider"
-    mapped_with_heuristic = "mapped_with_heuristic"
-    partially_supported = "partially_supported"
+from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 
 
 class ReasoningWarning(BaseModel):
@@ -66,18 +29,6 @@ class ReasoningWarning(BaseModel):
     message: str
     provider: str | None = None
     details: dict[str, Any] = Field(default_factory=dict)
-
-
-class ThinkingLevel(StrEnum):
-    NA = "na"
-    OFF = "off"
-    BUDGET = "budget"
-    ADAPTIVE = "adaptive"
-    MINIMAL = "minimal"
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    XHIGH = "xhigh"
 
 
 class ReasoningBudget(BaseModel):
@@ -264,16 +215,6 @@ def validate_discrete_thinking_level(
     supports_minimal: bool,
     supports_xhigh: bool = False,
 ) -> None:
-    """Validate a discrete (OFF/MINIMAL/LOW/MEDIUM/HIGH/XHIGH) thinking level.
-
-    Used by every provider whose API exposes thinking as a fixed set of
-    tiers rather than a numeric token budget — currently OpenAI (Responses
-    API), Codex (CLI), and OpenRouter when the upstream model uses the
-    OpenAI-style ``reasoning.effort`` shape. ``OFF`` and ``MINIMAL`` are
-    optional per-model; ``XHIGH`` is opt-in per provider/model family;
-    ``LOW``/``MEDIUM``/``HIGH`` are always accepted when this validator is
-    reached.
-    """
     if thinking_level == ThinkingLevel.NA:
         raise ValueError(
             f"thinking_level='na' is not supported for provider={provider!r} model={model!r}"
@@ -393,7 +334,6 @@ def require_budget_tokens(
     label: str,
     min_value: int,
 ) -> int:
-    """Validate budget_tokens for serializer payloads (strictly typed int >= min_value)."""
     if budget_tokens is None:
         raise ValueError(
             f"{label} budget thinking requires budget_tokens when thinking_level is 'budget'"
@@ -408,8 +348,6 @@ def require_budget_tokens(
 
 
 class BaseProviderReasoningConfig(BaseModel):
-    """Common Pydantic boilerplate for per-provider reasoning serializer configs."""
-
     model_config = ConfigDict(frozen=True)
 
     warnings: list[ReasoningWarning] = Field(default_factory=list)
@@ -424,7 +362,9 @@ def unsupported_reasoning_kind_message(
 def is_reasoning_unsupported(
     capabilities: ReasoningCapabilities | None,
 ) -> bool:
-    return capabilities is None or capabilities.mode == "unsupported"
+    return (
+        capabilities is None or capabilities.mode == ReasoningMode.UNSUPPORTED
+    )
 
 
 def dispatch_reasoning_validation(
@@ -437,12 +377,6 @@ def dispatch_reasoning_validation(
     validate_native: Callable[[Any], None],
     validate_top_budget: Callable[[ReasoningBudget], None],
 ) -> None:
-    """Shared dispatch for per-provider reasoning validators.
-
-    Implements the common skeleton: ``None`` → check requirement; native spec →
-    delegate to ``validate_native``; ``ReasoningBudget`` → delegate to
-    ``validate_top_budget``; otherwise raise an unsupported-kind error.
-    """
     if reasoning is None:
         if requires_reasoning:
             raise ValueError(

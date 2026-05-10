@@ -5,7 +5,7 @@ import pytest
 from dr_llm.llm.providers.anthropic.effort import (
     supported_effort_levels_for_anthropic,
 )
-from dr_llm.llm.providers.effort_types import EffortSpec
+from dr_llm.llm.names import EffortSpec
 
 _LOW_MEDIUM_HIGH = (EffortSpec.LOW, EffortSpec.MEDIUM, EffortSpec.HIGH)
 _LOW_MEDIUM_HIGH_MAX = (

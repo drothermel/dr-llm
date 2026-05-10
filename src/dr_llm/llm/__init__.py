@@ -14,25 +14,20 @@ from dr_llm.llm.config import (
 )
 from dr_llm.llm.names import (
     ApiBackedProviderName,
+    EffortSpec,
     HeadlessProviderName,
     KimiCodeProviderName,
     OpenAIProviderName,
     ProviderCategories,
     ProviderName,
     SamplingApiProviderName,
+    ThinkingLevel,
 )
 from dr_llm.llm.providers.config import (
     ProviderAvailabilityStatus,
     ProviderConfig,
 )
-from dr_llm.llm.providers.effort import EffortSpec, supported_effort_levels
-from dr_llm.llm.providers.openrouter.policy import (
-    OpenRouterModelPolicy,
-    OpenRouterReasoningRequestStyle,
-    openrouter_allowed_models,
-    openrouter_model_policy,
-)
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
     GlmReasoning,
@@ -42,8 +37,14 @@ from dr_llm.llm.providers.reasoning import (
     ReasoningBudget,
     ReasoningSpec,
     ReasoningWarning,
-    ThinkingLevel,
     parse_reasoning_spec,
+)
+from dr_llm.llm.providers.effort import supported_effort_levels
+from dr_llm.llm.providers.openrouter.policy import (
+    OpenRouterModelPolicy,
+    OpenRouterReasoningRequestStyle,
+    openrouter_allowed_models,
+    openrouter_model_policy,
 )
 from dr_llm.llm.providers.reasoning_capabilities import (
     reasoning_capabilities_for_model,

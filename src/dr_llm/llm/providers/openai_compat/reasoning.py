@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.llm.names import ProviderName
+from dr_llm.llm.names import ProviderName, ThinkingLevel
 from dr_llm.llm.providers.openai_compat.thinking import (
     openai_supports_configurable_thinking,
     openai_supports_minimal_thinking,
@@ -15,14 +15,13 @@ from dr_llm.llm.providers.openrouter.policy import (
     OpenRouterReasoningRequestStyle,
     openrouter_model_policy,
 )
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm.providers.concepts.reasoning import (
     BaseProviderReasoningConfig,
     GlmReasoning,
     OpenAIReasoning,
     OpenRouterReasoning,
     ReasoningBudget,
     ReasoningSpec,
-    ThinkingLevel,
     dispatch_reasoning_validation,
     is_reasoning_unsupported,
     unsupported_reasoning_kind_message,

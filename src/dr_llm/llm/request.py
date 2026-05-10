@@ -6,17 +6,18 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from dr_llm.llm.names import (
     ApiBackedProviderName,
-    SamplingApiProviderName,
+    EffortSpec,
     HeadlessProviderName,
     KimiCodeProviderName,
     OpenAIProviderName,
     ProviderName,
+    SamplingApiProviderName,
 )
-from dr_llm.llm.providers.effort import EffortSpec, validate_effort
+from dr_llm.llm.providers.concepts.reasoning import ReasoningSpec
+from dr_llm.llm.providers.effort import validate_effort
 from dr_llm.llm.providers.openai_compat.thinking import (
     validate_openai_sampling_controls,
 )
-from dr_llm.llm.providers.reasoning import ReasoningSpec
 from dr_llm.llm.providers.reasoning_validation import validate_reasoning
 
 

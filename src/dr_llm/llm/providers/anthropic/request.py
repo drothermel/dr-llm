@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.llm.names import ProviderName
+from dr_llm.llm.names import EffortSpec, ProviderName
 from dr_llm.llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.llm.providers.anthropic.reasoning import (
     AnthropicReasoningConfig,
@@ -13,8 +13,7 @@ from dr_llm.llm.providers.anthropic.reasoning import (
     MiniMaxReasoningConfig,
 )
 from dr_llm.llm.providers.api_config import resolve_api_key
-from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.providers.reasoning import ReasoningWarning
+from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
 from dr_llm.llm.request import ApiBackedLlmRequest, Message
 
 

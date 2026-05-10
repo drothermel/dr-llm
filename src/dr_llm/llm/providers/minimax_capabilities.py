@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.effort_types import FULL_EFFORT, EffortSpec
-from dr_llm.llm.providers.reasoning_capability_types import (
+from dr_llm.llm.names import EffortSpec, ReasoningMode
+from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilities,
     ReasoningCapabilityRule,
     resolve_capability_rules,
 )
+from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
 
-_MINIMAX_CAPS = ReasoningCapabilities(mode="minimax_effort")
+_MINIMAX_CAPS = ReasoningCapabilities(mode=ReasoningMode.MINIMAX_EFFORT)
 
 MINIMAX_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(

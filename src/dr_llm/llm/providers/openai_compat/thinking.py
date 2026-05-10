@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm.names import ReasoningMode, ThinkingLevel
+from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.concepts.reasoning import (
     OpenAIReasoning,
     ReasoningSpec,
-    ThinkingLevel,
 )
-from dr_llm.llm.providers.reasoning_capability_types import (
-    ReasoningCapabilities,
-)
-from dr_llm.llm.providers.thinking_utils import matches_family
+from dr_llm.llm.providers.concepts.thinking_utils import matches_family
 
 OPENAI_THINKING_SUPPORTED_MODELS = [
     "gpt-5",
@@ -156,5 +154,5 @@ def reasoning_capabilities_for_openai(
     model: str,
 ) -> ReasoningCapabilities | None:
     if openai_supports_configurable_thinking(model):
-        return ReasoningCapabilities(mode="openai_effort")
+        return ReasoningCapabilities(mode=ReasoningMode.OPENAI_EFFORT)
     return None

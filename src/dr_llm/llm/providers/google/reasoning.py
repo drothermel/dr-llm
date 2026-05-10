@@ -5,13 +5,12 @@ from typing import Any
 from pydantic import Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.llm.names import ProviderName
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm.names import ProviderName, ThinkingLevel
+from dr_llm.llm.providers.concepts.reasoning import (
     BaseProviderReasoningConfig,
     GoogleReasoning,
     ReasoningBudget,
     ReasoningSpec,
-    ThinkingLevel,
     dispatch_reasoning_validation,
     google_literal_to_thinking_level,
     is_reasoning_unsupported,
