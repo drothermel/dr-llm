@@ -36,6 +36,7 @@ from dr_llm.llm import (
     Message,
     OpenRouterReasoning,
     ProviderRegistry,
+    ProviderName,
     ReasoningSpec,
     ThinkingLevel,
     build_default_registry,
@@ -83,7 +84,7 @@ def format_attempt(
     effort: EffortSpec,
     reasoning_override: ReasoningSpec | None = None,
 ) -> str:
-    if provider == "openrouter":
+    if provider == ProviderName.OPENROUTER:
         detail = f"{provider} | {model}"
         match reasoning_override:
             case OpenRouterReasoning(effort=override_effort) if (
@@ -150,7 +151,9 @@ def make_request(
     explicit_reasoning: bool = False,
     reasoning_override: ReasoningSpec | None = None,
 ) -> LlmRequest:
-    max_tokens = KIMI_CODE_MAX_TOKENS if provider == "kimi-code" else None
+    max_tokens = (
+        KIMI_CODE_MAX_TOKENS if provider == ProviderName.KIMI_CODE else None
+    )
     reasoning = reasoning_override or reasoning_for_thinking_level(
         provider=provider,
         model=model,
@@ -158,7 +161,7 @@ def make_request(
         budget_tokens=budget_tokens_for_level(provider, model, thinking_level),
         explicit_na=explicit_reasoning,
     )
-    if provider in {"codex", "claude-code"}:
+    if provider in {ProviderName.CODEX, ProviderName.CLAUDE_CODE}:
         return HeadlessLlmRequest(
             provider=cast(HeadlessProviderName, provider),
             model=model,
@@ -166,7 +169,7 @@ def make_request(
             effort=effort,
             reasoning=reasoning,
         )
-    if provider == "kimi-code":
+    if provider == ProviderName.KIMI_CODE:
         return KimiCodeLlmRequest(
             provider=cast(KimiCodeProviderName, provider),
             model=model,
@@ -239,7 +242,7 @@ def run_attempt(
 
 
 def requires_explicit_reasoning(provider: str) -> bool:
-    return provider == "minimax"
+    return provider == ProviderName.MINIMAX
 
 
 def run_model_sweep(
@@ -274,7 +277,7 @@ def run_thinking_sweep(
 ) -> None:
     print("\n== thinking ==")
     for provider in providers:
-        if provider == "openrouter":
+        if provider == ProviderName.OPENROUTER:
             continue
         for model in DEMO_PROVIDER_MODELS[provider]:
             for thinking_level in supported_thinking_levels(
@@ -299,7 +302,7 @@ def run_effort_sweep(
 ) -> None:
     print("\n== effort ==")
     for provider in providers:
-        if provider == "openrouter":
+        if provider == ProviderName.OPENROUTER:
             continue
         for model in DEMO_PROVIDER_MODELS[provider]:
             for effort in supported_effort_levels(
