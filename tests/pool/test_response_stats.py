@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.response_stats import (
     parse_response_stats,
@@ -24,7 +25,7 @@ def test_parse_full_response() -> None:
             "prompt_cost_usd": 0.001,
             "completion_cost_usd": 0.002,
         },
-        "provider": "anthropic",
+        "provider": ProviderName.ANTHROPIC,
         "model": "claude-3",
     }
     stats = parse_response_stats(blob, finish_reason="stop", attempt_count=1)

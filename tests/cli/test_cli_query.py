@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 import json
 from typing import Any
 
@@ -15,7 +16,7 @@ runner = CliRunner()
 
 
 class _FakeProvider:
-    name = "openai"
+    name = ProviderName.OPENAI
     mode = "api"
 
     def generate(self, request: Any) -> Any:
@@ -24,7 +25,7 @@ class _FakeProvider:
             usage=TokenUsage(
                 prompt_tokens=1, completion_tokens=2, total_tokens=3
             ),
-            provider="openai",
+            provider=ProviderName.OPENAI,
             model="gpt-4.1",
         )
 
@@ -45,7 +46,7 @@ def test_query_emits_response_json(monkeypatch: pytest.MonkeyPatch) -> None:
         [
             "query",
             "--provider",
-            "openai",
+            ProviderName.OPENAI,
             "--model",
             "gpt-4.1",
             "--message",
@@ -65,7 +66,7 @@ def test_query_rejects_temperature_for_headless_provider() -> None:
         [
             "query",
             "--provider",
-            "codex",
+            ProviderName.CODEX,
             "--model",
             "gpt-5.4-mini",
             "--message",
@@ -84,7 +85,7 @@ def test_query_rejects_max_tokens_for_headless_provider() -> None:
         [
             "query",
             "--provider",
-            "claude-code",
+            ProviderName.CLAUDE_CODE,
             "--model",
             "claude-sonnet-4-6",
             "--message",
@@ -103,7 +104,7 @@ def test_query_rejects_temperature_for_kimi_code() -> None:
         [
             "query",
             "--provider",
-            "kimi-code",
+            ProviderName.KIMI_CODE,
             "--model",
             "kimi-for-coding",
             "--message",
@@ -130,7 +131,7 @@ def test_query_accepts_max_tokens_for_kimi_code(
         [
             "query",
             "--provider",
-            "kimi-code",
+            ProviderName.KIMI_CODE,
             "--model",
             "kimi-for-coding",
             "--message",

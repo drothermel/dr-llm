@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 from typing import Any
 
 from dr_llm.llm.catalog.fetchers.google import fetch_google_models
@@ -28,7 +29,7 @@ def test_google_catalog_fetch_passes_api_key_via_header(
     )
     provider = GoogleProvider(
         config=APIProviderConfig(
-            name="google",
+            name=ProviderName.GOOGLE,
             base_url="https://generativelanguage.googleapis.com/v1beta",
             api_key_env="GOOGLE_API_KEY",
             api_key="secret",

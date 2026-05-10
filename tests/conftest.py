@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 import os
 from collections.abc import Callable
 from typing import Any
@@ -45,7 +46,7 @@ class FakeProvider(Provider):
 
 def make_request(**overrides: Any) -> LlmRequest:
     defaults: dict[str, Any] = {
-        "provider": "openai",
+        "provider": ProviderName.OPENAI,
         "model": "gpt-4.1-mini",
         "messages": [Message(role="user", content="hello")],
     }

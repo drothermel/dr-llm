@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 from dr_llm.llm.catalog.model_blacklist import (
     OpenAIModelPrice,
     blacklist_reason,
@@ -36,7 +37,8 @@ def test_google_irrelevant_models_are_blacklisted() -> None:
         "veo-3.1-generate-preview",
     ):
         assert (
-            blacklist_reason(provider="google", model=model) == expected_reason
+            blacklist_reason(provider=ProviderName.GOOGLE, model=model)
+            == expected_reason
         )
 
 
@@ -54,13 +56,14 @@ def test_google_gemini_20_flash_models_are_blacklisted_as_unavailable() -> (
         "gemini-2.0-flash-lite-001",
     ):
         assert (
-            blacklist_reason(provider="google", model=model) == expected_reason
+            blacklist_reason(provider=ProviderName.GOOGLE, model=model)
+            == expected_reason
         )
 
 
 def test_glm_5_turbo_is_blacklisted() -> None:
     assert (
-        blacklist_reason(provider="glm", model="glm-5-turbo")
+        blacklist_reason(provider=ProviderName.GLM, model="glm-5-turbo")
         == "Avoid calling more expensive but faster models."
     )
 
@@ -71,7 +74,9 @@ def test_anthropic_claude_3_haiku_is_blacklisted() -> None:
         "Recommended replacement: claude-haiku-4-5-20251001."
     )
     assert (
-        blacklist_reason(provider="anthropic", model="claude-3-haiku-20240307")
+        blacklist_reason(
+            provider=ProviderName.ANTHROPIC, model="claude-3-haiku-20240307"
+        )
         == expected_reason
     )
 

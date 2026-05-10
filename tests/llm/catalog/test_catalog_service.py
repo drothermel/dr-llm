@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 import asyncio
 from typing import Any
 
@@ -138,7 +139,7 @@ def test_sync_filters_blacklisted_models_before_replace(
 ) -> None:
     class _AnthropicDummyProvider(_DummyProvider):
         def __init__(self) -> None:
-            self._config = ProviderConfig(name="anthropic")
+            self._config = ProviderConfig(name=ProviderName.ANTHROPIC)
 
     registry = ProviderRegistry()
     registry.register(_AnthropicDummyProvider())
@@ -168,13 +169,15 @@ def test_sync_filters_blacklisted_models_before_replace(
         "dr_llm.llm.catalog.service.fetch_models_for_provider",
         fake_fetch,
     )
-    results = asyncio.run(service.sync_models_detailed(provider="anthropic"))
+    results = asyncio.run(
+        service.sync_models_detailed(provider=ProviderName.ANTHROPIC)
+    )
     assert len(results) == 1
     assert results[0].success
     assert results[0].entry_count == 1
-    assert [entry.model for entry in repo.replaced["anthropic"]] == [
-        "claude-haiku-4-5-20251001"
-    ]
+    assert [
+        entry.model for entry in repo.replaced[ProviderName.ANTHROPIC]
+    ] == ["claude-haiku-4-5-20251001"]
 
 
 def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata(
@@ -182,7 +185,7 @@ def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata(
 ) -> None:
     class _OpenRouterDummyProvider(_DummyProvider):
         def __init__(self) -> None:
-            self._config = ProviderConfig(name="openrouter")
+            self._config = ProviderConfig(name=ProviderName.OPENROUTER)
 
     registry = ProviderRegistry()
     registry.register(_OpenRouterDummyProvider())
@@ -219,15 +222,21 @@ def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata(
         "dr_llm.llm.catalog.service.fetch_models_for_provider",
         fake_fetch,
     )
-    results = asyncio.run(service.sync_models_detailed(provider="openrouter"))
+    results = asyncio.run(
+        service.sync_models_detailed(provider=ProviderName.OPENROUTER)
+    )
     assert len(results) == 1
     assert results[0].success
-    assert [entry.model for entry in repo.replaced["openrouter"]] == [
+    assert [
+        entry.model for entry in repo.replaced[ProviderName.OPENROUTER]
+    ] == [
         "deepseek/deepseek-chat-v3.1",
         "deepseek/deepseek-chat",
     ]
-    assert repo.replaced["openrouter"][0].supports_reasoning is True
-    assert repo.replaced["openrouter"][1].supports_reasoning is False
+    assert repo.replaced[ProviderName.OPENROUTER][0].supports_reasoning is True
+    assert (
+        repo.replaced[ProviderName.OPENROUTER][1].supports_reasoning is False
+    )
 
 
 def test_sync_records_failure_when_replace_fails_without_success_snapshot(

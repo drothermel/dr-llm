@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 from typing import Any, cast
 
 import httpx
@@ -42,7 +43,7 @@ def test_payload_serializes_messages() -> None:
     adapter = AnthropicProvider(config=_make_config(), client=client)
 
     request = _make_api_request(
-        provider="anthropic",
+        provider=ProviderName.ANTHROPIC,
         model="claude-3-5-haiku-20241022",
         max_tokens=256,
         messages=[
@@ -71,7 +72,7 @@ def test_payload_serializes_messages() -> None:
 
 def test_missing_max_tokens_error_uses_actual_provider_name() -> None:
     request = _make_api_request(
-        provider="kimi-code",
+        provider=ProviderName.KIMI_CODE,
         model="kimi-k2-instruct",
         max_tokens=256,
     )
@@ -88,7 +89,7 @@ def test_payload_serializes_effort_output_config() -> None:
     adapter = AnthropicProvider(config=_make_config(), client=client)
 
     request = _make_api_request(
-        provider="anthropic",
+        provider=ProviderName.ANTHROPIC,
         model="claude-sonnet-4-6",
         max_tokens=256,
         effort=EffortSpec.MEDIUM,
@@ -105,7 +106,7 @@ def test_payload_serializes_manual_thinking() -> None:
     adapter = AnthropicProvider(config=_make_config(), client=client)
 
     request = _make_api_request(
-        provider="anthropic",
+        provider=ProviderName.ANTHROPIC,
         model="claude-sonnet-4-5-20250929",
         max_tokens=4096,
         reasoning=AnthropicReasoning(
@@ -129,7 +130,7 @@ def test_payload_omits_thinking_for_off() -> None:
     adapter = AnthropicProvider(config=_make_config(), client=client)
 
     request = _make_api_request(
-        provider="anthropic",
+        provider=ProviderName.ANTHROPIC,
         model="claude-sonnet-4-6",
         max_tokens=256,
         effort=EffortSpec.MEDIUM,
@@ -155,7 +156,7 @@ def test_invalid_json_raises_transport_error() -> None:
     with pytest.raises(ProviderTransportError, match="invalid JSON response"):
         adapter.generate(
             _make_api_request(
-                provider="anthropic",
+                provider=ProviderName.ANTHROPIC,
                 model="claude-3-5-haiku-20241022",
                 max_tokens=256,
             )
@@ -180,7 +181,7 @@ def test_transport_failure_retries_raw_http_send_only_once_before_success() -> (
 
     result = adapter.generate(
         _make_api_request(
-            provider="anthropic",
+            provider=ProviderName.ANTHROPIC,
             model="claude-3-5-haiku-20241022",
             max_tokens=256,
         )

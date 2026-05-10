@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -36,7 +37,7 @@ def _make_response() -> LlmResponse:
         text="hello world",
         finish_reason="stop",
         usage=TokenUsage(prompt_tokens=5, completion_tokens=3, total_tokens=8),
-        provider="openai",
+        provider=ProviderName.OPENAI,
         model="gpt-4.1-mini",
         mode=CallMode.api,
     )
@@ -47,7 +48,7 @@ def _make_headless_response() -> LlmResponse:
         text="hello from codex",
         finish_reason="stop",
         usage=TokenUsage(prompt_tokens=4, completion_tokens=2, total_tokens=6),
-        provider="codex",
+        provider=ProviderName.CODEX,
         model="gpt-5.4-mini",
         mode=CallMode.headless,
     )
@@ -65,7 +66,7 @@ def _make_registry(response: LlmResponse | None = None) -> MagicMock:
 
 def _sample_request() -> dict[str, Any]:
     config = LlmConfig(
-        provider="openai", model="gpt-4.1-mini", temperature=0.5
+        provider=ProviderName.OPENAI, model="gpt-4.1-mini", temperature=0.5
     )
     messages = [Message(role="user", content="Say hello")]
     return {
@@ -81,16 +82,16 @@ def test_dispatches_via_registry() -> None:
 
     result = process_fn(sample)
 
-    registry.get.assert_called_once_with("openai")
+    registry.get.assert_called_once_with(ProviderName.OPENAI)
     adapter = registry.get.return_value
     call_args = adapter.generate.call_args[0][0]
-    assert call_args.provider == "openai"
+    assert call_args.provider == ProviderName.OPENAI
     assert call_args.model == "gpt-4.1-mini"
     assert call_args.temperature == 0.5
     assert len(call_args.messages) == 1
     assert call_args.messages[0].content == "Say hello"
     assert result.text == "hello world"
-    assert result.provider == "openai"
+    assert result.provider == ProviderName.OPENAI
 
 
 def test_returns_llm_response_object() -> None:
@@ -194,7 +195,7 @@ def test_missing_llm_config_key_raises() -> None:
 def test_missing_prompt_key_raises() -> None:
     registry = _make_registry()
     process_fn = pool_backend.make_llm_process_fn(registry)
-    config = LlmConfig(provider="openai", model="gpt-4.1-mini")
+    config = LlmConfig(provider=ProviderName.OPENAI, model="gpt-4.1-mini")
     sample = _make_sample({"llm_config": config.model_dump()})
 
     with pytest.raises(KeyError, match="prompt"):
@@ -216,7 +217,7 @@ def test_explicit_none_request_field_raises_value_error() -> None:
 
 def test_custom_key_names() -> None:
     registry = _make_registry()
-    config = LlmConfig(provider="openai", model="gpt-4.1-mini")
+    config = LlmConfig(provider=ProviderName.OPENAI, model="gpt-4.1-mini")
     messages = [Message(role="user", content="custom")]
     process_fn = pool_backend.make_llm_process_fn(
         registry, llm_config_key="model_cfg", prompt_key="msgs"
@@ -255,7 +256,9 @@ def test_seed_llm_grid_round_trips_with_make_llm_process_fn() -> None:
     schema = PoolSchema.from_axis_names("rt", ["llm_config", "prompt"])
     store, captured = _make_seed_store(schema)
 
-    cfg = LlmConfig(provider="openai", model="gpt-4.1-mini", temperature=0.5)
+    cfg = LlmConfig(
+        provider=ProviderName.OPENAI, model="gpt-4.1-mini", temperature=0.5
+    )
     msgs = [Message(role="user", content="round trip")]
 
     def _build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
@@ -292,7 +295,7 @@ def test_seed_llm_grid_round_trips_with_make_llm_process_fn() -> None:
 
     assert response.text == "hello world"
     call_args = registry.get.return_value.generate.call_args[0][0]
-    assert call_args.provider == "openai"
+    assert call_args.provider == ProviderName.OPENAI
     assert call_args.model == "gpt-4.1-mini"
     assert call_args.temperature == 0.5
     assert call_args.messages[0].content == "round trip"
@@ -306,7 +309,7 @@ def test_seed_llm_grid_round_trips_headless_config() -> None:
     store, captured = _make_seed_store(schema)
 
     cfg = HeadlessLlmConfig(
-        provider="codex",
+        provider=ProviderName.CODEX,
         model="gpt-5.4-mini",
         reasoning=CodexReasoning(thinking_level=ThinkingLevel.XHIGH),
     )
@@ -344,7 +347,7 @@ def test_seed_llm_grid_round_trips_headless_config() -> None:
 
     assert response.text == "hello from codex"
     call_args = registry.get.return_value.generate.call_args[0][0]
-    assert call_args.provider == "codex"
+    assert call_args.provider == ProviderName.CODEX
     assert call_args.model == "gpt-5.4-mini"
     assert call_args.messages[0].content == "headless round trip"
     assert call_args.reasoning == CodexReasoning(
@@ -357,7 +360,7 @@ def test_seed_llm_grid_honors_custom_request_keys() -> None:
     schema = PoolSchema.from_axis_names("rt2", ["llm_config", "prompt"])
     store, captured = _make_seed_store(schema)
 
-    cfg = LlmConfig(provider="openai", model="gpt-4.1-mini")
+    cfg = LlmConfig(provider=ProviderName.OPENAI, model="gpt-4.1-mini")
     msgs = [Message(role="user", content="hi")]
 
     seed_llm_grid(

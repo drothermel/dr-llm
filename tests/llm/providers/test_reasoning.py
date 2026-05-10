@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 import pytest
 
 from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
@@ -76,12 +77,12 @@ def test_openai_compat_serializes_thinking_levels() -> None:
 def test_openrouter_serializes_reasoning_payloads() -> None:
     assert OpenAICompatReasoningConfig.from_base(
         OpenRouterReasoning(enabled=False),
-        provider="openrouter",
+        provider=ProviderName.OPENROUTER,
         model="deepseek/deepseek-chat-v3.1",
     ).extra_body == {"reasoning": {"enabled": False}}
     assert OpenAICompatReasoningConfig.from_base(
         OpenRouterReasoning(effort="low"),
-        provider="openrouter",
+        provider=ProviderName.OPENROUTER,
         model="openai/gpt-oss-20b",
     ).extra_body == {"reasoning": {"effort": "low"}}
 
@@ -160,13 +161,13 @@ def test_kimi_code_validation_rejects_unsupported_anthropic_levels() -> None:
 def test_minimax_validation_and_serializer_both_require_explicit_na() -> None:
     with pytest.raises(
         ValueError,
-        match="reasoning is required for provider='minimax' model='MiniMax-M2.7'",
+        match=f"reasoning is required for provider='{ProviderName.MINIMAX}' model='MiniMax-M2.7'",
     ):
         validate_reasoning_for_minimax(model="MiniMax-M2.7", reasoning=None)
 
     with pytest.raises(
         ProviderSemanticError,
-        match="minimax requires explicit AnthropicReasoning\\(thinking_level='na'\\)",
+        match=f"{ProviderName.MINIMAX} requires explicit AnthropicReasoning\\(thinking_level='na'\\)",
     ):
         MiniMaxReasoningConfig.from_base(None)
 

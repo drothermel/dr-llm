@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 import json
 
 from typer.testing import CliRunner
@@ -15,12 +16,12 @@ def test_providers_json() -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     providers = {item["provider"] for item in payload["providers"]}
-    assert "openai" in providers
-    assert "anthropic" in providers
-    assert "google" in providers
-    assert "glm" in providers
-    assert "kimi-code" in providers
-    assert "minimax" in providers
+    assert ProviderName.OPENAI in providers
+    assert ProviderName.ANTHROPIC in providers
+    assert ProviderName.GOOGLE in providers
+    assert ProviderName.GLM in providers
+    assert ProviderName.KIMI_CODE in providers
+    assert ProviderName.MINIMAX in providers
     for item in payload["providers"]:
         assert isinstance(item["available"], bool)
         assert isinstance(item["missing_env_vars"], list | tuple)

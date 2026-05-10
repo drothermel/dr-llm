@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import ProviderName
 from typing import Any
 
 import pytest
@@ -34,7 +35,7 @@ def test_fetch_models_for_provider_dispatches_google_subclasses(
     provider = _GoogleSubclassProvider()
     expected = (
         [ModelCatalogEntry(provider=provider.name, model="gemini-test")],
-        {"source": "google"},
+        {"source": ProviderName.GOOGLE},
     )
 
     def fake_fetch_google_models(
@@ -56,7 +57,7 @@ def test_fetch_models_for_provider_passes_kimi_config_to_fetcher(
 ) -> None:
     provider = KimiCodeProvider(
         config=AnthropicConfig(
-            name="kimi-code",
+            name=ProviderName.KIMI_CODE,
             base_url="https://api.kimi.com/coding/v1/messages",
             api_key_env="KIMI_API_KEY",
             api_key="kimi-secret",
@@ -68,7 +69,7 @@ def test_fetch_models_for_provider_passes_kimi_config_to_fetcher(
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         assert received_provider is provider
         assert received_provider.config.api_key == "kimi-secret"
-        assert received_provider.name == "kimi-code"
+        assert received_provider.name == ProviderName.KIMI_CODE
         return [], {"source": "kimi"}
 
     monkeypatch.setattr(
@@ -87,7 +88,7 @@ def test_fetch_models_for_provider_dispatches_openai_compat_subclasses(
 
     provider = _OpenAICompatSubclassProvider(
         config=OpenAICompatConfig(
-            name="openai",
+            name=ProviderName.OPENAI,
             base_url="https://api.openai.com/v1",
             api_key_env="OPENAI_API_KEY",
             api_key="openai-secret",
