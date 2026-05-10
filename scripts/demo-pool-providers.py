@@ -33,6 +33,7 @@ import typer
 
 from dr_llm.demo import (
     DEMO_QUERY_DEFAULT_MODELS,
+    DemoDsnLease,
     DemoPrompts,
     cleanup_demo_dsn,
     command_hint,
@@ -50,6 +51,7 @@ from dr_llm.llm import (
     EffortSpec,
     ProviderAvailabilityStatus,
     ProviderName,
+    ProviderRegistry,
     build_default_registry,
     default_effort,
     default_reasoning,
@@ -228,6 +230,158 @@ def token_cell(sample: PoolSample) -> int:
 # --- Main ---
 
 
+def _detect_available_providers_or_exit(
+    registry: ProviderRegistry,
+) -> list[ProviderAvailabilityStatus]:
+    step("1. Detecting available providers")
+    available = detect_providers(registry.availability_statuses())
+    if not available:
+        fail("No providers available. Set API keys or install CLI tools.")
+        raise typer.Exit(1)
+    print(
+        f"\n  Found {len(available)} providers: "
+        f"{', '.join(status.provider for status in available)}"
+    )
+    return available
+
+
+def _prepare_demo_pool(dsn: str) -> tuple[DbRuntime, PoolStore]:
+    step("3. Initializing pool")
+    runtime = DbRuntime(DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=4))
+    try:
+        store = PoolStore(POOL_SCHEMA, runtime)
+        store.ensure_schema()
+    except Exception:
+        runtime.close()
+        raise
+    ok(f"Pool '{POOL_SCHEMA.name}' ready")
+    return runtime, store
+
+
+def _query_and_store_provider(
+    *,
+    registry: ProviderRegistry,
+    store: PoolStore,
+    status: ProviderAvailabilityStatus,
+    prompt: str,
+) -> None:
+    provider = status.provider
+    provider_name = ProviderName(provider)
+
+    model = resolve_model(provider_name)
+    ok(f"Using model: {model}")
+
+    info = show_model_json(provider, model)
+    display = info.get("display_name", model)
+    ctx = info.get("context_window")
+    ctx_str = f", context={ctx}" if ctx else ""
+    ok(f"Model info: {display}{ctx_str}")
+
+    is_headless = registry.get(provider).mode == "headless"
+    print(f"  Querying {provider}/{model}...")
+    response = query_provider(provider, model, prompt, is_headless=is_headless)
+    text = (response.get("text") or "")[:80].replace("\n", " ")
+    latency = response.get("latency_ms", "?")
+    ok(f"Response ({latency}ms): {text}")
+
+    store_result(store, provider, model, prompt, response)
+    ok("Stored in pool")
+
+
+def _query_available_providers_pool(
+    *,
+    dsn: str,
+    registry: ProviderRegistry,
+    available: list[ProviderAvailabilityStatus],
+    prompt: str,
+) -> None:
+    runtime: DbRuntime | None = None
+    try:
+        runtime, store = _prepare_demo_pool(dsn)
+        failed_providers: list[str] = []
+
+        for i, status in enumerate(available, 1):
+            provider = status.provider
+            step(f"4.{i}. Provider: {provider}")
+            try:
+                _query_and_store_provider(
+                    registry=registry,
+                    store=store,
+                    status=status,
+                    prompt=prompt,
+                )
+            except Exception as exc:
+                fail(f"{provider}: {exc}")
+                failed_providers.append(provider)
+
+        step("5. Results")
+        print_summary(store)
+
+        if failed_providers:
+            warn(f"Failed providers: {', '.join(failed_providers)}")
+
+    finally:
+        if runtime:
+            runtime.close()
+
+
+def _print_kept_project_hints(lease: DemoDsnLease) -> None:
+    if lease.project_name is None or lease.should_destroy_project:
+        return
+
+    print(f"Project '{lease.project_name}' is still running with your data.\n")
+    command_hint(
+        "Stop (preserve data)",
+        f"uv run dr-llm project stop {lease.project_name}",
+    )
+    command_hint(
+        "Destroy permanently",
+        "uv run dr-llm project destroy "
+        f"{lease.project_name} --yes-really-delete-everything",
+    )
+
+
+def _ensure_dsn_and_query_providers(
+    *,
+    dsn: str | None,
+    project_name: str | None,
+    keep_project: bool,
+    prompt: str,
+) -> None:
+    registry = build_default_registry()
+    try:
+        available = _detect_available_providers_or_exit(registry)
+
+        step("2. Preparing database")
+        lease = prepare_demo_dsn(
+            dsn=dsn,
+            project_prefix=PROJECT_PREFIX,
+            project_name=project_name,
+            keep_project=keep_project,
+        )
+        if lease.project_name is not None:
+            ok(f"Project '{lease.project_name}' ready at {lease.dsn}")
+        else:
+            ok(f"Using database at {lease.dsn}")
+
+        try:
+            _query_available_providers_pool(
+                dsn=lease.dsn,
+                registry=registry,
+                available=available,
+                prompt=prompt,
+            )
+        finally:
+            if lease.should_destroy_project and lease.project_name is not None:
+                step("Destroying temporary project")
+                cleanup_demo_dsn(lease)
+
+        ok("Demo complete!")
+        _print_kept_project_hints(lease)
+    finally:
+        registry.close()
+
+
 @app.command()
 def main(
     dsn: Annotated[
@@ -260,104 +414,12 @@ def main(
     ] = DEFAULT_PROMPT,
 ) -> None:
     """Query all available LLM providers and store results in a typed pool."""
-    step("1. Detecting available providers")
-    registry = build_default_registry()
-    available = detect_providers(registry.availability_statuses())
-    if not available:
-        fail("No providers available. Set API keys or install CLI tools.")
-        raise typer.Exit(1)
-    print(
-        f"\n  Found {len(available)} providers: "
-        f"{', '.join(status.provider for status in available)}"
-    )
-
-    step("2. Preparing database")
-    lease = prepare_demo_dsn(
+    _ensure_dsn_and_query_providers(
         dsn=dsn,
-        project_prefix=PROJECT_PREFIX,
         project_name=project_name,
         keep_project=keep_project,
+        prompt=prompt,
     )
-    if lease.project_name is not None:
-        ok(f"Project '{lease.project_name}' ready at {lease.dsn}")
-    else:
-        ok(f"Using database at {lease.dsn}")
-
-    runtime: DbRuntime | None = None
-    try:
-        step("3. Initializing pool")
-        runtime = DbRuntime(
-            DbConfig(dsn=lease.dsn, min_pool_size=1, max_pool_size=4)
-        )
-        store = PoolStore(POOL_SCHEMA, runtime)
-        store.ensure_schema()
-        ok(f"Pool '{POOL_SCHEMA.name}' ready")
-
-        succeeded: list[str] = []
-        failed_providers: list[str] = []
-
-        for i, status in enumerate(available, 1):
-            provider = status.provider
-            provider_name = ProviderName(provider)
-            step(f"4.{i}. Provider: {provider}")
-            try:
-                # Resolve model
-                model = resolve_model(provider_name)
-                ok(f"Using model: {model}")
-
-                # Show model info
-                info = show_model_json(provider, model)
-                display = info.get("display_name", model)
-                ctx = info.get("context_window")
-                ctx_str = f", context={ctx}" if ctx else ""
-                ok(f"Model info: {display}{ctx_str}")
-
-                # Query
-                is_headless = registry.get(provider).mode == "headless"
-                print(f"  Querying {provider}/{model}...")
-                response = query_provider(
-                    provider, model, prompt, is_headless=is_headless
-                )
-                text = (response.get("text") or "")[:80].replace("\n", " ")
-                latency = response.get("latency_ms", "?")
-                ok(f"Response ({latency}ms): {text}")
-
-                # Store in pool
-                store_result(store, provider, model, prompt, response)
-                ok("Stored in pool")
-                succeeded.append(provider)
-
-            except Exception as exc:
-                fail(f"{provider}: {exc}")
-                failed_providers.append(provider)
-
-        step("5. Results")
-        print_summary(store)
-
-        if failed_providers:
-            warn(f"Failed providers: {', '.join(failed_providers)}")
-
-    finally:
-        if runtime:
-            runtime.close()
-        if lease.should_destroy_project and lease.project_name is not None:
-            step("Destroying temporary project")
-            cleanup_demo_dsn(lease)
-
-    ok("Demo complete!")
-    if lease.project_name is not None and not lease.should_destroy_project:
-        print(
-            f"Project '{lease.project_name}' is still running with your data.\n"
-        )
-        command_hint(
-            "Stop (preserve data)",
-            f"uv run dr-llm project stop {lease.project_name}",
-        )
-        command_hint(
-            "Destroy permanently",
-            "uv run dr-llm project destroy "
-            f"{lease.project_name} --yes-really-delete-everything",
-        )
 
 
 if __name__ == "__main__":
