@@ -18,20 +18,6 @@
 - Added `seed_llm_grid` for declarative `(axis × axis × …)` seeding from
   `Axis` / `AxisMember` lists.
 
-### Added
-
-- `dr-llm pool backfill-catalog PROJECT_NAME [--dry-run]` migration command:
-  for each pool in the project, derives the `PoolSchema` from the existing
-  samples table and persists it into `pool_catalog`, creating the catalog
-  table if it does not exist. Use this to migrate projects created before
-  catalog persistence shipped (the previous failure mode was an unhandled
-  `UndefinedTable` from `pool_catalog` when notebooks or `PoolReader.open()`
-  loaded an old pool). The command starts the project temporarily if it is
-  stopped and restores the original state on exit.
-- New `dr_llm.pool.admin.migration` module exposing `derive_pool_schema`,
-  `backfill_project_catalog`, `BackfillProjectCatalogRequest`/`Result`, and
-  `PoolMigrationError` for programmatic backfill.
-
 ### Fixed
 
 - Several provider request validators now require explicit `reasoning` and/or

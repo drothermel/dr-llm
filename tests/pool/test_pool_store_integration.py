@@ -506,35 +506,6 @@ def test_update_incomplete_request_with_metadata(pool_store: PoolStore) -> None:
     assert s.metadata == {"source": "repair"}
 
 
-# --- Historical insert tests ---
-
-
-def test_insert_historical_with_sentinel(pool_store: PoolStore) -> None:
-    sample = PoolSample(
-        sample_id="hist-1",
-        key_values={"dim_a": "hist", "dim_b": 1},
-        sample_idx=0,
-        response={"text": "old result"},
-        finish_reason="stop",
-        attempt_count=1,
-    )
-    assert pool_store.insert_historical_sample(sample, allow_missing_request=True)
-    [s] = pool_store.bulk_load(key_filter=PoolKeyFilter.eq(dim_a="hist"))
-    assert s.request["unavailable"] is True
-
-
-def test_insert_historical_rejects_empty_request_by_default(
-    pool_store: PoolStore,
-) -> None:
-    sample = PoolSample(
-        sample_id="hist-2",
-        key_values={"dim_a": "hist2", "dim_b": 1},
-        sample_idx=0,
-    )
-    with pytest.raises(ValueError, match="empty request"):
-        pool_store.insert_historical_sample(sample)
-
-
 # --- Catalog tests ---
 
 

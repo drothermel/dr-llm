@@ -264,39 +264,10 @@ finally:
     runtime.close()
 ```
 
-`PoolReader.open(project, pool)` resolves the project DSN, constructs a
-`DbRuntime`, and reads the pool's `PoolSchema` from the project-global
-`pool_catalog` table, where `PoolStore.ensure_schema()` persists it.
-Pools created before catalog persistence shipped raise
-`PoolSchemaNotPersistedError` on `open()`; use
-`PoolReader.from_runtime(runtime, schema=...)` to inspect them with an
-explicit schema, or run `dr-llm pool backfill-catalog PROJECT_NAME` once
-to derive each pool's schema from its samples table and persist it (see
-the migration section below).
-
-### Backfilling `pool_catalog` for legacy projects
-
-Projects created before catalog persistence have working pool tables but
-no `pool_catalog` row, so `load_schema()` and anything that depends on it
-(`PoolReader.open`, `inspect_pool`, `dr-llm project destroy`) fail.
-
-```bash
-dr-llm pool backfill-catalog PROJECT_NAME [--dry-run]
-```
-
-For each pool in the project the command derives a `PoolSchema` by
-inspecting the existing `pool_<name>_samples` table, creates `pool_catalog`
-if it does not already exist, and persists the schema row. The project is
-started temporarily if it is stopped and restored to its original state on
-exit. Each pool is processed independently, so one pool's failure does not
-block the others, and the command is idempotent — already-persisted pools
-are reported as `already_persisted`. The same logic is exposed
-programmatically as `backfill_project_catalog` in
-`dr_llm.pool.admin.migration`.
-
-Pools whose samples table predates this branch's split of `payload_json`
-into `request_json`/`response_json` cannot be backfilled — that is a data
-migration, not a catalog migration.
+`PoolReader.open(pool, runtime=runtime)` reads the pool's `PoolSchema` from
+the project-global `pool_catalog` table, where `PoolStore.ensure_schema()`
+persists it. Use `PoolReader.from_runtime(runtime, schema=...)` when you
+already have the schema in hand or want to control schema construction in tests.
 
 ## CLI Reference
 
@@ -332,7 +303,6 @@ dr-llm project start|stop NAME
 dr-llm pool destroy PROJECT_NAME POOL_NAME --yes-really-delete-everything
 dr-llm pool destroy-testish PROJECT_NAME --yes-really-delete-everything
 dr-llm pool destroy-testish PROJECT_NAME --dry-run
-dr-llm pool backfill-catalog PROJECT_NAME [--dry-run]
 dr-llm project backup NAME
 dr-llm project restore NAME BACKUP_PATH  # BACKUP_PATH must be .sql.gz
 dr-llm project destroy NAME --yes-really-delete-everything

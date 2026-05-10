@@ -18,7 +18,6 @@ from dr_llm.pool.pool_progress import PoolProgress
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.db import catalog
 from dr_llm.pool.store_ops import completion as completion_ops
-from dr_llm.pool.store_ops import historical as historical_ops
 from dr_llm.pool.store_ops import insert as insert_ops
 from dr_llm.pool.store_ops import leasing as leasing_ops
 from dr_llm.pool.store_ops import queries as query_ops
@@ -38,18 +37,6 @@ class PoolStore:
         self.schema = schema
         self._runtime = runtime
         self._tables = PoolTables(schema)
-
-    def insert_historical_sample(
-        self, sample: PoolSample, *, allow_missing_request: bool = False
-    ) -> bool:
-        """Insert a historical sample, substituting a sentinel if request is empty."""
-        return historical_ops.insert_historical_sample(
-            self._runtime,
-            self.schema,
-            self._tables,
-            sample,
-            allow_missing_request=allow_missing_request,
-        )
 
     def close(self) -> None:
         """Dispose the underlying runtime owned by this store."""
