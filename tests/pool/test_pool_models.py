@@ -9,8 +9,9 @@ from pydantic import BaseModel
 from dr_llm.pool.db import SampleColumn
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 from dr_llm.pool.db.tables import SamplesTableDef
-from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.insert_result import InsertResult
+from dr_llm.pool.pool_progress import PoolProgress
+from dr_llm.pool.pool_sample import PoolSample
 
 _TEST_SCHEMA = PoolSchema(
     name="modeltest",
@@ -182,3 +183,12 @@ def test_insert_result_defaults() -> None:
     assert result.inserted == 0
     assert result.skipped == 0
     assert result.failed == 0
+
+
+def test_pool_progress_construction() -> None:
+    p = PoolProgress(total=10, incomplete=4, leased=2, complete=6, error=1)
+    assert p.total == 10
+    assert p.incomplete == 4
+    assert p.leased == 2
+    assert p.complete == 6
+    assert p.error == 1

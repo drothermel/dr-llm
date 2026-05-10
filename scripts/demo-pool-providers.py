@@ -36,7 +36,6 @@ import typer
 
 from _demo_utils import BOLD, CYAN, GREEN, RED, RESET, YELLOW, fail, ok, step, warn
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
-from dr_llm.pool.db.names import PoolTableType
 from dr_llm.pool.db.schema import KeyColumn, PoolSchema
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
@@ -199,16 +198,13 @@ def store_result(
     store.insert_sample(
         PoolSample(
             key_values={"provider": provider, "model": model},
-            payload={
-                "prompt": prompt,
-                "response_text": response.get("text", ""),
-                "finish_reason": response.get("finish_reason"),
-                "latency_ms": response.get("latency_ms", 0),
-                "total_tokens": usage.get("total_tokens", 0),
-            },
+            request={"prompt": prompt},
+            response=response,
+            finish_reason=response.get("finish_reason"),
             metadata={
                 "cost": response.get("cost") or {},
                 "usage": usage,
+                "latency_ms": response.get("latency_ms", 0),
             },
         )
     )
@@ -241,9 +237,10 @@ def print_summary(store: PoolStore) -> None:
     for s in samples:
         provider = s.key_values["provider"]
         model = s.key_values["model"]
-        latency = s.payload.get("latency_ms", 0)
-        tokens = s.payload.get("total_tokens", 0)
-        text = s.payload.get("response_text", "")
+        latency = (s.metadata or {}).get("latency_ms", 0)
+        usage = (s.metadata or {}).get("usage", {})
+        tokens = usage.get("total_tokens", 0)
+        text = (s.response or {}).get("text", "")
         text_trunc = text[: resp_w - 3] + "..." if len(text) > resp_w else text
         text_trunc = text_trunc.replace("\n", " ")
 
@@ -301,11 +298,7 @@ def main(
         runtime = DbRuntime(DbConfig(dsn=project.dsn, min_pool_size=1, max_pool_size=4))
         store = PoolStore(POOL_SCHEMA, runtime)
         store.ensure_schema()
-        ok(
-            f"Pool '{POOL_SCHEMA.name}' ready "
-            f"(tables: {POOL_SCHEMA.table_name(PoolTableType.SAMPLES)}, "
-            f"{POOL_SCHEMA.table_name(PoolTableType.PENDING)}, ...)"
-        )
+        ok(f"Pool '{POOL_SCHEMA.name}' ready")
 
         succeeded: list[str] = []
         failed_providers: list[str] = []

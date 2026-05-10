@@ -52,14 +52,17 @@ def _drop_tables(dsn: str) -> None:
                 sql.Identifier("public", claims_tbl)
             )
         )
+        conn.execute(
+            "DELETE FROM pool_catalog WHERE pool_name = %s", [_TEST_SCHEMA.name]
+        )
         conn.commit()
 
 
 def _sample(dim_a: str = "a", dim_b: int = 1, **kwargs: Any) -> PoolSample:
     return PoolSample(
         key_values={"dim_a": dim_a, "dim_b": dim_b},
-        payload=kwargs.get("payload", {"data": "test"}),
-        source_run_id=kwargs.get("source_run_id"),
+        request=kwargs.get("request", {"data": "test"}),
+        run_id=kwargs.get("run_id"),
         metadata=kwargs.get("metadata", {}),
         sample_idx=kwargs.get("sample_idx"),
     )
@@ -109,8 +112,8 @@ def test_acquire_basic(pool_store: PoolStore, sampling_store: SamplingStore) -> 
             dim_a="acq",
             dim_b=1,
             sample_idx=0,
-            payload={"data": "primary"},
-            source_run_id="seed-run",
+            request={"data": "primary"},
+            run_id="seed-run",
             metadata={"kind": "primary"},
         )
     )
@@ -123,8 +126,8 @@ def test_acquire_basic(pool_store: PoolStore, sampling_store: SamplingStore) -> 
     assert len(result.samples) == 2
     assert result.samples[0].sample_idx == 0
     assert result.samples[1].sample_idx == 1
-    assert result.samples[0].payload == {"data": "primary"}
-    assert result.samples[0].source_run_id == "seed-run"
+    assert result.samples[0].request == {"data": "primary"}
+    assert result.samples[0].run_id == "seed-run"
     assert result.samples[0].metadata == {"kind": "primary"}
 
 
@@ -189,7 +192,7 @@ def test_service_acquire_or_generate(pool_store: PoolStore) -> None:
 
         def generator(key_values: dict[str, Any], deficit: int) -> list[PoolSample]:
             return [
-                PoolSample(key_values=key_values, payload={"generated": True})
+                PoolSample(key_values=key_values, request={"generated": True})
                 for _ in range(deficit)
             ]
 

@@ -38,23 +38,24 @@ class PoolSimpleStatsPieCard(BaseModel):
         return mo.Html("<div class='w-full border-t border-border'></div>")
 
     def pie_slices(self) -> list[PieSlice]:
+        p = self.pool.progress
         return [
             PieSlice(
-                label="Succeeded",
-                value=self.pool.sample_count,
+                label="Complete",
+                value=p.complete - p.error,
                 color=ChartColor.TWO,
             ),
             PieSlice(
-                label="Pending",
-                value=self.pool.pending_counts.pending,
+                label="Incomplete",
+                value=p.incomplete - p.leased,
             ),
             PieSlice(
                 label="Leased",
-                value=self.pool.pending_counts.leased,
+                value=p.leased,
             ),
             PieSlice(
-                label="Failed",
-                value=self.pool.pending_counts.failed,
+                label="Error",
+                value=p.error,
                 color=ChartColor.ONE,
             ),
         ]

@@ -16,6 +16,7 @@ from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.key_filter import PoolKeyFilter
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
+from dr_llm.pool.store_ops.request_update import RequestUpdate
 
 pytestmark = pytest.mark.integration
 
@@ -58,6 +59,7 @@ def _drop_tables(dsn: str, schema: PoolSchema) -> None:
                     sql.Identifier("public", schema.table_name(table_type))
                 )
             )
+        conn.execute("DELETE FROM pool_catalog WHERE pool_name = %s", [schema.name])
         conn.commit()
 
 
@@ -314,3 +316,342 @@ def test_auto_idx_insertion_allocates_sequential_indices(
 
     rows = pool_store.bulk_load(key_filter=PoolKeyFilter.eq(dim_a="auto", dim_b=1))
     assert sorted(row.sample_idx for row in rows) == [0, 1, 2]
+
+
+# --- Progress / error / leased count tests ---
+
+
+def test_progress_all_states(pool_store: PoolStore) -> None:
+    samples = [
+        _sample(dim_a="prog", dim_b=1, sample_id="prog-1", sample_idx=0),
+        _sample(dim_a="prog", dim_b=1, sample_id="prog-2", sample_idx=1),
+        _sample(dim_a="prog", dim_b=1, sample_id="prog-3", sample_idx=2),
+        _sample(dim_a="prog", dim_b=2, sample_id="prog-4", sample_idx=0),
+    ]
+    assert pool_store.insert_samples(samples).inserted == 4
+
+    pool_store.complete_sample(
+        sample_id="prog-1",
+        response={"text": "ok"},
+        finish_reason="stop",
+        attempt_count=1,
+    )
+    pool_store.complete_sample(
+        sample_id="prog-2",
+        response={"error": "boom"},
+        finish_reason="error",
+        attempt_count=3,
+    )
+    pool_store.claim_lease(worker_id="w1", lease_seconds=300)
+
+    p = pool_store.progress()
+    assert p.total == 4
+    assert p.complete == 2
+    assert p.incomplete == 2
+    assert p.error == 1
+    assert p.leased == 1
+
+
+def test_error_count_with_key_filter(pool_store: PoolStore) -> None:
+    samples = [
+        _sample(dim_a="errcnt", dim_b=1, sample_id="errcnt-1", sample_idx=0),
+        _sample(dim_a="errcnt", dim_b=2, sample_id="errcnt-2", sample_idx=0),
+    ]
+    assert pool_store.insert_samples(samples).inserted == 2
+    pool_store.complete_sample(
+        sample_id="errcnt-1",
+        response={"error": "fail"},
+        finish_reason="error",
+        attempt_count=1,
+    )
+    pool_store.complete_sample(
+        sample_id="errcnt-2",
+        response={"error": "fail"},
+        finish_reason="error",
+        attempt_count=1,
+    )
+
+    assert pool_store.error_count() == 2
+    assert (
+        pool_store.error_count(key_filter=PoolKeyFilter.eq(dim_a="errcnt", dim_b=1))
+        == 1
+    )
+
+
+def test_leased_count_reflects_active_leases(pool_store: PoolStore) -> None:
+    dsn = _get_dsn()
+    assert dsn is not None
+    samples = [
+        _sample(dim_a="lcnt", dim_b=1, sample_id="lcnt-1", sample_idx=0),
+        _sample(dim_a="lcnt", dim_b=1, sample_id="lcnt-2", sample_idx=1),
+    ]
+    assert pool_store.insert_samples(samples).inserted == 2
+
+    pool_store.claim_lease(worker_id="w1", lease_seconds=300)
+    claimed2 = pool_store.claim_lease(worker_id="w2", lease_seconds=300)
+    assert claimed2 is not None
+    assert pool_store.leased_count() == 2
+
+    _expire_lease(dsn, pool_store.schema, claimed2.sample_id)
+    assert pool_store.leased_count() == 1
+
+
+# --- Completion filter tests ---
+
+
+def test_bulk_load_completion_filter(pool_store: PoolStore) -> None:
+    samples = [
+        _sample(dim_a="cf", dim_b=1, sample_id="cf-1", sample_idx=0),
+        _sample(dim_a="cf", dim_b=1, sample_id="cf-2", sample_idx=1),
+        _sample(dim_a="cf", dim_b=1, sample_id="cf-3", sample_idx=2),
+    ]
+    assert pool_store.insert_samples(samples).inserted == 3
+    pool_store.complete_sample(
+        sample_id="cf-1",
+        response={"text": "ok"},
+        finish_reason="stop",
+        attempt_count=1,
+    )
+    pool_store.complete_sample(
+        sample_id="cf-2",
+        response={"error": "fail"},
+        finish_reason="error",
+        attempt_count=2,
+    )
+
+    kf = PoolKeyFilter.eq(dim_a="cf")
+    assert len(pool_store.bulk_load(key_filter=kf, completion="all")) == 3
+    assert len(pool_store.bulk_load(key_filter=kf, completion="complete")) == 2
+    assert len(pool_store.bulk_load(key_filter=kf, completion="incomplete")) == 1
+    errors = pool_store.bulk_load(key_filter=kf, completion="error")
+    assert len(errors) == 1
+    assert errors[0].sample_id == "cf-2"
+
+
+def test_iter_samples_completion_filter(pool_store: PoolStore) -> None:
+    samples = [
+        _sample(dim_a="cfi", dim_b=1, sample_id="cfi-1", sample_idx=0),
+        _sample(dim_a="cfi", dim_b=1, sample_id="cfi-2", sample_idx=1),
+    ]
+    assert pool_store.insert_samples(samples).inserted == 2
+    pool_store.complete_sample(
+        sample_id="cfi-1",
+        response={"text": "ok"},
+        finish_reason="stop",
+        attempt_count=1,
+    )
+
+    kf = PoolKeyFilter.eq(dim_a="cfi")
+    incomplete = list(pool_store.iter_samples(key_filter=kf, completion="incomplete"))
+    assert len(incomplete) == 1
+    assert incomplete[0].sample_id == "cfi-2"
+
+
+# --- Request update tests ---
+
+
+def test_update_incomplete_request_succeeds(pool_store: PoolStore) -> None:
+    sample = _sample(dim_a="upd", dim_b=1, sample_id="upd-1")
+    pool_store.insert_sample(sample)
+
+    assert pool_store.update_incomplete_request(
+        sample_id="upd-1", request={"prompt": "new"}
+    )
+    [s] = pool_store.bulk_load(key_filter=PoolKeyFilter.eq(dim_a="upd"))
+    assert s.request == {"prompt": "new"}
+
+
+def test_update_incomplete_request_noop_for_complete(pool_store: PoolStore) -> None:
+    sample = _sample(dim_a="updc", dim_b=1, sample_id="updc-1")
+    pool_store.insert_sample(sample)
+    pool_store.complete_sample(
+        sample_id="updc-1",
+        response={"text": "done"},
+        finish_reason="stop",
+        attempt_count=1,
+    )
+
+    assert not pool_store.update_incomplete_request(
+        sample_id="updc-1", request={"prompt": "should not apply"}
+    )
+
+
+def test_update_incomplete_requests_batch(pool_store: PoolStore) -> None:
+    samples = [
+        _sample(dim_a="batch", dim_b=1, sample_id="batch-1", sample_idx=0),
+        _sample(dim_a="batch", dim_b=1, sample_id="batch-2", sample_idx=1),
+    ]
+    pool_store.insert_samples(samples)
+
+    count = pool_store.update_incomplete_requests(
+        [
+            RequestUpdate(sample_id="batch-1", request={"v": 1}),
+            RequestUpdate(sample_id="batch-2", request={"v": 2}),
+        ]
+    )
+    assert count == 2
+
+
+def test_update_incomplete_request_with_metadata(pool_store: PoolStore) -> None:
+    sample = _sample(dim_a="updm", dim_b=1, sample_id="updm-1")
+    pool_store.insert_sample(sample)
+
+    pool_store.update_incomplete_request(
+        sample_id="updm-1",
+        request={"prompt": "new"},
+        metadata={"source": "repair"},
+    )
+    [s] = pool_store.bulk_load(key_filter=PoolKeyFilter.eq(dim_a="updm"))
+    assert s.request == {"prompt": "new"}
+    assert s.metadata == {"source": "repair"}
+
+
+# --- Historical insert tests ---
+
+
+def test_insert_historical_with_sentinel(pool_store: PoolStore) -> None:
+    sample = PoolSample(
+        sample_id="hist-1",
+        key_values={"dim_a": "hist", "dim_b": 1},
+        sample_idx=0,
+        response={"text": "old result"},
+        finish_reason="stop",
+        attempt_count=1,
+    )
+    assert pool_store.insert_historical_sample(sample, allow_missing_request=True)
+    [s] = pool_store.bulk_load(key_filter=PoolKeyFilter.eq(dim_a="hist"))
+    assert s.request["unavailable"] is True
+
+
+def test_insert_historical_rejects_empty_request_by_default(
+    pool_store: PoolStore,
+) -> None:
+    sample = PoolSample(
+        sample_id="hist-2",
+        key_values={"dim_a": "hist2", "dim_b": 1},
+        sample_idx=0,
+    )
+    with pytest.raises(ValueError, match="empty request"):
+        pool_store.insert_historical_sample(sample)
+
+
+# --- Catalog tests ---
+
+
+def test_ensure_schema_creates_catalog_entry(pool_store: PoolStore) -> None:
+    from dr_llm.pool.db.catalog import load_schema
+
+    loaded = load_schema(pool_store._runtime, pool_store.schema.name)
+    assert loaded is not None
+    assert loaded == pool_store.schema
+
+
+def test_catalog_load_schema_round_trip(pool_store: PoolStore) -> None:
+    from dr_llm.pool.db.catalog import load_schema
+
+    loaded = load_schema(pool_store._runtime, pool_store.schema.name)
+    assert loaded is not None
+    assert loaded.name == pool_store.schema.name
+    assert loaded.key_columns == pool_store.schema.key_columns
+
+
+def test_catalog_list_pool_names(pool_store: PoolStore) -> None:
+    from dr_llm.pool.db.catalog import list_pool_names
+
+    names = list_pool_names(pool_store._runtime)
+    assert pool_store.schema.name in names
+
+
+# --- Requeue / reset tests ---
+
+
+def test_requeue_errors_clears_response_and_leases(pool_store: PoolStore) -> None:
+    sample = _sample(dim_a="rq", dim_b=1, sample_id="rq-1")
+    pool_store.insert_sample(sample)
+    pool_store.complete_sample(
+        sample_id="rq-1",
+        response={"error": "boom"},
+        finish_reason="error",
+        attempt_count=3,
+    )
+    assert pool_store.error_count() >= 1
+
+    requeued = pool_store.requeue_errors()
+    assert requeued >= 1
+
+    [s] = pool_store.bulk_load(key_filter=PoolKeyFilter.eq(dim_a="rq"))
+    assert s.response is None
+    assert s.finish_reason is None
+    assert s.attempt_count == 0
+
+
+def test_requeue_errors_respects_key_filter(pool_store: PoolStore) -> None:
+    samples = [
+        _sample(dim_a="rqf", dim_b=1, sample_id="rqf-1", sample_idx=0),
+        _sample(dim_a="rqf", dim_b=2, sample_id="rqf-2", sample_idx=0),
+    ]
+    pool_store.insert_samples(samples)
+    for sid in ("rqf-1", "rqf-2"):
+        pool_store.complete_sample(
+            sample_id=sid,
+            response={"error": "fail"},
+            finish_reason="error",
+            attempt_count=1,
+        )
+
+    requeued = pool_store.requeue_errors(
+        key_filter=PoolKeyFilter.eq(dim_a="rqf", dim_b=1)
+    )
+    assert requeued == 1
+    assert pool_store.error_count(key_filter=PoolKeyFilter.eq(dim_a="rqf")) == 1
+
+
+def test_requeue_errors_skips_successful_completions(pool_store: PoolStore) -> None:
+    sample = _sample(dim_a="rqs", dim_b=1, sample_id="rqs-1")
+    pool_store.insert_sample(sample)
+    pool_store.complete_sample(
+        sample_id="rqs-1",
+        response={"text": "ok"},
+        finish_reason="stop",
+        attempt_count=1,
+    )
+
+    assert pool_store.requeue_errors(key_filter=PoolKeyFilter.eq(dim_a="rqs")) == 0
+
+
+def test_reset_samples_by_id(pool_store: PoolStore) -> None:
+    sample = _sample(dim_a="rst", dim_b=1, sample_id="rst-1")
+    pool_store.insert_sample(sample)
+    pool_store.complete_sample(
+        sample_id="rst-1",
+        response={"text": "done"},
+        finish_reason="stop",
+        attempt_count=1,
+    )
+
+    reset = pool_store.reset_samples(sample_ids=["rst-1"])
+    assert reset == 1
+
+    [s] = pool_store.bulk_load(key_filter=PoolKeyFilter.eq(dim_a="rst"))
+    assert s.response is None
+    assert s.attempt_count == 0
+
+
+def test_reset_samples_with_new_request(pool_store: PoolStore) -> None:
+    sample = _sample(dim_a="rstn", dim_b=1, sample_id="rstn-1")
+    pool_store.insert_sample(sample)
+    pool_store.complete_sample(
+        sample_id="rstn-1",
+        response={"text": "done"},
+        finish_reason="stop",
+        attempt_count=1,
+    )
+
+    pool_store.reset_samples(
+        sample_ids=["rstn-1"],
+        reset_request={"prompt": "retry"},
+    )
+
+    [s] = pool_store.bulk_load(key_filter=PoolKeyFilter.eq(dim_a="rstn"))
+    assert s.request == {"prompt": "retry"}
+    assert s.response is None

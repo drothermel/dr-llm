@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Callable
 from typing import Any
 
@@ -24,16 +23,9 @@ class PoolService:
     def __init__(
         self,
         store: PoolStore,
-        *,
-        pending_poll_interval_s: float = 2.0,
-        pending_poll_timeout_s: float = 120.0,
-        pending_priority_bump: int = 100,
     ) -> None:
         self._store = store
         self._sampling = SamplingStore(store.schema, store._runtime, store._tables)
-        self._pending_poll_interval_s = pending_poll_interval_s
-        self._pending_poll_timeout_s = pending_poll_timeout_s
-        self._pending_priority_bump = pending_priority_bump
 
     @property
     def store(self) -> PoolStore:
@@ -63,10 +55,6 @@ class PoolService:
         if self._is_satisfied(result, query):
             return result
 
-        result = self._wait_and_reacquire(query, result, consumer_id)
-        if self._is_satisfied(result, query):
-            return result
-
         deficit = result.deficit(query.n)
         try:
             logger.info(
@@ -93,42 +81,6 @@ class PoolService:
             return AcquireResult(samples=result.samples + reacquired.samples)
 
         return result
-
-    def _wait_and_reacquire(
-        self,
-        query: AcquireQuery,
-        acquired_so_far: AcquireResult,
-        consumer_id: str,
-    ) -> AcquireResult:
-        """Bump pending priority then poll for promoted samples to be acquired."""
-        bumped = self._store.pending.bump_priority(
-            key_values=query.key_values,
-            priority=self._pending_priority_bump,
-        )
-        if bumped == 0:
-            return acquired_so_far
-
-        deadline = time.monotonic() + self._pending_poll_timeout_s
-        sleep_s = self._INITIAL_POLL_INTERVAL_S
-
-        while not self._is_satisfied(acquired_so_far, query):
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            time.sleep(min(sleep_s, remaining))
-            sleep_s = min(sleep_s * 2.0, self._pending_poll_interval_s)
-
-            deficit = acquired_so_far.deficit(query.n)
-            reacquired = self._sampling.acquire(
-                query.model_copy(update={"n": deficit}), consumer_id
-            )
-            if reacquired.claimed > 0:
-                acquired_so_far = AcquireResult(
-                    samples=acquired_so_far.samples + reacquired.samples,
-                )
-                continue
-
-        return acquired_so_far
 
     @staticmethod
     def _is_satisfied(result: AcquireResult, query: AcquireQuery) -> bool:

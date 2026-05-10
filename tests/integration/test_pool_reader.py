@@ -15,13 +15,12 @@ from dr_llm.errors import TransientPersistenceError
 from dr_llm.pool.db.names import PoolTableType
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
-from dr_llm.pool.errors import PoolNotFoundError
 from dr_llm.pool.db.key_filter import PoolKeyFilter
-from dr_llm.pool.pending.pending_sample import PendingSample
-from dr_llm.pool.pending.pending_status import PendingStatus
+from dr_llm.pool.errors import PoolNotFoundError
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.pool.pool_store import SCHEMA_METADATA_KEY, PoolStore
+from dr_llm.pool.pool_store import PoolStore
 from dr_llm.pool.reader import PoolReader
+
 
 _READER_SCHEMA = PoolSchema(
     name=f"itest_reader_{uuid4().hex[:8]}",
@@ -30,21 +29,6 @@ _READER_SCHEMA = PoolSchema(
         KeyColumn(name="dim_b", type=ColumnType.integer),
     ],
 )
-
-_READER_TABLES = (
-    _READER_SCHEMA.table_name(PoolTableType.METADATA),
-    _READER_SCHEMA.table_name(PoolTableType.CALL_STATS),
-    _READER_SCHEMA.table_name(PoolTableType.PENDING),
-    _READER_SCHEMA.table_name(PoolTableType.SAMPLES),
-)
-
-
-def _eq_filter(**key_values: object) -> PoolKeyFilter:
-    return PoolKeyFilter.eq(**key_values)
-
-
-def _in_filter(**key_values: list[object]) -> PoolKeyFilter:
-    return PoolKeyFilter.in_(**key_values)
 
 
 def _get_dsn() -> str:
@@ -56,23 +40,25 @@ def _get_dsn() -> str:
 
 def _drop_pool_tables(dsn: str, schema: PoolSchema) -> None:
     with psycopg.connect(dsn) as conn:
-        for tbl in (
-            schema.table_name(PoolTableType.METADATA),
-            schema.table_name(PoolTableType.CALL_STATS),
-            schema.table_name(PoolTableType.PENDING),
-            schema.table_name(PoolTableType.SAMPLES),
-        ):
+        for table_type in reversed(tuple(PoolTableType)):
             conn.execute(
                 sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
-                    sql.Identifier("public", tbl)
+                    sql.Identifier("public", schema.table_name(table_type))
                 )
             )
+        conn.execute("DELETE FROM pool_catalog WHERE pool_name = %s", [schema.name])
         conn.commit()
 
 
 @pytest.fixture(scope="module")
 def reader_runtime() -> Generator[DbRuntime, None, None]:
-    """Module-scoped DbRuntime for reader integration tests."""
+    """Module-scoped DbRuntime for reader integration tests.
+
+    Seeds a pool with 5 samples across two key groups:
+      - alpha/1: 3 samples (idx 0-2), sample 0 completed ok, sample 1 completed error
+      - beta/2:  2 samples (idx 0-1), both incomplete
+    Then claims a lease on one incomplete sample.
+    """
     dsn = _get_dsn()
 
     runtime: DbRuntime | None = None
@@ -86,16 +72,15 @@ def reader_runtime() -> Generator[DbRuntime, None, None]:
                 application_name="pool_reader_tests",
             )
         )
-        # Seed shared pool with a few samples + pending rows of varied statuses.
         store = PoolStore(_READER_SCHEMA, runtime)
         store.ensure_schema()
+
         for i in range(3):
             store.insert_sample(
                 PoolSample(
                     key_values={"dim_a": "alpha", "dim_b": 1},
                     sample_idx=i,
-                    payload={"i": i},
-                    metadata={"seeded": True},
+                    request={"prompt": f"alpha-{i}"},
                 )
             )
         for i in range(2):
@@ -103,59 +88,28 @@ def reader_runtime() -> Generator[DbRuntime, None, None]:
                 PoolSample(
                     key_values={"dim_a": "beta", "dim_b": 2},
                     sample_idx=i,
-                    payload={"i": i},
+                    request={"prompt": f"beta-{i}"},
                 )
             )
-        # Pending rows: one pending, one will be promoted, one will be failed.
-        store.pending.insert(
-            PendingSample(
-                key_values={"dim_a": "alpha", "dim_b": 1},
-                sample_idx=10,
-                payload={"draft": "p1"},
-            )
-        )
-        promoted_pending = PendingSample(
-            key_values={"dim_a": "alpha", "dim_b": 1},
-            sample_idx=11,
-            payload={"draft": "p2"},
-        )
-        store.pending.insert(promoted_pending)
-        failed_pending = PendingSample(
-            key_values={"dim_a": "beta", "dim_b": 2},
-            sample_idx=20,
-            payload={"draft": "p3"},
-        )
-        store.pending.insert(failed_pending)
 
-        # Promote the second pending row, fail the third.
-        claimed_promote = store.pending.claim(
-            worker_id="w-promote",
-            lease_seconds=60,
-            key_filter=_eq_filter(dim_a="alpha", dim_b=1),
+        alpha_samples = store.bulk_load(
+            key_filter=PoolKeyFilter.eq(dim_a="alpha", dim_b=1)
         )
-        assert claimed_promote is not None
-        # claim() returns oldest first, so we may have grabbed pending #1 not #2;
-        # promote whichever we got and claim again to promote the other.
-        store.pending.promote(
-            pending_id=claimed_promote.pending_id,
-            worker_id="w-promote",
-            payload={"final": True},
+        alpha_samples.sort(key=lambda s: s.sample_idx or 0)
+        store.complete_sample(
+            sample_id=alpha_samples[0].sample_id,
+            response={"text": "ok"},
+            finish_reason="stop",
+            attempt_count=1,
+        )
+        store.complete_sample(
+            sample_id=alpha_samples[1].sample_id,
+            response={"error": "boom"},
+            finish_reason="error",
+            attempt_count=3,
         )
 
-        claimed_fail = store.pending.claim(
-            worker_id="w-fail",
-            lease_seconds=60,
-            key_filter=_eq_filter(dim_a="beta", dim_b=2),
-        )
-        assert claimed_fail is not None
-        store.pending.fail(
-            pending_id=claimed_fail.pending_id, worker_id="w-fail", reason="test"
-        )
-
-        # Seed metadata for prefix-scan tests.
-        store.metadata.upsert("prompt_template/foo", {"template_text": "hello {{X}}"})
-        store.metadata.upsert("prompt_template/bar", {"template_text": "world"})
-        store.metadata.upsert("data_sample/baz", {"source_code": "def f(): ..."})
+        store.claim_lease(worker_id="w-reader", lease_seconds=600)
 
     except (psycopg.OperationalError, TransientPersistenceError) as exc:
         if runtime is not None:
@@ -165,6 +119,19 @@ def reader_runtime() -> Generator[DbRuntime, None, None]:
     yield runtime
     _drop_pool_tables(dsn, _READER_SCHEMA)
     runtime.close()
+
+
+@pytest.mark.integration
+def test_open_from_catalog(reader_runtime: DbRuntime) -> None:
+    reader = PoolReader.open(_READER_SCHEMA.name, runtime=reader_runtime)
+    assert reader.pool_name == _READER_SCHEMA.name
+    assert reader.schema == _READER_SCHEMA
+
+
+@pytest.mark.integration
+def test_open_raises_for_missing_pool(reader_runtime: DbRuntime) -> None:
+    with pytest.raises(PoolNotFoundError):
+        PoolReader.open(f"never_created_{uuid4().hex[:8]}", runtime=reader_runtime)
 
 
 @pytest.mark.integration
@@ -178,144 +145,73 @@ def test_from_runtime_happy_path(reader_runtime: DbRuntime) -> None:
 def test_samples_list_returns_all_seeded(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
     samples = reader.samples_list()
-    # 3 alpha + 2 beta + 1 promoted alpha = 6
-    assert len(samples) == 6
+    assert len(samples) == 5
 
 
 @pytest.mark.integration
 def test_samples_list_with_key_filter(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    alpha = reader.samples_list(key_filter=_eq_filter(dim_a="alpha"))
+    alpha = reader.samples_list(key_filter=PoolKeyFilter.eq(dim_a="alpha"))
     assert all(s.key_values["dim_a"] == "alpha" for s in alpha)
-    # 3 originally seeded + 1 promoted from pending
-    assert len(alpha) == 4
+    assert len(alpha) == 3
 
 
 @pytest.mark.integration
 def test_samples_streaming_iterator(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    streamed = list(reader.samples(key_filter=_eq_filter(dim_a="beta")))
+    streamed = list(reader.samples(key_filter=PoolKeyFilter.eq(dim_a="beta")))
     assert len(streamed) == 2
     assert all(s.key_values["dim_a"] == "beta" for s in streamed)
 
 
 @pytest.mark.integration
+def test_samples_list_with_completion_filter(reader_runtime: DbRuntime) -> None:
+    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
+
+    complete = reader.samples_list(completion="complete")
+    assert len(complete) == 2
+
+    incomplete = reader.samples_list(completion="incomplete")
+    assert len(incomplete) == 3
+
+    errors = reader.samples_list(completion="error")
+    assert len(errors) == 1
+    assert errors[0].finish_reason == "error"
+
+
+@pytest.mark.integration
 def test_samples_list_supports_in_filter(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    rows = reader.samples_list(key_filter=_in_filter(dim_a=["alpha", "beta"]))
-
-    assert len(rows) == 6
-
-
-@pytest.mark.integration
-def test_pending_default_returns_in_flight_only(reader_runtime: DbRuntime) -> None:
-    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    in_flight = reader.pending_list()
-    # 3 inserted, 1 promoted, 1 failed → 1 still in-flight (pending status)
-    assert len(in_flight) == 1
-    assert in_flight[0].status in {PendingStatus.pending, PendingStatus.leased}
-
-
-@pytest.mark.integration
-def test_pending_status_filter_includes_terminal(reader_runtime: DbRuntime) -> None:
-    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    promoted = reader.pending_list(status=PendingStatus.promoted)
-    assert len(promoted) == 1
-    assert promoted[0].status == PendingStatus.promoted
-
-    failed = reader.pending_list(status=PendingStatus.failed)
-    assert len(failed) == 1
-    assert failed[0].status == PendingStatus.failed
-
-    all_states = reader.pending_list(
-        status=[
-            PendingStatus.pending,
-            PendingStatus.leased,
-            PendingStatus.promoted,
-            PendingStatus.failed,
-        ]
-    )
-    assert len(all_states) == 3
+    rows = reader.samples_list(key_filter=PoolKeyFilter.in_(dim_a=["alpha", "beta"]))
+    assert len(rows) == 5
 
 
 @pytest.mark.integration
 def test_progress_aggregates_correctly(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
     progress = reader.progress()
-    assert progress.samples_total == 6
-    assert progress.pending_counts.failed == 1
-    # 3 inserted - 1 promoted - 1 failed = 1 still pending
-    assert progress.pending_counts.pending + progress.pending_counts.leased == 1
-    assert progress.in_flight == 1
-    assert progress.is_complete is False
+    assert progress.total == 5
+    assert progress.complete == 2
+    assert progress.incomplete == 3
+    assert progress.error == 1
+    assert progress.leased >= 1
 
 
 @pytest.mark.integration
-def test_metadata_get_returns_value(reader_runtime: DbRuntime) -> None:
+def test_progress_with_key_filter(reader_runtime: DbRuntime) -> None:
     reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    value = reader.metadata_get("prompt_template/foo")
-    assert value == {"template_text": "hello {{X}}"}
+    alpha_progress = reader.progress(key_filter=PoolKeyFilter.eq(dim_a="alpha"))
+    assert alpha_progress.total == 3
+    assert alpha_progress.complete == 2
+    assert alpha_progress.incomplete == 1
+
+    beta_progress = reader.progress(key_filter=PoolKeyFilter.eq(dim_a="beta"))
+    assert beta_progress.total == 2
+    assert beta_progress.complete == 0
+    assert beta_progress.incomplete == 2
 
 
-@pytest.mark.integration
-def test_metadata_get_returns_none_for_missing(reader_runtime: DbRuntime) -> None:
-    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    assert reader.metadata_get("nonexistent_key") is None
-
-
-@pytest.mark.integration
-def test_metadata_prefix_scans_subset(reader_runtime: DbRuntime) -> None:
-    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    templates = reader.metadata_prefix("prompt_template/")
-    assert set(templates.keys()) == {"prompt_template/foo", "prompt_template/bar"}
-    assert templates["prompt_template/foo"]["template_text"] == "hello {{X}}"
-
-    samples = reader.metadata_prefix("data_sample/")
-    assert set(samples.keys()) == {"data_sample/baz"}
-
-
-@pytest.mark.integration
-def test_metadata_prefix_treats_like_wildcards_literally(
-    reader_runtime: DbRuntime,
-) -> None:
-    store = PoolStore(_READER_SCHEMA, reader_runtime)
-    literal_prefix = f"wild_%_case_{uuid4().hex[:8]}/"
-    literal_key = f"{literal_prefix}match"
-    wildcard_match_only = f"wildXabcYcase_{uuid4().hex[:8]}/decoy"
-
-    store.metadata.upsert(literal_key, {"kind": "literal"})
-    store.metadata.upsert(wildcard_match_only, {"kind": "decoy"})
-
-    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    matches = reader.metadata_prefix(literal_prefix)
-
-    assert matches == {literal_key: {"kind": "literal"}}
-
-
-@pytest.mark.integration
-def test_metadata_prefix_can_load_internal_schema_key(
-    reader_runtime: DbRuntime,
-) -> None:
-    """The persisted schema should be discoverable via prefix scan."""
-    reader = PoolReader.from_runtime(reader_runtime, schema=_READER_SCHEMA)
-    underscore_keys = reader.metadata_prefix("_")
-    assert SCHEMA_METADATA_KEY in underscore_keys
-    # Round-trip: the persisted dump should validate back into a PoolSchema.
-    reconstructed = PoolSchema(**underscore_keys[SCHEMA_METADATA_KEY])
-    assert reconstructed == _READER_SCHEMA
-
-
-@pytest.mark.integration
-def test_ensure_schema_persists_schema_metadata(reader_runtime: DbRuntime) -> None:
-    """ensure_schema must populate the _schema metadata key."""
-    store = PoolStore(_READER_SCHEMA, reader_runtime)
-    persisted = store.metadata.get(SCHEMA_METADATA_KEY)
-    assert persisted is not None
-    reconstructed = PoolSchema(**persisted)
-    assert reconstructed == _READER_SCHEMA
-
-
-# --- Schema-loading classmethod paths ---
+# --- Lifecycle ---
 
 
 def _isolated_pool_schema() -> PoolSchema:
@@ -326,55 +222,7 @@ def _isolated_pool_schema() -> PoolSchema:
 
 
 @pytest.mark.integration
-def test_load_schema_from_db_round_trip() -> None:
-    """A reader constructed without an explicit schema should reconstruct
-    the original PoolSchema from the metadata table."""
-    dsn = _get_dsn()
-    schema = _isolated_pool_schema()
-    runtime = DbRuntime(
-        DbConfig(
-            dsn=dsn,
-            min_pool_size=1,
-            max_pool_size=2,
-            application_name="pool_reader_tests_iso",
-        )
-    )
-    try:
-        store = PoolStore(schema, runtime)
-        store.ensure_schema()
-
-        from dr_llm.pool.reader import _load_schema_from_db
-
-        loaded = _load_schema_from_db(runtime, schema.name)
-        assert loaded == schema
-    finally:
-        _drop_pool_tables(dsn, schema)
-        runtime.close()
-
-
-@pytest.mark.integration
-def test_load_schema_from_db_raises_when_pool_missing() -> None:
-    dsn = _get_dsn()
-    runtime = DbRuntime(
-        DbConfig(
-            dsn=dsn,
-            min_pool_size=1,
-            max_pool_size=2,
-            application_name="pool_reader_tests_missing",
-        )
-    )
-    try:
-        from dr_llm.pool.reader import _load_schema_from_db
-
-        with pytest.raises(PoolNotFoundError):
-            _load_schema_from_db(runtime, f"never_created_{uuid4().hex[:8]}")
-    finally:
-        runtime.close()
-
-
-@pytest.mark.integration
 def test_close_disposes_owned_runtime_only() -> None:
-    """from_runtime borrows; close() must NOT dispose a borrowed runtime."""
     dsn = _get_dsn()
     schema = _isolated_pool_schema()
     runtime = DbRuntime(
@@ -391,9 +239,7 @@ def test_close_disposes_owned_runtime_only() -> None:
 
         reader = PoolReader.from_runtime(runtime, schema=schema)
         reader.close()
-        # close() is idempotent and the borrowed runtime is still alive.
         reader.close()
-        # The runtime is still usable after the borrowed reader closes.
         with runtime.connect() as conn:
             conn.execute(text("SELECT 1"))
     finally:
@@ -419,7 +265,6 @@ def test_context_manager_calls_close() -> None:
 
         with PoolReader.from_runtime(runtime, schema=schema) as reader:
             assert reader.samples_list() == []
-        # The borrowed runtime survives context exit.
         with runtime.connect() as conn:
             conn.execute(text("SELECT 1"))
     finally:

@@ -1,21 +1,17 @@
+"""Pool inspection: introspect pool state and schema."""
+
 from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
-from sqlalchemy import Column, DateTime, MetaData, Table, Text, select
+from pydantic import BaseModel, ConfigDict, field_validator
 
-from dr_llm.pool.db import (
-    DbConfig,
-    DbRuntime,
-    MetadataColumn,
-    PoolSchema,
-    PoolTableType,
-)
-from dr_llm.pool.pending.pending_status import PendingStatusCounts
-from dr_llm.pool.pool_store import SCHEMA_METADATA_KEY
-from dr_llm.pool.reader import PoolReader, _load_schema_from_db as load_schema_from_db
-from dr_llm.project.errors import ProjectError, ProjectNotFoundError
+from dr_llm.pool.db import DbConfig, DbRuntime, PoolSchema
+from dr_llm.pool.db.catalog import load_catalog_created_at, load_schema
+from dr_llm.pool.errors import PoolNotFoundError
+from dr_llm.pool.pool_progress import PoolProgress
+from dr_llm.pool.pool_store import PoolStore
+from dr_llm.project.errors import ProjectNotFoundError
 from dr_llm.project.project_info import ProjectInfo
 
 
@@ -38,18 +34,7 @@ class PoolInspection(BaseModel):
     name: str
     pool_schema: PoolSchema
     created_at: datetime | None = None
-    sample_count: int = 0
-    pending_counts: PendingStatusCounts = Field(default_factory=PendingStatusCounts)
-
-    @computed_field
-    @property
-    def pending_total(self) -> int:
-        return self.pending_counts.total
-
-    @computed_field
-    @property
-    def in_flight(self) -> int:
-        return self.pending_counts.in_flight
+    progress: PoolProgress
 
 
 def inspect_pool(request: PoolInspectionRequest) -> PoolInspection:
@@ -62,27 +47,22 @@ def inspect_pool(request: PoolInspectionRequest) -> PoolInspection:
 
 
 def _inspect_pool_for_project(project: ProjectInfo, pool_name: str) -> PoolInspection:
+    from dr_llm.project.errors import ProjectError
+
     if project.dsn is None:
         raise ProjectError(f"Project {project.name!r} has no DSN; start it first.")
 
     runtime = DbRuntime(DbConfig(dsn=project.dsn))
     try:
-        schema = load_schema_from_db(runtime, pool_name)
-        reader = PoolReader.from_runtime(runtime, schema=schema)
-        progress = reader.progress()
-        metadata_table = Table(
-            schema.table_name(PoolTableType.METADATA),
-            MetaData(),
-            Column(MetadataColumn.POOL_NAME, Text, nullable=False),
-            Column(MetadataColumn.KEY, Text, nullable=False),
-            Column(MetadataColumn.CREATED_AT, DateTime(timezone=True)),
-        )
-        metadata_created_at_stmt = select(metadata_table.c.created_at).where(
-            metadata_table.c.pool_name == schema.name,
-            metadata_table.c.key == SCHEMA_METADATA_KEY,
-        )
-        with runtime.connect() as conn:
-            created_at = conn.execute(metadata_created_at_stmt).scalar_one_or_none()
+        schema = load_schema(runtime, pool_name)
+        if schema is None:
+            raise PoolNotFoundError(
+                f"Pool {pool_name!r} not found in the catalog for "
+                f"project {project.name!r}."
+            )
+        store = PoolStore(schema, runtime)
+        pool_progress = store.progress()
+        created_at = load_catalog_created_at(runtime, pool_name)
     finally:
         runtime.close()
 
@@ -91,6 +71,5 @@ def _inspect_pool_for_project(project: ProjectInfo, pool_name: str) -> PoolInspe
         name=schema.name,
         pool_schema=schema,
         created_at=created_at,
-        sample_count=progress.samples_total,
-        pending_counts=progress.pending_counts,
+        progress=pool_progress,
     )
