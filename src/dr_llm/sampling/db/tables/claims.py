@@ -6,25 +6,24 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Column, Index, Integer, MetaData, Table, Text, text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 
-from dr_llm.pool.db.names import (
-    ClaimColumn,
-    IndexNamePrefix,
-    PoolIndexName,
-    PoolTableType,
-    pool_index_name,
-)
-from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.tables.table_def_protocol import ColumnServerDefault
+from dr_llm.sampling.db.names import (
+    ClaimColumn,
+    ClaimsIndexName,
+    ClaimsTableType,
+    IndexNamePrefix,
+    claims_index_name,
+)
 
 
 class ClaimsTableDef(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    table_type: ClassVar[PoolTableType] = PoolTableType.CLAIMS
+    table_type: ClassVar[ClaimsTableType] = ClaimsTableType.CLAIMS
 
-    def build_table(self, schema: PoolSchema, metadata: MetaData) -> Table:
+    def build_table(self, table_name: str, metadata: MetaData) -> Table:
         return Table(
-            schema.table_name(self.table_type),
+            table_name,
             metadata,
             Column(ClaimColumn.CLAIM_ID, Text, primary_key=True),
             Column(ClaimColumn.RUN_ID, Text, nullable=False),
@@ -45,23 +44,23 @@ class ClaimsTableDef(BaseModel):
             ),
         )
 
-    def build_indexes(self, table: Table, _schema: PoolSchema) -> list[Index]:
+    def build_indexes(self, table: Table) -> list[Index]:
         return [
             Index(
-                pool_index_name(
-                    IndexNamePrefix.UNIQUE, table.name, PoolIndexName.RUN_SAMPLE
+                claims_index_name(
+                    IndexNamePrefix.UNIQUE, table.name, ClaimsIndexName.RUN_SAMPLE
                 ),
                 table.c[ClaimColumn.RUN_ID],
                 table.c[ClaimColumn.SAMPLE_ID],
                 unique=True,
             ),
             Index(
-                pool_index_name(
-                    IndexNamePrefix.STANDARD, table.name, PoolIndexName.RUN
+                claims_index_name(
+                    IndexNamePrefix.STANDARD, table.name, ClaimsIndexName.RUN
                 ),
                 table.c[ClaimColumn.RUN_ID],
             ),
         ]
 
-    def select_columns(self, table: Table, _schema: PoolSchema) -> list[Any]:
+    def select_columns(self, table: Table) -> list[Any]:
         return list(table.c)

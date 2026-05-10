@@ -9,7 +9,6 @@ from dr_llm.pool.db.names import PoolTableType
 from dr_llm.pool.db.schema import PoolSchema
 from dr_llm.pool.db.tables import (
     CallStatsTableDef,
-    ClaimsTableDef,
     MetadataTableDef,
     PendingTableDef,
     SamplesTableDef,
@@ -23,7 +22,6 @@ class PoolTables:
         self.sa_metadata = MetaData()
         self.defs: dict[PoolTableType, TableDef] = {
             PoolTableType.SAMPLES: SamplesTableDef(),
-            PoolTableType.CLAIMS: ClaimsTableDef(),
             PoolTableType.PENDING: PendingTableDef(),
             PoolTableType.METADATA: MetadataTableDef(),
             PoolTableType.CALL_STATS: CallStatsTableDef(),

@@ -19,7 +19,6 @@ from dr_llm.pool.db.schema import (
     PoolSchema,
     pool_table_names,
 )
-from dr_llm.pool.acquisition import AcquireQuery
 from dr_llm.pool.admin.deletion import DeletePoolRequest, PoolDeletionStatus
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
@@ -97,7 +96,6 @@ def test_delete_pool_reports_counts_for_normal_pool(
         except (psycopg.OperationalError, TransientPersistenceError) as exc:
             pytest.skip(f"Postgres unavailable for pool integration tests: {exc}")
         store.insert_sample(sample)
-        store.acquire(AcquireQuery(run_id="run-1", key_values={"dim_a": "alpha"}, n=1))
         store.pending.insert(
             PendingSample(
                 key_values={"dim_a": "alpha"},
@@ -134,7 +132,6 @@ def test_delete_pool_reports_counts_for_normal_pool(
         assert result.deleted_table_names == _pool_table_names(pool_name)
         assert result.pre_delete_counts == {
             schema.table_name(PoolTableType.SAMPLES): 1,
-            schema.table_name(PoolTableType.CLAIMS): 1,
             schema.table_name(PoolTableType.PENDING): 1,
             schema.table_name(PoolTableType.METADATA): 2,
             schema.table_name(PoolTableType.CALL_STATS): 1,

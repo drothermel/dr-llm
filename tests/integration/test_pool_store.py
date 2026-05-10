@@ -22,13 +22,11 @@ from dr_llm.pool.db.names import (
 )
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
-from dr_llm.pool.errors import PoolSchemaError, PoolTopupError
+from dr_llm.pool.errors import PoolSchemaError
 from dr_llm.pool.key_filter import PoolKeyFilter
-from dr_llm.pool.acquisition import AcquireQuery
 from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.pool.pool_service import PoolService
 from dr_llm.pool.pool_store import PoolStore
 
 
@@ -243,7 +241,6 @@ def test_bootstrap_backfills_missing_unique_indexes() -> None:
             for table_name in (
                 schema.table_name(PoolTableType.METADATA),
                 schema.table_name(PoolTableType.CALL_STATS),
-                schema.table_name(PoolTableType.CLAIMS),
                 schema.table_name(PoolTableType.PENDING),
                 schema.table_name(PoolTableType.SAMPLES),
             ):
@@ -254,74 +251,6 @@ def test_bootstrap_backfills_missing_unique_indexes() -> None:
                 )
             conn.commit()
         runtime.close()
-
-
-# --- Acquire ---
-
-
-@pytest.mark.integration
-def test_acquire_basic(pool_store: PoolStore) -> None:
-    pool_store.insert_sample(
-        _sample(
-            dim_a="acq",
-            dim_b=1,
-            sample_idx=0,
-            payload={"data": "primary"},
-            source_run_id="seed-run",
-            metadata={"kind": "primary"},
-        )
-    )
-    for i in range(1, 3):
-        pool_store.insert_sample(_sample(dim_a="acq", dim_b=1, sample_idx=i))
-
-    q = AcquireQuery(run_id="run1", key_values={"dim_a": "acq", "dim_b": 1}, n=2)
-    result = pool_store.acquire(q)
-    assert result.claimed == 2
-    assert len(result.samples) == 2
-    assert result.samples[0].sample_idx == 0
-    assert result.samples[1].sample_idx == 1
-    assert result.samples[0].payload == {"data": "primary"}
-    assert result.samples[0].source_run_id == "seed-run"
-    assert result.samples[0].metadata == {"kind": "primary"}
-
-
-@pytest.mark.integration
-def test_acquire_no_replacement(pool_store: PoolStore) -> None:
-    for i in range(3):
-        pool_store.insert_sample(_sample(dim_a="norep", dim_b=1, sample_idx=i))
-
-    q1 = AcquireQuery(run_id="run_nr", key_values={"dim_a": "norep", "dim_b": 1}, n=2)
-    r1 = pool_store.acquire(q1)
-    assert r1.claimed == 2
-
-    # Second acquire in same run should get remaining sample
-    q2 = AcquireQuery(run_id="run_nr", key_values={"dim_a": "norep", "dim_b": 1}, n=2)
-    r2 = pool_store.acquire(q2)
-    assert r2.claimed == 1
-
-    # Third acquire exhausts pool
-    q3 = AcquireQuery(run_id="run_nr", key_values={"dim_a": "norep", "dim_b": 1}, n=2)
-    r3 = pool_store.acquire(q3)
-    assert r3.claimed == 0
-
-
-@pytest.mark.integration
-def test_remaining(pool_store: PoolStore) -> None:
-    for i in range(3):
-        pool_store.insert_sample(_sample(dim_a="rem", dim_b=1, sample_idx=i))
-
-    assert (
-        pool_store.remaining(run_id="run_rem", key_values={"dim_a": "rem", "dim_b": 1})
-        == 3
-    )
-
-    pool_store.acquire(
-        AcquireQuery(run_id="run_rem", key_values={"dim_a": "rem", "dim_b": 1}, n=1)
-    )
-    assert (
-        pool_store.remaining(run_id="run_rem", key_values={"dim_a": "rem", "dim_b": 1})
-        == 2
-    )
 
 
 # --- Pending ---
@@ -1004,48 +933,6 @@ def test_bulk_load_pending_excludes_promoted(pool_store: PoolStore) -> None:
 def test_missing_key_raises(pool_store: PoolStore) -> None:
     with pytest.raises(PoolSchemaError, match="Missing key columns"):
         pool_store.insert_sample(PoolSample(key_values={"dim_a": "x"}))
-
-
-# --- Service ---
-
-
-@pytest.mark.integration
-def test_service_acquire_or_generate(pool_store: PoolStore) -> None:
-    service = PoolService(pool_store)
-
-    def generator(key_values: dict[str, Any], deficit: int) -> list[PoolSample]:
-        return [
-            PoolSample(key_values=key_values, payload={"generated": True})
-            for _ in range(deficit)
-        ]
-
-    q = AcquireQuery(
-        run_id="svc_run",
-        key_values={"dim_a": "svc", "dim_b": 42},
-        n=3,
-    )
-    result = service.acquire_or_generate(q, generator_fn=generator)
-    assert len(result.samples) == 3
-
-    # Samples should now be in the pool for future runs
-    depth = pool_store.cell_depth(key_values={"dim_a": "svc", "dim_b": 42})
-    assert depth >= 3
-
-
-@pytest.mark.integration
-def test_service_generator_error_wraps_as_topup_error(pool_store: PoolStore) -> None:
-    service = PoolService(pool_store)
-
-    def failing_generator(key_values: dict[str, Any], deficit: int) -> list[PoolSample]:
-        raise RuntimeError("LLM call timed out")
-
-    q = AcquireQuery(
-        run_id="svc_fail",
-        key_values={"dim_a": "svc_err", "dim_b": 99},
-        n=3,
-    )
-    with pytest.raises(PoolTopupError, match="Top-up generation failed"):
-        service.acquire_or_generate(q, generator_fn=failing_generator)
 
 
 # --- Call stats ---

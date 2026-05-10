@@ -18,7 +18,6 @@ from dr_llm.pool.db.schema import (
 )
 from dr_llm.pool.db.tables import (
     CallStatsTableDef,
-    ClaimsTableDef,
     MetadataTableDef,
     PendingTableDef,
     SamplesTableDef,
@@ -39,7 +38,6 @@ def test_pool_tables_contains_all_tables() -> None:
     tables = PoolTables(_simple_schema())
     assert list(tables.tables) == list(PoolTableType)
     assert tables[PoolTableType.SAMPLES].name == "pool_test_samples"
-    assert tables[PoolTableType.CLAIMS].name == "pool_test_claims"
     assert tables[PoolTableType.PENDING].name == "pool_test_pending"
     assert tables[PoolTableType.METADATA].name == "pool_test_metadata"
     assert tables[PoolTableType.CALL_STATS].name == "pool_test_call_stats"
@@ -118,7 +116,6 @@ def test_pool_tables_select_columns_are_table_type_specific() -> None:
         "created_at",
     ]
     for table_type in (
-        PoolTableType.CLAIMS,
         PoolTableType.METADATA,
         PoolTableType.CALL_STATS,
     ):
@@ -130,14 +127,13 @@ def test_pool_tables_select_columns_are_table_type_specific() -> None:
 def test_pool_tables_reject_missing_table_type_helpers() -> None:
     tables = PoolTables(_simple_schema())
     with pytest.raises(ValueError, match="key columns"):
-        tables.key_columns(PoolTableType.CLAIMS)
+        tables.key_columns(PoolTableType.METADATA)
 
 
 def test_pool_tables_registers_pydantic_table_defs() -> None:
     tables = PoolTables(_simple_schema())
     expected_def_types: dict[PoolTableType, type[BaseModel]] = {
         PoolTableType.SAMPLES: SamplesTableDef,
-        PoolTableType.CLAIMS: ClaimsTableDef,
         PoolTableType.PENDING: PendingTableDef,
         PoolTableType.METADATA: MetadataTableDef,
         PoolTableType.CALL_STATS: CallStatsTableDef,
@@ -171,21 +167,18 @@ def test_schema_table_names() -> None:
     schema = _simple_schema()
     assert {table_type.value for table_type in PoolTableType} == {
         "samples",
-        "claims",
         "pending",
         "metadata",
         "call_stats",
     }
     assert pool_table_name("test", PoolTableType.SAMPLES) == "pool_test_samples"
     assert schema.table_name(PoolTableType.SAMPLES) == "pool_test_samples"
-    assert schema.table_name(PoolTableType.CLAIMS) == "pool_test_claims"
     assert schema.table_name(PoolTableType.PENDING) == "pool_test_pending"
     assert schema.table_name(PoolTableType.METADATA) == "pool_test_metadata"
     assert schema.table_name(PoolTableType.CALL_STATS) == "pool_test_call_stats"
     assert schema.table_names() == pool_table_names("test")
     assert schema.table_names() == [
         "pool_test_samples",
-        "pool_test_claims",
         "pool_test_pending",
         "pool_test_metadata",
         "pool_test_call_stats",

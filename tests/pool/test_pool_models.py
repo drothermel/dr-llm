@@ -5,10 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pydantic import BaseModel
 
-import pytest
 
 from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
-from dr_llm.pool.acquisition import AcquireQuery, AcquireResult
 from dr_llm.pool.admin.deletion import DeletePoolRequest, DeletePoolsByTokenRequest
 from dr_llm.pool.results import InsertResult
 from dr_llm.pool.pending.backend import PoolPendingBackendState
@@ -16,7 +14,6 @@ from dr_llm.pool.pending.pending_sample import PendingSample
 from dr_llm.pool.pending.pending_status import PendingStatus, PendingStatusCounts
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.workers import WorkerSnapshot
-from pydantic import ValidationError
 
 _TEST_SCHEMA = PoolSchema(
     name="modeltest",
@@ -32,18 +29,6 @@ def test_pool_sample_defaults() -> None:
     assert s.sample_id  # auto-generated
     assert s.sample_idx is None
     assert s.payload == {}
-
-
-def test_acquire_result_deficit() -> None:
-    r = AcquireResult(samples=[])
-    assert r.claimed == 0
-    assert r.deficit(5) == 5
-
-    r2 = AcquireResult(samples=[PoolSample(key_values={"x": "a"})] * 3)
-    assert r2.claimed == 3
-    assert r2.deficit(5) == 2
-    assert r2.deficit(3) == 0
-    assert r2.deficit(1) == 0
 
 
 def test_pending_sample_defaults() -> None:
@@ -247,16 +232,6 @@ def test_pending_status_counts_from_rows_handles_partial_and_unknown() -> None:
     assert counts.pending == 4
     assert counts.leased == 0
     assert counts.failed == 0
-
-
-def test_acquire_query_auto_request_id() -> None:
-    q = AcquireQuery(run_id="r1", key_values={"x": "a"}, n=5)
-    assert q.request_id  # auto-generated
-
-
-def test_acquire_query_rejects_negative_n() -> None:
-    with pytest.raises(ValidationError, match="greater than or equal to 0"):
-        AcquireQuery(run_id="r1", key_values={"x": "a"}, n=-1)
 
 
 def test_worker_snapshot_defaults() -> None:

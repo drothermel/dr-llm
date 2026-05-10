@@ -2,7 +2,6 @@
 
 from dr_llm.pool.db.names import (
     CallStatsColumn,
-    ClaimColumn,
     MetadataColumn,
     PendingColumn,
     PoolTableType,
@@ -14,7 +13,6 @@ from dr_llm.pool.db.schema import ColumnType, KeyColumn, PoolSchema
 
 __all__ = [
     "CallStatsColumn",
-    "ClaimColumn",
     "ColumnType",
     "DbConfig",
     "DbRuntime",

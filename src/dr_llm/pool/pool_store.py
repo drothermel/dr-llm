@@ -1,4 +1,4 @@
-"""Pool sample storage: CRUD, no-replacement acquisition, coverage."""
+"""Pool sample storage: CRUD and coverage."""
 
 from __future__ import annotations
 
@@ -7,14 +7,12 @@ import json
 from collections.abc import Iterable, Iterator
 from typing import Any
 
-from sqlalchemy import Text, exists, func, literal, select
+from sqlalchemy import func, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.sql.elements import ColumnElement
 
 from dr_llm.pool.db import (
     CallStatsColumn,
-    ClaimColumn,
     DbRuntime,
     PoolSchema,
     PoolTables,
@@ -28,7 +26,6 @@ from dr_llm.pool.db.sql_helpers import (
     stream_select_rows,
     validate_key_values,
 )
-from dr_llm.pool.acquisition import AcquireQuery, AcquireResult
 from dr_llm.pool.call_stats import CallStats
 from dr_llm.pool.coverage import CoverageRow
 from dr_llm.pool.key_filter import PoolKeyFilter
@@ -246,113 +243,6 @@ class PoolStore:
         )
         digest = hashlib.blake2b(lock_payload.encode("utf-8"), digest_size=8).digest()
         return int.from_bytes(digest, byteorder="big", signed=True)
-
-    def acquire(self, query: AcquireQuery) -> AcquireResult:
-        """Acquire up to query.n unclaimed samples for given key dimensions.
-
-        Single round-trip via data-modifying CTE: lock candidate sample rows
-        with FOR UPDATE SKIP LOCKED, insert claim rows for them, then return
-        the joined sample data. ON CONFLICT DO NOTHING tolerates the rare
-        race where a row was claimed between the lock and the insert.
-        """
-        validate_key_values(self.schema, query.key_values)
-        if query.n == 0:
-            return AcquireResult()
-
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        claims_table = self._tables[PoolTableType.CLAIMS]
-
-        locked = (
-            select(
-                samples_table.c.sample_id,
-                samples_table.c.sample_idx,
-                samples_table.c.created_at,
-            )
-            .where(
-                key_filter_clause(self.schema, samples_table, query.key_values),
-                self._unclaimed_predicate(query.run_id),
-            )
-            .order_by(
-                samples_table.c.sample_idx.asc(),
-                samples_table.c.created_at.asc(),
-            )
-            .limit(query.n)
-            .with_for_update(skip_locked=True)
-            .cte("locked")
-        )
-
-        claim_source = select(
-            func.cast(func.gen_random_uuid(), Text).label(ClaimColumn.CLAIM_ID),
-            literal(query.run_id, type_=Text).label(ClaimColumn.RUN_ID),
-            literal(query.request_id, type_=Text).label(ClaimColumn.REQUEST_ID),
-            literal(query.consumer_tag, type_=Text).label(ClaimColumn.CONSUMER_TAG),
-            locked.c.sample_id.label(ClaimColumn.SAMPLE_ID),
-            (
-                func.row_number().over(
-                    order_by=[
-                        locked.c.sample_idx.asc(),
-                        locked.c.created_at.asc(),
-                    ]
-                )
-                - 1
-            ).label(ClaimColumn.CLAIM_IDX),
-        ).select_from(locked)
-
-        inserted = (
-            pg_insert(claims_table)
-            .from_select(
-                [
-                    ClaimColumn.CLAIM_ID,
-                    ClaimColumn.RUN_ID,
-                    ClaimColumn.REQUEST_ID,
-                    ClaimColumn.CONSUMER_TAG,
-                    ClaimColumn.SAMPLE_ID,
-                    ClaimColumn.CLAIM_IDX,
-                ],
-                claim_source,
-            )
-            .on_conflict_do_nothing(
-                index_elements=[claims_table.c.run_id, claims_table.c.sample_id]
-            )
-            .returning(claims_table.c.sample_id)
-            .cte("inserted")
-        )
-
-        stmt = (
-            select(*self._tables.select_columns(PoolTableType.SAMPLES))
-            .join(inserted, samples_table.c.sample_id == inserted.c.sample_id)
-            .order_by(
-                samples_table.c.sample_idx.asc(),
-                samples_table.c.created_at.asc(),
-            )
-        )
-
-        with self._runtime.begin() as conn:
-            rows = conn.execute(stmt).mappings().all()
-        samples = [PoolSample.from_db_row(self.schema, dict(row)) for row in rows]
-        return AcquireResult(samples=samples)
-
-    def remaining(self, *, run_id: str, key_values: dict[str, Any]) -> int:
-        """Count unclaimed samples for given key dimensions and run."""
-        validate_key_values(self.schema, key_values)
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        stmt = select(func.count()).where(
-            key_filter_clause(self.schema, samples_table, key_values),
-            self._unclaimed_predicate(run_id),
-        )
-        with self._runtime.connect() as conn:
-            return int(conn.execute(stmt).scalar_one())
-
-    def _unclaimed_predicate(self, run_id: str) -> ColumnElement[bool]:
-        """Predicate matching samples with no claim row for the given run."""
-        claims_table = self._tables[PoolTableType.CLAIMS]
-        samples_table = self._tables[PoolTableType.SAMPLES]
-        return ~exists(
-            select(1).where(
-                claims_table.c.run_id == run_id,
-                claims_table.c.sample_id == samples_table.c.sample_id,
-            )
-        )
 
     def sample_count(self) -> int:
         """Return the total number of rows in the pool's samples table."""

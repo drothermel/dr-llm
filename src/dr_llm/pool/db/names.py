@@ -5,7 +5,6 @@ from enum import StrEnum
 
 class PoolTableType(StrEnum):
     SAMPLES = "samples"
-    CLAIMS = "claims"
     PENDING = "pending"
     METADATA = "metadata"
     CALL_STATS = "call_stats"
@@ -19,8 +18,6 @@ class IndexNamePrefix(StrEnum):
 class PoolIndexName(StrEnum):
     CELL = "cell"
     KEY = "key"
-    RUN_SAMPLE = "run_sample"
-    RUN = "run"
     STATUS_PRIORITY = "status_priority"
 
 
@@ -37,16 +34,6 @@ class SampleColumn(StrEnum):
     SOURCE_RUN_ID = "source_run_id"
     METADATA_JSON = "metadata_json"
     CREATED_AT = "created_at"
-
-
-class ClaimColumn(StrEnum):
-    CLAIM_ID = "claim_id"
-    RUN_ID = "run_id"
-    REQUEST_ID = "request_id"
-    CONSUMER_TAG = "consumer_tag"
-    SAMPLE_ID = "sample_id"
-    CLAIM_IDX = "claim_idx"
-    CLAIMED_AT = "claimed_at"
 
 
 class PendingColumn(StrEnum):

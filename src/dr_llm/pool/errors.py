@@ -11,14 +11,6 @@ class PoolSchemaError(PoolError):
     """Invalid pool schema declaration."""
 
 
-class PoolAcquireError(PoolError):
-    """Failed to acquire samples from pool."""
-
-
-class PoolTopupError(PoolError):
-    """Top-up generation or persistence failed."""
-
-
 class PoolNotFoundError(PoolError):
     """Pool tables do not exist for the requested pool name."""
 

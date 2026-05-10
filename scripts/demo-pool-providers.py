@@ -304,7 +304,7 @@ def main(
         ok(
             f"Pool '{POOL_SCHEMA.name}' ready "
             f"(tables: {POOL_SCHEMA.table_name(PoolTableType.SAMPLES)}, "
-            f"{POOL_SCHEMA.table_name(PoolTableType.CLAIMS)}, ...)"
+            f"{POOL_SCHEMA.table_name(PoolTableType.PENDING)}, ...)"
         )
 
         succeeded: list[str] = []
