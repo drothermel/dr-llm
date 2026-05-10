@@ -46,12 +46,13 @@ from pydantic import (
     model_validator,
 )
 
-from dr_llm.llm.messages import CallMode
+import dr_llm.llm.response as _llm_response
 from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.openrouter.policy import OpenRouterEffortLevel
 from dr_llm.llm.providers.reasoning_capability_types import (
     ReasoningCapabilities,
 )
+from dr_llm.llm.response import CallMode
 
 
 class ReasoningWarningCode(StrEnum):
@@ -68,6 +69,9 @@ class ReasoningWarning(BaseModel):
     provider: str | None = None
     mode: CallMode | None = None
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+_llm_response._rebuild_with_reasoning_warning()
 
 
 class ThinkingLevel(StrEnum):

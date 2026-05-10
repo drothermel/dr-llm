@@ -14,9 +14,8 @@ from dr_llm.llm.providers.anthropic.reasoning import (
 )
 from dr_llm.llm.providers.api_config import resolve_api_key
 from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.messages import Message
 from dr_llm.llm.providers.reasoning import ReasoningWarning
-from dr_llm.llm.request import ApiBackedLlmRequest
+from dr_llm.llm.request import ApiBackedLlmRequest, Message
 
 
 class _AnthropicRequestTextBlock(BaseModel):

@@ -4,7 +4,6 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
-from dr_llm.llm.messages import Message
 from dr_llm.llm.names import (
     SamplingApiProviderName,
     HeadlessProviderName,
@@ -19,6 +18,7 @@ from dr_llm.llm.request import (
     HeadlessLlmRequest,
     KimiCodeLlmRequest,
     OpenAILlmRequest,
+    Message,
     validate_llm_constraints,
 )
 from dr_llm.llm.providers.openai_compat.thinking import (

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
-from dr_llm.llm.messages import Message
 from dr_llm.llm.names import (
     ApiBackedProviderName,
     SamplingApiProviderName,
@@ -19,6 +18,13 @@ from dr_llm.llm.providers.openai_compat.thinking import (
 )
 from dr_llm.llm.providers.reasoning import ReasoningSpec
 from dr_llm.llm.providers.reasoning_validation import validate_reasoning
+
+
+class Message(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    role: Literal["system", "user", "assistant"]
+    content: str
 
 
 def validate_max_tokens(*, provider: str, max_tokens: int | None) -> None:

@@ -12,7 +12,6 @@ from dr_llm.llm.config import (
     OpenAILlmConfig,
     parse_llm_config,
 )
-from dr_llm.llm.messages import CallMode, Message
 from dr_llm.llm.names import (
     ApiBackedProviderName,
     HeadlessProviderName,
@@ -68,10 +67,11 @@ from dr_llm.llm.request import (
     HeadlessLlmRequest,
     KimiCodeLlmRequest,
     LlmRequest,
+    Message,
     OpenAILlmRequest,
     parse_llm_request,
 )
-from dr_llm.llm.response import LlmResponse
+from dr_llm.llm.response import CallMode, LlmResponse
 
 __all__ = [
     "ApiLlmConfig",
