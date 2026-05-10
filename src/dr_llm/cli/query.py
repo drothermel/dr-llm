@@ -6,10 +6,12 @@ from uuid import uuid4
 import typer
 from pydantic import ValidationError
 
-from dr_llm.llm.providers.effort import EffortSpec
-from dr_llm.llm.providers.reasoning import parse_reasoning_spec
-from dr_llm.llm.providers.registry import build_default_registry
-from dr_llm.llm.request import parse_llm_request
+from dr_llm.llm import (
+    EffortSpec,
+    build_default_registry,
+    parse_llm_request,
+    parse_reasoning_spec,
+)
 from dr_llm.logging.events import generation_log_context
 from dr_llm.logging.sinks import emit_generation_event
 

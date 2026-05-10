@@ -10,10 +10,8 @@ from dr_llm.llm.catalog.fetchers.common import (
     require_api_key,
 )
 from dr_llm.llm.catalog.fetchers.static import fetch_static_headless_models
+from dr_llm.llm import LlmRequest, LlmResponse, ProviderConfig
 from dr_llm.llm.providers.base import Provider
-from dr_llm.llm.providers.config import ProviderConfig
-from dr_llm.llm.request import LlmRequest
-from dr_llm.llm.response import LlmResponse
 from tests.conftest import make_response
 
 

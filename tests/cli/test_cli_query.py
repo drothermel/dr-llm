@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 import dr_llm.cli.query as query_cli
 from dr_llm.cli import app
-from dr_llm.llm.providers.usage import TokenUsage
+from dr_llm.llm import TokenUsage
 from tests.conftest import make_response
 
 runner = CliRunner()

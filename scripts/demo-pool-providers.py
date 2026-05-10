@@ -34,7 +34,7 @@ from typing import Any
 
 import typer
 
-from _demo_utils import (
+from dr_llm.demo import (
     BOLD,
     CYAN,
     GREEN,

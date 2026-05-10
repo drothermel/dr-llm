@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from dr_llm.llm import AnthropicReasoning, EffortSpec, ThinkingLevel
 from dr_llm.llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.llm.providers.effort import EffortSpec
 from dr_llm.llm.providers.minimax import (
     MINIMAX_BASE_URL,
     MINIMAX_PROVIDER_NAME,
     MiniMaxProvider,
 )
-from dr_llm.llm.providers.reasoning import AnthropicReasoning, ThinkingLevel
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 

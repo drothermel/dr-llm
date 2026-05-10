@@ -3,9 +3,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from dr_llm.llm import ProviderConfig, ProviderRegistry
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.providers.config import ProviderConfig
-from dr_llm.llm.providers.registry import ProviderRegistry
 from tests.conftest import FakeProvider
 from ui.api import main as ui_api
 
