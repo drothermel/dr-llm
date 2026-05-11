@@ -65,7 +65,7 @@ class OpenRouterOrchestrator(BaseOpenAICompatOrchestrator):
         entries, raw_payload = build_static_catalog_entries(
             provider=self._provider,
             models=models,
-            docs_url=OpenRouterUrls.MODELS_PAGE,
+            docs_url=OpenRouterUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=self.reasoning_capabilities,
         )

@@ -20,7 +20,10 @@ from dr_llm.llm.providers.impls.codex.capabilities import (
     codex_supports_off_thinking,
     reasoning_capabilities_for_codex,
 )
-from dr_llm.llm.providers.impls.codex.provider import CodexProvider
+from dr_llm.llm.providers.impls.codex.provider import (
+    CodexProvider,
+    CodexUrls,
+)
 from dr_llm.llm.providers.impls.codex.reasoning import (
     validate_reasoning_for_codex,
 )
@@ -29,7 +32,6 @@ from dr_llm.llm.providers.core.orchestrator_base import (
 )
 from dr_llm.llm.request import LlmRequest
 
-_CODEX_DOCS_URL = "https://developers.openai.com/codex/models"
 _CODEX_MODELS = [
     ("gpt-5.4", "GPT-5.4"),
     ("gpt-5.4-mini", "GPT-5.4 Mini"),
@@ -72,7 +74,7 @@ class CodexOrchestrator(BaseProviderOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_CODEX_MODELS,
-            docs_url=_CODEX_DOCS_URL,
+            docs_url=CodexUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=reasoning_capabilities_for_codex,
         )

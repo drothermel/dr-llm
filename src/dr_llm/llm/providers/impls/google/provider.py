@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from enum import StrEnum
+
 import httpx
 
 from dr_llm.llm.names import ProviderName
@@ -9,6 +11,11 @@ from dr_llm.llm.providers.transports.api_provider import ApiProvider
 from dr_llm.llm.providers.impls.google.request import GoogleRequest
 from dr_llm.llm.providers.impls.google.response import GoogleResponse
 from dr_llm.llm.request import LlmRequest
+
+
+class GoogleUrls(StrEnum):
+    API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+    MODELS_DOCS = "https://ai.google.dev/gemini-api/docs/models"
 
 
 class GoogleProvider(ApiProvider):
@@ -21,7 +28,7 @@ class GoogleProvider(ApiProvider):
             config=config
             or APIProviderConfig(
                 name=ProviderName.GOOGLE,
-                base_url="https://generativelanguage.googleapis.com/v1beta",
+                base_url=GoogleUrls.API_BASE,
                 api_key_env=ApiKeyNames.GOOGLE,
             ),
             client=client,

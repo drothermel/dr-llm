@@ -16,7 +16,7 @@ from dr_llm.llm.providers.transports.openai_compat.provider import (
 
 class OpenRouterUrls(StrEnum):
     API_BASE = "https://openrouter.ai/api/v1"
-    MODELS_PAGE = "https://openrouter.ai/models"
+    MODELS_DOCS = "https://openrouter.ai/models"
 
 
 class OpenRouterProvider(OpenAICompatProvider):

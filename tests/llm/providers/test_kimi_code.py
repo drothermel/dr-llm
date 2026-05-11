@@ -7,9 +7,9 @@ from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
 )
 from dr_llm.llm.providers.impls.kimi_code.provider import (
-    KIMI_CODE_BASE_URL,
     KIMI_CODE_PROVIDER_NAME,
     KimiCodeProvider,
+    KimiCodeUrls,
 )
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
@@ -24,7 +24,7 @@ _MOCK_RESPONSE: dict[str, Any] = {
 def _kimi_test_config() -> AnthropicProviderConfig:
     return AnthropicProviderConfig(
         name=KIMI_CODE_PROVIDER_NAME,
-        base_url=KIMI_CODE_BASE_URL,
+        base_url=KimiCodeUrls.MESSAGES_API,
         api_key="test-key",
     )
 
@@ -43,7 +43,7 @@ def test_kimi_code_serializes_effort_and_adaptive_thinking() -> None:
     result = adapter.generate(request)
 
     assert result.text == "done"
-    assert captured["url"] == KIMI_CODE_BASE_URL
+    assert captured["url"] == KimiCodeUrls.MESSAGES_API
     assert captured["payload"]["output_config"] == {"effort": "high"}
     assert captured["payload"]["thinking"] == {"type": "adaptive"}
     assert "temperature" not in captured["payload"]

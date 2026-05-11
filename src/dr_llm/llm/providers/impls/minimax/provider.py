@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from enum import StrEnum
+
 import httpx
 
 from dr_llm.llm.names import ProviderName
@@ -13,8 +15,12 @@ from dr_llm.llm.providers.impls.minimax.reasoning import MiniMaxReasoningConfig
 from dr_llm.llm.request import LlmRequest
 
 MINIMAX_PROVIDER_NAME = ProviderName.MINIMAX
-MINIMAX_BASE_URL = "https://api.minimax.io/anthropic/v1/messages"
 MINIMAX_API_KEY_ENV = ApiKeyNames.MINIMAX
+
+
+class MiniMaxUrls(StrEnum):
+    MESSAGES_API = "https://api.minimax.io/anthropic/v1/messages"
+    MODELS_DOCS = "https://platform.minimax.io/docs/guides/models-intro"
 
 
 class MiniMaxProvider(AnthropicProvider):
@@ -27,7 +33,7 @@ class MiniMaxProvider(AnthropicProvider):
             config=config
             or AnthropicProviderConfig(
                 name=MINIMAX_PROVIDER_NAME,
-                base_url=MINIMAX_BASE_URL,
+                base_url=MiniMaxUrls.MESSAGES_API,
                 api_key_env=MINIMAX_API_KEY_ENV,
             ),
             client=client,

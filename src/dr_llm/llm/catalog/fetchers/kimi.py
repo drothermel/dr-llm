@@ -13,11 +13,12 @@ from dr_llm.llm.catalog.fetchers.common import (
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
-from dr_llm.llm.providers.impls.kimi_code.provider import KimiCodeProvider
+from dr_llm.llm.providers.impls.kimi_code.provider import (
+    KimiCodeProvider,
+    KimiCodeUrls,
+)
 
 CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
-
-KIMI_CATALOG_URL = "https://api.kimi.com/coding/v1/models"
 
 
 def fetch_kimi_models(
@@ -53,7 +54,7 @@ def fetch_kimi_models(
         )
 
     return fetch_models_with_template(
-        url=KIMI_CATALOG_URL,
+        url=KimiCodeUrls.MODELS_API,
         headers={"Authorization": f"Bearer {key}"},
         items_key="data",
         item_processor=process,

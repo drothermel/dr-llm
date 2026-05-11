@@ -22,6 +22,7 @@ from dr_llm.llm.providers.impls.claude_code.capabilities import (
     supported_effort_levels_for_claude_code,
 )
 from dr_llm.llm.providers.impls.claude_code.provider import (
+    ClaudeCodeUrls,
     ClaudeCodeProvider,
 )
 from dr_llm.llm.providers.impls.claude_code.reasoning import (
@@ -32,7 +33,6 @@ from dr_llm.llm.providers.core.orchestrator_base import (
 )
 from dr_llm.llm.request import LlmRequest
 
-_CLAUDE_CODE_DOCS_URL = "https://code.claude.com/docs/en/model-config"
 _CLAUDE_CODE_MODELS = [
     ("claude-opus-4-6", "Claude Opus 4.6"),
     ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
@@ -69,7 +69,7 @@ class ClaudeCodeOrchestrator(BaseProviderOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_CLAUDE_CODE_MODELS,
-            docs_url=_CLAUDE_CODE_DOCS_URL,
+            docs_url=ClaudeCodeUrls.MODELS_DOCS,
             supports_vision=True,
             capabilities_fn=reasoning_capabilities_for_claude_code,
         )

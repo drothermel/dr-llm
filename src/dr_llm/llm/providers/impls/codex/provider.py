@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import tempfile
+from enum import StrEnum
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,6 +44,10 @@ CODEX_PROMPT_SENTINEL = "-"
 CODEX_NEUTRAL_INSTRUCTIONS_CONTENT = "."
 
 logger = logging.getLogger(__name__)
+
+
+class CodexUrls(StrEnum):
+    MODELS_DOCS = "https://developers.openai.com/codex/models"
 
 
 class CodexEvent(BaseModel):

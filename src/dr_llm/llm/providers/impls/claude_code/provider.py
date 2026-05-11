@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from enum import StrEnum
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -46,6 +47,10 @@ CLAUDE_CANONICAL_MODEL_PREFIX = "claude-"
 ANTHROPIC_BASE_URL_ENV = "ANTHROPIC_BASE_URL"
 ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN"
 ANTHROPIC_API_KEY_ENV = ApiKeyNames.ANTHROPIC
+
+
+class ClaudeCodeUrls(StrEnum):
+    MODELS_DOCS = "https://code.claude.com/docs/en/model-config"
 
 
 class ClaudeHeadlessUsage(BaseModel):

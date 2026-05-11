@@ -20,7 +20,10 @@ from dr_llm.llm.providers.core.request_defaults import (
 from dr_llm.llm.providers.impls.openai.reasoning import (
     validate_reasoning_for_openai,
 )
-from dr_llm.llm.providers.impls.openai.provider import OpenAIProvider
+from dr_llm.llm.providers.impls.openai.provider import (
+    OpenAIProvider,
+    OpenAIUrls,
+)
 from dr_llm.llm.providers.impls.openai.thinking import (
     openai_supports_configurable_thinking,
     openai_supports_minimal_thinking,
@@ -44,7 +47,6 @@ _OPENAI_COMMON_MODELS = [
     ("o3-mini", "o3-mini"),
     ("o4-mini", "o4-mini"),
 ]
-_OPENAI_DOCS_URL = "https://platform.openai.com/docs/models"
 
 
 class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
@@ -84,7 +86,7 @@ class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_OPENAI_COMMON_MODELS,
-            docs_url=_OPENAI_DOCS_URL,
+            docs_url=OpenAIUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=self.reasoning_capabilities,
         )

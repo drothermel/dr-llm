@@ -17,7 +17,10 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.impls.google.capabilities import (
     reasoning_capabilities_for_google,
 )
-from dr_llm.llm.providers.impls.google.provider import GoogleProvider
+from dr_llm.llm.providers.impls.google.provider import (
+    GoogleProvider,
+    GoogleUrls,
+)
 from dr_llm.llm.providers.impls.google.reasoning import (
     validate_reasoning_for_google,
 )
@@ -35,7 +38,6 @@ _GOOGLE_COMMON_MODELS = [
     ("gemini-2.0-flash", "Gemini 2.0 Flash"),
     ("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite"),
 ]
-_GOOGLE_DOCS_URL = "https://ai.google.dev/gemini-api/docs/models"
 
 
 class GoogleOrchestrator(BaseProviderOrchestrator):
@@ -118,7 +120,7 @@ class GoogleOrchestrator(BaseProviderOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_GOOGLE_COMMON_MODELS,
-            docs_url=_GOOGLE_DOCS_URL,
+            docs_url=GoogleUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=reasoning_capabilities_for_google,
         )

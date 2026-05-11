@@ -15,7 +15,10 @@ from dr_llm.llm.providers.impls.anthropic.capabilities import (
 from dr_llm.llm.providers.impls.anthropic.effort import (
     supported_effort_levels_for_anthropic,
 )
-from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
+from dr_llm.llm.providers.impls.anthropic.provider import (
+    AnthropicProvider,
+    AnthropicUrls,
+)
 from dr_llm.llm.providers.impls.anthropic.reasoning import (
     validate_reasoning_for_anthropic,
 )
@@ -41,7 +44,6 @@ _ANTHROPIC_COMMON_MODELS = [
     ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
     ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
 ]
-_ANTHROPIC_DOCS_URL = "https://docs.anthropic.com/en/docs/about-claude/models"
 
 
 class AnthropicOrchestrator(BaseProviderOrchestrator):
@@ -128,7 +130,7 @@ class AnthropicOrchestrator(BaseProviderOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_ANTHROPIC_COMMON_MODELS,
-            docs_url=_ANTHROPIC_DOCS_URL,
+            docs_url=AnthropicUrls.MODELS_DOCS,
             supports_vision=True,
             capabilities_fn=reasoning_capabilities_for_anthropic,
         )

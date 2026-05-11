@@ -16,7 +16,10 @@ from dr_llm.llm.providers.impls.minimax.capabilities import (
     reasoning_capabilities_for_minimax,
     supported_effort_levels_for_minimax,
 )
-from dr_llm.llm.providers.impls.minimax.provider import MiniMaxProvider
+from dr_llm.llm.providers.impls.minimax.provider import (
+    MiniMaxProvider,
+    MiniMaxUrls,
+)
 from dr_llm.llm.providers.impls.minimax.reasoning import (
     validate_reasoning_for_minimax,
 )
@@ -28,7 +31,6 @@ from dr_llm.llm.providers.core.request_defaults import (
 )
 from dr_llm.llm.request import LlmRequest
 
-_MINIMAX_DOCS_URL = "https://platform.minimax.io/docs/guides/models-intro"
 _MINIMAX_TEXT_MODELS = [
     ("MiniMax-M2.7", "MiniMax M2.7"),
     ("MiniMax-M2.5", "MiniMax M2.5"),
@@ -101,7 +103,7 @@ class MiniMaxOrchestrator(BaseProviderOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_MINIMAX_TEXT_MODELS,
-            docs_url=_MINIMAX_DOCS_URL,
+            docs_url=MiniMaxUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=reasoning_capabilities_for_minimax,
         )

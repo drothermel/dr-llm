@@ -7,8 +7,8 @@ from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
 )
 from dr_llm.llm.providers.impls.minimax.provider import (
-    MINIMAX_BASE_URL,
     MINIMAX_PROVIDER_NAME,
+    MiniMaxUrls,
     MiniMaxProvider,
 )
 from tests.conftest import make_request
@@ -27,7 +27,7 @@ _MOCK_RESPONSE: dict[str, Any] = {
 def _minimax_test_config() -> AnthropicProviderConfig:
     return AnthropicProviderConfig(
         name=MINIMAX_PROVIDER_NAME,
-        base_url=MINIMAX_BASE_URL,
+        base_url=MiniMaxUrls.MESSAGES_API,
         api_key="test-key",
     )
 
@@ -45,7 +45,7 @@ def test_minimax_serializes_effort_without_thinking_payload() -> None:
     result = adapter.generate(request)
 
     assert result.text == "done"
-    assert captured["url"] == MINIMAX_BASE_URL
+    assert captured["url"] == MiniMaxUrls.MESSAGES_API
     assert captured["payload"]["output_config"] == {"effort": "high"}
     assert "thinking" not in captured["payload"]
     assert "max_tokens" not in captured["payload"]

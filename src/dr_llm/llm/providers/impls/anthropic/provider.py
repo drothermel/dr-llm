@@ -4,6 +4,7 @@ import httpx
 
 from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
+    AnthropicUrls,
 )
 from dr_llm.llm.providers.impls.anthropic.reasoning import (
     AnthropicReasoningConfig,
@@ -12,6 +13,8 @@ from dr_llm.llm.providers.impls.anthropic.request import AnthropicRequest
 from dr_llm.llm.providers.impls.anthropic.response import AnthropicResponse
 from dr_llm.llm.providers.transports.api_provider import ApiProvider
 from dr_llm.llm.request import LlmRequest
+
+__all__ = ["AnthropicProvider", "AnthropicUrls"]
 
 
 class AnthropicProvider(ApiProvider):

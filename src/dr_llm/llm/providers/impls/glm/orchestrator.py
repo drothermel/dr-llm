@@ -18,7 +18,7 @@ from dr_llm.llm.providers.impls.openai_compat_base import (
     BaseOpenAICompatOrchestrator,
 )
 from dr_llm.llm.providers.core.orchestrator_base import CatalogResult
-from dr_llm.llm.providers.impls.glm.provider import GlmProvider
+from dr_llm.llm.providers.impls.glm.provider import GlmProvider, GlmUrls
 from dr_llm.llm.providers.impls.glm.reasoning import validate_reasoning_for_glm
 from dr_llm.llm.providers.transports.openai_compat.provider import (
     OpenAICompatProvider,
@@ -30,7 +30,6 @@ _GLM_COMMON_MODELS = [
     ("glm-4-air", "GLM 4 Air"),
     ("glm-4-flash", "GLM 4 Flash"),
 ]
-_GLM_DOCS_URL = "https://docs.z.ai/guides/llm/glm-4.5"
 
 
 class GlmOrchestrator(BaseOpenAICompatOrchestrator):
@@ -82,7 +81,7 @@ class GlmOrchestrator(BaseOpenAICompatOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_GLM_COMMON_MODELS,
-            docs_url=_GLM_DOCS_URL,
+            docs_url=GlmUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=self.reasoning_capabilities,
         )

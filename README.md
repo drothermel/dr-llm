@@ -95,9 +95,9 @@ uv run python scripts/demo_thinking_and_effort.py --provider openai
 | `kimi-code` | Kimi Code API (Anthropic-compatible) | `KIMI_API_KEY` |
 
 Provider implementation details live under
-`src/dr_llm/llm/providers/impls/<provider>/`. When a provider needs a default
-API URL, that default is defined in that provider's `provider.py`. Shared API
-key environment variable names live in
+`src/dr_llm/llm/providers/impls/<provider>/`. Provider API, catalog, and docs
+URLs are collected in provider-specific `<Provider>Urls` enums. Shared API key
+environment variable names live in
 `src/dr_llm/llm/providers/names.py` as `ApiKeyNames`; the default registry only
 registers orchestrators.
 
