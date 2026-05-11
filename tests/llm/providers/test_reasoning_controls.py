@@ -17,7 +17,7 @@ from dr_llm.llm import (
     ThinkingLevel,
     build_default_registry,
 )
-from dr_llm.llm.providers.registry import ProviderRegistry
+from dr_llm.llm.providers.core.registry import ProviderRegistry
 
 
 @pytest.fixture

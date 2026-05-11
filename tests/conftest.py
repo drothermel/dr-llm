@@ -19,7 +19,7 @@ from dr_llm.llm import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.names import ControlStrategy, ReasoningMode, ThinkingLevel
-from dr_llm.llm.providers.base import Provider
+from dr_llm.llm.providers.core.base import Provider
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
     ReasoningCapabilities,
@@ -28,7 +28,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.reasoning_controls import ReasoningControls
+from dr_llm.llm.providers.core.reasoning_controls import ReasoningControls
 
 os.environ.setdefault(
     "DR_LLM_TEST_DATABASE_URL",

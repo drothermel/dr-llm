@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from dr_llm.llm.providers.registry import ProviderRegistry
+from dr_llm.llm.providers.core.registry import ProviderRegistry
 from tests.conftest import FakeOrchestrator
 
 

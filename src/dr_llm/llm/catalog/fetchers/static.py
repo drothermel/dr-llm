@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.providers.base import Provider
+from dr_llm.llm.providers.core.base import Provider
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 
 CODEX_DOCS_URL = "https://developers.openai.com/codex/models"

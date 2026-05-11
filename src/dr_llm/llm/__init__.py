@@ -23,7 +23,7 @@ from dr_llm.llm.names import (
     SamplingApiProviderName,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.config import (
+from dr_llm.llm.providers.core.config import (
     ProviderAvailabilityStatus,
     ProviderConfig,
 )
@@ -43,21 +43,21 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningWarning,
     parse_reasoning_spec,
 )
-from dr_llm.llm.providers.openrouter.policy import (
+from dr_llm.llm.providers.impls.openrouter.policy import (
     OpenRouterModelPolicy,
     OpenRouterReasoningRequestStyle,
     openrouter_allowed_models,
     openrouter_model_policy,
 )
-from dr_llm.llm.providers.reasoning_controls import (
+from dr_llm.llm.providers.core.reasoning_controls import (
     ReasoningControls,
 )
-from dr_llm.llm.providers.protocol import ProviderOrchestrator
-from dr_llm.llm.providers.registry import (
+from dr_llm.llm.providers.core.protocol import ProviderOrchestrator
+from dr_llm.llm.providers.core.registry import (
     ProviderRegistry,
     build_default_registry,
 )
-from dr_llm.llm.providers.usage import CostInfo, TokenUsage
+from dr_llm.llm.providers.core.usage import CostInfo, TokenUsage
 from dr_llm.llm.request import (
     ApiLlmRequest,
     HeadlessLlmRequest,

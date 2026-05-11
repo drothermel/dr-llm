@@ -12,10 +12,10 @@ from dr_llm.llm.catalog.models import (
     ModelCatalogSyncResult,
 )
 from dr_llm.llm.catalog.model_blacklist import filter_blacklisted_entries
-from dr_llm.llm.providers.openrouter.policy import (
+from dr_llm.llm.providers.impls.openrouter.policy import (
     apply_openrouter_model_policies,
 )
-from dr_llm.llm.providers.registry import ProviderRegistry
+from dr_llm.llm.providers.core.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
 

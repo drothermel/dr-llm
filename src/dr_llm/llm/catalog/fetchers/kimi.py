@@ -12,7 +12,7 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
-from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
+from dr_llm.llm.providers.impls.kimi_code.provider import KimiCodeProvider
 
 CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
 

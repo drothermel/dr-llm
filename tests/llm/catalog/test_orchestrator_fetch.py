@@ -6,16 +6,22 @@ import pytest
 
 from dr_llm.llm import ProviderName
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.llm.providers.google.orchestrator import GoogleOrchestrator
-from dr_llm.llm.providers.google.provider import GoogleProvider
-from dr_llm.llm.providers.kimi_code.orchestrator import KimiCodeOrchestrator
-from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
-from dr_llm.llm.providers.openai_compat_config import OpenAICompatConfig
-from dr_llm.llm.providers.openai.orchestrator import (
+from dr_llm.llm.providers.impls.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.impls.google.orchestrator import GoogleOrchestrator
+from dr_llm.llm.providers.impls.google.provider import GoogleProvider
+from dr_llm.llm.providers.impls.kimi_code.orchestrator import (
+    KimiCodeOrchestrator,
+)
+from dr_llm.llm.providers.impls.kimi_code.provider import KimiCodeProvider
+from dr_llm.llm.providers.transports.openai_compat.config import (
+    OpenAICompatConfig,
+)
+from dr_llm.llm.providers.impls.openai.orchestrator import (
     OpenAIOrchestrator,
 )
-from dr_llm.llm.providers.openai_compat_provider import OpenAICompatProvider
+from dr_llm.llm.providers.transports.openai_compat.provider import (
+    OpenAICompatProvider,
+)
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 
 
@@ -43,7 +49,7 @@ def test_google_orchestrator_fetches_with_wrapped_provider(
         return expected
 
     monkeypatch.setattr(
-        "dr_llm.llm.providers.google.orchestrator.fetch_google_models",
+        "dr_llm.llm.providers.impls.google.orchestrator.fetch_google_models",
         fake_fetch_google_models,
     )
 
@@ -75,7 +81,7 @@ def test_kimi_orchestrator_fetches_with_wrapped_provider(
         return [], {"source": "kimi"}
 
     monkeypatch.setattr(
-        "dr_llm.llm.providers.kimi_code.orchestrator.fetch_kimi_models",
+        "dr_llm.llm.providers.impls.kimi_code.orchestrator.fetch_kimi_models",
         fake_fetch_kimi_models,
     )
 
@@ -105,7 +111,7 @@ def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
         return [], {"source": "openai_compat"}
 
     monkeypatch.setattr(
-        "dr_llm.llm.providers.openai_compat_orchestrator.fetch_openai_compat_models",
+        "dr_llm.llm.providers.transports.openai_compat.orchestrator.fetch_openai_compat_models",
         fake_fetch_openai_compat_models,
     )
 

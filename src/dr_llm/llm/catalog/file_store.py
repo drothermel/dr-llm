@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from dr_llm.errors import PersistenceError
 from dr_llm.llm.catalog.model_blacklist import filter_blacklisted_entries
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
-from dr_llm.llm.providers.openrouter.policy import (
+from dr_llm.llm.providers.impls.openrouter.policy import (
     apply_openrouter_model_policies,
 )
 

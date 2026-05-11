@@ -10,8 +10,10 @@ from dr_llm.llm.names import (
     ProviderName,
     ReasoningMode,
 )
-from dr_llm.llm.providers.anthropic.orchestrator import AnthropicOrchestrator
-from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
+from dr_llm.llm.providers.impls.anthropic.orchestrator import (
+    AnthropicOrchestrator,
+)
+from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
 
 
 @pytest.fixture

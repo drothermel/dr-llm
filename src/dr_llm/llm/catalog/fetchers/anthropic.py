@@ -13,7 +13,7 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
-from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
+from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
 
 CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
 

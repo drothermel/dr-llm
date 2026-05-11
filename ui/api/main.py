@@ -17,10 +17,10 @@ from dr_llm.llm.catalog.fetchers.static import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
-from dr_llm.llm.providers.openrouter.policy import apply_openrouter_model_policies
-from dr_llm.llm.providers.openrouter.policy import openrouter_allowed_models
-from dr_llm.llm.providers.registry import build_default_registry
-from dr_llm.llm.providers.registry import ProviderRegistry
+from dr_llm.llm.providers.impls.openrouter.policy import apply_openrouter_model_policies
+from dr_llm.llm.providers.impls.openrouter.policy import openrouter_allowed_models
+from dr_llm.llm.providers.core.registry import build_default_registry
+from dr_llm.llm.providers.core.registry import ProviderRegistry
 
 # ---------------------------------------------------------------------------
 # Response models

@@ -17,9 +17,9 @@ from dr_llm.llm import (
     ReasoningBudget,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.api_config import APIProviderConfig
-from dr_llm.llm.providers.google.provider import GoogleProvider
-from dr_llm.llm.providers.google.request import GoogleRequest
+from dr_llm.llm.providers.transports.api_config import APIProviderConfig
+from dr_llm.llm.providers.impls.google.provider import GoogleProvider
+from dr_llm.llm.providers.impls.google.request import GoogleRequest
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 

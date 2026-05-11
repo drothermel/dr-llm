@@ -15,9 +15,9 @@ from dr_llm.llm import (
     Message,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
-from dr_llm.llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.llm.providers.anthropic.request import AnthropicRequest
+from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
+from dr_llm.llm.providers.impls.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.impls.anthropic.request import AnthropicRequest
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 

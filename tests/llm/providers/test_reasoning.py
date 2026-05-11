@@ -4,23 +4,27 @@ from dr_llm.llm import ProviderName
 import pytest
 
 from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
-from dr_llm.llm.providers.anthropic.reasoning import AnthropicReasoningConfig
-from dr_llm.llm.providers.kimi_code.reasoning import KimiCodeReasoningConfig
-from dr_llm.llm.providers.kimi_code.reasoning import (
+from dr_llm.llm.providers.impls.anthropic.reasoning import (
+    AnthropicReasoningConfig,
+)
+from dr_llm.llm.providers.impls.kimi_code.reasoning import (
+    KimiCodeReasoningConfig,
+)
+from dr_llm.llm.providers.impls.kimi_code.reasoning import (
     validate_reasoning_for_kimi_code,
 )
-from dr_llm.llm.providers.minimax.reasoning import MiniMaxReasoningConfig
-from dr_llm.llm.providers.minimax.reasoning import (
+from dr_llm.llm.providers.impls.minimax.reasoning import MiniMaxReasoningConfig
+from dr_llm.llm.providers.impls.minimax.reasoning import (
     validate_reasoning_for_minimax,
 )
-from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig
-from dr_llm.llm.providers.claude_code.reasoning import (
+from dr_llm.llm.providers.impls.google.reasoning import GoogleReasoningConfig
+from dr_llm.llm.providers.impls.claude_code.reasoning import (
     ClaudeHeadlessReasoningConfig,
 )
-from dr_llm.llm.providers.codex.reasoning import (
+from dr_llm.llm.providers.impls.codex.reasoning import (
     CodexHeadlessReasoningConfig,
 )
-from dr_llm.llm.providers.openai_compat_reasoning import (
+from dr_llm.llm.providers.transports.openai_compat.reasoning import (
     OpenAICompatReasoningConfig,
 )
 from dr_llm.llm.names import ThinkingLevel

@@ -5,19 +5,23 @@ from collections.abc import Callable
 
 import pytest
 
-from dr_llm.llm.providers.api_config import APIProviderConfig
-from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
-from dr_llm.llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.llm.providers.google.provider import GoogleProvider
-from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
-from dr_llm.llm.providers.minimax.provider import MiniMaxProvider
-from dr_llm.llm.providers.openai_compat_provider import OpenAICompatProvider
-from dr_llm.llm.providers.openai_compat_config import OpenAICompatConfig
-from dr_llm.llm.providers.config import (
+from dr_llm.llm.providers.transports.api_config import APIProviderConfig
+from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
+from dr_llm.llm.providers.impls.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.impls.google.provider import GoogleProvider
+from dr_llm.llm.providers.impls.kimi_code.provider import KimiCodeProvider
+from dr_llm.llm.providers.impls.minimax.provider import MiniMaxProvider
+from dr_llm.llm.providers.transports.openai_compat.provider import (
+    OpenAICompatProvider,
+)
+from dr_llm.llm.providers.transports.openai_compat.config import (
+    OpenAICompatConfig,
+)
+from dr_llm.llm.providers.core.config import (
     ProviderAvailabilityStatus,
     ProviderConfig,
 )
-from dr_llm.llm.providers.registry import ProviderRegistry
+from dr_llm.llm.providers.core.registry import ProviderRegistry
 from tests.conftest import FakeOrchestrator, FakeProvider
 
 
@@ -26,7 +30,7 @@ def test_availability_reports_missing_requirements(
 ) -> None:
     monkeypatch.delenv("FAKE_ENV", raising=False)
     monkeypatch.setattr(
-        "dr_llm.llm.providers.config.shutil.which",
+        "dr_llm.llm.providers.core.config.shutil.which",
         lambda exe: None if exe == "fake-cli" else "/usr/bin/ok",
     )
 
@@ -53,7 +57,7 @@ def test_registry_available_names_filters_unavailable(
     monkeypatch.setenv("READY_ENV", "present")
     monkeypatch.delenv("MISSING_ENV", raising=False)
     monkeypatch.setattr(
-        "dr_llm.llm.providers.config.shutil.which",
+        "dr_llm.llm.providers.core.config.shutil.which",
         lambda exe: "/usr/bin/ready" if exe == "ready-cli" else None,
     )
 

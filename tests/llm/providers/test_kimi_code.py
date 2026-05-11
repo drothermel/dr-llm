@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from dr_llm.llm import AnthropicReasoning, EffortSpec, ThinkingLevel
-from dr_llm.llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.llm.providers.kimi_code.provider import (
+from dr_llm.llm.providers.impls.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.impls.kimi_code.provider import (
     KIMI_CODE_BASE_URL,
     KIMI_CODE_PROVIDER_NAME,
     KimiCodeProvider,

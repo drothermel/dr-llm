@@ -3,7 +3,9 @@ from __future__ import annotations
 import pytest
 
 from dr_llm.errors import ProviderTransportError
-from dr_llm.llm.providers.response_validation import validate_http_response
+from dr_llm.llm.providers.transports.response_validation import (
+    validate_http_response,
+)
 
 
 def test_validate_http_response_treats_408_as_transient() -> None:

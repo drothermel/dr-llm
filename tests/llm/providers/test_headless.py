@@ -14,13 +14,13 @@ from dr_llm.llm import (
     ReasoningBudget,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.claude_code.provider import (
+from dr_llm.llm.providers.impls.claude_code.provider import (
     ClaudeCodeProvider,
 )
-from dr_llm.llm.providers.codex.orchestrator import (
+from dr_llm.llm.providers.impls.codex.orchestrator import (
     CodexOrchestrator,
 )
-from dr_llm.llm.providers.codex.provider import CodexProvider
+from dr_llm.llm.providers.impls.codex.provider import CodexProvider
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_subprocess_mock
 

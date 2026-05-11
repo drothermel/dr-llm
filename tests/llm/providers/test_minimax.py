@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from dr_llm.llm import AnthropicReasoning, EffortSpec, ThinkingLevel
-from dr_llm.llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.llm.providers.minimax.provider import (
+from dr_llm.llm.providers.impls.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.impls.minimax.provider import (
     MINIMAX_BASE_URL,
     MINIMAX_PROVIDER_NAME,
     MiniMaxProvider,
