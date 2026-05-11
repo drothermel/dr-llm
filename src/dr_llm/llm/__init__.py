@@ -5,6 +5,7 @@ from dr_llm.llm.config import (
     parse_llm_config,
 )
 from dr_llm.llm.names import (
+    ControlMode,
     EffortSpec,
     ProviderName,
     ThinkingLevel,
@@ -79,7 +80,7 @@ from dr_llm.llm.providers.impls.openai import (
 )
 from dr_llm.llm.providers.impls.openrouter import (
     OpenRouterEffortConfig,
-    OpenRouterNoReasoningConfig,
+    OpenRouterNoControlConfig,
     OpenRouterToggleConfig,
 )
 from dr_llm.llm.request import (
@@ -107,6 +108,7 @@ __all__ = [
     "CodexGpt54Config",
     "CodexLegacyConfig",
     "CodexReasoning",
+    "ControlMode",
     "CostInfo",
     "EffortSpec",
     "GlmLegacyConfig",
@@ -131,7 +133,7 @@ __all__ = [
     "OpenAILegacyConfig",
     "OpenAIReasoning",
     "OpenRouterEffortConfig",
-    "OpenRouterNoReasoningConfig",
+    "OpenRouterNoControlConfig",
     "OpenRouterReasoning",
     "OpenRouterToggleConfig",
     "ProviderAvailabilityStatus",

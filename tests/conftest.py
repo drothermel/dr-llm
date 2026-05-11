@@ -21,7 +21,7 @@ from dr_llm.llm import (
     ProviderName,
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.names import ThinkingLevel
+from dr_llm.llm.names import ControlMode, ThinkingLevel
 from dr_llm.llm.providers.core.base import ProviderTransport
 from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
@@ -62,8 +62,8 @@ class FakeControls:
         self.mode = mode
 
     @property
-    def supports_reasoning(self) -> bool:
-        return False
+    def control_mode(self) -> ControlMode:
+        return ControlMode.UNSUPPORTED
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
@@ -88,7 +88,7 @@ class FakeControls:
     @property
     def catalog_metadata(self) -> dict[str, Any]:
         return {
-            "reasoning_mode": "unsupported",
+            "control_mode": self.control_mode,
             "supported_thinking_levels": self.supported_thinking_levels,
             "default_thinking_level": self.default_thinking_level,
             "supported_effort_levels": self.supported_effort_levels,

@@ -12,7 +12,7 @@ from dr_llm.llm.providers.impls.anthropic.provider_config import (
 from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
 from dr_llm.llm.providers.impls.anthropic.request import AnthropicRequest
 from dr_llm.llm.providers.impls.kimi_code.controls import (
-    KimiCodeReasoningConfig,
+    KimiCodeControlMapping,
 )
 from dr_llm.llm.request import LlmRequest
 
@@ -43,7 +43,7 @@ class KimiCodeProvider(AnthropicProvider):
         return AnthropicRequest.from_llm_request(
             request,
             self._config,
-            reasoning_mapping=KimiCodeReasoningConfig.from_base(
+            control_mapping=KimiCodeControlMapping.from_base(
                 request.reasoning
             ),
         )

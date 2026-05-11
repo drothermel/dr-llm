@@ -10,7 +10,7 @@ from dr_llm.llm.providers.concepts.reasoning import OpenRouterReasoning
 from dr_llm.llm.providers.core.authoring import build_provider_config
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 from dr_llm.llm.providers.impls.openrouter.controls import (
-    OpenRouterReasoningRequestStyle,
+    OpenRouterControlRequestStyle,
     openrouter_model_policy,
 )
 
@@ -23,7 +23,7 @@ class _OpenRouterBaseConfig(BaseModel):
     max_tokens: int | None = None
     sampling: SamplingControls | None = None
 
-    def _expected_style(self) -> OpenRouterReasoningRequestStyle:
+    def _expected_control_style(self) -> OpenRouterControlRequestStyle:
         raise NotImplementedError
 
     @model_validator(mode="after")
@@ -34,7 +34,7 @@ class _OpenRouterBaseConfig(BaseModel):
                 f"{ProviderName.OPENROUTER} model={self.model!r} is not in "
                 "the curated allowlist"
             )
-        expected_style = self._expected_style()
+        expected_style = self._expected_control_style()
         if policy.request_style != expected_style:
             raise ValueError(
                 f"{type(self).__name__} requires openrouter request_style "
@@ -59,16 +59,16 @@ class _OpenRouterBaseConfig(BaseModel):
         )
 
 
-class OpenRouterNoReasoningConfig(_OpenRouterBaseConfig):
-    def _expected_style(self) -> OpenRouterReasoningRequestStyle:
-        return OpenRouterReasoningRequestStyle.NONE
+class OpenRouterNoControlConfig(_OpenRouterBaseConfig):
+    def _expected_control_style(self) -> OpenRouterControlRequestStyle:
+        return OpenRouterControlRequestStyle.NONE
 
 
 class OpenRouterToggleConfig(_OpenRouterBaseConfig):
     enabled: bool | None = None
 
-    def _expected_style(self) -> OpenRouterReasoningRequestStyle:
-        return OpenRouterReasoningRequestStyle.ENABLED_FLAG
+    def _expected_control_style(self) -> OpenRouterControlRequestStyle:
+        return OpenRouterControlRequestStyle.ENABLED_FLAG
 
     @model_validator(mode="after")
     def _validate_enabled(self) -> OpenRouterToggleConfig:
@@ -91,8 +91,8 @@ class OpenRouterToggleConfig(_OpenRouterBaseConfig):
 class OpenRouterEffortConfig(_OpenRouterBaseConfig):
     effort: OpenRouterEffortLevel | None = None
 
-    def _expected_style(self) -> OpenRouterReasoningRequestStyle:
-        return OpenRouterReasoningRequestStyle.EFFORT
+    def _expected_control_style(self) -> OpenRouterControlRequestStyle:
+        return OpenRouterControlRequestStyle.EFFORT
 
     @model_validator(mode="after")
     def _validate_effort(self) -> OpenRouterEffortConfig:

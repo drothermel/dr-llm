@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from dr_llm.llm.config import SamplingControls
-from dr_llm.llm.names import EffortSpec, ThinkingLevel
+from dr_llm.llm.names import ControlMode, EffortSpec, ThinkingLevel
 from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
@@ -21,7 +21,7 @@ class ProviderControls(Protocol):
     mode: CallMode
 
     @property
-    def supports_reasoning(self) -> bool: ...
+    def control_mode(self) -> ControlMode: ...
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]: ...

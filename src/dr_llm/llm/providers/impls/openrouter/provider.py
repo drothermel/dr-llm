@@ -7,7 +7,7 @@ import httpx
 from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.impls.openrouter.controls import (
-    OpenRouterReasoningConfig,
+    OpenRouterControlMapping,
 )
 from dr_llm.llm.providers.transports.api_provider import ApiProvider
 from dr_llm.llm.providers.transports.openai_compat.config import (
@@ -51,7 +51,7 @@ class OpenRouterProvider(ApiProvider):
         return self._config
 
     def _build_request(self, request: LlmRequest) -> OpenAICompatRequest:
-        controls = OpenRouterReasoningConfig.from_base(request.reasoning)
+        controls = OpenRouterControlMapping.from_base(request.reasoning)
         return OpenAICompatRequest.from_llm_request(
             request,
             self._config,

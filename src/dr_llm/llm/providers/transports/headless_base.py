@@ -25,7 +25,7 @@ from dr_llm.llm.providers.core.usage import (
 )
 
 
-class HeadlessReasoningResult(Protocol):
+class HeadlessControlResult(Protocol):
     @property
     def cli_args(self) -> list[str]: ...
 
@@ -226,7 +226,7 @@ class BaseHeadlessProvider(ProviderTransport):
         self,
         request: LlmRequest,
         payload: HeadlessRequestPayload,
-        reasoning_mapping: HeadlessReasoningResult,
+        control_mapping: HeadlessControlResult,
     ) -> list[str]:
         return [*self._config.command]
 
@@ -245,12 +245,8 @@ class BaseHeadlessProvider(ProviderTransport):
         del request, payload
         return {**os.environ, **self._config.env_overrides}
 
-    def reasoning_mapping(
-        self, request: LlmRequest
-    ) -> HeadlessReasoningResult:
-        raise NotImplementedError(
-            "subclasses must implement reasoning_mapping"
-        )
+    def control_mapping(self, request: LlmRequest) -> HeadlessControlResult:
+        raise NotImplementedError("subclasses must implement control_mapping")
 
     def parse_stdout(
         self,
@@ -281,8 +277,8 @@ class BaseHeadlessProvider(ProviderTransport):
                 f"{self.name} only accepts headless requests"
             )
         payload = self.payload_for_request(request)
-        reasoning_mapping = self.reasoning_mapping(request)
-        command = self.command_for_request(request, payload, reasoning_mapping)
+        control_mapping = self.control_mapping(request)
+        command = self.command_for_request(request, payload, control_mapping)
         validate_headless_command(command)
         stdin_text = self.stdin_for_request(request, payload)
         logged_stdin = self._sanitize_for_logs(stdin_text)
@@ -304,7 +300,7 @@ class BaseHeadlessProvider(ProviderTransport):
             request=request,
             proc=proc,
             latency_ms=latency_ms,
-            reasoning_mapping=reasoning_mapping,
+            control_mapping=control_mapping,
         )
 
     def _sanitize_for_logs(self, value: str) -> str:
@@ -391,19 +387,19 @@ class BaseHeadlessProvider(ProviderTransport):
         request: LlmRequest,
         proc: subprocess.CompletedProcess[str],
         latency_ms: int,
-        reasoning_mapping: HeadlessReasoningResult,
+        control_mapping: HeadlessControlResult,
     ) -> LlmResponse:
         response = self.parse_stdout(
             request=request,
             stdout=proc.stdout,
             stderr=proc.stderr,
         ).to_llm_response(request, latency_ms=latency_ms)
-        if reasoning_mapping.warnings:
+        if control_mapping.warnings:
             response = response.model_copy(
                 update={
                     "warnings": [
                         *response.warnings,
-                        *reasoning_mapping.warnings,
+                        *control_mapping.warnings,
                     ]
                 }
             )

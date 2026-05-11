@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
+from dr_llm.llm import ControlMode, ProviderName
 import asyncio
 from typing import Any
 
@@ -152,13 +152,13 @@ def test_sync_uses_orchestrator_catalog_result() -> None:
                 ModelCatalogEntry(
                     provider=ProviderName.OPENROUTER,
                     model="deepseek/deepseek-chat-v3.1",
-                    supports_reasoning=False,
+                    control_mode=ControlMode.UNSUPPORTED,
                     source_quality="live",
                 ),
                 ModelCatalogEntry(
                     provider=ProviderName.OPENROUTER,
                     model="deepseek/deepseek-chat",
-                    supports_reasoning=True,
+                    control_mode=ControlMode.OPENROUTER_TOGGLE,
                     source_quality="live",
                 ),
                 ModelCatalogEntry(
@@ -192,9 +192,13 @@ def test_sync_uses_orchestrator_catalog_result() -> None:
         "unknown/model",
     ]
     assert (
-        repo.replaced[ProviderName.OPENROUTER][0].supports_reasoning is False
+        repo.replaced[ProviderName.OPENROUTER][0].control_mode
+        == ControlMode.UNSUPPORTED
     )
-    assert repo.replaced[ProviderName.OPENROUTER][1].supports_reasoning is True
+    assert (
+        repo.replaced[ProviderName.OPENROUTER][1].control_mode
+        == ControlMode.OPENROUTER_TOGGLE
+    )
 
 
 def test_sync_records_failure_when_replace_fails_without_success_snapshot() -> (

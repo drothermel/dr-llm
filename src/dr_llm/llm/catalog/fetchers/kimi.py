@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Any
 
 from dr_llm.llm.catalog.fetchers.common import (
-    as_bool,
     as_int,
     fetch_models_with_template,
     require_api_key,
@@ -46,11 +45,7 @@ def fetch_kimi_models(
             display_name=str(item.get("display_name") or model_id),
             context_window=as_int(item.get("context_length")),
             max_output_tokens=as_int(item.get("max_output_tokens")),
-            supports_reasoning=(
-                as_bool(item.get("supports_reasoning"))
-                if item.get("supports_reasoning") is not None
-                else controls.supports_reasoning
-            ),
+            control_mode=controls.control_mode,
             supports_vision=True,
             metadata={
                 **item,

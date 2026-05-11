@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from dr_llm.llm.names import ControlMode
+
 
 class ModelCatalogPricing(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -33,7 +35,7 @@ class ModelCatalogEntry(BaseModel):
     display_name: str | None = None
     context_window: int | None = None
     max_output_tokens: int | None = None
-    supports_reasoning: bool | None = None
+    control_mode: ControlMode | None = None
     supports_vision: bool | None = None
     pricing: ModelCatalogPricing | None = None
     rate_limits: ModelCatalogRateLimit | None = None
@@ -46,7 +48,7 @@ class ModelCatalogQuery(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     provider: str | None = None
-    supports_reasoning: bool | None = None
+    control_mode: ControlMode | None = None
     model_contains: str | None = None
     limit: int = 200
     offset: int = 0

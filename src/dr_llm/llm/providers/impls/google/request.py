@@ -8,7 +8,7 @@ from dr_llm.llm.providers.transports.api_config import (
     APIProviderConfig,
     resolve_api_key,
 )
-from dr_llm.llm.providers.impls.google.controls import GoogleReasoningConfig
+from dr_llm.llm.providers.impls.google.controls import GoogleControlMapping
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
 from dr_llm.llm.request import LlmRequest, Message
 
@@ -60,7 +60,7 @@ class GoogleRequest(BaseModel):
         request: LlmRequest,
         config: APIProviderConfig,
     ) -> GoogleRequest:
-        reasoning_mapping = GoogleReasoningConfig.from_base(request.reasoning)
+        control_mapping = GoogleControlMapping.from_base(request.reasoning)
         system = "\n".join(
             message.content
             for message in request.messages
@@ -79,12 +79,12 @@ class GoogleRequest(BaseModel):
             ),
             generationConfig=cls._generation_config(
                 request=request,
-                reasoning_payload=reasoning_mapping.payload,
+                reasoning_payload=control_mapping.payload,
             ),
             base_url=config.base_url,
             api_key_env=config.api_key_env,
             api_key=resolve_api_key(config, label="Google"),
-            warnings=reasoning_mapping.warnings,
+            warnings=control_mapping.warnings,
         )
 
     @staticmethod

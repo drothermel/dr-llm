@@ -31,7 +31,7 @@ def build_static_catalog_entries(
                 provider=provider.name,
                 model=model_id,
                 display_name=display_str(model_id),
-                supports_reasoning=controls.supports_reasoning,
+                control_mode=controls.control_mode,
                 supports_vision=supports_vision,
                 source_quality="static",
                 fetched_at=now,

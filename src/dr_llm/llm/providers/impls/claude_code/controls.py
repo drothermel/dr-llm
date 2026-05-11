@@ -7,14 +7,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.llm.config import SamplingControls
-from dr_llm.llm.names import EffortSpec, ReasoningMode
+from dr_llm.llm.names import EffortSpec, ControlMode
 from dr_llm.llm.names import ProviderName, ThinkingLevel
 from dr_llm.llm.providers.concepts.model_family import (
     model_matches_any_family,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
-    BaseProviderReasoningConfig,
+    BaseProviderControlMapping,
     ReasoningBudget,
     ReasoningSpec,
     unsupported_reasoning_kind_message,
@@ -40,10 +40,10 @@ class ClaudeCodeModelFamily(StrEnum):
 CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES = (ClaudeCodeModelFamily.CLAUDE,)
 
 
-def claude_code_reasoning_mode(model: str) -> ReasoningMode:
+def claude_code_control_mode(model: str) -> ControlMode:
     if model_matches_any_family(model, CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES):
-        return ReasoningMode.CLAUDE_CLI_EFFORT
-    return ReasoningMode.UNSUPPORTED
+        return ControlMode.CLAUDE_CLI_EFFORT
+    return ControlMode.UNSUPPORTED
 
 
 def supported_effort_levels_for_claude_code(
@@ -96,12 +96,8 @@ class ClaudeCodeControls(BaseModel):
     mode: CallMode
 
     @property
-    def reasoning_mode(self) -> ReasoningMode:
-        return claude_code_reasoning_mode(self.model)
-
-    @property
-    def supports_reasoning(self) -> bool:
-        return self.reasoning_mode != ReasoningMode.UNSUPPORTED
+    def control_mode(self) -> ControlMode:
+        return claude_code_control_mode(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
@@ -132,7 +128,7 @@ class ClaudeCodeControls(BaseModel):
     @property
     def catalog_metadata(self) -> dict[str, Any]:
         return {
-            "reasoning_mode": self.reasoning_mode,
+            "control_mode": self.control_mode,
             "supported_thinking_levels": self.supported_thinking_levels,
             "default_thinking_level": self.default_thinking_level,
             "supported_effort_levels": self.supported_effort_levels,
@@ -239,14 +235,14 @@ def _validate_effort(
         )
 
 
-class ClaudeHeadlessReasoningConfig(BaseProviderReasoningConfig):
+class ClaudeHeadlessControlMapping(BaseProviderControlMapping):
     cli_args: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_base(
         cls,
         config: ReasoningSpec | None,
-    ) -> ClaudeHeadlessReasoningConfig:
+    ) -> ClaudeHeadlessControlMapping:
         if config is None:
             return cls()
         match config:

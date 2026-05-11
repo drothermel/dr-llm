@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from dr_llm.llm.config import LlmConfig, SamplingControls
-from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
+from dr_llm.llm.names import ProviderName, ControlMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.reasoning import (
     GoogleReasoning,
     google_literal_to_thinking_level,
@@ -17,7 +17,7 @@ from dr_llm.llm.providers.core.authoring import (
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 from dr_llm.llm.providers.impls.google.controls import (
     GoogleControls,
-    google_reasoning_mode,
+    google_control_mode,
 )
 from dr_llm.llm.response import CallMode
 
@@ -42,17 +42,17 @@ class _GoogleBaseConfig(BaseModel):
     max_tokens: int | None = None
     sampling: SamplingControls | None = None
 
-    def _expected_mode(self) -> ReasoningMode:
+    def _expected_control_mode(self) -> ControlMode:
         raise NotImplementedError
 
     @model_validator(mode="after")
     def _validate_model_family(self) -> _GoogleBaseConfig:
-        mode = _google_reasoning_mode(self.model)
-        expected_mode = self._expected_mode()
+        mode = _google_control_mode(self.model)
+        expected_mode = self._expected_control_mode()
         if mode != expected_mode:
             raise ValueError(
                 f"{type(self).__name__} requires "
-                f"provider={self.provider!r} reasoning mode "
+                f"provider={self.provider!r} control mode "
                 f"{expected_mode.value!r}; got {mode.value!r} "
                 f"for model={self.model!r}"
             )
@@ -75,8 +75,8 @@ class _GoogleBaseConfig(BaseModel):
 
 
 class GoogleLegacyConfig(_GoogleBaseConfig):
-    def _expected_mode(self) -> ReasoningMode:
-        return ReasoningMode.UNSUPPORTED
+    def _expected_control_mode(self) -> ControlMode:
+        return ControlMode.UNSUPPORTED
 
 
 class GoogleBudgetConfig(_GoogleBaseConfig):
@@ -84,8 +84,8 @@ class GoogleBudgetConfig(_GoogleBaseConfig):
     budget_tokens: int | None = None
     include_thoughts: bool | None = None
 
-    def _expected_mode(self) -> ReasoningMode:
-        return ReasoningMode.GOOGLE_BUDGET
+    def _expected_control_mode(self) -> ControlMode:
+        return ControlMode.GOOGLE_BUDGET
 
     @model_validator(mode="after")
     def _validate_budget(self) -> GoogleBudgetConfig:
@@ -136,8 +136,8 @@ class GoogleLevelConfig(_GoogleBaseConfig):
     thinking_level: _GoogleLevelThinkingLevel | None = None
     include_thoughts: bool | None = None
 
-    def _expected_mode(self) -> ReasoningMode:
-        return ReasoningMode.GOOGLE_LEVEL
+    def _expected_control_mode(self) -> ControlMode:
+        return ControlMode.GOOGLE_LEVEL
 
     @model_validator(mode="after")
     def _validate_level(self) -> GoogleLevelConfig:
@@ -175,5 +175,5 @@ class GoogleLevelConfig(_GoogleBaseConfig):
         )
 
 
-def _google_reasoning_mode(model: str) -> ReasoningMode:
-    return google_reasoning_mode(model)
+def _google_control_mode(model: str) -> ControlMode:
+    return google_control_mode(model)

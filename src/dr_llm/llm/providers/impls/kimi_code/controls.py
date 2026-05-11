@@ -10,13 +10,13 @@ from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
-    ReasoningMode,
+    ControlMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
-    BaseProviderReasoningConfig,
+    BaseProviderControlMapping,
     ReasoningBudget,
     ReasoningSpec,
     require_budget_tokens,
@@ -42,16 +42,16 @@ class KimiCodeModelFamily(StrEnum):
 KIMI_CODE_SUPPORTED_MODELS = (KimiCodeModelFamily.KIMI_FOR_CODING,)
 
 
-def kimi_code_reasoning_mode(model: str) -> ReasoningMode:
+def kimi_code_control_mode(model: str) -> ControlMode:
     if KimiCodeModelFamily.KIMI_FOR_CODING.in_family(model):
-        return ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET
-    return ReasoningMode.UNSUPPORTED
+        return ControlMode.KIMI_CODE_EFFORT_AND_BUDGET
+    return ControlMode.UNSUPPORTED
 
 
 def supported_effort_levels_for_kimi_code(
     model: str,
 ) -> tuple[EffortSpec, ...]:
-    if kimi_code_reasoning_mode(model) == ReasoningMode.UNSUPPORTED:
+    if kimi_code_control_mode(model) == ControlMode.UNSUPPORTED:
         return ()
     return FULL_EFFORT
 
@@ -108,38 +108,34 @@ class KimiCodeControls(BaseModel):
     mode: CallMode
 
     @property
-    def reasoning_mode(self) -> ReasoningMode:
-        return kimi_code_reasoning_mode(self.model)
-
-    @property
-    def supports_reasoning(self) -> bool:
-        return self.reasoning_mode != ReasoningMode.UNSUPPORTED
+    def control_mode(self) -> ControlMode:
+        return kimi_code_control_mode(self.model)
 
     @property
     def min_budget_tokens(self) -> int | None:
-        if self.supports_reasoning:
+        if self.control_mode != ControlMode.UNSUPPORTED:
             return 1024
         return None
 
     @property
     def max_budget_tokens(self) -> int | None:
-        if self.supports_reasoning:
+        if self.control_mode != ControlMode.UNSUPPORTED:
             return 128000
         return None
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
-        if self.reasoning_mode == ReasoningMode.UNSUPPORTED:
+        if self.control_mode == ControlMode.UNSUPPORTED:
             return (ThinkingLevel.NA,)
-        if self.reasoning_mode == ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET:
+        if self.control_mode == ControlMode.KIMI_CODE_EFFORT_AND_BUDGET:
             return (
                 ThinkingLevel.OFF,
                 ThinkingLevel.ADAPTIVE,
                 ThinkingLevel.BUDGET,
             )
         raise ValueError(
-            f"unexpected reasoning mode for provider={self.provider!r} "
-            f"model={self.model!r}: {self.reasoning_mode!r}"
+            f"unexpected control mode for provider={self.provider!r} "
+            f"model={self.model!r}: {self.control_mode!r}"
         )
 
     @property
@@ -168,7 +164,7 @@ class KimiCodeControls(BaseModel):
     @property
     def catalog_metadata(self) -> dict[str, Any]:
         return {
-            "reasoning_mode": self.reasoning_mode,
+            "control_mode": self.control_mode,
             "min_budget_tokens": self.min_budget_tokens,
             "max_budget_tokens": self.max_budget_tokens,
             "supported_thinking_levels": self.supported_thinking_levels,
@@ -294,14 +290,14 @@ def _validate_effort(
         )
 
 
-class KimiCodeReasoningConfig(BaseProviderReasoningConfig):
+class KimiCodeControlMapping(BaseProviderControlMapping):
     thinking: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_base(
         cls,
         config: ReasoningSpec | None,
-    ) -> KimiCodeReasoningConfig:
+    ) -> KimiCodeControlMapping:
         if config is None:
             return cls()
         match config:

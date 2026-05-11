@@ -10,7 +10,7 @@ from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
-    ReasoningMode,
+    ControlMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.concepts.model_family import (
@@ -18,12 +18,12 @@ from dr_llm.llm.providers.concepts.model_family import (
     model_matches_any_family,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
-    BaseProviderReasoningConfig,
+    BaseProviderControlMapping,
     CodexReasoning,
     ReasoningBudget,
     ReasoningSpec,
     dispatch_reasoning_validation,
-    is_reasoning_unsupported,
+    is_control_unsupported,
     unsupported_reasoning_kind_message,
     validate_budget_range,
     validate_discrete_thinking_level,
@@ -92,10 +92,10 @@ def codex_supports_off_thinking(model: str) -> bool:
     return model_matches_any_family(model, CODEX_OFF_THINKING_SUPPORTED_MODELS)
 
 
-def codex_reasoning_mode(model: str) -> ReasoningMode:
+def codex_control_mode(model: str) -> ControlMode:
     if codex_supports_configurable_thinking(model):
-        return ReasoningMode.CODEX_CLI_EFFORT
-    return ReasoningMode.UNSUPPORTED
+        return ControlMode.CODEX_CLI_EFFORT
+    return ControlMode.UNSUPPORTED
 
 
 def validate_reasoning_for_codex(
@@ -116,7 +116,7 @@ def validate_reasoning_for_codex(
         )
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
-        if is_reasoning_unsupported(codex_reasoning_mode(model)):
+        if is_control_unsupported(codex_control_mode(model)):
             raise ValueError(
                 f"Reasoning is not supported for provider='{ProviderName.CODEX}' model={model!r}"
             )
@@ -140,14 +140,14 @@ def validate_reasoning_for_codex(
     )
 
 
-class CodexHeadlessReasoningConfig(BaseProviderReasoningConfig):
+class CodexHeadlessControlMapping(BaseProviderControlMapping):
     cli_args: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_base(
         cls,
         config: ReasoningSpec | None,
-    ) -> CodexHeadlessReasoningConfig:
+    ) -> CodexHeadlessControlMapping:
         if config is None:
             return cls()
         match config:
@@ -182,12 +182,8 @@ class CodexControls(BaseModel):
     mode: CallMode
 
     @property
-    def reasoning_mode(self) -> ReasoningMode:
-        return codex_reasoning_mode(self.model)
-
-    @property
-    def supports_reasoning(self) -> bool:
-        return self.reasoning_mode != ReasoningMode.UNSUPPORTED
+    def control_mode(self) -> ControlMode:
+        return codex_control_mode(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
@@ -237,7 +233,7 @@ class CodexControls(BaseModel):
     @property
     def catalog_metadata(self) -> dict[str, Any]:
         return {
-            "reasoning_mode": self.reasoning_mode,
+            "control_mode": self.control_mode,
             "supported_thinking_levels": self.supported_thinking_levels,
             "default_thinking_level": self.default_thinking_level,
             "supported_effort_levels": self.supported_effort_levels,

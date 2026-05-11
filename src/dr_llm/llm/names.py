@@ -36,7 +36,7 @@ class EffortSpec(StrEnum):
     MAX = "max"
 
 
-class ReasoningMode(StrEnum):
+class ControlMode(StrEnum):
     UNSUPPORTED = "unsupported"
     OPENAI_EFFORT = "openai_effort"
     OPENROUTER_TOGGLE = "openrouter_toggle"

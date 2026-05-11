@@ -15,7 +15,7 @@ from pydantic import (
 from dr_llm.llm.names import (
     OpenRouterEffortLevel,
     ProviderName,
-    ReasoningMode,
+    ControlMode,
     ReasoningWarningCode,
     ThinkingLevel,
 )
@@ -341,7 +341,7 @@ def require_budget_tokens(
     return budget_tokens
 
 
-class BaseProviderReasoningConfig(BaseModel):
+class BaseProviderControlMapping(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     warnings: list[ReasoningWarning] = Field(default_factory=list)
@@ -353,10 +353,8 @@ def unsupported_reasoning_kind_message(
     return f"{prefix} reasoning serializer received unsupported config kind={config.kind!r}"
 
 
-def is_reasoning_unsupported(reasoning_mode: ReasoningMode | None) -> bool:
-    return (
-        reasoning_mode is None or reasoning_mode == ReasoningMode.UNSUPPORTED
-    )
+def is_control_unsupported(control_mode: ControlMode | None) -> bool:
+    return control_mode is None or control_mode == ControlMode.UNSUPPORTED
 
 
 def dispatch_reasoning_validation(

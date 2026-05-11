@@ -8,7 +8,7 @@ from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.impls.openai.controls import (
     OPENAI_THINKING_SUPPORTED_MODELS,
-    OpenAIReasoningConfig,
+    OpenAIControlMapping,
 )
 from dr_llm.llm.providers.transports.api_provider import ApiProvider
 from dr_llm.llm.providers.transports.openai_compat.config import (
@@ -55,7 +55,7 @@ class OpenAIProvider(ApiProvider):
         return self._config
 
     def _build_request(self, request: LlmRequest) -> OpenAICompatRequest:
-        controls = OpenAIReasoningConfig.from_base(request.reasoning)
+        controls = OpenAIControlMapping.from_base(request.reasoning)
         return OpenAICompatRequest.from_llm_request(
             request,
             self._config,

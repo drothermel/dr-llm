@@ -10,7 +10,7 @@ from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
-    ReasoningMode,
+    ControlMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.concepts.model_family import (
@@ -18,7 +18,7 @@ from dr_llm.llm.providers.concepts.model_family import (
     model_matches_any_family,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
-    BaseProviderReasoningConfig,
+    BaseProviderControlMapping,
     OpenAIReasoning,
     ReasoningBudget,
     ReasoningSpec,
@@ -179,10 +179,10 @@ def validate_openai_sampling_controls(
         )
 
 
-def reasoning_mode_for_openai(model: str) -> ReasoningMode:
+def control_mode_for_openai(model: str) -> ControlMode:
     if openai_supports_configurable_thinking(model):
-        return ReasoningMode.OPENAI_EFFORT
-    return ReasoningMode.UNSUPPORTED
+        return ControlMode.OPENAI_EFFORT
+    return ControlMode.UNSUPPORTED
 
 
 def validate_reasoning_for_openai(
@@ -226,12 +226,8 @@ class OpenAIControls(BaseModel):
     mode: CallMode
 
     @property
-    def supports_reasoning(self) -> bool:
-        return self.reasoning_mode != ReasoningMode.UNSUPPORTED
-
-    @property
-    def reasoning_mode(self) -> ReasoningMode:
-        return reasoning_mode_for_openai(self.model)
+    def control_mode(self) -> ControlMode:
+        return control_mode_for_openai(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
@@ -276,7 +272,7 @@ class OpenAIControls(BaseModel):
     @property
     def catalog_metadata(self) -> dict[str, Any]:
         return {
-            "reasoning_mode": self.reasoning_mode,
+            "control_mode": self.control_mode,
             "supported_thinking_levels": self.supported_thinking_levels,
             "default_thinking_level": self.default_thinking_level,
             "supported_effort_levels": self.supported_effort_levels,
@@ -376,7 +372,7 @@ def _validate_effort(
         )
 
 
-class OpenAIReasoningConfig(BaseProviderReasoningConfig):
+class OpenAIControlMapping(BaseProviderControlMapping):
     reasoning_effort: (
         Literal["none", "minimal", "low", "medium", "high"] | None
     ) = None
@@ -385,7 +381,7 @@ class OpenAIReasoningConfig(BaseProviderReasoningConfig):
     def from_base(
         cls,
         config: ReasoningSpec | None,
-    ) -> OpenAIReasoningConfig:
+    ) -> OpenAIControlMapping:
         if config is None:
             return cls()
         match config:

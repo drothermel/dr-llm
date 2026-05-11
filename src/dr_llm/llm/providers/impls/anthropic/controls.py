@@ -10,16 +10,16 @@ from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
-    ReasoningMode,
+    ControlMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
-    BaseProviderReasoningConfig,
+    BaseProviderControlMapping,
     ReasoningBudget,
     ReasoningSpec,
     dispatch_reasoning_validation,
-    is_reasoning_unsupported,
+    is_control_unsupported,
     require_budget_tokens,
     unsupported_reasoning_kind_message,
     validate_budget_range,
@@ -87,36 +87,36 @@ ANTHROPIC_BUDGET_MIN_TOKENS = 1024
 ANTHROPIC_BUDGET_MAX_TOKENS = 128000
 
 
-def anthropic_reasoning_mode(model: str) -> ReasoningMode:
+def anthropic_control_mode(model: str) -> ControlMode:
     if AnthropicModelFamily.CLAUDE_OPUS_46.in_family(model):
-        return ReasoningMode.ANTHROPIC_EFFORT
+        return ControlMode.ANTHROPIC_EFFORT
     if AnthropicModelFamily.CLAUDE_SONNET_46.in_family(model):
-        return ReasoningMode.ANTHROPIC_EFFORT
+        return ControlMode.ANTHROPIC_EFFORT
     if AnthropicModelFamily.CLAUDE_OPUS_45.in_family(model):
-        return ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET
+        return ControlMode.ANTHROPIC_EFFORT_AND_BUDGET
     if any(
         family.in_family(model)
         for family in ANTHROPIC_BUDGET_CAPABILITY_FAMILIES
     ):
-        return ReasoningMode.ANTHROPIC_BUDGET
-    return ReasoningMode.UNSUPPORTED
+        return ControlMode.ANTHROPIC_BUDGET
+    return ControlMode.UNSUPPORTED
 
 
 def anthropic_supports_adaptive_thinking(model: str) -> bool:
-    return anthropic_reasoning_mode(model) == ReasoningMode.ANTHROPIC_EFFORT
+    return anthropic_control_mode(model) == ControlMode.ANTHROPIC_EFFORT
 
 
 def anthropic_supports_budget_thinking(model: str) -> bool:
-    return anthropic_reasoning_mode(model) in {
-        ReasoningMode.ANTHROPIC_BUDGET,
-        ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET,
+    return anthropic_control_mode(model) in {
+        ControlMode.ANTHROPIC_BUDGET,
+        ControlMode.ANTHROPIC_EFFORT_AND_BUDGET,
     }
 
 
 def anthropic_supports_effort(model: str) -> bool:
-    return anthropic_reasoning_mode(model) in {
-        ReasoningMode.ANTHROPIC_EFFORT,
-        ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET,
+    return anthropic_control_mode(model) in {
+        ControlMode.ANTHROPIC_EFFORT,
+        ControlMode.ANTHROPIC_EFFORT_AND_BUDGET,
     }
 
 
@@ -175,9 +175,7 @@ def validate_reasoning_for_anthropic(
         model=model,
         reasoning=reasoning,
         native_spec_type=AnthropicReasoning,
-        requires_reasoning=not is_reasoning_unsupported(
-            controls.reasoning_mode
-        ),
+        requires_reasoning=not is_control_unsupported(controls.control_mode),
         validate_native=lambda spec: _validate_anthropic_reasoning_shape(
             model=model, reasoning=spec, controls=controls
         ),
@@ -230,7 +228,7 @@ def _validate_anthropic_reasoning_shape(
 
 
 def _validate_anthropic_na(*, model: str) -> None:
-    if not is_reasoning_unsupported(anthropic_reasoning_mode(model)):
+    if not is_control_unsupported(anthropic_control_mode(model)):
         raise ValueError(
             f"thinking_level='na' is not supported for provider='{ProviderName.ANTHROPIC}' model={model!r}"
         )
@@ -251,47 +249,43 @@ class AnthropicControls(BaseModel):
     mode: CallMode
 
     @property
-    def reasoning_mode(self) -> ReasoningMode:
-        return anthropic_reasoning_mode(self.model)
-
-    @property
-    def supports_reasoning(self) -> bool:
-        return self.reasoning_mode != ReasoningMode.UNSUPPORTED
+    def control_mode(self) -> ControlMode:
+        return anthropic_control_mode(self.model)
 
     @property
     def min_budget_tokens(self) -> int | None:
-        if self.reasoning_mode in {
-            ReasoningMode.ANTHROPIC_BUDGET,
-            ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET,
+        if self.control_mode in {
+            ControlMode.ANTHROPIC_BUDGET,
+            ControlMode.ANTHROPIC_EFFORT_AND_BUDGET,
         }:
             return ANTHROPIC_BUDGET_MIN_TOKENS
         return None
 
     @property
     def max_budget_tokens(self) -> int | None:
-        if self.reasoning_mode in {
-            ReasoningMode.ANTHROPIC_BUDGET,
-            ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET,
+        if self.control_mode in {
+            ControlMode.ANTHROPIC_BUDGET,
+            ControlMode.ANTHROPIC_EFFORT_AND_BUDGET,
         }:
             return ANTHROPIC_BUDGET_MAX_TOKENS
         return None
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
-        if self.reasoning_mode == ReasoningMode.UNSUPPORTED:
+        if self.control_mode == ControlMode.UNSUPPORTED:
             return (ThinkingLevel.NA,)
-        if self.reasoning_mode == ReasoningMode.ANTHROPIC_BUDGET:
+        if self.control_mode == ControlMode.ANTHROPIC_BUDGET:
             return (ThinkingLevel.OFF, ThinkingLevel.BUDGET)
-        if self.reasoning_mode == ReasoningMode.ANTHROPIC_EFFORT:
+        if self.control_mode == ControlMode.ANTHROPIC_EFFORT:
             return self._supported_effort_thinking_levels()
-        if self.reasoning_mode == ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET:
+        if self.control_mode == ControlMode.ANTHROPIC_EFFORT_AND_BUDGET:
             return (
                 *self._supported_effort_thinking_levels(),
                 ThinkingLevel.BUDGET,
             )
         raise ValueError(
-            f"unexpected reasoning mode for provider={self.provider!r} "
-            f"model={self.model!r}: {self.reasoning_mode!r}"
+            f"unexpected control mode for provider={self.provider!r} "
+            f"model={self.model!r}: {self.control_mode!r}"
         )
 
     @property
@@ -326,7 +320,7 @@ class AnthropicControls(BaseModel):
     @property
     def catalog_metadata(self) -> dict[str, Any]:
         return {
-            "reasoning_mode": self.reasoning_mode,
+            "control_mode": self.control_mode,
             "min_budget_tokens": self.min_budget_tokens,
             "max_budget_tokens": self.max_budget_tokens,
             "supported_thinking_levels": self.supported_thinking_levels,
@@ -455,14 +449,14 @@ def _validate_effort(
         )
 
 
-class AnthropicReasoningConfig(BaseProviderReasoningConfig):
+class AnthropicControlMapping(BaseProviderControlMapping):
     thinking: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_base(
         cls,
         config: ReasoningSpec | None,
-    ) -> AnthropicReasoningConfig:
+    ) -> AnthropicControlMapping:
         if config is None:
             return cls()
         match config:

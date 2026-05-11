@@ -10,17 +10,17 @@ from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
-    ReasoningMode,
+    ControlMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
-    BaseProviderReasoningConfig,
+    BaseProviderControlMapping,
     GoogleReasoning,
     ReasoningBudget,
     ReasoningSpec,
     dispatch_reasoning_validation,
     google_literal_to_thinking_level,
-    is_reasoning_unsupported,
+    is_control_unsupported,
     require_budget_tokens,
     unsupported_reasoning_kind_message,
     validate_allowed_thinking_levels,
@@ -78,7 +78,7 @@ class GoogleMaxBudget(IntEnum):
     GEMINI_25_PRO = 32768
 
 
-def google_reasoning_mode(model: str) -> ReasoningMode:
+def google_control_mode(model: str) -> ControlMode:
     if any(
         family.in_family(model)
         for family in (
@@ -87,13 +87,13 @@ def google_reasoning_mode(model: str) -> ReasoningMode:
             *GOOGLE_25_PRO_FAMILIES,
         )
     ):
-        return ReasoningMode.GOOGLE_BUDGET
+        return ControlMode.GOOGLE_BUDGET
     if any(
         family.in_family(model)
         for family in (*GOOGLE_3_FAMILIES, *GEMMA_4_FAMILIES)
     ):
-        return ReasoningMode.GOOGLE_LEVEL
-    return ReasoningMode.UNSUPPORTED
+        return ControlMode.GOOGLE_LEVEL
+    return ControlMode.UNSUPPORTED
 
 
 # Google Generative Language API `thinkingBudget` sentinel values.
@@ -107,13 +107,13 @@ def validate_reasoning_for_google(
     controls = GoogleControls(model=model, mode=CallMode.api)
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
-        if controls.reasoning_mode == ReasoningMode.UNSUPPORTED:
+        if controls.control_mode == ControlMode.UNSUPPORTED:
             raise ValueError(
                 f"Reasoning is not allowed for provider='{ProviderName.GOOGLE}' model={model!r}: reasoning capabilities are unknown"
             )
-        if controls.reasoning_mode == ReasoningMode.GOOGLE_LEVEL:
+        if controls.control_mode == ControlMode.GOOGLE_LEVEL:
             raise ValueError(
-                f"Top-level reasoning budget is not supported for provider='{ProviderName.GOOGLE}' model={model!r} with reasoning_mode={controls.reasoning_mode!r}"
+                f"Top-level reasoning budget is not supported for provider='{ProviderName.GOOGLE}' model={model!r} with control_mode={controls.control_mode!r}"
             )
         validate_budget_range(
             provider=ProviderName.GOOGLE,
@@ -129,9 +129,7 @@ def validate_reasoning_for_google(
         model=model,
         reasoning=reasoning,
         native_spec_type=GoogleReasoning,
-        requires_reasoning=not is_reasoning_unsupported(
-            controls.reasoning_mode
-        ),
+        requires_reasoning=not is_control_unsupported(controls.control_mode),
         validate_native=lambda spec: _validate_google_reasoning_shape(
             model=model,
             thinking_level=spec.thinking_level,
@@ -148,7 +146,7 @@ def _validate_google_reasoning_shape(
     budget_tokens: int | None,
 ) -> None:
     controls = GoogleControls(model=model, mode=CallMode.api)
-    if is_reasoning_unsupported(controls.reasoning_mode):
+    if is_control_unsupported(controls.control_mode):
         if thinking_level == ThinkingLevel.NA:
             return
         raise ValueError(
@@ -158,7 +156,7 @@ def _validate_google_reasoning_shape(
         raise ValueError(
             f"thinking_level='na' is not supported for provider='{ProviderName.GOOGLE}' model={model!r}"
         )
-    if controls.reasoning_mode == ReasoningMode.GOOGLE_BUDGET:
+    if controls.control_mode == ControlMode.GOOGLE_BUDGET:
         _validate_google_budget_mode(
             model=model,
             thinking_level=thinking_level,
@@ -166,7 +164,7 @@ def _validate_google_reasoning_shape(
             controls=controls,
         )
         return
-    if controls.reasoning_mode == ReasoningMode.GOOGLE_LEVEL:
+    if controls.control_mode == ControlMode.GOOGLE_LEVEL:
         _validate_google_level_mode(
             model=model,
             thinking_level=thinking_level,
@@ -240,12 +238,8 @@ class GoogleControls(BaseModel):
     mode: CallMode
 
     @property
-    def reasoning_mode(self) -> ReasoningMode:
-        return google_reasoning_mode(self.model)
-
-    @property
-    def supports_reasoning(self) -> bool:
-        return self.reasoning_mode != ReasoningMode.UNSUPPORTED
+    def control_mode(self) -> ControlMode:
+        return google_control_mode(self.model)
 
     @property
     def min_budget_tokens(self) -> int | None:
@@ -283,7 +277,7 @@ class GoogleControls(BaseModel):
 
     @property
     def supports_dynamic(self) -> bool:
-        return self.reasoning_mode == ReasoningMode.GOOGLE_BUDGET
+        return self.control_mode == ControlMode.GOOGLE_BUDGET
 
     @property
     def google_thinking_levels(self) -> tuple[GoogleThinkingLevel, ...]:
@@ -303,22 +297,22 @@ class GoogleControls(BaseModel):
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
-        if self.reasoning_mode == ReasoningMode.UNSUPPORTED:
+        if self.control_mode == ControlMode.UNSUPPORTED:
             return (ThinkingLevel.NA,)
-        if self.reasoning_mode == ReasoningMode.GOOGLE_BUDGET:
+        if self.control_mode == ControlMode.GOOGLE_BUDGET:
             return (
                 ThinkingLevel.ADAPTIVE,
                 ThinkingLevel.OFF,
                 ThinkingLevel.BUDGET,
             )
-        if self.reasoning_mode == ReasoningMode.GOOGLE_LEVEL:
+        if self.control_mode == ControlMode.GOOGLE_LEVEL:
             return tuple(
                 google_literal_to_thinking_level(level)
                 for level in self.google_thinking_levels
             )
         raise ValueError(
-            f"unexpected reasoning mode for provider={self.provider!r} "
-            f"model={self.model!r}: {self.reasoning_mode!r}"
+            f"unexpected control mode for provider={self.provider!r} "
+            f"model={self.model!r}: {self.control_mode!r}"
         )
 
     @property
@@ -351,7 +345,7 @@ class GoogleControls(BaseModel):
     @property
     def catalog_metadata(self) -> dict[str, Any]:
         return {
-            "reasoning_mode": self.reasoning_mode,
+            "control_mode": self.control_mode,
             "min_budget_tokens": self.min_budget_tokens,
             "max_budget_tokens": self.max_budget_tokens,
             "supports_dynamic": self.supports_dynamic,
@@ -466,14 +460,14 @@ def _validate_effort(
         )
 
 
-class GoogleReasoningConfig(BaseProviderReasoningConfig):
+class GoogleControlMapping(BaseProviderControlMapping):
     payload: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_base(
         cls,
         config: ReasoningSpec | None,
-    ) -> GoogleReasoningConfig:
+    ) -> GoogleControlMapping:
         if config is None:
             return cls()
         match config:

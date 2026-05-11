@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Any
 
 from dr_llm.llm.catalog.fetchers.common import (
-    as_bool,
     fetch_models_with_template,
     require_api_key,
     resolve_supports_vision,
@@ -38,9 +37,6 @@ def fetch_google_models(
             return None
         model_name = name_raw.split("/")[-1]
         controls = controls_fn(model_name)
-        supports_reasoning = (
-            as_bool(item.get("thinking")) if "thinking" in item else None
-        )
         supports_vision = resolve_supports_vision(
             item,
             "supportsVision",
@@ -54,11 +50,7 @@ def fetch_google_models(
             display_name=str(item.get("displayName") or model_name),
             context_window=as_int(item.get("inputTokenLimit")),
             max_output_tokens=as_int(item.get("outputTokenLimit")),
-            supports_reasoning=(
-                supports_reasoning
-                if supports_reasoning is not None
-                else controls.supports_reasoning
-            ),
+            control_mode=controls.control_mode,
             supports_vision=supports_vision,
             metadata={
                 **item,

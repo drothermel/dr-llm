@@ -10,15 +10,15 @@ from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
-    ReasoningMode,
+    ControlMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
-    BaseProviderReasoningConfig,
+    BaseProviderControlMapping,
     GlmReasoning,
     ReasoningBudget,
     ReasoningSpec,
-    is_reasoning_unsupported,
+    is_control_unsupported,
     unsupported_reasoning_kind_message,
     validate_allowed_thinking_levels,
 )
@@ -47,20 +47,20 @@ GLM_THINKING_SUPPORTED_FAMILIES = (
 )
 
 
-def glm_reasoning_mode(model: str) -> ReasoningMode:
+def glm_control_mode(model: str) -> ControlMode:
     if any(
         family.in_family(model) for family in GLM_THINKING_SUPPORTED_FAMILIES
     ):
-        return ReasoningMode.GLM
-    return ReasoningMode.UNSUPPORTED
+        return ControlMode.GLM
+    return ControlMode.UNSUPPORTED
 
 
 def validate_reasoning_for_glm(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
-    reasoning_mode = glm_reasoning_mode(model)
+    control_mode = glm_control_mode(model)
     if reasoning is None:
-        if not is_reasoning_unsupported(reasoning_mode):
+        if not is_control_unsupported(control_mode):
             raise ValueError(
                 f"reasoning is required for provider='{ProviderName.GLM}' model={model!r}"
             )
@@ -91,22 +91,18 @@ class GlmControls(BaseModel):
     mode: CallMode
 
     @property
-    def reasoning_mode(self) -> ReasoningMode:
-        return glm_reasoning_mode(self.model)
-
-    @property
-    def supports_reasoning(self) -> bool:
-        return self.reasoning_mode != ReasoningMode.UNSUPPORTED
+    def control_mode(self) -> ControlMode:
+        return glm_control_mode(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
-        if self.reasoning_mode == ReasoningMode.UNSUPPORTED:
+        if self.control_mode == ControlMode.UNSUPPORTED:
             return (ThinkingLevel.NA,)
-        if self.reasoning_mode == ReasoningMode.GLM:
+        if self.control_mode == ControlMode.GLM:
             return (ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE)
         raise ValueError(
-            f"unexpected reasoning mode for provider={self.provider!r} "
-            f"model={self.model!r}: {self.reasoning_mode!r}"
+            f"unexpected control mode for provider={self.provider!r} "
+            f"model={self.model!r}: {self.control_mode!r}"
         )
 
     @property
@@ -132,7 +128,7 @@ class GlmControls(BaseModel):
     @property
     def catalog_metadata(self) -> dict[str, Any]:
         return {
-            "reasoning_mode": self.reasoning_mode,
+            "control_mode": self.control_mode,
             "supported_thinking_levels": self.supported_thinking_levels,
             "default_thinking_level": self.default_thinking_level,
             "supported_effort_levels": self.supported_effort_levels,
@@ -230,14 +226,14 @@ def _validate_effort(
         )
 
 
-class GlmReasoningConfig(BaseProviderReasoningConfig):
+class GlmControlMapping(BaseProviderControlMapping):
     extra_body: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_base(
         cls,
         config: ReasoningSpec | None,
-    ) -> GlmReasoningConfig:
+    ) -> GlmControlMapping:
         if config is None:
             return cls()
         match config:

@@ -10,14 +10,14 @@ from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
 )
 from dr_llm.llm.providers.impls.anthropic.controls import (
-    AnthropicReasoningConfig,
+    AnthropicControlMapping,
 )
 from dr_llm.llm.providers.transports.api_config import resolve_api_key
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
 from dr_llm.llm.request import LlmRequest, Message
 
 
-class AnthropicReasoningPayload(Protocol):
+class AnthropicControlPayload(Protocol):
     thinking: dict[str, Any]
     warnings: list[ReasoningWarning]
 
@@ -57,14 +57,14 @@ class AnthropicRequest(BaseModel):
         request: LlmRequest,
         config: AnthropicProviderConfig,
         *,
-        reasoning_mapping: AnthropicReasoningPayload | None = None,
+        control_mapping: AnthropicControlPayload | None = None,
         require_max_tokens: bool = True,
     ) -> AnthropicRequest:
         if require_max_tokens and request.max_tokens is None:
             raise cls._missing_max_tokens_error(request.provider)
-        resolved_reasoning_mapping = (
-            reasoning_mapping
-            or AnthropicReasoningConfig.from_base(request.reasoning)
+        resolved_control_mapping = (
+            control_mapping
+            or AnthropicControlMapping.from_base(request.reasoning)
         )
         output_config = (
             {"effort": request.effort}
@@ -84,12 +84,12 @@ class AnthropicRequest(BaseModel):
             system=system or None,
             temperature=request.sampling_temperature,
             top_p=request.sampling_top_p,
-            thinking=resolved_reasoning_mapping.thinking or None,
+            thinking=resolved_control_mapping.thinking or None,
             output_config=output_config,
             base_url=config.base_url,
             api_key=resolve_api_key(config, label="Anthropic"),
             anthropic_version=config.anthropic_version,
-            warnings=resolved_reasoning_mapping.warnings,
+            warnings=resolved_control_mapping.warnings,
         )
 
     @staticmethod

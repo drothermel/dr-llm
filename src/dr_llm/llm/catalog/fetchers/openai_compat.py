@@ -61,17 +61,13 @@ def _process_openai_model_item(
         return None
     pricing = _parse_pricing(item.get("pricing"))
     controls = controls_fn(model_id)
-    supports_reasoning = _resolve_reasoning_support(
-        supported_params=item.get("supported_parameters"),
-        controls=controls,
-    )
     return ModelCatalogEntry(
         provider=provider_name,
         model=model_id,
         display_name=str(item.get("name") or model_id),
         context_window=as_int(item.get("context_length")),
         max_output_tokens=as_int(item.get("max_output_tokens")),
-        supports_reasoning=supports_reasoning,
+        control_mode=controls.control_mode,
         supports_vision=_detect_supports_vision(item),
         pricing=pricing,
         metadata={
@@ -81,20 +77,6 @@ def _process_openai_model_item(
         fetched_at=now,
         source_quality="live",
     )
-
-
-def _resolve_reasoning_support(
-    *,
-    supported_params: Any,
-    controls: ProviderControls,
-) -> bool | None:
-    if not isinstance(supported_params, list):
-        return controls.supports_reasoning
-    normalized = {str(param) for param in supported_params}
-    supports_reasoning = (
-        "reasoning" in normalized or "reasoning.effort" in normalized
-    )
-    return supports_reasoning or controls.supports_reasoning
 
 
 def _parse_pricing(value: Any) -> ModelCatalogPricing | None:

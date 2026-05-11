@@ -10,13 +10,13 @@ from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
-    ReasoningMode,
+    ControlMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
-    BaseProviderReasoningConfig,
+    BaseProviderControlMapping,
     ReasoningBudget,
     ReasoningSpec,
     unsupported_reasoning_kind_message,
@@ -38,16 +38,16 @@ class MiniMaxModelFamily(StrEnum):
 MINIMAX_SUPPORTED_MODEL_FAMILIES = (MiniMaxModelFamily.MINIMAX,)
 
 
-def minimax_reasoning_mode(model: str) -> ReasoningMode:
+def minimax_control_mode(model: str) -> ControlMode:
     if any(
         family.in_family(model) for family in MINIMAX_SUPPORTED_MODEL_FAMILIES
     ):
-        return ReasoningMode.MINIMAX_EFFORT
-    return ReasoningMode.UNSUPPORTED
+        return ControlMode.MINIMAX_EFFORT
+    return ControlMode.UNSUPPORTED
 
 
 def supported_effort_levels_for_minimax(model: str) -> tuple[EffortSpec, ...]:
-    if minimax_reasoning_mode(model) == ReasoningMode.UNSUPPORTED:
+    if minimax_control_mode(model) == ControlMode.UNSUPPORTED:
         return ()
     return FULL_EFFORT
 
@@ -86,12 +86,8 @@ class MiniMaxControls(BaseModel):
     mode: CallMode
 
     @property
-    def reasoning_mode(self) -> ReasoningMode:
-        return minimax_reasoning_mode(self.model)
-
-    @property
-    def supports_reasoning(self) -> bool:
-        return self.reasoning_mode != ReasoningMode.UNSUPPORTED
+    def control_mode(self) -> ControlMode:
+        return minimax_control_mode(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
@@ -120,7 +116,7 @@ class MiniMaxControls(BaseModel):
     @property
     def catalog_metadata(self) -> dict[str, Any]:
         return {
-            "reasoning_mode": self.reasoning_mode,
+            "control_mode": self.control_mode,
             "supported_thinking_levels": self.supported_thinking_levels,
             "default_thinking_level": self.default_thinking_level,
             "supported_effort_levels": self.supported_effort_levels,
@@ -222,14 +218,14 @@ def _validate_effort(
         )
 
 
-class MiniMaxReasoningConfig(BaseProviderReasoningConfig):
+class MiniMaxControlMapping(BaseProviderControlMapping):
     thinking: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_base(
         cls,
         config: ReasoningSpec | None,
-    ) -> MiniMaxReasoningConfig:
+    ) -> MiniMaxControlMapping:
         if config is None:
             raise ProviderSemanticError(
                 f"{ProviderName.MINIMAX} requires explicit AnthropicReasoning(thinking_level='na')"

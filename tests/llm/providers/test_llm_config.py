@@ -37,7 +37,7 @@ from dr_llm.llm import (
     OpenAIGpt54Config,
     OpenAILegacyConfig,
     OpenRouterEffortConfig,
-    OpenRouterNoReasoningConfig,
+    OpenRouterNoControlConfig,
     OpenRouterToggleConfig,
     ProviderName,
     SamplingControls,
@@ -285,7 +285,7 @@ def test_glm_authoring_configs_to_llm_config(
     ("config", "expected_reasoning"),
     [
         (
-            OpenRouterNoReasoningConfig(model="deepseek/deepseek-chat"),
+            OpenRouterNoControlConfig(model="deepseek/deepseek-chat"),
             None,
         ),
         (
