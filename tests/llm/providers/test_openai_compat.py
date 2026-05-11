@@ -229,6 +229,35 @@ def test_openai_gpt5_swaps_max_tokens_for_max_completion_tokens() -> None:
     assert payload["max_completion_tokens"] == 64
 
 
+def test_openai_gpt_oss_serializes_reasoning_effort() -> None:
+    openai_config = OpenAICompatConfig(
+        name=ProviderName.OPENAI,
+        base_url="https://api.openai.com/v1",
+        api_key="x",
+        max_completion_token_model_families=(
+            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_FAMILIES
+        ),
+    )
+    request = _make_api_request(
+        {
+            "provider": ProviderName.OPENAI,
+            "model": "gpt-oss-20b",
+            "max_tokens": 64,
+            "reasoning": OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
+        }
+    )
+    provider = OpenAIProvider(config=openai_config)
+    try:
+        provider_request = provider._build_request(request)
+    finally:
+        provider.close()
+    payload = provider_request.json_payload()
+
+    assert payload["reasoning_effort"] == "low"
+    assert "max_tokens" not in payload
+    assert payload["max_completion_tokens"] == 64
+
+
 def test_openai_legacy_model_keeps_max_tokens() -> None:
     openai_config = OpenAICompatConfig(
         name=ProviderName.OPENAI,

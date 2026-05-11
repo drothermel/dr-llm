@@ -4,7 +4,7 @@ from enum import StrEnum
 from importlib.resources import files
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from dr_llm.llm.names import (
     EffortSpec,
@@ -28,9 +28,26 @@ class OpenRouterModelPolicy(BaseModel):
     request_style: OpenRouterControlRequestStyle
     supports_disable: bool
     allowed_efforts: tuple[OpenRouterEffortLevel, ...] = ()
+    default_effort: OpenRouterEffortLevel | None = None
     default_enabled: bool | None = None
     verified: bool = False
     notes: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_default_effort(self) -> OpenRouterModelPolicy:
+        if self.default_effort is None:
+            return self
+        if self.request_style != OpenRouterControlRequestStyle.EFFORT:
+            raise ValueError(
+                "default_effort is only allowed for effort-style policies"
+            )
+        if self.default_effort in self.allowed_efforts:
+            return self
+        allowed = ", ".join(self.allowed_efforts)
+        raise ValueError(
+            f"default_effort={self.default_effort!r} is not in "
+            f"allowed_efforts for model={self.model!r}: {allowed}"
+        )
 
 
 def _load_openrouter_policies() -> dict[str, OpenRouterModelPolicy]:

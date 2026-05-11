@@ -170,7 +170,9 @@ class OpenRouterControls(BaseModel):
             if policy.supports_disable:
                 return OpenRouterReasoning(enabled=False)
             return OpenRouterReasoning(enabled=True)
-        return OpenRouterReasoning(effort=policy.allowed_efforts[0])
+        return OpenRouterReasoning(
+            effort=policy.default_effort or policy.allowed_efforts[0]
+        )
 
     @property
     def catalog_metadata(self) -> dict[str, Any]:

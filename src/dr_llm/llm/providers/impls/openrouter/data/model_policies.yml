@@ -278,6 +278,7 @@ openai/gpt-oss-20b:
   - low
   - medium
   - high
+  default_effort: low
   default_enabled: true
   verified: true
   notes: 'Live-tested: accepts reasoning.effort=low|medium|high and rejects disable.'
@@ -288,6 +289,7 @@ openai/gpt-oss-120b:
   - low
   - medium
   - high
+  default_effort: low
   default_enabled: true
   verified: true
   notes: 'Live-tested: accepts reasoning.effort=low|medium|high and rejects disable.'

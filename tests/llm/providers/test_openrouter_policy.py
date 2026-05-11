@@ -28,6 +28,7 @@ def test_openrouter_policy_applies_verified_overrides() -> None:
         policies["openai/gpt-oss-20b"].request_style
         == OpenRouterControlRequestStyle.EFFORT
     )
+    assert policies["openai/gpt-oss-20b"].default_effort == "low"
     assert (
         policies["openai/gpt-5-nano"].request_style
         == OpenRouterControlRequestStyle.EFFORT

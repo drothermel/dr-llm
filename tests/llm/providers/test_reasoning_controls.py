@@ -55,6 +55,17 @@ def test_openai_controls_prefer_minimal_or_off_defaults(
         thinking_level=ThinkingLevel.OFF
     )
 
+    gpt_oss = controls(registry, ProviderName.OPENAI, "gpt-oss-20b")
+    assert gpt_oss.supported_thinking_levels == (
+        ThinkingLevel.LOW,
+        ThinkingLevel.MEDIUM,
+        ThinkingLevel.HIGH,
+    )
+    assert gpt_oss.default_thinking_level == ThinkingLevel.LOW
+    assert gpt_oss.default_reasoning == OpenAIReasoning(
+        thinking_level=ThinkingLevel.LOW
+    )
+
 
 def test_google_controls_cover_budget_and_level_modes(
     registry: ProviderRegistry,

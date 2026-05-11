@@ -76,7 +76,9 @@ def _validate_reasoning_for_anthropic(
     families: AnthropicFamilies | None = None,
 ) -> None:
     families = families or ANTHROPIC_FAMILIES
-    controls = AnthropicControls(model=model, mode=CallMode.api, families=families)
+    controls = AnthropicControls(
+        model=model, mode=CallMode.api, families=families
+    )
     dispatch_reasoning_validation(
         provider=ProviderName.ANTHROPIC,
         model=model,
@@ -103,7 +105,10 @@ def _validate_anthropic_reasoning_shape(
     controls: "AnthropicControls",
 ) -> None:
     thinking_level = reasoning.thinking_level
-    if thinking_level != ThinkingLevel.BUDGET and reasoning.budget_tokens is not None:
+    if (
+        thinking_level != ThinkingLevel.BUDGET
+        and reasoning.budget_tokens is not None
+    ):
         raise ValueError(
             "anthropic budget_tokens are only allowed with thinking_level='budget'"
         )
@@ -152,7 +157,9 @@ class AnthropicControls(BaseModel):
     provider: ProviderName = ProviderName.ANTHROPIC
     model: str
     mode: CallMode
-    families: AnthropicFamilies = Field(default_factory=AnthropicFamilies, exclude=True)
+    families: AnthropicFamilies = Field(
+        default_factory=AnthropicFamilies, exclude=True
+    )
 
     @property
     def control_mode(self) -> ControlMode:
@@ -257,7 +264,9 @@ class AnthropicControls(BaseModel):
         if thinking_level == ThinkingLevel.BUDGET:
             return AnthropicReasoning(
                 thinking_level=thinking_level,
-                budget_tokens=_require_budget_tokens(budget_tokens=budget_tokens),
+                budget_tokens=_require_budget_tokens(
+                    budget_tokens=budget_tokens
+                ),
             )
         return AnthropicReasoning(thinking_level=thinking_level)
 

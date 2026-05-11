@@ -32,6 +32,11 @@ type _OpenAIOffThinkingLevel = Literal[
     ThinkingLevel.MEDIUM,
     ThinkingLevel.HIGH,
 ]
+type _OpenAIGptOssThinkingLevel = Literal[
+    ThinkingLevel.LOW,
+    ThinkingLevel.MEDIUM,
+    ThinkingLevel.HIGH,
+]
 
 
 class _OpenAIBaseConfig(BaseModel):
@@ -198,3 +203,14 @@ class OpenAIGpt54Config(_OpenAIBaseConfig):
 
     def _sampling(self) -> SamplingControls | None:
         return self.sampling
+
+
+class OpenAIGptOssConfig(_OpenAIBaseConfig):
+    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = (
+        OPENAI_FAMILIES.gpt_oss
+    )
+
+    thinking_level: _OpenAIGptOssThinkingLevel | None = None
+
+    def _thinking_level(self) -> ThinkingLevel | None:
+        return self.thinking_level

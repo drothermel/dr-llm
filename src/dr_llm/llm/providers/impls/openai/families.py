@@ -32,6 +32,8 @@ class OpenAIModelFamily(StrEnum):
     GPT54 = "gpt-5.4"
     GPT54_MINI = "gpt-5.4-mini"
     GPT54_NANO = "gpt-5.4-nano"
+    GPT_OSS_20B = "gpt-oss-20b"
+    GPT_OSS_120B = "gpt-oss-120b"
 
     def in_family(self, model: str) -> bool:
         normalized = _normalize_openai_model(model)
@@ -48,6 +50,8 @@ def _normalize_openai_model(model: str) -> str:
 
 class OpenAIFamilies(BaseModel):
     model_config = ConfigDict(frozen=True)
+
+    gpt_oss_default_thinking_level: ThinkingLevel = ThinkingLevel.LOW
 
     gpt5: tuple[OpenAIModelFamily, ...] = (
         OpenAIModelFamily.GPT5,
@@ -79,6 +83,10 @@ class OpenAIFamilies(BaseModel):
         OpenAIModelFamily.GPT54_MINI,
         OpenAIModelFamily.GPT54_NANO,
     )
+    gpt_oss: tuple[OpenAIModelFamily, ...] = (
+        OpenAIModelFamily.GPT_OSS_20B,
+        OpenAIModelFamily.GPT_OSS_120B,
+    )
     sampling_with_reasoning_off: tuple[OpenAIModelFamily, ...] = (
         OpenAIModelFamily.GPT52,
         OpenAIModelFamily.GPT52_MINI,
@@ -96,6 +104,7 @@ class OpenAIFamilies(BaseModel):
             *self.gpt52,
             *self.gpt53,
             *self.gpt54,
+            *self.gpt_oss,
         )
 
     @property
@@ -120,6 +129,9 @@ class OpenAIFamilies(BaseModel):
     def supports_off_thinking(self, model: str) -> bool:
         return self.matches_any(model, self.off_thinking_supported)
 
+    def supports_gpt_oss_thinking(self, model: str) -> bool:
+        return self.matches_any(model, self.gpt_oss)
+
     def supports_sampling_with_reasoning_off(self, model: str) -> bool:
         return self.matches_any(model, self.sampling_with_reasoning_off)
 
@@ -133,6 +145,12 @@ class OpenAIFamilies(BaseModel):
     ) -> tuple[ThinkingLevel, ...]:
         if not self.supports_configurable_thinking(model):
             return (ThinkingLevel.NA,)
+        if self.supports_gpt_oss_thinking(model):
+            return (
+                ThinkingLevel.LOW,
+                ThinkingLevel.MEDIUM,
+                ThinkingLevel.HIGH,
+            )
         levels: list[ThinkingLevel] = []
         if self.supports_off_thinking(model):
             levels.append(ThinkingLevel.OFF)
@@ -144,6 +162,8 @@ class OpenAIFamilies(BaseModel):
         return tuple(levels)
 
     def default_thinking_level(self, model: str) -> ThinkingLevel:
+        if self.supports_gpt_oss_thinking(model):
+            return self.gpt_oss_default_thinking_level
         levels = self.supported_thinking_levels(model)
         for level in (
             ThinkingLevel.OFF,

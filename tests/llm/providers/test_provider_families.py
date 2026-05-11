@@ -21,6 +21,13 @@ def test_openai_families_match_snapshots_and_prefixed_models() -> None:
     assert families.supports_minimal_thinking("gpt-5-mini")
     assert families.supports_sampling_with_reasoning_off("gpt-5.4")
     assert not families.supports_sampling_with_reasoning_off("gpt-5.3")
+    assert families.supports_gpt_oss_thinking("gpt-oss-20b")
+    assert families.supported_thinking_levels("gpt-oss-20b") == (
+        ThinkingLevel.LOW,
+        ThinkingLevel.MEDIUM,
+        ThinkingLevel.HIGH,
+    )
+    assert families.default_thinking_level("gpt-oss-20b") == ThinkingLevel.LOW
 
 
 def test_codex_families_separate_public_and_codex_model_behavior() -> None:

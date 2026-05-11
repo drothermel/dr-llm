@@ -10,6 +10,8 @@ class OpenAIStaticCatalogModel(StrEnum):
     GPT52 = "gpt-5.2"
     GPT51 = "gpt-5.1"
     GPT5 = "gpt-5"
+    GPT_OSS_20B = "gpt-oss-20b"
+    GPT_OSS_120B = "gpt-oss-120b"
     O3 = "o3"
     O3_MINI = "o3-mini"
     O4_MINI = "o4-mini"

@@ -35,6 +35,7 @@ from dr_llm.llm import (
     OpenAIGpt52Config,
     OpenAIGpt53Config,
     OpenAIGpt54Config,
+    OpenAIGptOssConfig,
     OpenAILegacyConfig,
     OpenRouterEffortConfig,
     OpenRouterNoControlConfig,
@@ -176,6 +177,13 @@ def test_orchestrator_build_request_applies_normalized_config() -> None:
                 sampling=SamplingControls(temperature=0.7),
             ),
             OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
+        ),
+        (
+            OpenAIGptOssConfig(
+                model="gpt-oss-20b",
+                thinking_level=ThinkingLevel.MEDIUM,
+            ),
+            OpenAIReasoning(thinking_level=ThinkingLevel.MEDIUM),
         ),
     ],
 )
@@ -454,6 +462,15 @@ def test_claude_code_authoring_configs_use_anthropic_family_capabilities() -> (
             "custom sampling requires thinking_level='off'",
         ),
         (
+            lambda: OpenAIGptOssConfig.model_validate(
+                {
+                    "model": "gpt-oss-20b",
+                    "thinking_level": ThinkingLevel.OFF,
+                }
+            ),
+            "Input should be",
+        ),
+        (
             lambda: GoogleBudgetConfig(
                 model="gemini-2.5-flash-lite",
                 thinking_level=ThinkingLevel.BUDGET,
@@ -505,6 +522,18 @@ def test_build_config_rejects_provider_specific_reasoning_mismatch() -> None:
             registry.get(ProviderName.OPENAI).build_config(
                 model="gpt-5-mini",
                 reasoning=GoogleReasoning(thinking_level=ThinkingLevel.OFF),
+            )
+    finally:
+        registry.close()
+
+
+def test_openai_gpt_oss_rejects_no_thinking_level() -> None:
+    registry = build_default_registry()
+    try:
+        with pytest.raises(ValueError, match="thinking_level='off'"):
+            registry.get(ProviderName.OPENAI).build_config(
+                model="gpt-oss-20b",
+                thinking_level=ThinkingLevel.OFF,
             )
     finally:
         registry.close()

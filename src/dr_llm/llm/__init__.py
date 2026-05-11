@@ -76,6 +76,7 @@ from dr_llm.llm.providers.impls.openai import (
     OpenAIGpt52Config,
     OpenAIGpt53Config,
     OpenAIGpt54Config,
+    OpenAIGptOssConfig,
     OpenAILegacyConfig,
 )
 from dr_llm.llm.providers.impls.openrouter import (
@@ -130,6 +131,7 @@ __all__ = [
     "OpenAIGpt52Config",
     "OpenAIGpt53Config",
     "OpenAIGpt54Config",
+    "OpenAIGptOssConfig",
     "OpenAILegacyConfig",
     "OpenAIReasoning",
     "OpenRouterEffortConfig",

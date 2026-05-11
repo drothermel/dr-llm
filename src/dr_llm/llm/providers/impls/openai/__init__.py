@@ -6,6 +6,7 @@ from dr_llm.llm.providers.impls.openai.config import (
     OpenAIGpt52Config,
     OpenAIGpt53Config,
     OpenAIGpt54Config,
+    OpenAIGptOssConfig,
     OpenAILegacyConfig,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "OpenAIGpt52Config",
     "OpenAIGpt53Config",
     "OpenAIGpt54Config",
+    "OpenAIGptOssConfig",
     "OpenAILegacyConfig",
 ]
