@@ -10,7 +10,7 @@ from dr_llm.llm import (
     MINIMAX_TEXT_MODELS,
     OpenAILlmConfig,
     ProviderName,
-    default_reasoning,
+    build_default_registry,
     openrouter_allowed_models,
 )
 
@@ -75,24 +75,28 @@ DEMO_QUERY_DEFAULT_MODELS: dict[ProviderName, str] = {
 
 def demo_pool_fill_llm_configs() -> dict[str, LlmConfig]:
     """Build fresh LLM configs for the pool-fill demo."""
-    return {
-        "gpt-5-mini-default": OpenAILlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-5-mini",
-            max_tokens=64,
-            reasoning=default_reasoning(
-                provider=ProviderName.OPENAI, model="gpt-5-mini"
+    registry = build_default_registry()
+    try:
+        return {
+            "gpt-5-mini-default": OpenAILlmConfig(
+                provider=ProviderName.OPENAI,
+                model="gpt-5-mini",
+                max_tokens=64,
+                reasoning=registry.get(ProviderName.OPENAI)
+                .reasoning_controls("gpt-5-mini")
+                .default_reasoning,
             ),
-        ),
-        "gemini-flash-default": ApiLlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemini-2.5-flash",
-            max_tokens=64,
-            reasoning=default_reasoning(
-                provider=ProviderName.GOOGLE, model="gemini-2.5-flash"
+            "gemini-flash-default": ApiLlmConfig(
+                provider=ProviderName.GOOGLE,
+                model="gemini-2.5-flash",
+                max_tokens=64,
+                reasoning=registry.get(ProviderName.GOOGLE)
+                .reasoning_controls("gemini-2.5-flash")
+                .default_reasoning,
             ),
-        ),
-    }
+        }
+    finally:
+        registry.close()
 
 
 __all__ = [

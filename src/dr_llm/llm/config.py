@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from dr_llm.llm.names import (
     EffortSpec,
@@ -19,10 +19,6 @@ from dr_llm.llm.request import (
     KimiCodeLlmRequest,
     OpenAILlmRequest,
     Message,
-    validate_llm_constraints,
-)
-from dr_llm.llm.providers.openai_compat.thinking import (
-    validate_openai_sampling_controls,
 )
 
 
@@ -36,17 +32,6 @@ class ApiBackedLlmConfig(BaseModel):
     max_tokens: int | None = None
     effort: EffortSpec = EffortSpec.NA
     reasoning: ReasoningSpec | None = None
-
-    @model_validator(mode="after")
-    def _validate_generation_params(self) -> ApiBackedLlmConfig:
-        validate_llm_constraints(
-            provider=self.provider,
-            model=self.model,
-            max_tokens=self.max_tokens,
-            effort=self.effort,
-            reasoning=self.reasoning,
-        )
-        return self
 
     def to_request(self, messages: list[Message]) -> ApiBackedLlmRequest:
         raise NotImplementedError
@@ -74,16 +59,6 @@ class OpenAILlmConfig(ApiBackedLlmConfig):
     provider: OpenAIProviderName
     temperature: float | None = None
     top_p: float | None = None
-
-    @model_validator(mode="after")
-    def _validate_openai_sampling_controls(self) -> OpenAILlmConfig:
-        validate_openai_sampling_controls(
-            model=self.model,
-            reasoning=self.reasoning,
-            temperature=self.temperature,
-            top_p=self.top_p,
-        )
-        return self
 
     def to_request(self, messages: list[Message]) -> OpenAILlmRequest:
         return OpenAILlmRequest(
@@ -119,17 +94,6 @@ class HeadlessLlmConfig(BaseModel):
     model: str
     effort: EffortSpec = EffortSpec.NA
     reasoning: ReasoningSpec | None = None
-
-    @model_validator(mode="after")
-    def _validate_generation_params(self) -> HeadlessLlmConfig:
-        validate_llm_constraints(
-            provider=self.provider,
-            model=self.model,
-            max_tokens=None,
-            effort=self.effort,
-            reasoning=self.reasoning,
-        )
-        return self
 
     def to_request(self, messages: list[Message]) -> HeadlessLlmRequest:
         return HeadlessLlmRequest(

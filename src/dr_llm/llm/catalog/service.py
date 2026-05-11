@@ -12,7 +12,6 @@ from dr_llm.llm.catalog.models import (
     ModelCatalogSyncResult,
 )
 from dr_llm.llm.catalog.model_blacklist import filter_blacklisted_entries
-from dr_llm.llm.catalog.fetchers import fetch_models_for_provider
 from dr_llm.llm.providers.openrouter.policy import (
     apply_openrouter_model_policies,
 )
@@ -165,4 +164,4 @@ class ModelCatalogService:
     def _fetch_provider(
         self, provider: str
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-        return fetch_models_for_provider(self._registry.get(provider))
+        return self._registry.get(provider).fetch_models()

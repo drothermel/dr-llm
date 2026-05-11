@@ -6,19 +6,19 @@ from fastapi.testclient import TestClient
 
 from dr_llm.llm import ProviderConfig, ProviderRegistry
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from tests.conftest import FakeProvider
+from tests.conftest import FakeOrchestrator
 from ui.api import main as ui_api
 
 
 def test_providers_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    adapter = FakeProvider(
+    orchestrator = FakeOrchestrator(
         "fake-provider",
         config=ProviderConfig(
             name="fake-provider", supports_structured_output=True
         ),
     )
     registry = ProviderRegistry()
-    registry.register(adapter)
+    registry.register(orchestrator)
     monkeypatch.setattr(ui_api, "build_default_registry", lambda: registry)
 
     with TestClient(ui_api.app) as client:
@@ -34,46 +34,40 @@ def test_providers_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
             "supports_structured_output": True,
         }
     ]
-    assert adapter.close_calls == 1
+    assert orchestrator.close_calls == 1
     assert getattr(ui_api.app.state, "registry", None) is None
 
 
 def test_openrouter_models_endpoint_applies_policy_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    adapter = FakeProvider(
+    entries = [
+        ModelCatalogEntry(
+            provider=ProviderName.OPENROUTER,
+            model="deepseek/deepseek-chat-v3.1",
+            supports_reasoning=False,
+            source_quality="live",
+        ),
+        ModelCatalogEntry(
+            provider=ProviderName.OPENROUTER,
+            model="deepseek/deepseek-chat",
+            supports_reasoning=True,
+            source_quality="live",
+        ),
+        ModelCatalogEntry(
+            provider=ProviderName.OPENROUTER,
+            model="unknown/model",
+            source_quality="live",
+        ),
+    ]
+    orchestrator = FakeOrchestrator(
         ProviderName.OPENROUTER,
         config=ProviderConfig(name=ProviderName.OPENROUTER),
+        fetch_models_fn=lambda: (entries, {}),
     )
     registry = ProviderRegistry()
-    registry.register(adapter)
+    registry.register(orchestrator)
     monkeypatch.setattr(ui_api, "build_default_registry", lambda: registry)
-    monkeypatch.setattr(
-        ui_api,
-        "fetch_models_for_provider",
-        lambda _provider: (
-            [
-                ModelCatalogEntry(
-                    provider=ProviderName.OPENROUTER,
-                    model="deepseek/deepseek-chat-v3.1",
-                    supports_reasoning=False,
-                    source_quality="live",
-                ),
-                ModelCatalogEntry(
-                    provider=ProviderName.OPENROUTER,
-                    model="deepseek/deepseek-chat",
-                    supports_reasoning=True,
-                    source_quality="live",
-                ),
-                ModelCatalogEntry(
-                    provider=ProviderName.OPENROUTER,
-                    model="unknown/model",
-                    source_quality="live",
-                ),
-            ],
-            {},
-        ),
-    )
 
     with TestClient(ui_api.app) as client:
         response = client.get("/api/providers/openrouter/models")
@@ -92,7 +86,7 @@ def test_openrouter_models_endpoint_applies_policy_filter(
 def test_openrouter_static_models_use_curated_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    adapter = FakeProvider(
+    orchestrator = FakeOrchestrator(
         ProviderName.OPENROUTER,
         config=ProviderConfig(
             name=ProviderName.OPENROUTER,
@@ -100,7 +94,7 @@ def test_openrouter_static_models_use_curated_policy(
         ),
     )
     registry = ProviderRegistry()
-    registry.register(adapter)
+    registry.register(orchestrator)
     monkeypatch.setattr(ui_api, "build_default_registry", lambda: registry)
 
     with TestClient(ui_api.app) as client:

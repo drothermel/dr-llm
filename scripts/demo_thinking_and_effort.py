@@ -47,13 +47,6 @@ from dr_llm.llm import (
     ReasoningSpec,
     ThinkingLevel,
     build_default_registry,
-    default_effort,
-    default_reasoning,
-    default_thinking_level,
-    reasoning_capabilities_for_model,
-    reasoning_for_thinking_level,
-    supported_effort_levels,
-    supported_thinking_levels,
 )
 
 app = typer.Typer()
@@ -67,19 +60,22 @@ PHASES = ["models", "thinking", "effort"]
 
 
 def budget_tokens_for_level(
-    provider: str, model: str, thinking_level: ThinkingLevel
+    registry: ProviderRegistry,
+    provider: str,
+    model: str,
+    thinking_level: ThinkingLevel,
 ) -> int | None:
     if thinking_level != ThinkingLevel.BUDGET:
         return None
-    capabilities = reasoning_capabilities_for_model(
-        provider=provider, model=model
+    return (
+        registry.get(provider)
+        .model_capabilities(model)
+        .reasoning.min_budget_tokens
     )
-    if capabilities is None or capabilities.min_budget_tokens is None:
-        return None
-    return capabilities.min_budget_tokens
 
 
 def format_attempt(
+    registry: ProviderRegistry,
     provider: str,
     model: str,
     thinking_level: ThinkingLevel,
@@ -99,7 +95,9 @@ def format_attempt(
                 detail += " | reasoning=none"
         return detail
     detail = f"{provider} | {model} | thinking={thinking_level.name}"
-    budget_tokens = budget_tokens_for_level(provider, model, thinking_level)
+    budget_tokens = budget_tokens_for_level(
+        registry, provider, model, thinking_level
+    )
     if budget_tokens is not None:
         detail = (
             f"{provider} | {model} | "
@@ -146,6 +144,7 @@ def ensure_required_providers_available(
 
 
 def make_request(
+    registry: ProviderRegistry,
     provider: str,
     model: str,
     thinking_level: ThinkingLevel,
@@ -157,13 +156,19 @@ def make_request(
     max_tokens = (
         KIMI_CODE_MAX_TOKENS if provider == ProviderName.KIMI_CODE else None
     )
-    reasoning = reasoning_override or reasoning_for_thinking_level(
-        provider=provider,
+    reasoning = reasoning_override or registry.get(
+        provider
+    ).reasoning_for_thinking_level(
         model=model,
         thinking_level=thinking_level,
-        budget_tokens=budget_tokens_for_level(provider, model, thinking_level),
-        explicit_na=explicit_reasoning,
+        budget_tokens=budget_tokens_for_level(
+            registry, provider, model, thinking_level
+        ),
     )
+    if explicit_reasoning and reasoning is None:
+        reasoning = (
+            registry.get(provider).reasoning_controls(model).default_reasoning
+        )
     if provider in ProviderCategories().headless:
         return HeadlessLlmRequest(
             provider=cast(HeadlessProviderName, provider),
@@ -208,6 +213,7 @@ def run_attempt(
     summary.increment("attempted")
     print(
         format_attempt(
+            registry,
             provider,
             model,
             thinking_level,
@@ -218,6 +224,7 @@ def run_attempt(
 
     try:
         request = make_request(
+            registry,
             provider=provider,
             model=model,
             thinking_level=thinking_level,
@@ -256,20 +263,17 @@ def run_model_sweep(
     print("\n== models ==")
     for provider in providers:
         for model in DEMO_THINKING_SWEEP_MODELS[provider]:
+            controls = registry.get(provider).reasoning_controls(model)
             run_attempt(
                 registry=registry,
                 provider=provider,
                 model=model,
                 phase="models",
-                thinking_level=default_thinking_level(
-                    provider=provider, model=model
-                ),
-                effort=default_effort(provider=provider, model=model),
+                thinking_level=controls.default_thinking_level,
+                effort=controls.default_effort,
                 explicit_reasoning=requires_explicit_reasoning(provider),
                 counts=counts,
-                reasoning_override=default_reasoning(
-                    provider=provider, model=model
-                ),
+                reasoning_override=controls.default_reasoning,
             )
 
 
@@ -283,16 +287,15 @@ def run_thinking_sweep(
         if provider == ProviderName.OPENROUTER:
             continue
         for model in DEMO_THINKING_SWEEP_MODELS[provider]:
-            for thinking_level in supported_thinking_levels(
-                provider=provider, model=model
-            ):
+            controls = registry.get(provider).reasoning_controls(model)
+            for thinking_level in controls.supported_thinking_levels:
                 run_attempt(
                     registry=registry,
                     provider=provider,
                     model=model,
                     phase="thinking",
                     thinking_level=thinking_level,
-                    effort=default_effort(provider=provider, model=model),
+                    effort=controls.default_effort,
                     explicit_reasoning=True,
                     counts=counts,
                 )
@@ -308,17 +311,14 @@ def run_effort_sweep(
         if provider == ProviderName.OPENROUTER:
             continue
         for model in DEMO_THINKING_SWEEP_MODELS[provider]:
-            for effort in supported_effort_levels(
-                provider=provider, model=model
-            ):
+            controls = registry.get(provider).reasoning_controls(model)
+            for effort in controls.supported_effort_levels:
                 run_attempt(
                     registry=registry,
                     provider=provider,
                     model=model,
                     phase="effort",
-                    thinking_level=default_thinking_level(
-                        provider=provider, model=model
-                    ),
+                    thinking_level=controls.default_thinking_level,
                     effort=effort,
                     explicit_reasoning=requires_explicit_reasoning(provider),
                     counts=counts,

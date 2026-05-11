@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm.catalog.fetchers.static import fetch_static_minimax_models
 from dr_llm.llm.names import ControlStrategy, ProviderName, ReasoningMode
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -14,13 +15,15 @@ from dr_llm.llm.providers.minimax.provider import MiniMaxProvider
 from dr_llm.llm.providers.minimax.reasoning import (
     validate_reasoning_for_minimax,
 )
+from dr_llm.llm.providers.orchestrator_base import BaseProviderOrchestrator
 from dr_llm.llm.request import LlmRequest
-from dr_llm.llm.response import LlmResponse
 
 
-class MiniMaxOrchestrator:
+class MiniMaxOrchestrator(BaseProviderOrchestrator):
+    _provider: MiniMaxProvider
+
     def __init__(self, provider: MiniMaxProvider) -> None:
-        self._provider = provider
+        super().__init__(provider)
 
     @property
     def name(self) -> ProviderName:
@@ -47,16 +50,11 @@ class MiniMaxOrchestrator:
         )
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
+        super().validate_request(request)
         validate_reasoning_for_minimax(
             model=request.model, reasoning=request.reasoning
         )
         return []
 
-    def generate(self, request: LlmRequest) -> LlmResponse:
-        return self._provider.generate(request)
-
-    def is_available(self) -> bool:
-        return self._provider.availability_status().available
-
-    def close(self) -> None:
-        self._provider.close()
+    def fetch_models(self):
+        return fetch_static_minimax_models(self._provider)

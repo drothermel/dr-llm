@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm.catalog.fetchers.google import fetch_google_models
 from dr_llm.llm.names import ControlStrategy, ProviderName, ReasoningMode
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -11,13 +12,15 @@ from dr_llm.llm.providers.google.capabilities import (
 )
 from dr_llm.llm.providers.google.provider import GoogleProvider
 from dr_llm.llm.providers.google.reasoning import validate_reasoning_for_google
+from dr_llm.llm.providers.orchestrator_base import BaseProviderOrchestrator
 from dr_llm.llm.request import LlmRequest
-from dr_llm.llm.response import LlmResponse
 
 
-class GoogleOrchestrator:
+class GoogleOrchestrator(BaseProviderOrchestrator):
+    _provider: GoogleProvider
+
     def __init__(self, provider: GoogleProvider) -> None:
-        self._provider = provider
+        super().__init__(provider)
 
     @property
     def name(self) -> ProviderName:
@@ -39,16 +42,11 @@ class GoogleOrchestrator:
         )
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
+        super().validate_request(request)
         validate_reasoning_for_google(
             model=request.model, reasoning=request.reasoning
         )
         return []
 
-    def generate(self, request: LlmRequest) -> LlmResponse:
-        return self._provider.generate(request)
-
-    def is_available(self) -> bool:
-        return self._provider.availability_status().available
-
-    def close(self) -> None:
-        self._provider.close()
+    def fetch_models(self):
+        return fetch_google_models(self._provider)

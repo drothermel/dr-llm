@@ -18,7 +18,7 @@ from dr_llm.llm.providers.config import (
     ProviderConfig,
 )
 from dr_llm.llm.providers.registry import ProviderRegistry
-from tests.conftest import FakeProvider
+from tests.conftest import FakeOrchestrator, FakeProvider
 
 
 def test_availability_reports_missing_requirements(
@@ -59,7 +59,7 @@ def test_registry_available_names_filters_unavailable(
 
     registry = ProviderRegistry()
     registry.register(
-        FakeProvider(
+        FakeOrchestrator(
             name="ready-provider",
             config=ProviderConfig(
                 name="ready-provider",
@@ -69,7 +69,7 @@ def test_registry_available_names_filters_unavailable(
         )
     )
     registry.register(
-        FakeProvider(
+        FakeOrchestrator(
             name="missing-provider",
             config=ProviderConfig(
                 name="missing-provider",

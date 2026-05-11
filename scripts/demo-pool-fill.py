@@ -105,7 +105,9 @@ def _seed_fill_pool(
     def _build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
         return cell.values["prompt"], cell.values["llm_config"]
 
-    def _snapshot_progress(snapshot: WorkerSnapshot[LlmPoolBackendState]) -> None:
+    def _snapshot_progress(
+        snapshot: WorkerSnapshot[LlmPoolBackendState],
+    ) -> None:
         counts = DemoCounts.from_pool_snapshot(snapshot)
         print(f"Progress: {counts.format_line(POOL_PROGRESS_FIELDS)}")
 
@@ -200,7 +202,9 @@ def _ensure_dsn_and_seed_fill_pool(
             cleanup_demo_dsn(lease)
 
     if lease.project_name is not None and not lease.should_destroy_project:
-        print(f"Project '{lease.project_name}' is still running with your data.")
+        print(
+            f"Project '{lease.project_name}' is still running with your data."
+        )
         command_hint(
             "Destroy permanently",
             "uv run dr-llm project destroy "
@@ -213,7 +217,9 @@ def main(
     dsn: Annotated[
         str | None,
         typer.Option(
-            help=("PostgreSQL DSN. If omitted, a Docker demo project is created.")
+            help=(
+                "PostgreSQL DSN. If omitted, a Docker demo project is created."
+            )
         ),
     ] = None,
     project_name: Annotated[

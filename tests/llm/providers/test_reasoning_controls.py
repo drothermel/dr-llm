@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
+from collections.abc import Generator
+
 import pytest
 
 from dr_llm.llm import (
@@ -11,71 +12,84 @@ from dr_llm.llm import (
     GoogleReasoning,
     OpenAIReasoning,
     OpenRouterReasoning,
+    ProviderName,
     ReasoningControls,
     ThinkingLevel,
-    default_effort,
-    default_reasoning,
-    default_thinking_level,
-    reasoning_controls_for_model,
-    reasoning_for_thinking_level,
-    supported_thinking_levels,
+    build_default_registry,
 )
+from dr_llm.llm.providers.registry import ProviderRegistry
 
 
-def test_openai_controls_prefer_minimal_or_off_defaults() -> None:
-    assert supported_thinking_levels(
-        provider=ProviderName.OPENAI, model="gpt-5-mini"
-    ) == (
+@pytest.fixture
+def registry() -> Generator[ProviderRegistry]:
+    reg = build_default_registry()
+    try:
+        yield reg
+    finally:
+        reg.close()
+
+
+def controls(
+    registry: ProviderRegistry, provider: ProviderName, model: str
+) -> ReasoningControls:
+    return registry.get(provider).reasoning_controls(model)
+
+
+def test_openai_controls_prefer_minimal_or_off_defaults(
+    registry: ProviderRegistry,
+) -> None:
+    gpt5 = controls(registry, ProviderName.OPENAI, "gpt-5-mini")
+    assert gpt5.supported_thinking_levels == (
         ThinkingLevel.MINIMAL,
         ThinkingLevel.LOW,
         ThinkingLevel.MEDIUM,
         ThinkingLevel.HIGH,
     )
-    assert default_reasoning(
-        provider=ProviderName.OPENAI, model="gpt-5-mini"
-    ) == OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL)
-
-    assert (
-        default_thinking_level(
-            provider=ProviderName.OPENAI, model="gpt-5.4-mini"
-        )
-        == ThinkingLevel.OFF
+    assert gpt5.default_reasoning == OpenAIReasoning(
+        thinking_level=ThinkingLevel.MINIMAL
     )
-    assert default_reasoning(
-        provider=ProviderName.OPENAI, model="gpt-5.4-mini"
-    ) == OpenAIReasoning(thinking_level=ThinkingLevel.OFF)
+
+    gpt54 = controls(registry, ProviderName.OPENAI, "gpt-5.4-mini")
+    assert gpt54.default_thinking_level == ThinkingLevel.OFF
+    assert gpt54.default_reasoning == OpenAIReasoning(
+        thinking_level=ThinkingLevel.OFF
+    )
 
 
-def test_google_controls_cover_budget_and_level_modes() -> None:
-    assert supported_thinking_levels(
-        provider=ProviderName.GOOGLE, model="gemini-2.5-flash"
-    ) == (
+def test_google_controls_cover_budget_and_level_modes(
+    registry: ProviderRegistry,
+) -> None:
+    flash = controls(registry, ProviderName.GOOGLE, "gemini-2.5-flash")
+    assert flash.supported_thinking_levels == (
         ThinkingLevel.ADAPTIVE,
         ThinkingLevel.OFF,
         ThinkingLevel.BUDGET,
     )
-    assert default_reasoning(
-        provider=ProviderName.GOOGLE, model="gemini-2.5-flash"
-    ) == GoogleReasoning(thinking_level=ThinkingLevel.OFF)
+    assert flash.default_reasoning == GoogleReasoning(
+        thinking_level=ThinkingLevel.OFF
+    )
 
-    assert supported_thinking_levels(
-        provider=ProviderName.GOOGLE, model="gemma-4-26b-a4b-it"
-    ) == (ThinkingLevel.MINIMAL, ThinkingLevel.HIGH)
-    assert default_reasoning(
-        provider=ProviderName.GOOGLE, model="gemma-4-26b-a4b-it"
-    ) == GoogleReasoning(thinking_level=ThinkingLevel.MINIMAL)
+    gemma = controls(registry, ProviderName.GOOGLE, "gemma-4-26b-a4b-it")
+    assert gemma.supported_thinking_levels == (
+        ThinkingLevel.MINIMAL,
+        ThinkingLevel.HIGH,
+    )
+    assert gemma.default_reasoning == GoogleReasoning(
+        thinking_level=ThinkingLevel.MINIMAL
+    )
 
 
-def test_reasoning_for_budget_level_requires_explicit_tokens() -> None:
+def test_reasoning_for_budget_level_requires_explicit_tokens(
+    registry: ProviderRegistry,
+) -> None:
+    orchestrator = registry.get(ProviderName.GOOGLE)
     with pytest.raises(ValueError, match="budget thinking requires"):
-        reasoning_for_thinking_level(
-            provider=ProviderName.GOOGLE,
+        orchestrator.reasoning_for_thinking_level(
             model="gemini-2.5-flash",
             thinking_level=ThinkingLevel.BUDGET,
         )
 
-    assert reasoning_for_thinking_level(
-        provider=ProviderName.GOOGLE,
+    assert orchestrator.reasoning_for_thinking_level(
         model="gemini-2.5-flash",
         thinking_level=ThinkingLevel.BUDGET,
         budget_tokens=128,
@@ -85,100 +99,99 @@ def test_reasoning_for_budget_level_requires_explicit_tokens() -> None:
     )
 
 
-def test_codex_and_glm_controls_use_provider_native_specs() -> None:
-    assert supported_thinking_levels(
-        provider=ProviderName.CODEX, model="gpt-5.4-mini"
-    ) == (
+def test_codex_and_glm_controls_use_provider_native_specs(
+    registry: ProviderRegistry,
+) -> None:
+    codex = controls(registry, ProviderName.CODEX, "gpt-5.4-mini")
+    assert codex.supported_thinking_levels == (
         ThinkingLevel.OFF,
         ThinkingLevel.LOW,
         ThinkingLevel.MEDIUM,
         ThinkingLevel.HIGH,
         ThinkingLevel.XHIGH,
     )
-    assert default_reasoning(
-        provider=ProviderName.CODEX, model="gpt-5.4-mini"
-    ) == CodexReasoning(thinking_level=ThinkingLevel.OFF)
+    assert codex.default_reasoning == CodexReasoning(
+        thinking_level=ThinkingLevel.OFF
+    )
 
-    assert supported_thinking_levels(
-        provider=ProviderName.GLM, model="glm-4.5"
-    ) == (
+    glm = controls(registry, ProviderName.GLM, "glm-4.5")
+    assert glm.supported_thinking_levels == (
         ThinkingLevel.OFF,
         ThinkingLevel.ADAPTIVE,
     )
-    assert default_reasoning(
-        provider=ProviderName.GLM, model="glm-4.5"
-    ) == GlmReasoning(thinking_level=ThinkingLevel.OFF)
-
-
-def test_anthropic_style_controls_cover_effort_and_required_na() -> None:
-    assert supported_thinking_levels(
-        provider=ProviderName.ANTHROPIC, model="claude-sonnet-4-20250514"
-    ) == (ThinkingLevel.OFF, ThinkingLevel.BUDGET)
-    assert default_reasoning(
-        provider=ProviderName.ANTHROPIC, model="claude-sonnet-4-20250514"
-    ) == AnthropicReasoning(thinking_level=ThinkingLevel.OFF)
-
-    assert (
-        default_effort(
-            provider=ProviderName.CLAUDE_CODE, model="claude-sonnet-4-6"
-        )
-        == EffortSpec.LOW
+    assert glm.default_reasoning == GlmReasoning(
+        thinking_level=ThinkingLevel.OFF
     )
-    assert default_reasoning(
-        provider=ProviderName.CLAUDE_CODE, model="claude-sonnet-4-6"
-    ) == AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
 
-    assert (
-        default_effort(provider=ProviderName.MINIMAX, model="MiniMax-M2")
-        == EffortSpec.LOW
+
+def test_anthropic_style_controls_cover_effort_and_required_na(
+    registry: ProviderRegistry,
+) -> None:
+    anthropic = controls(
+        registry, ProviderName.ANTHROPIC, "claude-sonnet-4-20250514"
     )
-    assert default_reasoning(
-        provider=ProviderName.MINIMAX, model="MiniMax-M2"
-    ) == AnthropicReasoning(thinking_level=ThinkingLevel.NA)
-
-    assert (
-        default_effort(
-            provider=ProviderName.KIMI_CODE, model="kimi-for-coding"
-        )
-        == EffortSpec.LOW
+    assert anthropic.supported_thinking_levels == (
+        ThinkingLevel.OFF,
+        ThinkingLevel.BUDGET,
     )
-    assert default_reasoning(
-        provider=ProviderName.KIMI_CODE, model="kimi-for-coding"
-    ) == AnthropicReasoning(thinking_level=ThinkingLevel.OFF)
+    assert anthropic.default_reasoning == AnthropicReasoning(
+        thinking_level=ThinkingLevel.OFF
+    )
+
+    claude = controls(registry, ProviderName.CLAUDE_CODE, "claude-sonnet-4-6")
+    assert claude.default_effort == EffortSpec.LOW
+    assert claude.default_reasoning == AnthropicReasoning(
+        thinking_level=ThinkingLevel.ADAPTIVE
+    )
+
+    minimax = controls(registry, ProviderName.MINIMAX, "MiniMax-M2")
+    assert minimax.default_effort == EffortSpec.LOW
+    assert minimax.default_reasoning == AnthropicReasoning(
+        thinking_level=ThinkingLevel.NA
+    )
+
+    kimi = controls(registry, ProviderName.KIMI_CODE, "kimi-for-coding")
+    assert kimi.default_effort == EffortSpec.LOW
+    assert kimi.default_reasoning == AnthropicReasoning(
+        thinking_level=ThinkingLevel.OFF
+    )
 
 
-def test_openrouter_controls_follow_curated_policy() -> None:
+def test_openrouter_controls_follow_curated_policy(
+    registry: ProviderRegistry,
+) -> None:
+    orchestrator = registry.get(ProviderName.OPENROUTER)
     assert (
-        default_reasoning(
-            provider=ProviderName.OPENROUTER, model="deepseek/deepseek-chat"
-        )
+        orchestrator.reasoning_controls(
+            "deepseek/deepseek-chat"
+        ).default_reasoning
         is None
     )
-    assert default_reasoning(
-        provider=ProviderName.OPENROUTER, model="deepseek/deepseek-chat-v3.1"
-    ) == OpenRouterReasoning(enabled=False)
-    assert default_reasoning(
-        provider=ProviderName.OPENROUTER, model="deepseek/deepseek-r1"
-    ) == OpenRouterReasoning(enabled=True)
-    assert default_reasoning(
-        provider=ProviderName.OPENROUTER, model="openai/gpt-oss-20b"
-    ) == OpenRouterReasoning(effort="low")
+    assert orchestrator.reasoning_controls(
+        "deepseek/deepseek-chat-v3.1"
+    ).default_reasoning == OpenRouterReasoning(enabled=False)
+    assert orchestrator.reasoning_controls(
+        "deepseek/deepseek-r1"
+    ).default_reasoning == OpenRouterReasoning(enabled=True)
+    assert orchestrator.reasoning_controls(
+        "openai/gpt-oss-20b"
+    ).default_reasoning == OpenRouterReasoning(effort="low")
 
 
-def test_reasoning_controls_model_collects_all_defaults() -> None:
-    controls = reasoning_controls_for_model(
-        provider=ProviderName.GOOGLE, model="gemini-2.5-flash"
-    )
+def test_reasoning_controls_model_collects_all_defaults(
+    registry: ProviderRegistry,
+) -> None:
+    google = controls(registry, ProviderName.GOOGLE, "gemini-2.5-flash")
 
-    assert isinstance(controls, ReasoningControls)
-    assert controls.supported_thinking_levels == (
+    assert isinstance(google, ReasoningControls)
+    assert google.supported_thinking_levels == (
         ThinkingLevel.ADAPTIVE,
         ThinkingLevel.OFF,
         ThinkingLevel.BUDGET,
     )
-    assert controls.default_thinking_level == ThinkingLevel.OFF
-    assert controls.supported_effort_levels == ()
-    assert controls.default_effort == EffortSpec.NA
-    assert controls.default_reasoning == GoogleReasoning(
+    assert google.default_thinking_level == ThinkingLevel.OFF
+    assert google.supported_effort_levels == ()
+    assert google.default_effort == EffortSpec.NA
+    assert google.default_reasoning == GoogleReasoning(
         thinking_level=ThinkingLevel.OFF
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm.catalog.fetchers.kimi import fetch_kimi_models
 from dr_llm.llm.names import ControlStrategy, ProviderName, ReasoningMode
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -14,13 +15,15 @@ from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
 from dr_llm.llm.providers.kimi_code.reasoning import (
     validate_reasoning_for_kimi_code,
 )
+from dr_llm.llm.providers.orchestrator_base import BaseProviderOrchestrator
 from dr_llm.llm.request import LlmRequest
-from dr_llm.llm.response import LlmResponse
 
 
-class KimiCodeOrchestrator:
+class KimiCodeOrchestrator(BaseProviderOrchestrator):
+    _provider: KimiCodeProvider
+
     def __init__(self, provider: KimiCodeProvider) -> None:
-        self._provider = provider
+        super().__init__(provider)
 
     @property
     def name(self) -> ProviderName:
@@ -47,16 +50,12 @@ class KimiCodeOrchestrator:
         )
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
+        super().validate_request(request)
+        self._validate_max_tokens_required(request)
         validate_reasoning_for_kimi_code(
             model=request.model, reasoning=request.reasoning
         )
         return []
 
-    def generate(self, request: LlmRequest) -> LlmResponse:
-        return self._provider.generate(request)
-
-    def is_available(self) -> bool:
-        return self._provider.availability_status().available
-
-    def close(self) -> None:
-        self._provider.close()
+    def fetch_models(self):
+        return fetch_kimi_models(self._provider)

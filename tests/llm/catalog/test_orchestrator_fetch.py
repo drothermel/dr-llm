@@ -1,38 +1,32 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
 from typing import Any
 
 import pytest
 
-from dr_llm.llm.catalog.fetchers import fetch_models_for_provider
+from dr_llm.llm import ProviderName
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm import LlmRequest, LlmResponse, ProviderConfig
 from dr_llm.llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.llm.providers.base import Provider
+from dr_llm.llm.providers.google.orchestrator import GoogleOrchestrator
 from dr_llm.llm.providers.google.provider import GoogleProvider
+from dr_llm.llm.providers.kimi_code.orchestrator import KimiCodeOrchestrator
 from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
 from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
+from dr_llm.llm.providers.openai_compat.orchestrator import (
+    OpenAICompatOrchestrator,
+)
 from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
-from tests.conftest import make_response
-
-
-class _UnsupportedProvider(Provider):
-    def __init__(self) -> None:
-        self._config = ProviderConfig(name="unsupported")
-
-    def generate(self, request: LlmRequest) -> LlmResponse:
-        return make_response(provider=request.provider, model=request.model)
 
 
 class _GoogleSubclassProvider(GoogleProvider):
     pass
 
 
-def test_fetch_models_for_provider_dispatches_google_subclasses(
+def test_google_orchestrator_fetches_with_wrapped_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = _GoogleSubclassProvider()
+    orchestrator = GoogleOrchestrator(provider)
     expected = (
         [ModelCatalogEntry(provider=provider.name, model="gemini-test")],
         {"source": ProviderName.GOOGLE},
@@ -45,14 +39,14 @@ def test_fetch_models_for_provider_dispatches_google_subclasses(
         return expected
 
     monkeypatch.setattr(
-        "dr_llm.llm.catalog.fetchers.fetch_google_models",
+        "dr_llm.llm.providers.google.orchestrator.fetch_google_models",
         fake_fetch_google_models,
     )
 
-    assert fetch_models_for_provider(provider) == expected
+    assert orchestrator.fetch_models() == expected
 
 
-def test_fetch_models_for_provider_passes_kimi_config_to_fetcher(
+def test_kimi_orchestrator_fetches_with_wrapped_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = KimiCodeProvider(
@@ -63,6 +57,7 @@ def test_fetch_models_for_provider_passes_kimi_config_to_fetcher(
             api_key="kimi-secret",
         )
     )
+    orchestrator = KimiCodeOrchestrator(provider)
 
     def fake_fetch_kimi_models(
         received_provider: KimiCodeProvider,
@@ -73,20 +68,17 @@ def test_fetch_models_for_provider_passes_kimi_config_to_fetcher(
         return [], {"source": "kimi"}
 
     monkeypatch.setattr(
-        "dr_llm.llm.catalog.fetchers.fetch_kimi_models",
+        "dr_llm.llm.providers.kimi_code.orchestrator.fetch_kimi_models",
         fake_fetch_kimi_models,
     )
 
-    assert fetch_models_for_provider(provider) == ([], {"source": "kimi"})
+    assert orchestrator.fetch_models() == ([], {"source": "kimi"})
 
 
-def test_fetch_models_for_provider_dispatches_openai_compat_subclasses(
+def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _OpenAICompatSubclassProvider(OpenAICompatProvider):
-        pass
-
-    provider = _OpenAICompatSubclassProvider(
+    provider = OpenAICompatProvider(
         config=OpenAICompatConfig(
             name=ProviderName.OPENAI,
             base_url="https://api.openai.com/v1",
@@ -94,6 +86,7 @@ def test_fetch_models_for_provider_dispatches_openai_compat_subclasses(
             api_key="openai-secret",
         )
     )
+    orchestrator = OpenAICompatOrchestrator(provider)
 
     def fake_fetch_openai_compat_models(
         received_provider: OpenAICompatProvider,
@@ -102,20 +95,8 @@ def test_fetch_models_for_provider_dispatches_openai_compat_subclasses(
         return [], {"source": "openai_compat"}
 
     monkeypatch.setattr(
-        "dr_llm.llm.catalog.fetchers.fetch_openai_compat_models",
+        "dr_llm.llm.providers.openai_compat.orchestrator.fetch_openai_compat_models",
         fake_fetch_openai_compat_models,
     )
 
-    assert fetch_models_for_provider(provider) == (
-        [],
-        {"source": "openai_compat"},
-    )
-
-
-def test_fetch_models_for_provider_returns_unsupported_for_unknown_provider() -> (
-    None
-):
-    assert fetch_models_for_provider(_UnsupportedProvider()) == (
-        [],
-        {"source": "unsupported_provider_type"},
-    )
+    assert orchestrator.fetch_models() == ([], {"source": "openai_compat"})

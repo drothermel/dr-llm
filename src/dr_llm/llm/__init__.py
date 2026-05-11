@@ -27,6 +27,10 @@ from dr_llm.llm.providers.config import (
     ProviderAvailabilityStatus,
     ProviderConfig,
 )
+from dr_llm.llm.providers.concepts.capabilities import (
+    ModelCapabilities,
+    ReasoningCapabilities,
+)
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
@@ -47,15 +51,8 @@ from dr_llm.llm.providers.openrouter.policy import (
 )
 from dr_llm.llm.providers.reasoning_controls import (
     ReasoningControls,
-    default_effort,
-    default_reasoning,
-    default_thinking_level,
-    reasoning_capabilities_for_model,
-    reasoning_controls_for_model,
-    reasoning_for_thinking_level,
-    supported_effort_levels,
-    supported_thinking_levels,
 )
+from dr_llm.llm.providers.protocol import ProviderOrchestrator
 from dr_llm.llm.providers.registry import (
     ProviderRegistry,
     build_default_registry,
@@ -97,6 +94,7 @@ __all__ = [
     "LlmResponse",
     "MINIMAX_TEXT_MODELS",
     "Message",
+    "ModelCapabilities",
     "OpenAIReasoning",
     "OpenAILlmConfig",
     "OpenAILlmRequest",
@@ -108,8 +106,10 @@ __all__ = [
     "ProviderCategories",
     "ProviderConfig",
     "ProviderName",
+    "ProviderOrchestrator",
     "ProviderRegistry",
     "ReasoningBudget",
+    "ReasoningCapabilities",
     "ReasoningControls",
     "ReasoningSpec",
     "ReasoningWarning",
@@ -117,17 +117,9 @@ __all__ = [
     "ThinkingLevel",
     "TokenUsage",
     "build_default_registry",
-    "default_effort",
-    "default_reasoning",
-    "default_thinking_level",
     "openrouter_allowed_models",
     "openrouter_model_policy",
     "parse_llm_config",
     "parse_llm_request",
     "parse_reasoning_spec",
-    "reasoning_capabilities_for_model",
-    "reasoning_controls_for_model",
-    "reasoning_for_thinking_level",
-    "supported_effort_levels",
-    "supported_thinking_levels",
 ]

@@ -6,7 +6,6 @@ from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.anthropic.orchestrator import AnthropicOrchestrator
 from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
 from dr_llm.llm.providers.api_config import APIProviderConfig
-from dr_llm.llm.providers.base import Provider
 from dr_llm.llm.providers.config import ProviderAvailabilityStatus
 from dr_llm.llm.providers.google.orchestrator import GoogleOrchestrator
 from dr_llm.llm.providers.google.provider import GoogleProvider
@@ -35,42 +34,41 @@ from dr_llm.llm.providers.protocol import ProviderOrchestrator
 class ProviderRegistry:
     def __init__(self) -> None:
         self._lock = RLock()
-        self._providers: dict[str, Provider] = {}
         self._orchestrators: dict[str, ProviderOrchestrator] = {}
 
-    def register(self, provider: Provider) -> None:
-        raw_primary = provider.name
+    def register(self, orchestrator: ProviderOrchestrator) -> None:
+        raw_primary = orchestrator.name
         primary = raw_primary.strip()
         if not primary:
-            raise ValueError("provider.name must be non-empty")
+            raise ValueError("orchestrator.name must be non-empty")
         if raw_primary != primary:
             raise ValueError(
-                "provider.name must not have leading or trailing whitespace"
+                "orchestrator.name must not have leading or trailing whitespace"
             )
 
         with self._lock:
             normalized_primary = primary.lower()
-            existing = self._providers.get(normalized_primary)
+            existing = self._orchestrators.get(normalized_primary)
             if existing is not None:
                 raise ValueError(
                     f"register conflict for provider {primary!r}: {existing!r} is already registered"
                 )
-            self._providers[normalized_primary] = provider
+            self._orchestrators[normalized_primary] = orchestrator
 
-    def get(self, provider_name: str) -> Provider:
+    def get(self, provider_name: str) -> ProviderOrchestrator:
         key = provider_name.strip().lower()
         with self._lock:
-            provider = self._providers.get(key)
-            if provider is None:
-                known = ", ".join(sorted(self._providers.keys()))
+            orchestrator = self._orchestrators.get(key)
+            if orchestrator is None:
+                known = ", ".join(sorted(self._orchestrators.keys()))
                 raise KeyError(
                     f"Unknown provider {provider_name!r}. Known providers: {known}"
                 )
-            return provider
+            return orchestrator
 
     def names(self) -> set[str]:
         with self._lock:
-            return set(self._providers.keys())
+            return set(self._orchestrators.keys())
 
     def sorted_names(self) -> list[str]:
         return sorted(self.names())
@@ -95,27 +93,12 @@ class ProviderRegistry:
             statuses = self.availability_statuses()
         return [status.provider for status in statuses if status.available]
 
-    def register_orchestrator(
-        self, orchestrator: ProviderOrchestrator
-    ) -> None:
-        key = orchestrator.name.lower()
-        with self._lock:
-            self._orchestrators[key] = orchestrator
-
-    def get_orchestrator(
-        self, provider_name: str
-    ) -> ProviderOrchestrator | None:
-        key = provider_name.strip().lower()
-        with self._lock:
-            return self._orchestrators.get(key)
-
     def close(self) -> None:
         with self._lock:
-            providers = list(self._providers.values())
-            self._providers.clear()
+            orchestrators = list(self._orchestrators.values())
             self._orchestrators.clear()
-        for provider in providers:
-            provider.close()
+        for orchestrator in orchestrators:
+            orchestrator.close()
 
 
 _OPENAI_COMPAT_PROVIDERS: tuple[tuple[ProviderName, str, str], ...] = (
@@ -132,7 +115,6 @@ _OPENAI_COMPAT_PROVIDERS: tuple[tuple[ProviderName, str, str], ...] = (
 def build_default_registry() -> ProviderRegistry:
     registry = ProviderRegistry()
 
-    openai_compat_providers: list[OpenAICompatProvider] = []
     for name, base_url, api_key_env in _OPENAI_COMPAT_PROVIDERS:
         provider = OpenAICompatProvider(
             config=OpenAICompatConfig(
@@ -141,14 +123,13 @@ def build_default_registry() -> ProviderRegistry:
                 api_key_env=api_key_env,
             ),
         )
-        registry.register(provider)
-        openai_compat_providers.append(provider)
+        registry.register(OpenAICompatOrchestrator(provider))
 
     minimax = MiniMaxProvider()
-    registry.register(minimax)
+    registry.register(MiniMaxOrchestrator(minimax))
 
     anthropic = AnthropicProvider()
-    registry.register(anthropic)
+    registry.register(AnthropicOrchestrator(anthropic))
 
     google = GoogleProvider(
         config=APIProviderConfig(
@@ -157,24 +138,15 @@ def build_default_registry() -> ProviderRegistry:
             api_key_env="GOOGLE_API_KEY",
         )
     )
-    registry.register(google)
+    registry.register(GoogleOrchestrator(google))
 
     codex = CodexHeadlessProvider()
-    registry.register(codex)
+    registry.register(CodexHeadlessOrchestrator(codex))
 
     claude_headless = ClaudeHeadlessProvider()
-    registry.register(claude_headless)
+    registry.register(ClaudeHeadlessOrchestrator(claude_headless))
 
     kimi_code = KimiCodeProvider()
-    registry.register(kimi_code)
-
-    for oai_provider in openai_compat_providers:
-        registry.register_orchestrator(OpenAICompatOrchestrator(oai_provider))
-    registry.register_orchestrator(MiniMaxOrchestrator(minimax))
-    registry.register_orchestrator(AnthropicOrchestrator(anthropic))
-    registry.register_orchestrator(GoogleOrchestrator(google))
-    registry.register_orchestrator(CodexHeadlessOrchestrator(codex))
-    registry.register_orchestrator(ClaudeHeadlessOrchestrator(claude_headless))
-    registry.register_orchestrator(KimiCodeOrchestrator(kimi_code))
+    registry.register(KimiCodeOrchestrator(kimi_code))
 
     return registry

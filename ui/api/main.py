@@ -9,7 +9,6 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.llm.catalog.fetchers import fetch_models_for_provider
 from dr_llm.llm.catalog.fetchers.static import (
     CLAUDE_CODE_MODELS,
     CODEX_MODELS,
@@ -216,7 +215,7 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
     """Get models for a provider.  Uses static data if the provider is unavailable."""
     registry = _get_registry(request.app)
     try:
-        model_provider = registry.get(provider)
+        orchestrator = registry.get(provider)
     except KeyError as err:
         raise HTTPException(
             status_code=404, detail=f"Unknown provider: {provider}"
@@ -236,7 +235,7 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
 
     # Try live fetch
     try:
-        entries, _raw = fetch_models_for_provider(model_provider)
+        entries, _raw = orchestrator.fetch_models()
         entries = apply_openrouter_model_policies(entries)
     except (ProviderTransportError, ProviderSemanticError) as exc:
         # Fall back to static
@@ -260,14 +259,14 @@ def sync_provider_models(provider: str, request: Request) -> SyncResultResponse:
     """Trigger a live model sync for a provider."""
     registry = _get_registry(request.app)
     try:
-        model_provider = registry.get(provider)
+        orchestrator = registry.get(provider)
     except KeyError as err:
         raise HTTPException(
             status_code=404, detail=f"Unknown provider: {provider}"
         ) from err
 
     try:
-        entries, _raw = fetch_models_for_provider(model_provider)
+        entries, _raw = orchestrator.fetch_models()
         entries = apply_openrouter_model_policies(entries)
     except (ProviderTransportError, ProviderSemanticError) as exc:
         error_msg = f"{type(exc).__name__}: {exc}"

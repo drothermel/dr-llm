@@ -6,7 +6,6 @@ import subprocess
 from typing import cast
 
 import pytest
-from pydantic import ValidationError
 
 from dr_llm.llm import (
     AnthropicReasoning,
@@ -17,6 +16,9 @@ from dr_llm.llm import (
 )
 from dr_llm.llm.providers.headless.claude.provider import (
     ClaudeHeadlessProvider,
+)
+from dr_llm.llm.providers.headless.codex.orchestrator import (
+    CodexHeadlessOrchestrator,
 )
 from dr_llm.llm.providers.headless.codex.provider import CodexHeadlessProvider
 from tests.conftest import make_request
@@ -278,10 +280,12 @@ def test_codex_rejects_reasoning_before_subprocess(
     captured, fake_run = make_subprocess_mock(stdout)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    with pytest.raises(ValidationError):
-        make_request(
-            provider=ProviderName.CODEX,
-            model="gpt-5.1-codex-mini",
-            reasoning=ReasoningBudget(tokens=1024),
-        )
+    request = make_request(
+        provider=ProviderName.CODEX,
+        model="gpt-5.1-codex-mini",
+        reasoning=ReasoningBudget(tokens=1024),
+    )
+    orchestrator = CodexHeadlessOrchestrator(CodexHeadlessProvider())
+    with pytest.raises(ValueError):
+        orchestrator.generate(request)
     assert "command" not in captured
