@@ -1,16 +1,24 @@
 import marimo
 
-__generated_with = "0.23.1"
+__generated_with = "0.23.5"
 app = marimo.App(width="columns")
 
 with app.setup:
     from dr_llm.llm import (
         ApiLlmRequest,
+        ModelCapabilities,
+        ProviderName,
+        ProviderOrchestrator,
+        ProviderRegistry,
+        ReasoningCapabilities,
+        ReasoningControls,
+        build_default_registry,
     )
 
     import html
     import inspect as inspect_
 
+    import marimo as mo
     from marimo._output.builder import h
     from marimo._output.formatting import as_html
     from marimo._output.hypertext import Html
@@ -454,9 +462,89 @@ def _():
     return (inspect,)
 
 
-@app.cell(column=1)
+@app.cell(column=1, hide_code=True)
 def _(inspect):
-    inspect(ApiLlmRequest)
+    orchestrator_surface = None
+    registry = build_default_registry()
+    try:
+        openai_orchestrator = registry.get(ProviderName.OPENAI)
+        openai_controls = openai_orchestrator.reasoning_controls("gpt-5-mini")
+        openai_capabilities = openai_orchestrator.model_capabilities("gpt-5-mini")
+        default_reasoning = openai_controls.default_reasoning
+
+        orchestrator_surface = mo.vstack(
+            [
+                mo.md(r"""
+                ## Provider Orchestrator Surface
+                """),
+                mo.hstack(
+                    [
+                        inspect(ProviderRegistry),
+                        inspect(ProviderOrchestrator),
+                        inspect(openai_orchestrator),
+                    ],
+                    gap=1,
+                ),
+                mo.md(r"""
+                ## Capability Models
+                """),
+                mo.hstack(
+                    [
+                        inspect(ModelCapabilities),
+                        inspect(ReasoningCapabilities),
+                        inspect(ReasoningControls),
+                    ],
+                    gap=1,
+                ),
+                mo.md(r"""
+                ## OpenAI Reasoning Controls
+                """),
+                mo.ui.table(
+                    [
+                        {
+                            "provider": str(openai_controls.provider),
+                            "model": openai_controls.model,
+                            "default_thinking_level": openai_controls.default_thinking_level.value,
+                            "supported_thinking_levels": [
+                                level.value
+                                for level in openai_controls.supported_thinking_levels
+                            ],
+                            "default_effort": openai_controls.default_effort.value,
+                            "supported_effort_levels": [
+                                effort.value
+                                for effort in openai_controls.supported_effort_levels
+                            ],
+                            "default_reasoning": (
+                                default_reasoning.model_dump(mode="json")
+                                if default_reasoning is not None
+                                else None
+                            ),
+                        }
+                    ]
+                ),
+                mo.md(r"""
+                ## OpenAI Model Capabilities
+                """),
+                mo.ui.table([openai_capabilities.model_dump(mode="json")]),
+                mo.md(r"""
+                ## Request Payload
+                """),
+                inspect(ApiLlmRequest),
+            ],
+            gap=1,
+        )
+    finally:
+        registry.close()
+
+    orchestrator_surface
+    return
+
+
+@app.cell(column=2, hide_code=True)
+def _():
+    mo.md(r"""
+    leave space
+    """)
     return
 
 
