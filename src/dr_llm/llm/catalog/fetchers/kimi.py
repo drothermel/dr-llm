@@ -11,8 +11,8 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
-from dr_llm.llm.providers.reasoning_capabilities import (
-    reasoning_capabilities_for_model,
+from dr_llm.llm.providers.kimi_code.capabilities import (
+    reasoning_capabilities_for_kimi_code,
 )
 
 
@@ -42,9 +42,8 @@ def fetch_kimi_models(
             context_window=as_int(item.get("context_length")),
             max_output_tokens=as_int(item.get("max_output_tokens")),
             supports_reasoning=as_bool(item.get("supports_reasoning")),
-            reasoning_capabilities=reasoning_capabilities_for_model(
-                provider=provider_name,
-                model=model_id,
+            reasoning_capabilities=reasoning_capabilities_for_kimi_code(
+                model_id
             ),
             supports_vision=True,
             metadata=item,

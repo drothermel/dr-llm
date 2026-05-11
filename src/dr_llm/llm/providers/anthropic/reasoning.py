@@ -6,10 +6,14 @@ from pydantic import Field
 
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.names import ProviderName, ThinkingLevel
+from dr_llm.llm.providers.anthropic.capabilities import (
+    reasoning_capabilities_for_anthropic,
+)
 from dr_llm.llm.providers.anthropic.thinking import (
     ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
     ANTHROPIC_BUDGET_THINKING_SUPPORTED,
 )
+from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     BaseProviderReasoningConfig,
@@ -21,22 +25,20 @@ from dr_llm.llm.providers.concepts.reasoning import (
     unsupported_reasoning_kind_message,
     validate_budget_range,
 )
-from dr_llm.llm.providers.reasoning_capabilities import (
-    reasoning_capabilities_for_model,
-)
 
 
 def validate_anthropic_budget_for_provider(
-    *, provider: str, model: str, budget_tokens: int | None
+    *,
+    provider: str,
+    model: str,
+    budget_tokens: int | None,
+    capabilities: ReasoningCapabilities | None,
 ) -> None:
     if budget_tokens is None:
         raise ValueError(
             f"{provider} budget thinking requires budget_tokens when "
             "thinking_level is 'budget'"
         )
-    capabilities = reasoning_capabilities_for_model(
-        provider=provider, model=model
-    )
     if (
         capabilities is None
         or capabilities.min_budget_tokens is None
@@ -57,9 +59,7 @@ def validate_anthropic_budget_for_provider(
 def validate_reasoning_for_anthropic(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
-    capabilities = reasoning_capabilities_for_model(
-        provider=ProviderName.ANTHROPIC, model=model
-    )
+    capabilities = reasoning_capabilities_for_anthropic(model)
     dispatch_reasoning_validation(
         provider=ProviderName.ANTHROPIC,
         model=model,
@@ -67,20 +67,24 @@ def validate_reasoning_for_anthropic(
         native_spec_type=AnthropicReasoning,
         requires_reasoning=not is_reasoning_unsupported(capabilities),
         validate_native=lambda spec: _validate_anthropic_reasoning_shape(
-            model=model, reasoning=spec
+            model=model, reasoning=spec, capabilities=capabilities
         ),
         validate_top_budget=lambda budget: (
             validate_anthropic_budget_for_provider(
                 provider=ProviderName.ANTHROPIC,
                 model=model,
                 budget_tokens=budget.tokens,
+                capabilities=capabilities,
             )
         ),
     )
 
 
 def _validate_anthropic_reasoning_shape(
-    *, model: str, reasoning: AnthropicReasoning
+    *,
+    model: str,
+    reasoning: AnthropicReasoning,
+    capabilities: ReasoningCapabilities | None,
 ) -> None:
     thinking_level = reasoning.thinking_level
     if thinking_level == ThinkingLevel.NA:
@@ -96,6 +100,7 @@ def _validate_anthropic_reasoning_shape(
             provider=ProviderName.ANTHROPIC,
             model=model,
             budget_tokens=reasoning.budget_tokens,
+            capabilities=capabilities,
         )
         return
     raise ValueError(

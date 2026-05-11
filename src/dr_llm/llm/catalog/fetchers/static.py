@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from dr_llm.llm.providers.headless.codex.provider import CodexHeadlessProvider
+from dr_llm.llm.catalog.models import ModelCatalogEntry
+from dr_llm.llm.providers.base import Provider
+from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.headless.claude.capabilities import (
+    reasoning_capabilities_for_claude_code,
+)
 from dr_llm.llm.providers.headless.claude.provider import (
     ClaudeHeadlessProvider,
 )
-from dr_llm.llm.providers.base import Provider
-from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.providers.reasoning_capabilities import (
-    reasoning_capabilities_for_model,
+from dr_llm.llm.providers.headless.codex.capabilities import (
+    reasoning_capabilities_for_codex,
+)
+from dr_llm.llm.providers.headless.codex.provider import CodexHeadlessProvider
+from dr_llm.llm.providers.minimax.capabilities import (
+    reasoning_capabilities_for_minimax,
 )
 
 CODEX_DOCS_URL = "https://developers.openai.com/codex/models"
@@ -58,6 +66,7 @@ def _build_static_catalog_entries(
     models: list[tuple[str, str]],
     docs_url: str,
     supports_vision: bool | None,
+    capabilities_fn: Callable[[str], ReasoningCapabilities | None],
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     source_meta = {"source": "static", "docs_url": docs_url}
     now = datetime.now(UTC)
@@ -66,10 +75,7 @@ def _build_static_catalog_entries(
             provider=provider.name,
             model=model_id,
             display_name=display_name,
-            reasoning_capabilities=reasoning_capabilities_for_model(
-                provider=provider.name,
-                model=model_id,
-            ),
+            reasoning_capabilities=capabilities_fn(model_id),
             supports_vision=supports_vision,
             source_quality="static",
             fetched_at=now,
@@ -89,6 +95,7 @@ def fetch_static_headless_models(
             models=CODEX_MODELS,
             docs_url=CODEX_DOCS_URL,
             supports_vision=None,
+            capabilities_fn=reasoning_capabilities_for_codex,
         )
     if isinstance(provider, ClaudeHeadlessProvider):
         return _build_static_catalog_entries(
@@ -96,6 +103,7 @@ def fetch_static_headless_models(
             models=CLAUDE_CODE_MODELS,
             docs_url=CLAUDE_CODE_DOCS_URL,
             supports_vision=True,
+            capabilities_fn=reasoning_capabilities_for_claude_code,
         )
     raise ValueError(
         "Unsupported static headless provider for catalog fetch: "
@@ -111,4 +119,5 @@ def fetch_static_minimax_models(
         models=MINIMAX_TEXT_MODELS,
         docs_url=MINIMAX_DOCS_URL,
         supports_vision=None,
+        capabilities_fn=reasoning_capabilities_for_minimax,
     )

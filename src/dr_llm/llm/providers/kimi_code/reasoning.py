@@ -17,6 +17,9 @@ from dr_llm.llm.providers.concepts.reasoning import (
     require_budget_tokens,
     unsupported_reasoning_kind_message,
 )
+from dr_llm.llm.providers.kimi_code.capabilities import (
+    reasoning_capabilities_for_kimi_code,
+)
 
 
 def validate_reasoning_for_kimi_code(
@@ -52,6 +55,7 @@ def validate_reasoning_for_kimi_code(
             provider=ProviderName.KIMI_CODE,
             model=model,
             budget_tokens=reasoning.budget_tokens,
+            capabilities=reasoning_capabilities_for_kimi_code(model),
         )
 
 

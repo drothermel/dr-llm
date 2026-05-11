@@ -9,12 +9,28 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogPricing
 from dr_llm.llm.coercion import as_float, as_int
-from dr_llm.llm.names import ReasoningMode
+from dr_llm.llm.names import ProviderName, ReasoningMode
 from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
-from dr_llm.llm.providers.reasoning_capabilities import (
-    ReasoningCapabilities,
-    reasoning_capabilities_for_model,
+from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.openai_compat.glm_capabilities import (
+    reasoning_capabilities_for_glm,
 )
+from dr_llm.llm.providers.openai_compat.thinking import (
+    reasoning_capabilities_for_openai,
+)
+from dr_llm.llm.providers.openrouter.policy import (
+    reasoning_capabilities_for_openrouter,
+)
+
+
+def _resolve_capabilities_for_provider(
+    provider_name: str, model: str
+) -> ReasoningCapabilities | None:
+    if provider_name == ProviderName.OPENROUTER:
+        return reasoning_capabilities_for_openrouter(model)
+    if provider_name == ProviderName.GLM:
+        return reasoning_capabilities_for_glm(model)
+    return reasoning_capabilities_for_openai(model)
 
 
 def fetch_openai_compat_models(
@@ -54,9 +70,8 @@ def _process_openai_model_item(
     if not model_id:
         return None
     pricing = _parse_pricing(item.get("pricing"))
-    reasoning_capabilities = reasoning_capabilities_for_model(
-        provider=provider_name,
-        model=model_id,
+    reasoning_capabilities = _resolve_capabilities_for_provider(
+        provider_name, model_id
     )
     supports_reasoning, reasoning_capabilities = _resolve_reasoning_support(
         supported_params=item.get("supported_parameters"),

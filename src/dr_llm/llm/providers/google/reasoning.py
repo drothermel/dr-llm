@@ -19,9 +19,9 @@ from dr_llm.llm.providers.concepts.reasoning import (
     validate_allowed_thinking_levels,
     validate_budget_range,
 )
-from dr_llm.llm.providers.reasoning_capabilities import (
-    ReasoningCapabilities,
-    reasoning_capabilities_for_model,
+from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.google.capabilities import (
+    reasoning_capabilities_for_google,
 )
 
 # Google Generative Language API `thinkingBudget` sentinel values.
@@ -32,9 +32,7 @@ _GOOGLE_THINKING_BUDGET_ADAPTIVE = -1
 def validate_reasoning_for_google(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
-    capabilities = reasoning_capabilities_for_model(
-        provider=ProviderName.GOOGLE, model=model
-    )
+    capabilities = reasoning_capabilities_for_google(model)
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
         if capabilities is None:
@@ -78,9 +76,7 @@ def _validate_google_reasoning_shape(
     thinking_level: ThinkingLevel,
     budget_tokens: int | None,
 ) -> None:
-    capabilities = reasoning_capabilities_for_model(
-        provider=ProviderName.GOOGLE, model=model
-    )
+    capabilities = reasoning_capabilities_for_google(model)
     if is_reasoning_unsupported(capabilities):
         if thinking_level == ThinkingLevel.NA:
             return

@@ -10,7 +10,9 @@ from dr_llm.llm.providers.headless.claude.capabilities import (
     reasoning_capabilities_for_claude_code,
     supported_effort_levels_for_claude_code,
 )
-from dr_llm.llm.providers.headless.claude.provider import ClaudeHeadlessProvider
+from dr_llm.llm.providers.headless.claude.provider import (
+    ClaudeHeadlessProvider,
+)
 from dr_llm.llm.providers.headless.claude.reasoning import (
     validate_reasoning_for_claude_code,
 )

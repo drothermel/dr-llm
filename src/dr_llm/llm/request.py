@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
@@ -13,12 +14,96 @@ from dr_llm.llm.names import (
     ProviderName,
     SamplingApiProviderName,
 )
+from dr_llm.llm.providers.anthropic.effort import (
+    supported_effort_levels_for_anthropic,
+)
+from dr_llm.llm.providers.anthropic.reasoning import (
+    validate_reasoning_for_anthropic,
+)
 from dr_llm.llm.providers.concepts.reasoning import ReasoningSpec
-from dr_llm.llm.providers.effort import validate_effort
+from dr_llm.llm.providers.google.reasoning import validate_reasoning_for_google
+from dr_llm.llm.providers.headless.claude.capabilities import (
+    supported_effort_levels_for_claude_code,
+)
+from dr_llm.llm.providers.headless.claude.reasoning import (
+    validate_reasoning_for_claude_code,
+)
+from dr_llm.llm.providers.headless.codex.reasoning import (
+    validate_reasoning_for_codex,
+)
+from dr_llm.llm.providers.kimi_code.capabilities import (
+    supported_effort_levels_for_kimi_code,
+)
+from dr_llm.llm.providers.kimi_code.reasoning import (
+    validate_reasoning_for_kimi_code,
+)
+from dr_llm.llm.providers.minimax.capabilities import (
+    supported_effort_levels_for_minimax,
+)
+from dr_llm.llm.providers.minimax.reasoning import (
+    validate_reasoning_for_minimax,
+)
+from dr_llm.llm.providers.openai_compat.reasoning import (
+    validate_reasoning_for_glm,
+    validate_reasoning_for_openai,
+    validate_reasoning_for_openrouter,
+)
 from dr_llm.llm.providers.openai_compat.thinking import (
     validate_openai_sampling_controls,
 )
-from dr_llm.llm.providers.reasoning_validation import validate_reasoning
+
+_EFFORT_RESOLVERS: dict[str, Callable[[str], tuple[EffortSpec, ...]]] = {
+    ProviderName.ANTHROPIC: supported_effort_levels_for_anthropic,
+    ProviderName.CLAUDE_CODE: supported_effort_levels_for_claude_code,
+    ProviderName.KIMI_CODE: supported_effort_levels_for_kimi_code,
+    ProviderName.MINIMAX: supported_effort_levels_for_minimax,
+}
+
+_REASONING_VALIDATORS: dict[str, Callable[..., None]] = {
+    ProviderName.ANTHROPIC: validate_reasoning_for_anthropic,
+    ProviderName.CLAUDE_CODE: validate_reasoning_for_claude_code,
+    ProviderName.CODEX: validate_reasoning_for_codex,
+    ProviderName.GLM: validate_reasoning_for_glm,
+    ProviderName.GOOGLE: validate_reasoning_for_google,
+    ProviderName.KIMI_CODE: validate_reasoning_for_kimi_code,
+    ProviderName.MINIMAX: validate_reasoning_for_minimax,
+    ProviderName.OPENAI: validate_reasoning_for_openai,
+    ProviderName.OPENROUTER: validate_reasoning_for_openrouter,
+}
+
+
+def validate_effort(*, provider: str, model: str, effort: EffortSpec) -> None:
+    resolver = _EFFORT_RESOLVERS.get(provider)
+    allowed_levels = resolver(model) if resolver else ()
+    if not allowed_levels:
+        if effort != EffortSpec.NA:
+            raise ValueError(
+                f"effort is not supported for provider={provider!r} model={model!r}"
+            )
+        return
+    if effort == EffortSpec.NA:
+        raise ValueError(
+            f"effort is required for provider={provider!r} model={model!r}"
+        )
+    if effort not in allowed_levels:
+        allowed = ", ".join(level.value for level in allowed_levels)
+        raise ValueError(
+            f"effort={effort.value!r} is not supported for provider={provider!r} "
+            f"model={model!r}; allowed levels: {allowed}"
+        )
+
+
+def validate_reasoning(
+    *, provider: str, model: str, reasoning: ReasoningSpec | None
+) -> None:
+    validator = _REASONING_VALIDATORS.get(provider)
+    if validator is None:
+        if reasoning is not None:
+            raise ValueError(
+                f"reasoning is not supported for provider={provider!r}"
+            )
+        return
+    validator(model=model, reasoning=reasoning)
 
 
 class Message(BaseModel):

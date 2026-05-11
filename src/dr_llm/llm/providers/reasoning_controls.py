@@ -5,26 +5,17 @@ from collections.abc import Callable
 from pydantic import BaseModel, ConfigDict
 
 from dr_llm.llm.names import EffortSpec, ProviderName, ThinkingLevel
+from dr_llm.llm.providers.anthropic.capabilities import (
+    reasoning_capabilities_for_anthropic,
+)
+from dr_llm.llm.providers.anthropic.effort import (
+    supported_effort_levels_for_anthropic,
+)
 from dr_llm.llm.providers.anthropic.thinking import (
     ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
 )
 from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilities,
-)
-from dr_llm.llm.providers.effort import supported_effort_levels
-from dr_llm.llm.providers.headless.codex.capabilities import (
-    codex_supports_configurable_thinking,
-    codex_supports_minimal_thinking,
-    codex_supports_off_thinking,
-)
-from dr_llm.llm.providers.openai_compat.thinking import (
-    openai_supports_configurable_thinking,
-    openai_supports_minimal_thinking,
-    openai_supports_off_thinking,
-)
-from dr_llm.llm.providers.openrouter.policy import (
-    OpenRouterReasoningRequestStyle,
-    openrouter_model_policy,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
@@ -36,9 +27,81 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     google_literal_to_thinking_level,
 )
-from dr_llm.llm.providers.reasoning_capabilities import (
-    reasoning_capabilities_for_model,
+from dr_llm.llm.providers.google.capabilities import (
+    reasoning_capabilities_for_google,
 )
+from dr_llm.llm.providers.headless.claude.capabilities import (
+    reasoning_capabilities_for_claude_code,
+    supported_effort_levels_for_claude_code,
+)
+from dr_llm.llm.providers.headless.codex.capabilities import (
+    codex_supports_configurable_thinking,
+    codex_supports_minimal_thinking,
+    codex_supports_off_thinking,
+    reasoning_capabilities_for_codex,
+)
+from dr_llm.llm.providers.kimi_code.capabilities import (
+    reasoning_capabilities_for_kimi_code,
+    supported_effort_levels_for_kimi_code,
+)
+from dr_llm.llm.providers.minimax.capabilities import (
+    reasoning_capabilities_for_minimax,
+    supported_effort_levels_for_minimax,
+)
+from dr_llm.llm.providers.openai_compat.glm_capabilities import (
+    reasoning_capabilities_for_glm,
+)
+from dr_llm.llm.providers.openai_compat.thinking import (
+    openai_supports_configurable_thinking,
+    openai_supports_minimal_thinking,
+    openai_supports_off_thinking,
+    reasoning_capabilities_for_openai,
+)
+from dr_llm.llm.providers.openrouter.policy import (
+    OpenRouterReasoningRequestStyle,
+    openrouter_model_policy,
+    reasoning_capabilities_for_openrouter,
+)
+
+
+_EFFORT_DISPATCHERS: dict[str, Callable[[str], tuple[EffortSpec, ...]]] = {
+    ProviderName.ANTHROPIC: supported_effort_levels_for_anthropic,
+    ProviderName.CLAUDE_CODE: supported_effort_levels_for_claude_code,
+    ProviderName.KIMI_CODE: supported_effort_levels_for_kimi_code,
+    ProviderName.MINIMAX: supported_effort_levels_for_minimax,
+}
+
+_CAPABILITY_DISPATCHERS: dict[
+    str, Callable[[str], ReasoningCapabilities | None]
+] = {
+    ProviderName.ANTHROPIC: reasoning_capabilities_for_anthropic,
+    ProviderName.CLAUDE_CODE: reasoning_capabilities_for_claude_code,
+    ProviderName.CODEX: reasoning_capabilities_for_codex,
+    ProviderName.GLM: reasoning_capabilities_for_glm,
+    ProviderName.GOOGLE: reasoning_capabilities_for_google,
+    ProviderName.KIMI_CODE: reasoning_capabilities_for_kimi_code,
+    ProviderName.MINIMAX: reasoning_capabilities_for_minimax,
+    ProviderName.OPENAI: reasoning_capabilities_for_openai,
+    ProviderName.OPENROUTER: reasoning_capabilities_for_openrouter,
+}
+
+
+def supported_effort_levels(
+    *, provider: str, model: str
+) -> tuple[EffortSpec, ...]:
+    resolver = _EFFORT_DISPATCHERS.get(provider)
+    if resolver is None:
+        return ()
+    return resolver(model)
+
+
+def reasoning_capabilities_for_model(
+    *, provider: str, model: str
+) -> ReasoningCapabilities | None:
+    resolver = _CAPABILITY_DISPATCHERS.get(provider)
+    if resolver is None:
+        return None
+    return resolver(model)
 
 
 class ReasoningControls(BaseModel):

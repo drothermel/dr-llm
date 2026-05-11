@@ -8,6 +8,7 @@ from dr_llm.llm.providers.headless.codex.capabilities import (
     codex_supports_configurable_thinking,
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
+    reasoning_capabilities_for_codex,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
     BaseProviderReasoningConfig,
@@ -19,9 +20,6 @@ from dr_llm.llm.providers.concepts.reasoning import (
     unsupported_reasoning_kind_message,
     validate_budget_range,
     validate_discrete_thinking_level,
-)
-from dr_llm.llm.providers.reasoning_capabilities import (
-    reasoning_capabilities_for_model,
 )
 
 
@@ -43,9 +41,7 @@ def validate_reasoning_for_codex(
         )
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
-        capabilities = reasoning_capabilities_for_model(
-            provider=ProviderName.CODEX, model=model
-        )
+        capabilities = reasoning_capabilities_for_codex(model)
         if is_reasoning_unsupported(capabilities):
             raise ValueError(
                 f"Reasoning is not supported for provider='{ProviderName.CODEX}' model={model!r}"

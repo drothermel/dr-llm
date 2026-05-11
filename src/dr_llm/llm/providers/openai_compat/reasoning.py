@@ -14,6 +14,7 @@ from dr_llm.llm.providers.openai_compat.thinking import (
 from dr_llm.llm.providers.openrouter.policy import (
     OpenRouterReasoningRequestStyle,
     openrouter_model_policy,
+    reasoning_capabilities_for_openrouter,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
     BaseProviderReasoningConfig,
@@ -28,8 +29,8 @@ from dr_llm.llm.providers.concepts.reasoning import (
     validate_allowed_thinking_levels,
     validate_discrete_thinking_level,
 )
-from dr_llm.llm.providers.reasoning_capabilities import (
-    reasoning_capabilities_for_model,
+from dr_llm.llm.providers.openai_compat.glm_capabilities import (
+    reasoning_capabilities_for_glm,
 )
 
 
@@ -73,9 +74,7 @@ def validate_reasoning_for_openrouter(
         raise ValueError(
             f"{ProviderName.OPENROUTER} model={model!r} is not in the curated allowlist"
         )
-    capabilities = reasoning_capabilities_for_model(
-        provider=ProviderName.OPENROUTER, model=model
-    )
+    capabilities = reasoning_capabilities_for_openrouter(model)
     if reasoning is None:
         if not is_reasoning_unsupported(capabilities):
             raise ValueError(
@@ -158,9 +157,7 @@ def _validate_openrouter_shape(
 def validate_reasoning_for_glm(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
-    capabilities = reasoning_capabilities_for_model(
-        provider=ProviderName.GLM, model=model
-    )
+    capabilities = reasoning_capabilities_for_glm(model)
     if reasoning is None:
         if not is_reasoning_unsupported(capabilities):
             raise ValueError(

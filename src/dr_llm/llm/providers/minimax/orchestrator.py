@@ -11,7 +11,9 @@ from dr_llm.llm.providers.minimax.capabilities import (
     supported_effort_levels_for_minimax,
 )
 from dr_llm.llm.providers.minimax.provider import MiniMaxProvider
-from dr_llm.llm.providers.minimax.reasoning import validate_reasoning_for_minimax
+from dr_llm.llm.providers.minimax.reasoning import (
+    validate_reasoning_for_minimax,
+)
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import LlmResponse
 

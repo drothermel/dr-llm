@@ -12,8 +12,8 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
-from dr_llm.llm.providers.reasoning_capabilities import (
-    reasoning_capabilities_for_model,
+from dr_llm.llm.providers.anthropic.capabilities import (
+    reasoning_capabilities_for_anthropic,
 )
 
 
@@ -52,9 +52,8 @@ def fetch_anthropic_models(
             display_name=str(item.get("display_name") or model_id),
             context_window=as_int(item.get("context_window")),
             max_output_tokens=as_int(item.get("max_output_tokens")),
-            reasoning_capabilities=reasoning_capabilities_for_model(
-                provider=provider.name,
-                model=model_id,
+            reasoning_capabilities=reasoning_capabilities_for_anthropic(
+                model_id
             ),
             supports_vision=None,
             metadata=item,
