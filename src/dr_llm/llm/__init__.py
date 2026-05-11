@@ -4,6 +4,7 @@ from dr_llm.llm.config import (
     KimiCodeLlmConfig,
     LlmConfig,
     OpenAILlmConfig,
+    build_request_from_config,
     parse_llm_config,
 )
 from dr_llm.llm.names import (
@@ -43,8 +44,8 @@ from dr_llm.llm.providers.core.request_defaults import ProviderRequestDefaults
 from dr_llm.llm.providers.core.protocol import ProviderOrchestrator
 from dr_llm.llm.providers.core.registry import (
     ProviderRegistry,
-    build_default_registry,
 )
+from dr_llm.llm.providers.default_registry import build_default_registry
 from dr_llm.llm.providers.core.usage import CostInfo, TokenUsage
 from dr_llm.llm.request import (
     ApiLlmRequest,
@@ -99,6 +100,7 @@ __all__ = [
     "ThinkingLevel",
     "TokenUsage",
     "build_default_registry",
+    "build_request_from_config",
     "parse_llm_config",
     "parse_llm_request",
     "parse_reasoning_spec",

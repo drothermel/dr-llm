@@ -11,6 +11,7 @@ from dr_llm.llm import (
     LlmResponse,
     Message,
     ProviderRegistry,
+    build_request_from_config,
     parse_llm_config,
 )
 from dr_llm.logging.events import (
@@ -230,15 +231,7 @@ def make_llm_process_fn(
 
         context = get_generation_log_context()
         orchestrator = registry.get(config.provider)
-        request = orchestrator.build_request(
-            model=config.model,
-            messages=messages,
-            max_tokens=getattr(config, "max_tokens", None),
-            effort=config.effort,
-            reasoning=config.reasoning,
-            temperature=getattr(config, "temperature", None),
-            top_p=getattr(config, "top_p", None),
-        )
+        request = build_request_from_config(orchestrator, config, messages)
         call_id = uuid4().hex
         worker_payload = {
             "pool_name": context.get("pool_name"),

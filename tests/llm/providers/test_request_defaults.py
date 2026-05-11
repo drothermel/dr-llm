@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from dr_llm.llm import (
     AnthropicReasoning,
+    CallMode,
     EffortSpec,
     GoogleReasoning,
     KimiCodeLlmRequest,
@@ -97,9 +98,9 @@ def test_request_defaults_expose_headless_and_minimax_defaults(
     )
     minimax = registry.get(ProviderName.MINIMAX).request_defaults("MiniMax-M2")
 
-    assert codex.mode == "headless"
+    assert codex.mode == CallMode.headless
     assert not codex.supports_temperature
-    assert claude.mode == "headless"
+    assert claude.mode == CallMode.headless
     assert not claude.supports_top_p
 
     assert minimax.effort == EffortSpec.LOW
@@ -115,7 +116,7 @@ def test_request_defaults_reject_inconsistent_max_token_state() -> None:
         ProviderRequestDefaults(
             provider="test",
             model="test-model",
-            mode="api",
+            mode=CallMode.api,
             max_tokens_required=True,
         )
 
@@ -125,7 +126,7 @@ def test_request_defaults_reject_unsupported_sampling_defaults() -> None:
         ProviderRequestDefaults(
             provider="test",
             model="test-model",
-            mode="api",
+            mode=CallMode.api,
             temperature=0.7,
         )
 
@@ -133,7 +134,7 @@ def test_request_defaults_reject_unsupported_sampling_defaults() -> None:
         ProviderRequestDefaults(
             provider="test",
             model="test-model",
-            mode="api",
+            mode=CallMode.api,
             top_p=0.9,
         )
 

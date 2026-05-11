@@ -58,12 +58,13 @@ def _make_headless_response() -> LlmResponse:
 
 def _make_registry(response: LlmResponse | None = None) -> MagicMock:
     resp = response or _make_response()
-    adapter = MagicMock()
-    adapter.build_request.side_effect = _build_request_for_response(resp)
-    adapter.generate.return_value = resp
-    adapter.mode = resp.mode
+    orchestrator = MagicMock()
+    orchestrator.name = resp.provider
+    orchestrator.build_request.side_effect = _build_request_for_response(resp)
+    orchestrator.generate.return_value = resp
+    orchestrator.mode = resp.mode
     registry = MagicMock()
-    registry.get.return_value = adapter
+    registry.get.return_value = orchestrator
     return registry
 
 
@@ -117,8 +118,8 @@ def test_dispatches_via_registry() -> None:
     result = process_fn(sample)
 
     registry.get.assert_called_once_with(ProviderName.OPENAI)
-    adapter = registry.get.return_value
-    call_args = adapter.generate.call_args[0][0]
+    orchestrator = registry.get.return_value
+    call_args = orchestrator.generate.call_args[0][0]
     assert call_args.provider == ProviderName.OPENAI
     assert call_args.model == "gpt-4.1-mini"
     assert call_args.temperature == 0.5
@@ -174,14 +175,15 @@ def test_emits_worker_logging_events(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_failed_worker_call_emits_failure_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    adapter = MagicMock()
-    adapter.build_request.side_effect = _build_request_for_response(
+    orchestrator = MagicMock()
+    orchestrator.name = ProviderName.OPENAI
+    orchestrator.build_request.side_effect = _build_request_for_response(
         _make_response()
     )
-    adapter.generate.side_effect = RuntimeError("API down")
-    adapter.mode = CallMode.api
+    orchestrator.generate.side_effect = RuntimeError("API down")
+    orchestrator.mode = CallMode.api
     registry = MagicMock()
-    registry.get.return_value = adapter
+    registry.get.return_value = orchestrator
     process_fn = pool_backend.make_llm_process_fn(registry)
     sample = _make_sample(_sample_request())
     events: list[dict[str, Any]] = []
@@ -208,14 +210,15 @@ def test_failed_worker_call_emits_failure_event(
 
 
 def test_error_propagates() -> None:
-    adapter = MagicMock()
-    adapter.build_request.side_effect = _build_request_for_response(
+    orchestrator = MagicMock()
+    orchestrator.name = ProviderName.OPENAI
+    orchestrator.build_request.side_effect = _build_request_for_response(
         _make_response()
     )
-    adapter.generate.side_effect = RuntimeError("API down")
-    adapter.mode = CallMode.api
+    orchestrator.generate.side_effect = RuntimeError("API down")
+    orchestrator.mode = CallMode.api
     registry = MagicMock()
-    registry.get.return_value = adapter
+    registry.get.return_value = orchestrator
     process_fn = pool_backend.make_llm_process_fn(registry)
     sample = _make_sample(_sample_request())
 

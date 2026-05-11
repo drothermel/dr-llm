@@ -18,8 +18,6 @@ Usage:
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import cast
-
 import typer
 from pydantic import ValidationError
 
@@ -31,13 +29,7 @@ from dr_llm.demo import (
     print_list,
 )
 from dr_llm.llm import (
-    ApiLlmRequest,
-    SamplingApiProviderName,
     EffortSpec,
-    HeadlessLlmRequest,
-    HeadlessProviderName,
-    KimiCodeLlmRequest,
-    KimiCodeProviderName,
     LlmRequest,
     Message,
     OpenRouterReasoning,
@@ -165,25 +157,7 @@ def make_request(
     )
     if explicit_reasoning and reasoning is None:
         reasoning = defaults.reasoning
-    if orchestrator.mode == "headless":
-        return HeadlessLlmRequest(
-            provider=cast(HeadlessProviderName, provider),
-            model=model,
-            messages=[Message(role="user", content=PROMPT)],
-            effort=effort,
-            reasoning=reasoning,
-        )
-    if provider == ProviderName.KIMI_CODE:
-        return KimiCodeLlmRequest(
-            provider=cast(KimiCodeProviderName, provider),
-            model=model,
-            messages=[Message(role="user", content=PROMPT)],
-            max_tokens=max_tokens,
-            effort=effort,
-            reasoning=reasoning,
-        )
-    return ApiLlmRequest(
-        provider=cast(SamplingApiProviderName, provider),
+    return orchestrator.build_request(
         model=model,
         messages=[Message(role="user", content=PROMPT)],
         max_tokens=max_tokens,

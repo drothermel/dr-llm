@@ -5,6 +5,8 @@ import shutil
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from dr_llm.llm.response import CallMode
+
 
 class ProviderAvailabilityStatus(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -20,7 +22,7 @@ class ProviderConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
-    mode: str = "api"
+    mode: CallMode = CallMode.api
     supports_structured_output: bool = False
     required_env_vars: list[str] = Field(default_factory=list)
     required_executables: list[str] = Field(default_factory=list)

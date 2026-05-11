@@ -48,6 +48,7 @@ from dr_llm.demo import (
     warn,
 )
 from dr_llm.llm import (
+    CallMode,
     EffortSpec,
     ProviderAvailabilityStatus,
     ProviderName,
@@ -278,7 +279,7 @@ def _query_and_store_provider(
     ctx_str = f", context={ctx}" if ctx else ""
     ok(f"Model info: {display}{ctx_str}")
 
-    is_headless = registry.get(provider).mode == "headless"
+    is_headless = registry.get(provider).mode == CallMode.headless
     print(f"  Querying {provider}/{model}...")
     response = query_provider(
         registry, provider, model, prompt, is_headless=is_headless

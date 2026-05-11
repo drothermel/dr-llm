@@ -7,10 +7,11 @@ from pydantic import model_validator
 
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.providers.core.config import ProviderConfig
+from dr_llm.llm.response import CallMode
 
 
 class APIProviderConfig(ProviderConfig):
-    mode: str = "api"
+    mode: CallMode = CallMode.api
     supports_structured_output: bool = True
     base_url: str
     api_key_env: str

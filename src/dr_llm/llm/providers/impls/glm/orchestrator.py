@@ -14,7 +14,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.impls.glm.capabilities import (
     reasoning_capabilities_for_glm,
 )
-from dr_llm.llm.providers.transports.openai_compat.orchestrator import (
+from dr_llm.llm.providers.impls.openai_compat_base import (
     BaseOpenAICompatOrchestrator,
 )
 from dr_llm.llm.providers.impls.glm.reasoning import validate_reasoning_for_glm

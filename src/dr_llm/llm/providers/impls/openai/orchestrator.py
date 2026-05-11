@@ -11,7 +11,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.transports.openai_compat.orchestrator import (
+from dr_llm.llm.providers.impls.openai_compat_base import (
     BaseOpenAICompatOrchestrator,
 )
 from dr_llm.llm.providers.core.request_defaults import (

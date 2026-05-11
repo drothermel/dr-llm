@@ -121,24 +121,27 @@ def models_sync(
     ),
 ) -> None:
     """Sync provider model catalog."""
-    svc, _ = _catalog_service()
-    results = _sync_models(svc=svc, provider=provider)
-    exit_code = 1 if any(not result.success for result in results) else 0
-    if verbose:
-        common._emit(
-            {
-                "results": [
-                    result.model_dump(
-                        mode="json",
-                        exclude_none=True,
-                        exclude_computed_fields=True,
-                    )
-                    for result in results
-                ]
-            }
-        )
-        raise typer.Exit(exit_code)
-    common._render_models_sync_summary(results)
+    svc, registry = _catalog_service()
+    try:
+        results = _sync_models(svc=svc, provider=provider)
+        exit_code = 1 if any(not result.success for result in results) else 0
+        if verbose:
+            common._emit(
+                {
+                    "results": [
+                        result.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                            exclude_computed_fields=True,
+                        )
+                        for result in results
+                    ]
+                }
+            )
+            raise typer.Exit(exit_code)
+        common._render_models_sync_summary(results)
+    finally:
+        registry.close()
 
 
 @models_app.command("list")
@@ -162,16 +165,19 @@ def models_list(
 ) -> None:
     """List models from stored catalog."""
     svc, registry = _catalog_service()
-    _emit_models_list(
-        svc=svc,
-        registry=registry,
-        provider=provider,
-        supports_reasoning=supports_reasoning,
-        model_contains=model_contains,
-        limit=limit,
-        offset=offset,
-        json_output=json_output,
-    )
+    try:
+        _emit_models_list(
+            svc=svc,
+            registry=registry,
+            provider=provider,
+            supports_reasoning=supports_reasoning,
+            model_contains=model_contains,
+            limit=limit,
+            offset=offset,
+            json_output=json_output,
+        )
+    finally:
+        registry.close()
 
 
 @models_app.command("sync-list")
@@ -195,20 +201,23 @@ def models_sync_list(
 ) -> None:
     """Sync models first, then list them."""
     svc, registry = _catalog_service()
-    results = _sync_models(svc=svc, provider=provider)
-    if any(not result.success for result in results):
-        common._render_models_sync_summary(results)
-        return
-    _emit_models_list(
-        svc=svc,
-        registry=registry,
-        provider=provider,
-        supports_reasoning=supports_reasoning,
-        model_contains=model_contains,
-        limit=limit,
-        offset=offset,
-        json_output=json_output,
-    )
+    try:
+        results = _sync_models(svc=svc, provider=provider)
+        if any(not result.success for result in results):
+            common._render_models_sync_summary(results)
+            return
+        _emit_models_list(
+            svc=svc,
+            registry=registry,
+            provider=provider,
+            supports_reasoning=supports_reasoning,
+            model_contains=model_contains,
+            limit=limit,
+            offset=offset,
+            json_output=json_output,
+        )
+    finally:
+        registry.close()
 
 
 @models_app.command("show")
@@ -217,17 +226,22 @@ def models_show(
     model: str = typer.Option(...),
 ) -> None:
     """Show one model from stored catalog."""
-    svc, _ = _catalog_service()
-    item = svc.show_model(provider=provider, model=model)
-    if item is None:
-        typer.secho(
-            f"Model not found for provider={provider!r} model={model!r}",
-            fg=typer.colors.RED,
-            err=True,
+    svc, registry = _catalog_service()
+    try:
+        item = svc.show_model(provider=provider, model=model)
+        if item is None:
+            typer.secho(
+                f"Model not found for provider={provider!r} model={model!r}",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        common._emit(
+            item.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_computed_fields=True,
+            )
         )
-        raise typer.Exit(code=1)
-    common._emit(
-        item.model_dump(
-            mode="json", exclude_none=True, exclude_computed_fields=True
-        )
-    )
+    finally:
+        registry.close()

@@ -114,7 +114,7 @@ def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
         return [], {"source": "openai_compat"}
 
     monkeypatch.setattr(
-        "dr_llm.llm.providers.transports.openai_compat.orchestrator.fetch_openai_compat_models",
+        "dr_llm.llm.providers.impls.openai_compat_base.fetch_openai_compat_models",
         fake_fetch_openai_compat_models,
     )
 

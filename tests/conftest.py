@@ -78,7 +78,7 @@ class FakeOrchestrator:
         return self._config.name
 
     @property
-    def mode(self) -> str:
+    def mode(self) -> CallMode:
         return self._config.mode
 
     def availability_status(self):

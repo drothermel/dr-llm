@@ -13,7 +13,7 @@ from dr_llm.llm.providers.core.config import ProviderAvailabilityStatus
 from dr_llm.llm.providers.core.reasoning_controls import ReasoningControls
 from dr_llm.llm.providers.core.request_defaults import ProviderRequestDefaults
 from dr_llm.llm.request import LlmRequest, Message
-from dr_llm.llm.response import LlmResponse
+from dr_llm.llm.response import CallMode, LlmResponse
 
 
 class ProviderOrchestrator(Protocol):
@@ -21,7 +21,7 @@ class ProviderOrchestrator(Protocol):
     def name(self) -> str: ...
 
     @property
-    def mode(self) -> str: ...
+    def mode(self) -> CallMode: ...
 
     def model_capabilities(self, model: str) -> ModelCapabilities: ...
 

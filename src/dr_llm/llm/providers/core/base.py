@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from dr_llm.llm.request import LlmRequest
-from dr_llm.llm.response import LlmResponse
+from dr_llm.llm.response import CallMode, LlmResponse
 from dr_llm.llm.providers.core.config import (
     ProviderAvailabilityStatus,
     ProviderConfig,
@@ -20,7 +20,7 @@ class ProviderTransport(ABC):
         return self._config.name
 
     @property
-    def mode(self) -> str:
+    def mode(self) -> CallMode:
         return self._config.mode
 
     @property

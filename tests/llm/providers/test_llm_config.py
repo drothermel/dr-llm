@@ -19,6 +19,7 @@ from dr_llm.llm import (
     ReasoningBudget,
     ThinkingLevel,
     build_default_registry,
+    build_request_from_config,
     parse_llm_config,
     parse_llm_request,
 )
@@ -168,13 +169,10 @@ def test_orchestrator_build_request_applies_config_values() -> None:
 
     registry = build_default_registry()
     try:
-        request = registry.get(config.provider).build_request(
-            model=config.model,
-            messages=messages,
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-            effort=config.effort,
-            reasoning=config.reasoning,
+        request = build_request_from_config(
+            registry.get(config.provider),
+            config,
+            messages,
         )
     finally:
         registry.close()
@@ -200,12 +198,10 @@ def test_orchestrator_build_request_uses_provider_reasoning_defaults() -> None:
 
     registry = build_default_registry()
     try:
-        request = registry.get(config.provider).build_request(
-            model=config.model,
-            messages=messages,
-            max_tokens=config.max_tokens,
-            effort=config.effort,
-            reasoning=config.reasoning,
+        request = build_request_from_config(
+            registry.get(config.provider),
+            config,
+            messages,
         )
     finally:
         registry.close()
@@ -362,3 +358,22 @@ def test_provider_reasoning_shape_can_parse_before_validation() -> None:
     assert config.reasoning == AnthropicReasoning(
         thinking_level=ThinkingLevel.NA
     )
+
+
+def test_build_request_from_config_rejects_provider_mismatch() -> None:
+    config = LlmConfig(
+        provider=ProviderName.OPENAI,
+        model="gpt-4.1-mini",
+    )
+    messages = [Message(role="user", content="Hello")]
+
+    registry = build_default_registry()
+    try:
+        with pytest.raises(ValueError, match="does not match"):
+            build_request_from_config(
+                registry.get(ProviderName.GOOGLE),
+                config,
+                messages,
+            )
+    finally:
+        registry.close()

@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from dr_llm.llm.names import EffortSpec
 from dr_llm.llm.providers.concepts.reasoning import ReasoningSpec
+from dr_llm.llm.response import CallMode
 
 
 class ProviderRequestDefaults(BaseModel):
@@ -11,7 +12,7 @@ class ProviderRequestDefaults(BaseModel):
 
     provider: str
     model: str
-    mode: str
+    mode: CallMode
     max_tokens: int | None = None
     max_tokens_required: bool = False
     effort: EffortSpec = EffortSpec.NA

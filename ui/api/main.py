@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.catalog.service import ModelCatalogService
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
-from dr_llm.llm.providers.core.registry import build_default_registry
+from dr_llm.llm import build_default_registry
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 
 # ---------------------------------------------------------------------------

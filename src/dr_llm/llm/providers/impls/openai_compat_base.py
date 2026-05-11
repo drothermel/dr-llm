@@ -10,15 +10,15 @@ from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilities,
     build_model_capabilities,
 )
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
-)
 from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
     CatalogResult,
 )
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
+)
+from dr_llm.llm.providers.transports.openai_compat.provider import (
+    OpenAICompatProvider,
 )
 
 

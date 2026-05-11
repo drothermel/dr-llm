@@ -5,10 +5,11 @@ from typing import Self
 from pydantic import Field, model_validator
 
 from dr_llm.llm.providers.core.config import ProviderConfig
+from dr_llm.llm.response import CallMode
 
 
 class HeadlessProviderConfig(ProviderConfig):
-    mode: str = "headless"
+    mode: CallMode = CallMode.headless
     supports_structured_output: bool = True
     timeout_seconds: float = 180.0
     command: list[str]

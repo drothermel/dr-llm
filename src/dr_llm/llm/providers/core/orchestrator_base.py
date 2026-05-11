@@ -21,7 +21,7 @@ from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
 from dr_llm.llm.request import LlmRequest, Message, parse_llm_request
-from dr_llm.llm.response import LlmResponse
+from dr_llm.llm.response import CallMode, LlmResponse
 
 CatalogResult = tuple[list[ModelCatalogEntry], dict[str, Any]]
 
@@ -35,7 +35,7 @@ class BaseProviderOrchestrator(ABC):
         return ProviderName(self._provider.name)
 
     @property
-    def mode(self) -> str:
+    def mode(self) -> CallMode:
         return self._provider.mode
 
     def availability_status(self) -> ProviderAvailabilityStatus:
@@ -105,7 +105,7 @@ class BaseProviderOrchestrator(ABC):
             defaults.max_tokens if max_tokens is None else max_tokens
         )
         if resolved_max_tokens is not None:
-            if defaults.mode == "headless":
+            if defaults.mode == CallMode.headless:
                 raise ValueError(
                     f"max_tokens is not supported for provider={self.name!r}"
                 )
