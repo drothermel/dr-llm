@@ -133,11 +133,9 @@ class FileCatalogStore:
     def _apply_filters(
         entries: list[ModelCatalogEntry], query: ModelCatalogQuery
     ) -> list[ModelCatalogEntry]:
-        if query.supports_reasoning is not None:
+        if query.control_mode is not None:
             entries = [
-                e
-                for e in entries
-                if e.supports_reasoning == query.supports_reasoning
+                e for e in entries if e.control_mode == query.control_mode
             ]
         if query.model_contains is not None:
             needle = query.model_contains.lower()

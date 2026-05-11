@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from dr_llm.llm.providers.impls.anthropic.effort import (
-    supported_effort_levels_for_anthropic,
+from dr_llm.llm.providers.impls.anthropic.families import (
+    AnthropicFamilies,
 )
 from dr_llm.llm.names import EffortSpec
 
@@ -14,6 +14,7 @@ _LOW_MEDIUM_HIGH_MAX = (
     EffortSpec.HIGH,
     EffortSpec.MAX,
 )
+_FAMILIES = AnthropicFamilies()
 
 
 @pytest.mark.parametrize(
@@ -26,7 +27,7 @@ _LOW_MEDIUM_HIGH_MAX = (
 def test_supported_effort_levels_for_anthropic_opus_4_6_includes_max(
     model: str,
 ) -> None:
-    assert supported_effort_levels_for_anthropic(model) == _LOW_MEDIUM_HIGH_MAX
+    assert _FAMILIES.supported_effort_levels(model) == _LOW_MEDIUM_HIGH_MAX
 
 
 @pytest.mark.parametrize(
@@ -40,10 +41,10 @@ def test_supported_effort_levels_for_anthropic_opus_4_6_includes_max(
 def test_supported_effort_levels_for_anthropic_non_opus_4_6_is_low_medium_high_only(
     model: str,
 ) -> None:
-    assert supported_effort_levels_for_anthropic(model) == _LOW_MEDIUM_HIGH
+    assert _FAMILIES.supported_effort_levels(model) == _LOW_MEDIUM_HIGH
 
 
 def test_supported_effort_levels_for_anthropic_unknown_model_returns_empty() -> (
     None
 ):
-    assert supported_effort_levels_for_anthropic("claude-haiku-3-5") == ()
+    assert _FAMILIES.supported_effort_levels("claude-haiku-3-5") == ()

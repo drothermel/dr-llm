@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from dr_llm.llm import ProviderName
+from dr_llm.llm import ControlMode, ProviderName
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
@@ -21,13 +21,11 @@ from dr_llm.llm.providers.transports.openai_compat.config import (
 from dr_llm.llm.providers.impls.openai.orchestrator import (
     OpenAIOrchestrator,
 )
+from dr_llm.llm.providers.impls.openai.provider import OpenAIProvider
 from dr_llm.llm.providers.impls.openrouter.orchestrator import (
     OpenRouterOrchestrator,
 )
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
-)
-from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.impls.openrouter.provider import OpenRouterProvider
 
 
 class _GoogleSubclassProvider(GoogleProvider):
@@ -47,10 +45,12 @@ def test_google_orchestrator_fetches_with_wrapped_provider(
     def fake_fetch_google_models(
         received_provider: GoogleProvider,
         *,
-        capabilities_fn,
+        controls_fn,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         assert received_provider is provider
-        assert capabilities_fn("gemini-test") is None
+        assert (
+            controls_fn("gemini-test").control_mode == ControlMode.UNSUPPORTED
+        )
         return expected
 
     monkeypatch.setattr(
@@ -77,12 +77,15 @@ def test_kimi_orchestrator_fetches_with_wrapped_provider(
     def fake_fetch_kimi_models(
         received_provider: KimiCodeProvider,
         *,
-        capabilities_fn,
+        controls_fn,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         assert received_provider is provider
         assert received_provider.config.api_key == "kimi-secret"
         assert received_provider.name == ProviderName.KIMI_CODE
-        assert capabilities_fn("kimi-for-coding") is not None
+        assert (
+            controls_fn("kimi-for-coding").control_mode
+            == ControlMode.KIMI_CODE_EFFORT_AND_BUDGET
+        )
         return [], {"source": "kimi"}
 
     monkeypatch.setattr(
@@ -96,7 +99,7 @@ def test_kimi_orchestrator_fetches_with_wrapped_provider(
 def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    provider = OpenAICompatProvider(
+    provider = OpenAIProvider(
         config=OpenAICompatConfig(
             name=ProviderName.OPENAI,
             base_url="https://api.openai.com/v1",
@@ -107,12 +110,14 @@ def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
     orchestrator = OpenAIOrchestrator(provider)
 
     def fake_fetch_openai_compat_models(
-        received_provider: OpenAICompatProvider,
+        received_provider: OpenAIProvider,
         *,
-        capabilities_fn,
+        controls_fn,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         assert received_provider is provider
-        assert isinstance(capabilities_fn("gpt-5-mini"), ReasoningCapabilities)
+        assert (
+            controls_fn("gpt-5-mini").control_mode == ControlMode.OPENAI_EFFORT
+        )
         return [], {"source": "openai_compat"}
 
     monkeypatch.setattr(
@@ -126,7 +131,7 @@ def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
 def test_openrouter_orchestrator_applies_policy_to_live_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    provider = OpenAICompatProvider(
+    provider = OpenRouterProvider(
         config=OpenAICompatConfig(
             name=ProviderName.OPENROUTER,
             base_url="https://openrouter.ai/api/v1",
@@ -139,13 +144,13 @@ def test_openrouter_orchestrator_applies_policy_to_live_catalog(
         ModelCatalogEntry(
             provider=ProviderName.OPENROUTER,
             model="deepseek/deepseek-chat-v3.1",
-            supports_reasoning=False,
+            control_mode=ControlMode.UNSUPPORTED,
             source_quality="live",
         ),
         ModelCatalogEntry(
             provider=ProviderName.OPENROUTER,
             model="deepseek/deepseek-chat",
-            supports_reasoning=True,
+            control_mode=ControlMode.OPENROUTER_TOGGLE,
             source_quality="live",
         ),
         ModelCatalogEntry(
@@ -171,5 +176,6 @@ def test_openrouter_orchestrator_applies_policy_to_live_catalog(
         "deepseek/deepseek-chat-v3.1",
         "deepseek/deepseek-chat",
     ]
-    assert filtered[0].supports_reasoning is True
-    assert filtered[1].supports_reasoning is False
+    assert filtered[0].control_mode == ControlMode.OPENROUTER_TOGGLE
+    assert filtered[1].control_mode == ControlMode.UNSUPPORTED
+    assert "dr_llm_controls" in filtered[0].metadata

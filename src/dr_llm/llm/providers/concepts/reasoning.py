@@ -15,11 +15,10 @@ from pydantic import (
 from dr_llm.llm.names import (
     OpenRouterEffortLevel,
     ProviderName,
-    ReasoningMode,
+    ControlMode,
     ReasoningWarningCode,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 
 
 class ReasoningWarning(BaseModel):
@@ -310,21 +309,16 @@ def validate_budget_range(
     model: str,
     label: str,
     tokens: int,
-    capabilities: ReasoningCapabilities,
+    min_budget_tokens: int | None,
+    max_budget_tokens: int | None,
 ) -> None:
-    if (
-        capabilities.min_budget_tokens is None
-        or capabilities.max_budget_tokens is None
-    ):
+    if min_budget_tokens is None or max_budget_tokens is None:
         raise ValueError(
             f"{label} is not supported for provider={provider!r} model={model!r}"
         )
-    if (
-        tokens < capabilities.min_budget_tokens
-        or tokens > capabilities.max_budget_tokens
-    ):
+    if tokens < min_budget_tokens or tokens > max_budget_tokens:
         raise ValueError(
-            f"{label} must be between {capabilities.min_budget_tokens} and {capabilities.max_budget_tokens} for provider={provider!r} model={model!r}"
+            f"{label} must be between {min_budget_tokens} and {max_budget_tokens} for provider={provider!r} model={model!r}"
         )
 
 
@@ -347,24 +341,14 @@ def require_budget_tokens(
     return budget_tokens
 
 
-class BaseProviderReasoningConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    warnings: list[ReasoningWarning] = Field(default_factory=list)
-
-
 def unsupported_reasoning_kind_message(
     prefix: str, config: ReasoningSpec
 ) -> str:
     return f"{prefix} reasoning serializer received unsupported config kind={config.kind!r}"
 
 
-def is_reasoning_unsupported(
-    capabilities: ReasoningCapabilities | None,
-) -> bool:
-    return (
-        capabilities is None or capabilities.mode == ReasoningMode.UNSUPPORTED
-    )
+def is_control_unsupported(control_mode: ControlMode | None) -> bool:
+    return control_mode is None or control_mode == ControlMode.UNSUPPORTED
 
 
 def dispatch_reasoning_validation(

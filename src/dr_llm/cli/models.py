@@ -9,7 +9,7 @@ from dr_llm.llm.catalog.file_store import FileCatalogStore
 from dr_llm.llm.catalog.model_blacklist import blacklisted_models
 from dr_llm.llm.catalog.models import ModelCatalogQuery, ModelCatalogSyncResult
 from dr_llm.llm.catalog.service import ModelCatalogService
-from dr_llm.llm import ProviderRegistry, build_default_registry
+from dr_llm.llm import ControlMode, ProviderRegistry, build_default_registry
 
 from . import common
 
@@ -49,7 +49,7 @@ def _emit_models_list(
     svc: ModelCatalogService,
     registry: ProviderRegistry,
     provider: str | None,
-    supports_reasoning: bool | None,
+    control_mode: ControlMode | None,
     model_contains: str | None,
     limit: int,
     offset: int,
@@ -58,7 +58,7 @@ def _emit_models_list(
     provider = _canonical_provider_name(provider=provider, registry=registry)
     base_query = ModelCatalogQuery(
         provider=provider,
-        supports_reasoning=supports_reasoning,
+        control_mode=control_mode,
         model_contains=model_contains,
     )
     list_query = base_query.model_copy(
@@ -150,8 +150,8 @@ def models_list(
     provider: str | None = typer.Option(
         None, help="Optional provider filter."
     ),
-    supports_reasoning: bool | None = typer.Option(
-        None, help="Optional reasoning support filter."
+    control_mode: ControlMode | None = typer.Option(
+        None, help="Optional control mode filter."
     ),
     model_contains: str | None = typer.Option(
         None, help="Substring model filter."
@@ -171,7 +171,7 @@ def models_list(
             svc=svc,
             registry=registry,
             provider=provider,
-            supports_reasoning=supports_reasoning,
+            control_mode=control_mode,
             model_contains=model_contains,
             limit=limit,
             offset=offset,
@@ -186,8 +186,8 @@ def models_sync_list(
     provider: str | None = typer.Option(
         None, help="Optional provider filter."
     ),
-    supports_reasoning: bool | None = typer.Option(
-        None, help="Optional reasoning support filter."
+    control_mode: ControlMode | None = typer.Option(
+        None, help="Optional control mode filter."
     ),
     model_contains: str | None = typer.Option(
         None, help="Substring model filter."
@@ -211,7 +211,7 @@ def models_sync_list(
             svc=svc,
             registry=registry,
             provider=provider,
-            supports_reasoning=supports_reasoning,
+            control_mode=control_mode,
             model_contains=model_contains,
             limit=limit,
             offset=offset,

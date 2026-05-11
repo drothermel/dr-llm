@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 import pytest
 from pydantic import ValidationError
@@ -35,9 +35,11 @@ from dr_llm.llm import (
     OpenAIGpt52Config,
     OpenAIGpt53Config,
     OpenAIGpt54Config,
+    OpenAIGptOssConfig,
     OpenAILegacyConfig,
     OpenRouterEffortConfig,
-    OpenRouterNoReasoningConfig,
+    OpenRouterEffortLevel,
+    OpenRouterNoControlConfig,
     OpenRouterToggleConfig,
     ProviderName,
     SamplingControls,
@@ -177,6 +179,13 @@ def test_orchestrator_build_request_applies_normalized_config() -> None:
             ),
             OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
         ),
+        (
+            OpenAIGptOssConfig(
+                model="gpt-oss-20b",
+                thinking_level=ThinkingLevel.MEDIUM,
+            ),
+            OpenAIReasoning(thinking_level=ThinkingLevel.MEDIUM),
+        ),
     ],
 )
 def test_openai_authoring_configs_to_llm_config(
@@ -285,22 +294,22 @@ def test_glm_authoring_configs_to_llm_config(
     ("config", "expected_reasoning"),
     [
         (
-            OpenRouterNoReasoningConfig(model="deepseek/deepseek-chat"),
+            OpenRouterNoControlConfig(model="deepseek/deepseek-chat"),
             None,
         ),
         (
             OpenRouterToggleConfig(
                 model="deepseek/deepseek-chat-v3.1",
-                enabled=False,
+                reasoning_enabled=False,
             ),
             OpenRouterReasoning(enabled=False),
         ),
         (
             OpenRouterEffortConfig(
                 model="openai/gpt-oss-120b",
-                effort="medium",
+                effort=OpenRouterEffortLevel.MEDIUM,
             ),
-            OpenRouterReasoning(effort="medium"),
+            OpenRouterReasoning(effort=OpenRouterEffortLevel.MEDIUM),
         ),
     ],
 )
@@ -454,6 +463,13 @@ def test_claude_code_authoring_configs_use_anthropic_family_capabilities() -> (
             "custom sampling requires thinking_level='off'",
         ),
         (
+            lambda: OpenAIGptOssConfig(
+                model="gpt-oss-20b",
+                thinking_level=cast(Any, ThinkingLevel.OFF),
+            ),
+            "Input should be",
+        ),
+        (
             lambda: GoogleBudgetConfig(
                 model="gemini-2.5-flash-lite",
                 thinking_level=ThinkingLevel.BUDGET,
@@ -464,7 +480,7 @@ def test_claude_code_authoring_configs_use_anthropic_family_capabilities() -> (
         (
             lambda: OpenRouterToggleConfig(
                 model="deepseek/deepseek-r1",
-                enabled=False,
+                reasoning_enabled=False,
             ),
             "reasoning cannot be disabled",
         ),
@@ -505,6 +521,18 @@ def test_build_config_rejects_provider_specific_reasoning_mismatch() -> None:
             registry.get(ProviderName.OPENAI).build_config(
                 model="gpt-5-mini",
                 reasoning=GoogleReasoning(thinking_level=ThinkingLevel.OFF),
+            )
+    finally:
+        registry.close()
+
+
+def test_openai_gpt_oss_rejects_no_thinking_level() -> None:
+    registry = build_default_registry()
+    try:
+        with pytest.raises(ValueError, match="thinking_level='off'"):
+            registry.get(ProviderName.OPENAI).build_config(
+                model="gpt-oss-20b",
+                thinking_level=ThinkingLevel.OFF,
             )
     finally:
         registry.close()

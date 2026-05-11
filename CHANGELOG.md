@@ -1,5 +1,66 @@
 # Changelog
 
+## 4.2.0 - 2026-05-11
+
+### Added
+
+- Added provider-specific `controls(model)` objects backed by model-family
+  metadata. Controls now expose provider `control_mode`, supported/default
+  thinking levels, supported/default effort levels, budget bounds where
+  applicable, request defaults, catalog metadata, and provider-specific request
+  validation.
+- Added model-family capability models and static catalog definitions for
+  OpenAI, Anthropic, Google, OpenRouter, GLM, Codex, Claude Code, Kimi Code, and
+  MiniMax.
+- Added `nbs/hit_providers.py`, a marimo notebook for manually sending prompts
+  through curated provider configs and saving response history under `logs/`.
+- Added `ApiKeyNames` and provider URL enums so API key environment variables
+  and provider docs/catalog/API URLs live with provider metadata.
+
+### Changed
+
+- Replaced scattered reasoning/capability helpers with provider-owned controls
+  and request-control builders. `BaseProviderOrchestrator` now delegates
+  reasoning, effort, sampling, defaults, and provider-specific validation to the
+  provider controls layer.
+- Model catalogs now store `control_mode` plus structured
+  `metadata["dr_llm_controls"]` instead of a flattened reasoning-support flag.
+  Static fallback catalog entries derive display names from model ids and embed
+  the same controls metadata as live catalog entries.
+- The model catalog CLI now filters by `--control-mode` instead of
+  `--supports-reasoning`, and the UI model table displays control mode.
+- OpenRouter catalog handling now applies the curated model-policy allowlist and
+  attaches resolved controls metadata to OpenRouter entries.
+- The default registry now registers orchestrators directly; provider
+  constructors own their default transport/config wiring.
+- Expanded OpenAI/GPT-OSS, Anthropic, Google, OpenRouter, GLM, Codex, Claude
+  Code, Kimi Code, and MiniMax model-family coverage, including GPT-5.3,
+  GPT-5.4, GPT-OSS, Google level/budget controls, and provider-specific
+  static fallback catalogs.
+
+### Fixed
+
+- Tightened request validation so provider controls validate requests against
+  consistent model values and validate budget tokens before building provider
+  payloads.
+- Preserved both Claude Code `--effort` and reasoning-derived CLI arguments
+  when building headless commands.
+- Fixed Google model-family matching so overlapping prefixes only match the
+  exact family or snapshots separated by a dash.
+- Made headless transports require `request_controls(...)` via an abstract
+  method instead of a runtime `NotImplementedError`.
+
+### Breaking
+
+- `ModelCatalogEntry.supports_reasoning` and `reasoning_capabilities` have been
+  replaced by `control_mode` and structured `metadata["dr_llm_controls"]`.
+- `dr-llm models list --supports-reasoning` and
+  `dr-llm models sync-list --supports-reasoning` have been replaced by
+  `--control-mode`.
+- Provider orchestrators expose `controls(model)` rather than
+  `reasoning_controls(model)` / `model_capabilities(model)` for capability
+  inspection.
+
 ## 4.1.0 - 2026-05-11
 
 ### Added

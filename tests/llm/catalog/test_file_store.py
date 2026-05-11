@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
+from dr_llm.llm import ControlMode, ProviderName
 from pathlib import Path
 from typing import Any
 
@@ -76,16 +76,22 @@ def test_filter_by_provider(store: FileCatalogStore) -> None:
     assert len(all_models) == 2
 
 
-def test_filter_by_supports_reasoning(store: FileCatalogStore) -> None:
+def test_filter_by_control_mode(store: FileCatalogStore) -> None:
     store.replace_provider_models(
         provider="test",
         entries=[
-            _entry("test", "reasoner", supports_reasoning=True),
-            _entry("test", "basic", supports_reasoning=False),
+            _entry(
+                "test",
+                "reasoner",
+                control_mode=ControlMode.OPENAI_EFFORT,
+            ),
+            _entry("test", "basic", control_mode=ControlMode.UNSUPPORTED),
         ],
     )
     result = store.list_models(
-        query=ModelCatalogQuery(provider="test", supports_reasoning=True)
+        query=ModelCatalogQuery(
+            provider="test", control_mode=ControlMode.OPENAI_EFFORT
+        )
     )
     assert len(result) == 1
     assert result[0].model == "reasoner"

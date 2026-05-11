@@ -13,16 +13,17 @@ from dr_llm.llm import (
     LlmRequest,
     Message,
     OpenAIReasoning,
+    OpenRouterEffortLevel,
     OpenRouterReasoning,
     ProviderName,
     SamplingControls,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
-)
+from dr_llm.llm.providers.impls.glm.provider import GlmProvider
+from dr_llm.llm.providers.impls.openai.provider import OpenAIProvider
+from dr_llm.llm.providers.impls.openrouter.provider import OpenRouterProvider
 from dr_llm.llm.providers.impls.openai.families import (
-    OPENAI_THINKING_SUPPORTED_MODELS,
+    OPENAI_FAMILIES,
 )
 from dr_llm.llm.providers.transports.openai_compat.config import (
     OpenAICompatConfig,
@@ -41,8 +42,8 @@ _CONFIG = OpenAICompatConfig(
     base_url="https://openrouter.ai/api/v1",
     api_key="x",
 )
-_OPENAI_MAX_COMPLETION_TOKEN_MODEL_PREFIXES = tuple(
-    str(family) for family in OPENAI_THINKING_SUPPORTED_MODELS
+_OPENAI_MAX_COMPLETION_TOKEN_MODEL_FAMILIES = (
+    OPENAI_FAMILIES.thinking_supported
 )
 
 _REASONING_RESPONSE_JSON: dict[str, Any] = {
@@ -85,12 +86,14 @@ def _make_api_request(
 def test_forwards_reasoning_and_parses_cost() -> None:
     captured, client = make_http_client(_REASONING_RESPONSE_JSON)
 
-    with OpenAICompatProvider(config=_CONFIG, client=client) as adapter:
+    with OpenRouterProvider(config=_CONFIG, client=client) as adapter:
         request = _make_api_request(
             {
                 "provider": ProviderName.OPENROUTER,
                 "model": "openai/gpt-oss-20b",
-                "reasoning": OpenRouterReasoning(effort="high"),
+                "reasoning": OpenRouterReasoning(
+                    effort=OpenRouterEffortLevel.HIGH
+                ),
             }
         )
         result = adapter.generate(request)
@@ -107,7 +110,7 @@ def test_invalid_json_raises_transport_error() -> None:
         return httpx.Response(status_code=200, text="{")
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    adapter = OpenAICompatProvider(config=_CONFIG, client=client)
+    adapter = OpenRouterProvider(config=_CONFIG, client=client)
 
     with pytest.raises(ProviderTransportError, match="invalid JSON response"):
         adapter.generate(
@@ -127,13 +130,13 @@ def test_invalid_json_raises_transport_error() -> None:
 
 def test_close_does_not_close_injected_client() -> None:
     _, client = make_http_client({})
-    adapter = OpenAICompatProvider(config=_CONFIG, client=client)
+    adapter = OpenRouterProvider(config=_CONFIG, client=client)
     adapter.close()
     assert not client.is_closed
 
 
 def test_close_closes_adapter_owned_client() -> None:
-    adapter = OpenAICompatProvider(config=_CONFIG)
+    adapter = OpenRouterProvider(config=_CONFIG)
     owned_client = adapter._client
     adapter.close()
     assert owned_client.is_closed
@@ -199,9 +202,7 @@ def test_glm_request_serializes_native_thinking_payload() -> None:
             "reasoning": GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
         }
     )
-    provider_request = OpenAICompatRequest.from_llm_request(
-        request, glm_config
-    )
+    provider_request = GlmProvider(config=glm_config)._build_request(request)
     assert provider_request.reasoning_effort is None
     assert provider_request.json_payload()["thinking"] == {"type": "enabled"}
 
@@ -211,8 +212,8 @@ def test_openai_gpt5_swaps_max_tokens_for_max_completion_tokens() -> None:
         name=ProviderName.OPENAI,
         base_url="https://api.openai.com/v1",
         api_key="x",
-        max_completion_token_model_prefixes=(
-            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_PREFIXES
+        max_completion_token_model_families=(
+            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_FAMILIES
         ),
     )
     request = _make_api_request(
@@ -231,13 +232,39 @@ def test_openai_gpt5_swaps_max_tokens_for_max_completion_tokens() -> None:
     assert payload["max_completion_tokens"] == 64
 
 
+def test_openai_gpt_oss_serializes_reasoning_effort() -> None:
+    openai_config = OpenAICompatConfig(
+        name=ProviderName.OPENAI,
+        base_url="https://api.openai.com/v1",
+        api_key="x",
+        max_completion_token_model_families=(
+            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_FAMILIES
+        ),
+    )
+    request = _make_api_request(
+        {
+            "provider": ProviderName.OPENAI,
+            "model": "gpt-oss-20b",
+            "max_tokens": 64,
+            "reasoning": OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
+        }
+    )
+    with OpenAIProvider(config=openai_config) as provider:
+        provider_request = provider._build_request(request)
+    payload = provider_request.json_payload()
+
+    assert payload["reasoning_effort"] == "low"
+    assert "max_tokens" not in payload
+    assert payload["max_completion_tokens"] == 64
+
+
 def test_openai_legacy_model_keeps_max_tokens() -> None:
     openai_config = OpenAICompatConfig(
         name=ProviderName.OPENAI,
         base_url="https://api.openai.com/v1",
         api_key="x",
-        max_completion_token_model_prefixes=(
-            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_PREFIXES
+        max_completion_token_model_families=(
+            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_FAMILIES
         ),
     )
     request = _make_api_request(
@@ -344,7 +371,7 @@ def test_request_rejects_extra_body_key_collisions() -> None:
         extra_body={"model": "other-model"},
         base_url="https://openrouter.ai/api/v1",
         chat_path="/chat/completions",
-        max_completion_token_model_prefixes=(),
+        max_completion_token_model_families=(),
         api_key_env="OPENROUTER_API_KEY",
         api_key="x",
         idempotency_key="fixed-key",
@@ -396,7 +423,13 @@ def test_provider_rejects_headless_request_mode() -> None:
         mode=CallMode.headless,
         messages=[Message(role="user", content="hi")],
     )
-    adapter = OpenAICompatProvider(config=_CONFIG)
+    adapter = OpenAIProvider(
+        config=OpenAICompatConfig(
+            name=ProviderName.OPENAI,
+            base_url="https://api.openai.com/v1",
+            api_key="x",
+        )
+    )
 
     with pytest.raises(
         ProviderSemanticError, match="only accepts API-backed requests"

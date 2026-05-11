@@ -1,0 +1,315 @@
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from dr_llm.llm.config import SamplingControls
+from dr_llm.llm.names import (
+    EffortSpec,
+    ProviderName,
+    ControlMode,
+    ThinkingLevel,
+)
+from dr_llm.llm.providers.concepts.effort import validate_effort
+from dr_llm.llm.providers.concepts.reasoning import (
+    GoogleReasoning,
+    ReasoningBudget,
+    ReasoningSpec,
+    ReasoningWarning,
+    dispatch_reasoning_validation,
+    google_literal_to_thinking_level,
+    is_control_unsupported,
+    validate_allowed_thinking_levels,
+    validate_budget_range,
+)
+from dr_llm.llm.providers.core.request_defaults import (
+    ProviderRequestDefaults,
+)
+from dr_llm.llm.providers.impls.google.families import (
+    GOOGLE_FAMILIES,
+    GoogleFamilies,
+    GoogleThinkingLevel,
+)
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.response import CallMode
+
+
+GOOGLE_DEFAULT_SAMPLING = SamplingControls(temperature=1.0, top_p=0.95)
+
+
+def _validate_reasoning_for_google(
+    *,
+    model: str,
+    reasoning: ReasoningSpec | None,
+    families: GoogleFamilies | None = None,
+) -> None:
+    families = families or GOOGLE_FAMILIES
+    controls = GoogleControls(
+        model=model, mode=CallMode.api, families=families
+    )
+
+    def _validate_top_budget(budget: ReasoningBudget) -> None:
+        if controls.control_mode == ControlMode.UNSUPPORTED:
+            raise ValueError(
+                f"Reasoning is not allowed for provider='{ProviderName.GOOGLE}' model={model!r}: reasoning capabilities are unknown"
+            )
+        if controls.control_mode == ControlMode.GOOGLE_LEVEL:
+            raise ValueError(
+                f"Top-level reasoning budget is not supported for provider='{ProviderName.GOOGLE}' model={model!r} with control_mode={controls.control_mode!r}"
+            )
+        validate_budget_range(
+            provider=ProviderName.GOOGLE,
+            model=model,
+            label="reasoning budget",
+            tokens=budget.tokens,
+            min_budget_tokens=controls.min_budget_tokens,
+            max_budget_tokens=controls.max_budget_tokens,
+        )
+
+    dispatch_reasoning_validation(
+        provider=ProviderName.GOOGLE,
+        model=model,
+        reasoning=reasoning,
+        native_spec_type=GoogleReasoning,
+        requires_reasoning=not is_control_unsupported(controls.control_mode),
+        validate_native=lambda spec: _validate_google_reasoning_shape(
+            thinking_level=spec.thinking_level,
+            budget_tokens=spec.budget_tokens,
+            controls=controls,
+        ),
+        validate_top_budget=_validate_top_budget,
+    )
+
+
+def _validate_google_reasoning_shape(
+    *,
+    thinking_level: ThinkingLevel,
+    budget_tokens: int | None,
+    controls: GoogleControls,
+) -> None:
+    if is_control_unsupported(controls.control_mode):
+        if thinking_level == ThinkingLevel.NA:
+            return
+        raise ValueError(
+            f"{ProviderName.GOOGLE} thinking is not supported for model={controls.model!r}"
+        )
+    if thinking_level == ThinkingLevel.NA:
+        raise ValueError(
+            f"thinking_level='na' is not supported for provider='{ProviderName.GOOGLE}' model={controls.model!r}"
+        )
+    if controls.control_mode == ControlMode.GOOGLE_BUDGET:
+        _validate_google_budget_mode(
+            thinking_level=thinking_level,
+            budget_tokens=budget_tokens,
+            controls=controls,
+        )
+        return
+    if controls.control_mode == ControlMode.GOOGLE_LEVEL:
+        _validate_google_level_mode(
+            thinking_level=thinking_level,
+            controls=controls,
+        )
+        return
+    raise ValueError(
+        f"Reasoning is not supported for provider='{ProviderName.GOOGLE}' model={controls.model!r}"
+    )
+
+
+def _validate_google_budget_mode(
+    *,
+    thinking_level: ThinkingLevel,
+    budget_tokens: int | None,
+    controls: GoogleControls,
+) -> None:
+    if thinking_level == ThinkingLevel.OFF:
+        return
+    if thinking_level == ThinkingLevel.ADAPTIVE:
+        if controls.supports_dynamic:
+            return
+        raise ValueError(
+            f"{ProviderName.GOOGLE} dynamic thinking is not supported for model={controls.model!r}"
+        )
+    if thinking_level == ThinkingLevel.BUDGET:
+        if budget_tokens is None:
+            raise ValueError(
+                "google budget thinking requires budget_tokens when "
+                "thinking_level is 'budget'"
+            )
+        validate_budget_range(
+            provider=ProviderName.GOOGLE,
+            model=controls.model,
+            label=f"{ProviderName.GOOGLE} thinking_budget",
+            tokens=budget_tokens,
+            min_budget_tokens=controls.min_budget_tokens,
+            max_budget_tokens=controls.max_budget_tokens,
+        )
+        return
+    raise ValueError(
+        f"{ProviderName.GOOGLE} model {controls.model!r} does not support thinking_level={thinking_level!r}; use off, adaptive, or budget"
+    )
+
+
+def _validate_google_level_mode(
+    *,
+    thinking_level: ThinkingLevel,
+    controls: GoogleControls,
+) -> None:
+    allowed_levels = {
+        google_literal_to_thinking_level(level)
+        for level in controls.google_thinking_levels
+    }
+    validate_allowed_thinking_levels(
+        provider=ProviderName.GOOGLE,
+        model=controls.model,
+        thinking_level=thinking_level,
+        allowed_levels=allowed_levels,
+        allow_na=False,
+    )
+
+
+class GoogleControls(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider: ProviderName = ProviderName.GOOGLE
+    model: str
+    mode: CallMode
+    families: GoogleFamilies = Field(
+        default_factory=GoogleFamilies, exclude=True
+    )
+
+    @property
+    def control_mode(self) -> ControlMode:
+        return self.families.control_mode(self.model)
+
+    @property
+    def min_budget_tokens(self) -> int | None:
+        return self.families.min_budget_tokens(self.model)
+
+    @property
+    def max_budget_tokens(self) -> int | None:
+        return self.families.max_budget_tokens(self.model)
+
+    @property
+    def supports_dynamic(self) -> bool:
+        return self.families.supports_dynamic(self.model)
+
+    @property
+    def google_thinking_levels(self) -> tuple[GoogleThinkingLevel, ...]:
+        return self.families.google_thinking_levels(self.model)
+
+    @property
+    def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
+        return self.families.supported_thinking_levels(self.model)
+
+    @property
+    def default_thinking_level(self) -> ThinkingLevel:
+        return self.families.default_thinking_level(self.model)
+
+    @property
+    def supported_effort_levels(self) -> tuple[EffortSpec, ...]:
+        return self.families.supported_effort_levels(self.model)
+
+    @property
+    def default_effort(self) -> EffortSpec:
+        return self.families.default_effort(self.model)
+
+    @property
+    def default_reasoning(self) -> ReasoningSpec | None:
+        return self.reasoning_for_thinking_level(
+            thinking_level=self.default_thinking_level,
+            budget_tokens=self.min_budget_tokens,
+        )
+
+    @property
+    def catalog_metadata(self) -> dict[str, Any]:
+        return {
+            "control_mode": self.control_mode,
+            "min_budget_tokens": self.min_budget_tokens,
+            "max_budget_tokens": self.max_budget_tokens,
+            "supports_dynamic": self.supports_dynamic,
+            "google_thinking_levels": self.google_thinking_levels,
+            "supported_thinking_levels": self.supported_thinking_levels,
+            "default_thinking_level": self.default_thinking_level,
+            "supported_effort_levels": self.supported_effort_levels,
+            "default_effort": self.default_effort,
+        }
+
+    def request_defaults(self) -> ProviderRequestDefaults:
+        return ProviderRequestDefaults(
+            provider=self.provider,
+            model=self.model,
+            mode=self.mode,
+            effort=self.default_effort,
+            reasoning=self.default_reasoning,
+            sampling_supported=True,
+            sampling=GOOGLE_DEFAULT_SAMPLING,
+        )
+
+    def resolve_reasoning(
+        self,
+        *,
+        reasoning: ReasoningSpec | None,
+        thinking_level: ThinkingLevel | None,
+        budget_tokens: int | None,
+    ) -> ReasoningSpec | None:
+        if reasoning is not None:
+            return reasoning
+        if thinking_level is not None:
+            return self.reasoning_for_thinking_level(
+                thinking_level=thinking_level,
+                budget_tokens=budget_tokens,
+            )
+        return self.default_reasoning
+
+    def resolve_effort(self, effort: EffortSpec | None) -> EffortSpec:
+        if effort is None:
+            return self.default_effort
+        return effort
+
+    def resolve_sampling(
+        self, sampling: SamplingControls | None
+    ) -> SamplingControls | None:
+        if sampling is not None:
+            if sampling.is_empty():
+                return None
+            return sampling
+        return GOOGLE_DEFAULT_SAMPLING
+
+    def reasoning_for_thinking_level(
+        self,
+        *,
+        thinking_level: ThinkingLevel,
+        budget_tokens: int | None = None,
+    ) -> ReasoningSpec | None:
+        if thinking_level == ThinkingLevel.NA:
+            return None
+        if thinking_level == ThinkingLevel.BUDGET:
+            return GoogleReasoning(
+                thinking_level=thinking_level,
+                budget_tokens=_require_budget_tokens(
+                    provider=self.provider,
+                    budget_tokens=budget_tokens,
+                ),
+            )
+        return GoogleReasoning(thinking_level=thinking_level)
+
+    def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
+        validate_effort(
+            provider=self.provider,
+            model=self.model,
+            effort=request.effort,
+            supported_effort_levels=self.supported_effort_levels,
+        )
+        _validate_reasoning_for_google(
+            model=request.model,
+            reasoning=request.reasoning,
+            families=self.families,
+        )
+        return []
+
+
+def _require_budget_tokens(*, provider: str, budget_tokens: int | None) -> int:
+    if budget_tokens is None:
+        raise ValueError(f"{provider} budget thinking requires budget_tokens")
+    return budget_tokens

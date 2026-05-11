@@ -1,11 +1,11 @@
 from dr_llm.llm.providers.impls.openrouter.config import (
     OpenRouterEffortConfig,
-    OpenRouterNoReasoningConfig,
+    OpenRouterNoControlConfig,
     OpenRouterToggleConfig,
 )
 
 __all__ = [
     "OpenRouterEffortConfig",
-    "OpenRouterNoReasoningConfig",
+    "OpenRouterNoControlConfig",
     "OpenRouterToggleConfig",
 ]

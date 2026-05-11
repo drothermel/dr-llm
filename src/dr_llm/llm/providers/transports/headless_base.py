@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 import json
 import os
 import subprocess
 import time
-from typing import Any, Protocol
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,6 +14,7 @@ from dr_llm.logging.sinks import emit_generation_event
 from dr_llm.llm.names import EffortSpec
 from dr_llm.llm.providers.core.base import ProviderTransport
 from dr_llm.llm.providers.concepts.reasoning import ReasoningSpec
+from dr_llm.llm.providers.core.request_controls import HeadlessRequestControls
 from dr_llm.llm.providers.transports.headless_config import (
     HeadlessProviderConfig,
 )
@@ -23,14 +25,6 @@ from dr_llm.llm.providers.core.usage import (
     TokenUsage,
     parse_reasoning,
 )
-
-
-class HeadlessReasoningResult(Protocol):
-    @property
-    def cli_args(self) -> list[str]: ...
-
-    @property
-    def warnings(self) -> list[Any]: ...
 
 
 HEADLESS_DEFAULT_EMPTY_PROMPT = " "
@@ -211,7 +205,7 @@ def sanitize_io_for_logs(
     return sanitized
 
 
-class BaseHeadlessProvider(ProviderTransport):
+class BaseHeadlessProvider(ProviderTransport, ABC):
     _config: HeadlessProviderConfig
 
     def __init__(self, *, config: HeadlessProviderConfig) -> None:
@@ -226,8 +220,9 @@ class BaseHeadlessProvider(ProviderTransport):
         self,
         request: LlmRequest,
         payload: HeadlessRequestPayload,
-        reasoning_mapping: HeadlessReasoningResult,
+        request_controls: HeadlessRequestControls,
     ) -> list[str]:
+        del request_controls
         return [*self._config.command]
 
     def stdin_for_request(
@@ -245,12 +240,10 @@ class BaseHeadlessProvider(ProviderTransport):
         del request, payload
         return {**os.environ, **self._config.env_overrides}
 
-    def reasoning_mapping(
+    @abstractmethod
+    def request_controls(
         self, request: LlmRequest
-    ) -> HeadlessReasoningResult:
-        raise NotImplementedError(
-            "subclasses must implement reasoning_mapping"
-        )
+    ) -> HeadlessRequestControls: ...
 
     def parse_stdout(
         self,
@@ -281,8 +274,8 @@ class BaseHeadlessProvider(ProviderTransport):
                 f"{self.name} only accepts headless requests"
             )
         payload = self.payload_for_request(request)
-        reasoning_mapping = self.reasoning_mapping(request)
-        command = self.command_for_request(request, payload, reasoning_mapping)
+        request_controls = self.request_controls(request)
+        command = self.command_for_request(request, payload, request_controls)
         validate_headless_command(command)
         stdin_text = self.stdin_for_request(request, payload)
         logged_stdin = self._sanitize_for_logs(stdin_text)
@@ -304,7 +297,7 @@ class BaseHeadlessProvider(ProviderTransport):
             request=request,
             proc=proc,
             latency_ms=latency_ms,
-            reasoning_mapping=reasoning_mapping,
+            request_controls=request_controls,
         )
 
     def _sanitize_for_logs(self, value: str) -> str:
@@ -391,19 +384,19 @@ class BaseHeadlessProvider(ProviderTransport):
         request: LlmRequest,
         proc: subprocess.CompletedProcess[str],
         latency_ms: int,
-        reasoning_mapping: HeadlessReasoningResult,
+        request_controls: HeadlessRequestControls,
     ) -> LlmResponse:
         response = self.parse_stdout(
             request=request,
             stdout=proc.stdout,
             stderr=proc.stderr,
         ).to_llm_response(request, latency_ms=latency_ms)
-        if reasoning_mapping.warnings:
+        if request_controls.warnings:
             response = response.model_copy(
                 update={
                     "warnings": [
                         *response.warnings,
-                        *reasoning_mapping.warnings,
+                        *request_controls.warnings,
                     ]
                 }
             )

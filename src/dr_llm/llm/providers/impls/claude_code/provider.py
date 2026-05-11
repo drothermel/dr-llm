@@ -2,22 +2,27 @@ from __future__ import annotations
 
 import json
 import os
+from enum import StrEnum
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.llm.names import EffortSpec, ProviderName
+from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.transports.headless_base import (
     BaseHeadlessProvider,
     HEADLESS_DEFAULT_EMPTY_PROMPT,
-    HeadlessReasoningResult,
     HeadlessRequestPayload,
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
-from dr_llm.llm.providers.impls.claude_code.reasoning import (
-    ClaudeHeadlessReasoningConfig,
+from dr_llm.llm.providers.core.request_controls import HeadlessRequestControls
+from dr_llm.llm.providers.impls.claude_code.request_controls import (
+    ClaudeCodeRequestControls,
+)
+from dr_llm.llm.providers.impls.claude_code.families import (
+    ClaudeCodeModelFamily,
 )
 from dr_llm.llm.providers.transports.headless_config import (
     ClaudeCodeProviderConfig,
@@ -41,10 +46,12 @@ CLAUDE_DEFAULT_COMMAND = [
     "--setting-sources",
     "user",
 ]
-CLAUDE_CANONICAL_MODEL_PREFIX = "claude-"
 ANTHROPIC_BASE_URL_ENV = "ANTHROPIC_BASE_URL"
 ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN"
-ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
+
+
+class ClaudeCodeUrls(StrEnum):
+    MODELS_DOCS = "https://code.claude.com/docs/en/model-config"
 
 
 class ClaudeHeadlessUsage(BaseModel):
@@ -164,19 +171,19 @@ class ClaudeCodeProvider(BaseHeadlessProvider):
             key_value = os.getenv(self._config.api_key_env)
             if key_value:
                 env[ANTHROPIC_AUTH_TOKEN_ENV] = key_value
-                env[ANTHROPIC_API_KEY_ENV] = key_value
+                env[ApiKeyNames.ANTHROPIC] = key_value
         return env
 
     def command_for_request(
         self,
         request: LlmRequest,
         payload: HeadlessRequestPayload,
-        reasoning_mapping: HeadlessReasoningResult,
+        request_controls: HeadlessRequestControls,
     ) -> list[str]:
         del payload
         if (
             self.name == ProviderName.CLAUDE_CODE
-            and not request.model.startswith(CLAUDE_CANONICAL_MODEL_PREFIX)
+            and not ClaudeCodeModelFamily.CLAUDE.in_family(request.model)
         ):
             raise HeadlessExecutionError(
                 f"{ProviderName.CLAUDE_CODE} requires canonical model ids like 'claude-sonnet-4-6'"
@@ -185,14 +192,12 @@ class ClaudeCodeProvider(BaseHeadlessProvider):
         command.extend(["--model", request.model])
         if request.effort != EffortSpec.NA:
             command.extend(["--effort", request.effort])
-        elif reasoning_mapping.cli_args:
-            command.extend(reasoning_mapping.cli_args)
+        if request_controls.cli_args:
+            command.extend(request_controls.cli_args)
         return command
 
-    def reasoning_mapping(
-        self, request: LlmRequest
-    ) -> HeadlessReasoningResult:
-        return ClaudeHeadlessReasoningConfig.from_base(request.reasoning)
+    def request_controls(self, request: LlmRequest) -> HeadlessRequestControls:
+        return ClaudeCodeRequestControls.from_reasoning(request.reasoning)
 
     def stdin_for_request(
         self,

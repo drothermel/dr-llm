@@ -9,6 +9,13 @@ function CapIcon({ value, label }) {
     : <span className="cap-icon cap-no" title={`${label}: no`}>&mdash;</span>
 }
 
+function ControlMode({ value }) {
+  if (!value) {
+    return <span className="text-muted">&mdash;</span>
+  }
+  return <code>{value}</code>
+}
+
 export default function ModelTable({ models }) {
   return (
     <div className="model-table-wrapper">
@@ -17,7 +24,7 @@ export default function ModelTable({ models }) {
           <tr>
             <th>Model</th>
             <th>Display Name</th>
-            <th className="cap-col">Reasoning</th>
+            <th className="cap-col">Control Mode</th>
             <th className="cap-col">Vision</th>
             <th className="cap-col">Context</th>
             <th className="cap-col">Source</th>
@@ -36,7 +43,7 @@ export default function ModelTable({ models }) {
                 }
               </td>
               <td className="cap-col">
-                <CapIcon value={m.supports_reasoning} label="Reasoning" />
+                <ControlMode value={m.control_mode} />
               </td>
               <td className="cap-col">
                 <CapIcon value={m.supports_vision} label="Vision" />

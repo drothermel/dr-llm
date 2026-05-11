@@ -4,12 +4,10 @@ from dr_llm.llm.providers.impls.anthropic.config import (
     AnthropicEffortConfig,
     AnthropicLegacyConfig,
 )
-from dr_llm.llm.providers.impls.anthropic.families import AnthropicModelFamily
 
 __all__ = [
     "AnthropicBudgetConfig",
     "AnthropicEffortAndBudgetConfig",
     "AnthropicEffortConfig",
     "AnthropicLegacyConfig",
-    "AnthropicModelFamily",
 ]

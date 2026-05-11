@@ -8,10 +8,10 @@ from dr_llm.llm.config import LlmConfig, SamplingControls
 from dr_llm.llm.names import EffortSpec, ProviderName
 from dr_llm.llm.providers.core.authoring import build_provider_config
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.minimax.capabilities import (
-    supported_effort_levels_for_minimax,
+from dr_llm.llm.providers.impls.minimax.families import (
+    MINIMAX_FAMILIES,
+    MiniMaxModelFamily,
 )
-from dr_llm.llm.providers.impls.minimax.families import MiniMaxModelFamily
 
 type _MiniMaxEffort = Literal[
     EffortSpec.LOW,
@@ -32,20 +32,20 @@ class MiniMaxConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_controls(self) -> MiniMaxConfig:
-        if not self.model.startswith(MiniMaxModelFamily.MINIMAX):
+        if not MiniMaxModelFamily.MINIMAX.in_family(self.model):
             raise ValueError(
                 f"MiniMaxConfig only supports provider={self.provider!r} "
-                f"model family={MiniMaxModelFamily.MINIMAX.value!r}; "
+                f"model family={MiniMaxModelFamily.MINIMAX!r}; "
                 f"got model={self.model!r}"
             )
         if self.effort is None:
             return self
-        allowed = supported_effort_levels_for_minimax(self.model)
+        allowed = MINIMAX_FAMILIES.supported_effort_levels(self.model)
         if self.effort in allowed:
             return self
-        allowed_values = ", ".join(level.value for level in allowed)
+        allowed_values = ", ".join(str(level) for level in allowed)
         raise ValueError(
-            f"MiniMaxConfig effort={self.effort.value!r} is not supported "
+            f"MiniMaxConfig effort={self.effort!r} is not supported "
             f"for provider={self.provider!r} model={self.model!r}; "
             f"allowed levels: {allowed_values}"
         )

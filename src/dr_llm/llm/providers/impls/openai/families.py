@@ -2,6 +2,14 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from pydantic import BaseModel, ConfigDict
+
+from dr_llm.llm.names import EffortSpec, ControlMode, ThinkingLevel
+from dr_llm.llm.providers.concepts.model_family import (
+    is_snapshot_of_family,
+    model_matches_any_family,
+)
+
 
 class OpenAIModelFamily(StrEnum):
     GPT5 = "gpt-5"
@@ -24,57 +32,155 @@ class OpenAIModelFamily(StrEnum):
     GPT54 = "gpt-5.4"
     GPT54_MINI = "gpt-5.4-mini"
     GPT54_NANO = "gpt-5.4-nano"
+    GPT_OSS_20B = "gpt-oss-20b"
+    GPT_OSS_120B = "gpt-oss-120b"
+
+    def in_family(self, model: str) -> bool:
+        normalized = _normalize_openai_model(model)
+        return normalized == self or is_snapshot_of_family(
+            model=normalized, family=str(self)
+        )
 
 
-OPENAI_GPT5_FAMILIES = (
-    OpenAIModelFamily.GPT5,
-    OpenAIModelFamily.GPT5_MINI,
-    OpenAIModelFamily.GPT5_NANO,
-)
-OPENAI_GPT51_FAMILIES = (
-    OpenAIModelFamily.GPT51,
-    OpenAIModelFamily.GPT51_MINI,
-    OpenAIModelFamily.GPT51_NANO,
-    OpenAIModelFamily.GPT51_CODEX,
-    OpenAIModelFamily.GPT51_CODEX_MINI,
-    OpenAIModelFamily.GPT51_CODEX_MAX,
-)
-OPENAI_GPT52_FAMILIES = (
-    OpenAIModelFamily.GPT52,
-    OpenAIModelFamily.GPT52_MINI,
-    OpenAIModelFamily.GPT52_NANO,
-    OpenAIModelFamily.GPT52_CODEX,
-)
-OPENAI_GPT53_FAMILIES = (
-    OpenAIModelFamily.GPT53,
-    OpenAIModelFamily.GPT53_MINI,
-    OpenAIModelFamily.GPT53_NANO,
-    OpenAIModelFamily.GPT53_CODEX,
-)
-OPENAI_GPT54_FAMILIES = (
-    OpenAIModelFamily.GPT54,
-    OpenAIModelFamily.GPT54_MINI,
-    OpenAIModelFamily.GPT54_NANO,
-)
-OPENAI_THINKING_SUPPORTED_MODELS = (
-    *OPENAI_GPT5_FAMILIES,
-    *OPENAI_GPT51_FAMILIES,
-    *OPENAI_GPT52_FAMILIES,
-    *OPENAI_GPT53_FAMILIES,
-    *OPENAI_GPT54_FAMILIES,
-)
-OPENAI_MINIMAL_THINKING_SUPPORTED_MODELS = OPENAI_GPT5_FAMILIES
-OPENAI_OFF_THINKING_SUPPORTED_MODELS = (
-    *OPENAI_GPT51_FAMILIES,
-    *OPENAI_GPT52_FAMILIES,
-    *OPENAI_GPT53_FAMILIES,
-    *OPENAI_GPT54_FAMILIES,
-)
-OPENAI_GPT5_SAMPLING_SUPPORTED_MODELS = (
-    OpenAIModelFamily.GPT52,
-    OpenAIModelFamily.GPT52_MINI,
-    OpenAIModelFamily.GPT52_NANO,
-    OpenAIModelFamily.GPT54,
-    OpenAIModelFamily.GPT54_MINI,
-    OpenAIModelFamily.GPT54_NANO,
-)
+def _normalize_openai_model(model: str) -> str:
+    if model.startswith("openai/"):
+        return model[len("openai/") :]
+    return model
+
+
+class OpenAIFamilies(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    gpt_oss_default_thinking_level: ThinkingLevel = ThinkingLevel.LOW
+
+    gpt5: tuple[OpenAIModelFamily, ...] = (
+        OpenAIModelFamily.GPT5,
+        OpenAIModelFamily.GPT5_MINI,
+        OpenAIModelFamily.GPT5_NANO,
+    )
+    gpt51: tuple[OpenAIModelFamily, ...] = (
+        OpenAIModelFamily.GPT51,
+        OpenAIModelFamily.GPT51_MINI,
+        OpenAIModelFamily.GPT51_NANO,
+        OpenAIModelFamily.GPT51_CODEX,
+        OpenAIModelFamily.GPT51_CODEX_MINI,
+        OpenAIModelFamily.GPT51_CODEX_MAX,
+    )
+    gpt52: tuple[OpenAIModelFamily, ...] = (
+        OpenAIModelFamily.GPT52,
+        OpenAIModelFamily.GPT52_MINI,
+        OpenAIModelFamily.GPT52_NANO,
+        OpenAIModelFamily.GPT52_CODEX,
+    )
+    gpt53: tuple[OpenAIModelFamily, ...] = (
+        OpenAIModelFamily.GPT53,
+        OpenAIModelFamily.GPT53_MINI,
+        OpenAIModelFamily.GPT53_NANO,
+        OpenAIModelFamily.GPT53_CODEX,
+    )
+    gpt54: tuple[OpenAIModelFamily, ...] = (
+        OpenAIModelFamily.GPT54,
+        OpenAIModelFamily.GPT54_MINI,
+        OpenAIModelFamily.GPT54_NANO,
+    )
+    gpt_oss: tuple[OpenAIModelFamily, ...] = (
+        OpenAIModelFamily.GPT_OSS_20B,
+        OpenAIModelFamily.GPT_OSS_120B,
+    )
+    sampling_with_reasoning_off: tuple[OpenAIModelFamily, ...] = (
+        OpenAIModelFamily.GPT52,
+        OpenAIModelFamily.GPT52_MINI,
+        OpenAIModelFamily.GPT52_NANO,
+        OpenAIModelFamily.GPT54,
+        OpenAIModelFamily.GPT54_MINI,
+        OpenAIModelFamily.GPT54_NANO,
+    )
+
+    @property
+    def thinking_supported(self) -> tuple[OpenAIModelFamily, ...]:
+        return (
+            *self.gpt5,
+            *self.gpt51,
+            *self.gpt52,
+            *self.gpt53,
+            *self.gpt54,
+            *self.gpt_oss,
+        )
+
+    @property
+    def minimal_thinking_supported(self) -> tuple[OpenAIModelFamily, ...]:
+        return self.gpt5
+
+    @property
+    def off_thinking_supported(self) -> tuple[OpenAIModelFamily, ...]:
+        return (*self.gpt51, *self.gpt52, *self.gpt53, *self.gpt54)
+
+    def matches_any(
+        self, model: str, families: tuple[OpenAIModelFamily, ...]
+    ) -> bool:
+        return model_matches_any_family(model, families)
+
+    def supports_configurable_thinking(self, model: str) -> bool:
+        return self.matches_any(model, self.thinking_supported)
+
+    def supports_minimal_thinking(self, model: str) -> bool:
+        return self.matches_any(model, self.minimal_thinking_supported)
+
+    def supports_off_thinking(self, model: str) -> bool:
+        return self.matches_any(model, self.off_thinking_supported)
+
+    def supports_gpt_oss_thinking(self, model: str) -> bool:
+        return self.matches_any(model, self.gpt_oss)
+
+    def supports_sampling_with_reasoning_off(self, model: str) -> bool:
+        return self.matches_any(model, self.sampling_with_reasoning_off)
+
+    def control_mode(self, model: str) -> ControlMode:
+        if self.supports_configurable_thinking(model):
+            return ControlMode.OPENAI_EFFORT
+        return ControlMode.UNSUPPORTED
+
+    def supported_thinking_levels(
+        self, model: str
+    ) -> tuple[ThinkingLevel, ...]:
+        if not self.supports_configurable_thinking(model):
+            return (ThinkingLevel.NA,)
+        if self.supports_gpt_oss_thinking(model):
+            return (
+                ThinkingLevel.LOW,
+                ThinkingLevel.MEDIUM,
+                ThinkingLevel.HIGH,
+            )
+        levels: list[ThinkingLevel] = []
+        if self.supports_off_thinking(model):
+            levels.append(ThinkingLevel.OFF)
+        elif self.supports_minimal_thinking(model):
+            levels.append(ThinkingLevel.MINIMAL)
+        levels.extend(
+            [ThinkingLevel.LOW, ThinkingLevel.MEDIUM, ThinkingLevel.HIGH]
+        )
+        return tuple(levels)
+
+    def default_thinking_level(self, model: str) -> ThinkingLevel:
+        if self.supports_gpt_oss_thinking(model):
+            return self.gpt_oss_default_thinking_level
+        levels = self.supported_thinking_levels(model)
+        for level in (
+            ThinkingLevel.OFF,
+            ThinkingLevel.MINIMAL,
+            ThinkingLevel.LOW,
+        ):
+            if level in levels:
+                return level
+        return ThinkingLevel.NA
+
+    def supported_effort_levels(self, model: str) -> tuple[EffortSpec, ...]:
+        del model
+        return ()
+
+    def default_effort(self, model: str) -> EffortSpec:
+        del model
+        return EffortSpec.NA
+
+
+OPENAI_FAMILIES = OpenAIFamilies()

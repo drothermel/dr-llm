@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.catalog.service import ModelCatalogService
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
-from dr_llm.llm import build_default_registry
+from dr_llm.llm import ControlMode, build_default_registry
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ class ModelEntryResponse(BaseModel):
     display_name: str | None = None
     context_window: int | None = None
     max_output_tokens: int | None = None
-    supports_reasoning: bool | None = None
+    control_mode: ControlMode | None = None
     supports_vision: bool | None = None
     source_quality: str = "live"
 
@@ -70,7 +70,7 @@ def _entry_to_response(entry: ModelCatalogEntry) -> ModelEntryResponse:
         display_name=entry.display_name,
         context_window=entry.context_window,
         max_output_tokens=entry.max_output_tokens,
-        supports_reasoning=entry.supports_reasoning,
+        control_mode=entry.control_mode,
         supports_vision=entry.supports_vision,
         source_quality=entry.source_quality,
     )

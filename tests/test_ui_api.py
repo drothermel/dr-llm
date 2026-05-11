@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
+from dr_llm.llm import ControlMode, ProviderName
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,11 +9,9 @@ from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.impls.openrouter.orchestrator import (
     OpenRouterOrchestrator,
 )
+from dr_llm.llm.providers.impls.openrouter.provider import OpenRouterProvider
 from dr_llm.llm.providers.transports.openai_compat.config import (
     OpenAICompatConfig,
-)
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
 )
 from tests.conftest import FakeOrchestrator
 from ui.api import main as ui_api
@@ -54,13 +52,13 @@ def test_models_endpoint_uses_orchestrator_catalog_result(
         ModelCatalogEntry(
             provider=ProviderName.OPENROUTER,
             model="deepseek/deepseek-chat-v3.1",
-            supports_reasoning=False,
+            control_mode=ControlMode.UNSUPPORTED,
             source_quality="live",
         ),
         ModelCatalogEntry(
             provider=ProviderName.OPENROUTER,
             model="deepseek/deepseek-chat",
-            supports_reasoning=True,
+            control_mode=ControlMode.OPENROUTER_TOGGLE,
             source_quality="live",
         ),
         ModelCatalogEntry(
@@ -89,15 +87,15 @@ def test_models_endpoint_uses_orchestrator_catalog_result(
         "deepseek/deepseek-chat",
         "unknown/model",
     ]
-    assert payload["models"][0]["supports_reasoning"] is False
-    assert payload["models"][1]["supports_reasoning"] is True
+    assert payload["models"][0]["control_mode"] == "unsupported"
+    assert payload["models"][1]["control_mode"] == "openrouter_toggle"
 
 
 def test_openrouter_static_models_come_from_orchestrator_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     orchestrator = OpenRouterOrchestrator(
-        OpenAICompatProvider(
+        OpenRouterProvider(
             config=OpenAICompatConfig(
                 name=ProviderName.OPENROUTER,
                 base_url="https://openrouter.ai/api/v1",

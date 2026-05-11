@@ -8,7 +8,7 @@ from dr_llm.llm.config import LlmConfig, SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
-    ReasoningMode,
+    ControlMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.core.authoring import (
@@ -16,13 +16,10 @@ from dr_llm.llm.providers.core.authoring import (
     validate_budget_range,
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.anthropic.capabilities import (
-    ANTHROPIC_BUDGET_MAX_TOKENS,
-    ANTHROPIC_BUDGET_MIN_TOKENS,
-    anthropic_reasoning_mode,
-)
-from dr_llm.llm.providers.impls.anthropic.effort import (
-    supported_effort_levels_for_anthropic,
+from dr_llm.llm.providers.impls.anthropic.families import (
+    ANTHROPIC_FAMILIES,
+    ANTHROPIC_THINKING_MAX_BUDGET_TOKENS,
+    ANTHROPIC_THINKING_MIN_BUDGET_TOKENS,
 )
 
 type _AnthropicBudgetThinkingLevel = Literal[
@@ -49,17 +46,17 @@ class _AnthropicBaseConfig(BaseModel):
     max_tokens: int | None = None
     sampling: SamplingControls | None = None
 
-    def _expected_mode(self) -> ReasoningMode:
+    def _expected_control_mode(self) -> ControlMode:
         raise NotImplementedError
 
     @model_validator(mode="after")
     def _validate_model_family(self) -> _AnthropicBaseConfig:
-        mode = anthropic_reasoning_mode(self.model)
-        expected_mode = self._expected_mode()
+        mode = ANTHROPIC_FAMILIES.control_mode(self.model)
+        expected_mode = self._expected_control_mode()
         if mode != expected_mode:
             raise ValueError(
                 f"{type(self).__name__} requires "
-                f"provider={self.provider!r} reasoning mode "
+                f"provider={self.provider!r} control mode "
                 f"{expected_mode.value!r}; got {mode.value!r} "
                 f"for model={self.model!r}"
             )
@@ -90,16 +87,16 @@ class _AnthropicBaseConfig(BaseModel):
 
 
 class AnthropicLegacyConfig(_AnthropicBaseConfig):
-    def _expected_mode(self) -> ReasoningMode:
-        return ReasoningMode.UNSUPPORTED
+    def _expected_control_mode(self) -> ControlMode:
+        return ControlMode.UNSUPPORTED
 
 
 class AnthropicBudgetConfig(_AnthropicBaseConfig):
     thinking_level: _AnthropicBudgetThinkingLevel | None = None
     budget_tokens: int | None = None
 
-    def _expected_mode(self) -> ReasoningMode:
-        return ReasoningMode.ANTHROPIC_BUDGET
+    def _expected_control_mode(self) -> ControlMode:
+        return ControlMode.ANTHROPIC_BUDGET
 
     @model_validator(mode="after")
     def _validate_budget(self) -> AnthropicBudgetConfig:
@@ -123,8 +120,8 @@ class AnthropicEffortConfig(_AnthropicBaseConfig):
     effort: _AnthropicEffort | None = None
     thinking_level: _AnthropicEffortThinkingLevel | None = None
 
-    def _expected_mode(self) -> ReasoningMode:
-        return ReasoningMode.ANTHROPIC_EFFORT
+    def _expected_control_mode(self) -> ControlMode:
+        return ControlMode.ANTHROPIC_EFFORT
 
     @model_validator(mode="after")
     def _validate_effort(self) -> AnthropicEffortConfig:
@@ -148,8 +145,8 @@ class AnthropicEffortAndBudgetConfig(_AnthropicBaseConfig):
     thinking_level: _AnthropicBudgetThinkingLevel | None = None
     budget_tokens: int | None = None
 
-    def _expected_mode(self) -> ReasoningMode:
-        return ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET
+    def _expected_control_mode(self) -> ControlMode:
+        return ControlMode.ANTHROPIC_EFFORT_AND_BUDGET
 
     @model_validator(mode="after")
     def _validate_controls(self) -> AnthropicEffortAndBudgetConfig:
@@ -187,7 +184,7 @@ def _validate_anthropic_effort(
 ) -> None:
     if effort is None:
         return
-    allowed = supported_effort_levels_for_anthropic(model)
+    allowed = ANTHROPIC_FAMILIES.supported_effort_levels(model)
     if effort in allowed:
         return
     allowed_values = ", ".join(level.value for level in allowed)
@@ -218,6 +215,6 @@ def _validate_anthropic_budget(
         provider=provider,
         model=model,
         budget_tokens=budget_tokens,
-        min_tokens=ANTHROPIC_BUDGET_MIN_TOKENS,
-        max_tokens=ANTHROPIC_BUDGET_MAX_TOKENS,
+        min_tokens=ANTHROPIC_THINKING_MIN_BUDGET_TOKENS,
+        max_tokens=ANTHROPIC_THINKING_MAX_BUDGET_TOKENS,
     )

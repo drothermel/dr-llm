@@ -8,14 +8,8 @@ from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.names import EffortSpec, ProviderName, ThinkingLevel
 from dr_llm.llm.providers.core.authoring import build_provider_config
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.anthropic.capabilities import (
-    anthropic_supports_adaptive_thinking,
-)
-from dr_llm.llm.providers.impls.claude_code.capabilities import (
-    supported_effort_levels_for_claude_code,
-)
 from dr_llm.llm.providers.impls.claude_code.families import (
-    CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES,
+    CLAUDE_CODE_FAMILIES,
     ClaudeCodeModelFamily,
 )
 
@@ -69,7 +63,7 @@ class ClaudeCodeLegacyConfig(_ClaudeCodeBaseConfig):
                 f"ClaudeCodeLegacyConfig does not support adaptive model "
                 f"{self.model!r}; use ClaudeCodeAdaptiveConfig"
             )
-        if supported_effort_levels_for_claude_code(self.model):
+        if CLAUDE_CODE_FAMILIES.supported_effort_levels(self.model):
             raise ValueError(
                 f"ClaudeCodeLegacyConfig does not support effort model "
                 f"{self.model!r}; use ClaudeCodeEffortConfig"
@@ -98,7 +92,7 @@ class ClaudeCodeEffortConfig(_ClaudeCodeBaseConfig):
 
     @model_validator(mode="after")
     def _validate_effort(self) -> ClaudeCodeEffortConfig:
-        allowed = supported_effort_levels_for_claude_code(self.model)
+        allowed = CLAUDE_CODE_FAMILIES.supported_effort_levels(self.model)
         if not allowed:
             raise ValueError(
                 f"ClaudeCodeEffortConfig does not support model={self.model!r}"
@@ -117,11 +111,8 @@ class ClaudeCodeEffortConfig(_ClaudeCodeBaseConfig):
 
 
 def _is_claude_code_model(model: str) -> bool:
-    return any(
-        model.startswith(family)
-        for family in CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES
-    )
+    return CLAUDE_CODE_FAMILIES.is_supported_model(model)
 
 
 def _is_adaptive_model(model: str) -> bool:
-    return anthropic_supports_adaptive_thinking(model)
+    return CLAUDE_CODE_FAMILIES.supports_adaptive_thinking(model)

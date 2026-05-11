@@ -11,12 +11,13 @@ from dr_llm.llm import (
     GlmReasoning,
     GoogleReasoning,
     OpenAIReasoning,
+    OpenRouterEffortLevel,
     OpenRouterReasoning,
     ProviderName,
-    ReasoningControls,
     ThinkingLevel,
     build_default_registry,
 )
+from dr_llm.llm.providers.core.controls import ProviderControls
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 
 
@@ -31,8 +32,8 @@ def registry() -> Generator[ProviderRegistry]:
 
 def controls(
     registry: ProviderRegistry, provider: ProviderName, model: str
-) -> ReasoningControls:
-    return registry.get(provider).reasoning_controls(model)
+) -> ProviderControls:
+    return registry.get(provider).controls(model)
 
 
 def test_openai_controls_prefer_minimal_or_off_defaults(
@@ -53,6 +54,17 @@ def test_openai_controls_prefer_minimal_or_off_defaults(
     assert gpt54.default_thinking_level == ThinkingLevel.OFF
     assert gpt54.default_reasoning == OpenAIReasoning(
         thinking_level=ThinkingLevel.OFF
+    )
+
+    gpt_oss = controls(registry, ProviderName.OPENAI, "gpt-oss-20b")
+    assert gpt_oss.supported_thinking_levels == (
+        ThinkingLevel.LOW,
+        ThinkingLevel.MEDIUM,
+        ThinkingLevel.HIGH,
+    )
+    assert gpt_oss.default_thinking_level == ThinkingLevel.LOW
+    assert gpt_oss.default_reasoning == OpenAIReasoning(
+        thinking_level=ThinkingLevel.LOW
     )
 
 
@@ -84,13 +96,13 @@ def test_reasoning_for_budget_level_requires_explicit_tokens(
 ) -> None:
     orchestrator = registry.get(ProviderName.GOOGLE)
     with pytest.raises(ValueError, match="budget thinking requires"):
-        orchestrator.reasoning_for_thinking_level(
-            model="gemini-2.5-flash",
+        orchestrator.controls("gemini-2.5-flash").reasoning_for_thinking_level(
             thinking_level=ThinkingLevel.BUDGET,
         )
 
-    assert orchestrator.reasoning_for_thinking_level(
-        model="gemini-2.5-flash",
+    assert orchestrator.controls(
+        "gemini-2.5-flash"
+    ).reasoning_for_thinking_level(
         thinking_level=ThinkingLevel.BUDGET,
         budget_tokens=128,
     ) == GoogleReasoning(
@@ -162,20 +174,30 @@ def test_openrouter_controls_follow_curated_policy(
 ) -> None:
     orchestrator = registry.get(ProviderName.OPENROUTER)
     assert (
-        orchestrator.reasoning_controls(
-            "deepseek/deepseek-chat"
-        ).default_reasoning
+        orchestrator.controls("deepseek/deepseek-chat").default_reasoning
         is None
     )
-    assert orchestrator.reasoning_controls(
+    assert orchestrator.controls(
         "deepseek/deepseek-chat-v3.1"
     ).default_reasoning == OpenRouterReasoning(enabled=False)
-    assert orchestrator.reasoning_controls(
+    assert orchestrator.controls(
         "deepseek/deepseek-r1"
     ).default_reasoning == OpenRouterReasoning(enabled=True)
-    assert orchestrator.reasoning_controls(
+    assert orchestrator.controls(
         "openai/gpt-oss-20b"
-    ).default_reasoning == OpenRouterReasoning(effort="low")
+    ).default_reasoning == OpenRouterReasoning(
+        effort=OpenRouterEffortLevel.LOW
+    )
+    assert orchestrator.controls(
+        "openai/gpt-5-nano"
+    ).default_reasoning == OpenRouterReasoning(
+        effort=OpenRouterEffortLevel.LOW
+    )
+    assert orchestrator.controls(
+        "openai/gpt-5.4-nano"
+    ).default_reasoning == OpenRouterReasoning(
+        effort=OpenRouterEffortLevel.LOW
+    )
 
 
 def test_reasoning_controls_model_collects_all_defaults(
@@ -183,7 +205,6 @@ def test_reasoning_controls_model_collects_all_defaults(
 ) -> None:
     google = controls(registry, ProviderName.GOOGLE, "gemini-2.5-flash")
 
-    assert isinstance(google, ReasoningControls)
     assert google.supported_thinking_levels == (
         ThinkingLevel.ADAPTIVE,
         ThinkingLevel.OFF,

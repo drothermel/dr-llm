@@ -15,13 +15,8 @@ from dr_llm.llm.providers.core.authoring import (
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 from dr_llm.llm.providers.impls.openai.families import (
-    OPENAI_GPT51_FAMILIES,
-    OPENAI_GPT52_FAMILIES,
-    OPENAI_GPT53_FAMILIES,
-    OPENAI_GPT54_FAMILIES,
-    OPENAI_GPT5_FAMILIES,
-    OPENAI_GPT5_SAMPLING_SUPPORTED_MODELS,
-    OPENAI_THINKING_SUPPORTED_MODELS,
+    OPENAI_FAMILIES,
+    OpenAIFamilies,
     OpenAIModelFamily,
 )
 
@@ -37,6 +32,11 @@ type _OpenAIOffThinkingLevel = Literal[
     ThinkingLevel.MEDIUM,
     ThinkingLevel.HIGH,
 ]
+type _OpenAIGptOssThinkingLevel = Literal[
+    ThinkingLevel.LOW,
+    ThinkingLevel.MEDIUM,
+    ThinkingLevel.HIGH,
+]
 
 
 class _OpenAIBaseConfig(BaseModel):
@@ -47,6 +47,7 @@ class _OpenAIBaseConfig(BaseModel):
     max_tokens: int | None = None
 
     _families: ClassVar[tuple[OpenAIModelFamily, ...]] = ()
+    _provider_families: ClassVar[OpenAIFamilies] = OPENAI_FAMILIES
 
     @model_validator(mode="after")
     def _validate_model_family(self) -> _OpenAIBaseConfig:
@@ -90,7 +91,7 @@ class OpenAILegacyConfig(BaseModel):
         reject_model_family(
             provider=self.provider,
             model=self.model,
-            families=OPENAI_THINKING_SUPPORTED_MODELS,
+            families=OPENAI_FAMILIES.thinking_supported,
             config_name=type(self).__name__,
         )
         return self
@@ -108,7 +109,7 @@ class OpenAILegacyConfig(BaseModel):
 
 
 class OpenAIGpt5Config(_OpenAIBaseConfig):
-    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = OPENAI_GPT5_FAMILIES
+    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = OPENAI_FAMILIES.gpt5
 
     thinking_level: _OpenAIMinimalThinkingLevel | None = None
 
@@ -117,7 +118,7 @@ class OpenAIGpt5Config(_OpenAIBaseConfig):
 
 
 class OpenAIGpt51Config(_OpenAIBaseConfig):
-    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = OPENAI_GPT51_FAMILIES
+    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = OPENAI_FAMILIES.gpt51
 
     thinking_level: _OpenAIOffThinkingLevel | None = None
 
@@ -126,7 +127,7 @@ class OpenAIGpt51Config(_OpenAIBaseConfig):
 
 
 class OpenAIGpt52Config(_OpenAIBaseConfig):
-    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = OPENAI_GPT52_FAMILIES
+    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = OPENAI_FAMILIES.gpt52
 
     thinking_level: _OpenAIOffThinkingLevel | None = None
     sampling: SamplingControls | None = None
@@ -143,7 +144,7 @@ class OpenAIGpt52Config(_OpenAIBaseConfig):
                 "thinking_level='off'"
             )
         if not model_matches_any_family(
-            self.model, OPENAI_GPT5_SAMPLING_SUPPORTED_MODELS
+            self.model, self._provider_families.sampling_with_reasoning_off
         ):
             reject_sampling(
                 provider=self.provider,
@@ -161,7 +162,7 @@ class OpenAIGpt52Config(_OpenAIBaseConfig):
 
 
 class OpenAIGpt53Config(_OpenAIBaseConfig):
-    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = OPENAI_GPT53_FAMILIES
+    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = OPENAI_FAMILIES.gpt53
 
     thinking_level: _OpenAIOffThinkingLevel | None = None
 
@@ -170,7 +171,7 @@ class OpenAIGpt53Config(_OpenAIBaseConfig):
 
 
 class OpenAIGpt54Config(_OpenAIBaseConfig):
-    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = OPENAI_GPT54_FAMILIES
+    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = OPENAI_FAMILIES.gpt54
 
     thinking_level: _OpenAIOffThinkingLevel | None = None
     sampling: SamplingControls | None = None
@@ -187,7 +188,7 @@ class OpenAIGpt54Config(_OpenAIBaseConfig):
                 "thinking_level='off'"
             )
         if not model_matches_any_family(
-            self.model, OPENAI_GPT5_SAMPLING_SUPPORTED_MODELS
+            self.model, self._provider_families.sampling_with_reasoning_off
         ):
             reject_sampling(
                 provider=self.provider,
@@ -202,3 +203,14 @@ class OpenAIGpt54Config(_OpenAIBaseConfig):
 
     def _sampling(self) -> SamplingControls | None:
         return self.sampling
+
+
+class OpenAIGptOssConfig(_OpenAIBaseConfig):
+    _families: ClassVar[tuple[OpenAIModelFamily, ...]] = (
+        OPENAI_FAMILIES.gpt_oss
+    )
+
+    thinking_level: _OpenAIGptOssThinkingLevel | None = None
+
+    def _thinking_level(self) -> ThinkingLevel | None:
+        return self.thinking_level

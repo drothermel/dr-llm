@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from dr_llm.llm import AnthropicReasoning, EffortSpec, ThinkingLevel
+from dr_llm.llm import (
+    AnthropicReasoning,
+    EffortSpec,
+    ProviderName,
+    ThinkingLevel,
+)
 from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
 )
 from dr_llm.llm.providers.impls.minimax.provider import (
-    MINIMAX_BASE_URL,
-    MINIMAX_PROVIDER_NAME,
+    MiniMaxUrls,
     MiniMaxProvider,
 )
 from tests.conftest import make_request
@@ -26,8 +30,8 @@ _MOCK_RESPONSE: dict[str, Any] = {
 
 def _minimax_test_config() -> AnthropicProviderConfig:
     return AnthropicProviderConfig(
-        name=MINIMAX_PROVIDER_NAME,
-        base_url=MINIMAX_BASE_URL,
+        name=ProviderName.MINIMAX,
+        base_url=MiniMaxUrls.MESSAGES_API,
         api_key="test-key",
     )
 
@@ -37,7 +41,7 @@ def test_minimax_serializes_effort_without_thinking_payload() -> None:
     adapter = MiniMaxProvider(config=_minimax_test_config(), client=client)
 
     request = make_request(
-        provider=MINIMAX_PROVIDER_NAME,
+        provider=ProviderName.MINIMAX,
         model="MiniMax-M2.7",
         effort=EffortSpec.HIGH,
         reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.NA),
@@ -45,7 +49,7 @@ def test_minimax_serializes_effort_without_thinking_payload() -> None:
     result = adapter.generate(request)
 
     assert result.text == "done"
-    assert captured["url"] == MINIMAX_BASE_URL
+    assert captured["url"] == MiniMaxUrls.MESSAGES_API
     assert captured["payload"]["output_config"] == {"effort": "high"}
     assert "thinking" not in captured["payload"]
     assert "max_tokens" not in captured["payload"]
@@ -56,7 +60,7 @@ def test_minimax_serializes_optional_max_tokens_when_present() -> None:
     adapter = MiniMaxProvider(config=_minimax_test_config(), client=client)
 
     request = make_request(
-        provider=MINIMAX_PROVIDER_NAME,
+        provider=ProviderName.MINIMAX,
         model="MiniMax-M2.5",
         max_tokens=2048,
         effort=EffortSpec.MAX,

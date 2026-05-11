@@ -5,11 +5,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from dr_llm.llm.providers.concepts.model_family import (
+    ModelFamily,
+    model_matches_any_family,
+)
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
 from dr_llm.llm.providers.transports.api_config import resolve_api_key
-from dr_llm.llm.providers.transports.openai_compat.reasoning import (
-    OpenAICompatReasoningConfig,
-)
 from dr_llm.llm.request import LlmRequest, Message
 
 if TYPE_CHECKING:
@@ -19,7 +20,9 @@ if TYPE_CHECKING:
 
 
 class OpenAICompatRequest(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", arbitrary_types_allowed=True
+    )
 
     provider: str = Field(exclude=True)
     model: str
@@ -31,7 +34,9 @@ class OpenAICompatRequest(BaseModel):
     extra_body: dict[str, Any] = Field(default_factory=dict)
     base_url: str = Field(exclude=True)
     chat_path: str = Field(exclude=True)
-    max_completion_token_model_prefixes: tuple[str, ...] = Field(exclude=True)
+    max_completion_token_model_families: tuple[ModelFamily, ...] = Field(
+        exclude=True
+    )
     api_key_env: str = Field(exclude=True)
     api_key: str = Field(exclude=True, repr=False)
     idempotency_key: str = Field(exclude=True)
@@ -44,14 +49,11 @@ class OpenAICompatRequest(BaseModel):
         cls,
         request: LlmRequest,
         config: OpenAICompatConfig,
+        *,
+        reasoning_effort: str | None = None,
+        extra_body: dict[str, Any] | None = None,
+        warnings: list[ReasoningWarning] | None = None,
     ) -> OpenAICompatRequest:
-        reasoning_mapping = OpenAICompatReasoningConfig.from_base(
-            request.reasoning,
-            provider=request.provider,
-            model=request.model,
-        )
-        reasoning_effort = reasoning_mapping.reasoning_effort
-        extra_body = reasoning_mapping.extra_body
         return cls(
             provider=request.provider,
             model=request.model,
@@ -60,16 +62,16 @@ class OpenAICompatRequest(BaseModel):
             top_p=request.sampling_top_p,
             max_tokens=request.max_tokens,
             reasoning_effort=reasoning_effort,
-            extra_body=extra_body,
+            extra_body=extra_body or {},
             base_url=config.base_url,
             chat_path=config.chat_path,
-            max_completion_token_model_prefixes=(
-                config.max_completion_token_model_prefixes
+            max_completion_token_model_families=(
+                config.max_completion_token_model_families
             ),
             api_key_env=config.api_key_env,
             api_key=resolve_api_key(config, label=request.provider),
             idempotency_key=cls._resolve_idempotency_key(request=request),
-            warnings=reasoning_mapping.warnings,
+            warnings=warnings or [],
         )
 
     @staticmethod
@@ -112,7 +114,6 @@ class OpenAICompatRequest(BaseModel):
         return payload
 
     def _uses_max_completion_tokens(self) -> bool:
-        return any(
-            self.model == prefix or self.model.startswith(f"{prefix}-")
-            for prefix in self.max_completion_token_model_prefixes
+        return model_matches_any_family(
+            self.model, self.max_completion_token_model_families
         )

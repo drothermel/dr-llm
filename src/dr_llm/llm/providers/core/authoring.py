@@ -5,8 +5,11 @@ from typing import TYPE_CHECKING, Protocol
 
 from dr_llm.llm.config import LlmConfig, SamplingControls
 from dr_llm.llm.names import EffortSpec, ThinkingLevel
+from dr_llm.llm.providers.concepts.model_family import (
+    ModelFamily,
+    model_matches_any_family,
+)
 from dr_llm.llm.providers.concepts.reasoning import ReasoningSpec
-from dr_llm.llm.providers.concepts.thinking_utils import matches_family
 
 if TYPE_CHECKING:
     from dr_llm.llm.names import ProviderName
@@ -19,20 +22,16 @@ class LlmAuthoringConfig(Protocol):
     ) -> LlmConfig: ...
 
 
-def model_matches_any_family(model: str, families: Sequence[str]) -> bool:
-    return matches_family(normalized=model, families=tuple(families))
-
-
 def require_model_family(
     *,
     provider: str,
     model: str,
-    families: Sequence[str],
+    families: Sequence[ModelFamily],
     config_name: str,
 ) -> None:
     if model_matches_any_family(model, families):
         return
-    joined = ", ".join(families)
+    joined = ", ".join(str(family) for family in families)
     raise ValueError(
         f"{config_name} only supports provider={provider!r} "
         f"model families: {joined}; got model={model!r}"
@@ -43,12 +42,12 @@ def reject_model_family(
     *,
     provider: str,
     model: str,
-    families: Sequence[str],
+    families: Sequence[ModelFamily],
     config_name: str,
 ) -> None:
     if not model_matches_any_family(model, families):
         return
-    joined = ", ".join(families)
+    joined = ", ".join(str(family) for family in families)
     raise ValueError(
         f"{config_name} does not support provider={provider!r} "
         f"model families: {joined}; got model={model!r}"

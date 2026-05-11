@@ -72,12 +72,14 @@ provider/model choices, setup, cleanup, and progress output.
 | `scripts/demo-pool-providers.py` | Query every available provider and store one result per provider/model in a typed pool. | Docker plus at least one API key or supported CLI tool. |
 | `scripts/demo-pool-fill.py` | Seed an `(llm_config, prompt)` grid, fill it with workers, and inspect stored responses. | OpenAI/Google API keys, plus Docker or `--dsn` for Postgres. |
 | `scripts/demo_thinking_and_effort.py` | Live-check provider-specific reasoning and effort validation. | API keys or CLI tools for the providers under test. |
+| `nbs/hit_providers.py` | Manually send prompts through curated provider configs and save response history. | API keys for the selected providers; writes optional logs under `logs/`. |
 
 ```bash
 uv run python scripts/demo-providers.py
 uv run python scripts/demo-pool-providers.py --help
 uv run python scripts/demo-pool-fill.py --help
 uv run python scripts/demo_thinking_and_effort.py --provider openai
+uv run marimo run nbs/hit_providers.py
 ```
 
 ## Available Providers
@@ -94,11 +96,22 @@ uv run python scripts/demo_thinking_and_effort.py --provider openai
 | `claude-code` | Claude Code CLI (headless) | `claude` executable |
 | `kimi-code` | Kimi Code API (Anthropic-compatible) | `KIMI_API_KEY` |
 
+Provider implementation details live under
+`src/dr_llm/llm/providers/impls/<provider>/`. Provider API, catalog, and docs
+URLs are collected in provider-specific `<Provider>Urls` enums. Shared API key
+environment variable names live in
+`src/dr_llm/llm/providers/names.py` as `ApiKeyNames`; the default registry only
+registers orchestrators.
+
 Headless providers shell out to CLI tools. `minimax` and `kimi-code` are direct Anthropic-compatible `/messages` API providers. Headless input shapes do not expose `temperature`, `top_p`, or `max_tokens`. `kimi-code` rejects `temperature` and `top_p`; its orchestrator supplies the provider max-token default when callers omit it.
 
 Some provider orchestrators use static fallback catalogs when a provider has no
 `/models` endpoint or live discovery is unavailable. The CLI notes when a list
 may be out of date and links to docs.
+
+Catalog entries expose a `control_mode` field plus provider-owned
+`metadata["dr_llm_controls"]` details instead of a flattened
+`supports_reasoning` flag.
 
 ## Python API
 
@@ -112,6 +125,9 @@ optional nested `SamplingControls`. Provider-specific authoring configs such as
 `OpenAIGpt5Config`, `AnthropicBudgetConfig`, `GoogleBudgetConfig`, and
 `CodexGpt54Config` encode provider and model-family constraints, then serialize
 to the common `LlmConfig` shape with `.to_llm_config()`.
+Provider control support is backed by provider-specific family capability
+models, so model matching, thinking levels, effort support, budget bounds, and
+provider defaults are defined in one inspectable data object per provider.
 
 Provider orchestrators construct requests from stored configs or caller inputs.
 Both paths run the same provider validation before generation, so persisted
@@ -125,6 +141,11 @@ API providers, omitted sampling controls default to `temperature=1.0` and
 Use `build_default_registry().get(provider).request_defaults(model)` when
 inspecting generic provider requests. It returns the orchestrator-owned defaults
 for effort, reasoning, token limits, and supported sampling controls.
+
+Use `build_default_registry().get(provider).controls(model)` when you need the
+full provider control object, including `control_mode`,
+`supported_thinking_levels`, `supported_effort_levels`, budget bounds where
+available, and provider-specific request validation.
 
 ### Calling a provider
 
@@ -185,8 +206,8 @@ dr-llm providers [--json]
 
 # Model catalog (file-based, no DB needed)
 dr-llm models sync [--provider NAME] [--verbose]
-dr-llm models list [--provider NAME] [--supports-reasoning] [--model-contains TEXT] [--json]
-dr-llm models sync-list [--provider NAME] [--supports-reasoning] [--model-contains TEXT] [--json]
+dr-llm models list [--provider NAME] [--control-mode MODE] [--model-contains TEXT] [--json]
+dr-llm models sync-list [--provider NAME] [--control-mode MODE] [--model-contains TEXT] [--json]
 dr-llm models show --provider NAME --model NAME
 
 # Query

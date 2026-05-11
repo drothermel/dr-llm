@@ -1,19 +1,25 @@
 from __future__ import annotations
 
+from enum import StrEnum
+
 import httpx
 
 from dr_llm.llm.names import ProviderName
+from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
 )
 from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
 from dr_llm.llm.providers.impls.anthropic.request import AnthropicRequest
-from dr_llm.llm.providers.impls.minimax.reasoning import MiniMaxReasoningConfig
+from dr_llm.llm.providers.impls.minimax.request_controls import (
+    MiniMaxRequestControls,
+)
 from dr_llm.llm.request import LlmRequest
 
-MINIMAX_PROVIDER_NAME = ProviderName.MINIMAX
-MINIMAX_BASE_URL = "https://api.minimax.io/anthropic/v1/messages"
-MINIMAX_API_KEY_ENV = "MINIMAX_API_KEY"
+
+class MiniMaxUrls(StrEnum):
+    MESSAGES_API = "https://api.minimax.io/anthropic/v1/messages"
+    MODELS_DOCS = "https://platform.minimax.io/docs/guides/models-intro"
 
 
 class MiniMaxProvider(AnthropicProvider):
@@ -25,9 +31,9 @@ class MiniMaxProvider(AnthropicProvider):
         super().__init__(
             config=config
             or AnthropicProviderConfig(
-                name=MINIMAX_PROVIDER_NAME,
-                base_url=MINIMAX_BASE_URL,
-                api_key_env=MINIMAX_API_KEY_ENV,
+                name=ProviderName.MINIMAX,
+                base_url=MiniMaxUrls.MESSAGES_API,
+                api_key_env=ApiKeyNames.MINIMAX,
             ),
             client=client,
         )
@@ -36,7 +42,7 @@ class MiniMaxProvider(AnthropicProvider):
         return AnthropicRequest.from_llm_request(
             request,
             self._config,
-            reasoning_mapping=MiniMaxReasoningConfig.from_base(
+            request_controls=MiniMaxRequestControls.from_reasoning(
                 request.reasoning
             ),
             require_max_tokens=False,

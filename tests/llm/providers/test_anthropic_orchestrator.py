@@ -7,7 +7,7 @@ import pytest
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
-    ReasoningMode,
+    ControlMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.concepts.reasoning import AnthropicReasoning
@@ -25,61 +25,61 @@ def orchestrator() -> Generator[AnthropicOrchestrator]:
     provider.close()
 
 
-class TestModelCapabilities:
+class TestControls:
     def test_opus_46_has_effort_strategy(
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
-        caps = orchestrator.model_capabilities("claude-opus-4-6")
-        assert EffortSpec.MAX in caps.supported_effort_levels
-        assert caps.reasoning.mode == ReasoningMode.ANTHROPIC_EFFORT
+        controls = orchestrator.controls("claude-opus-4-6")
+        assert EffortSpec.MAX in controls.supported_effort_levels
+        assert controls.control_mode == ControlMode.ANTHROPIC_EFFORT
 
     def test_sonnet_46_has_effort_strategy(
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
-        caps = orchestrator.model_capabilities("claude-sonnet-4-6")
-        assert EffortSpec.MAX not in caps.supported_effort_levels
-        assert EffortSpec.HIGH in caps.supported_effort_levels
+        controls = orchestrator.controls("claude-sonnet-4-6")
+        assert EffortSpec.MAX not in controls.supported_effort_levels
+        assert EffortSpec.HIGH in controls.supported_effort_levels
 
     def test_sonnet_46_snapshot_uses_same_family_strategy(
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
-        caps = orchestrator.model_capabilities("claude-sonnet-4-6-20261201")
-        assert EffortSpec.HIGH in caps.supported_effort_levels
-        assert caps.reasoning.mode == ReasoningMode.ANTHROPIC_EFFORT
+        controls = orchestrator.controls("claude-sonnet-4-6-20261201")
+        assert EffortSpec.HIGH in controls.supported_effort_levels
+        assert controls.control_mode == ControlMode.ANTHROPIC_EFFORT
 
     def test_opus_45_has_reasoning_strategy(
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
-        caps = orchestrator.model_capabilities("claude-opus-4-5-20251101")
-        assert caps.reasoning.mode == ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET
-        assert caps.reasoning.min_budget_tokens == 1024
+        controls = orchestrator.controls("claude-opus-4-5-20251101")
+        assert controls.control_mode == ControlMode.ANTHROPIC_EFFORT_AND_BUDGET
+        assert controls.min_budget_tokens == 1024
 
     def test_opus_45_snapshot_uses_same_effort_and_budget_strategy(
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
-        caps = orchestrator.model_capabilities("claude-opus-4-5-20261201")
-        assert EffortSpec.HIGH in caps.supported_effort_levels
-        assert caps.reasoning.mode == ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET
+        controls = orchestrator.controls("claude-opus-4-5-20261201")
+        assert EffortSpec.HIGH in controls.supported_effort_levels
+        assert controls.control_mode == ControlMode.ANTHROPIC_EFFORT_AND_BUDGET
 
     def test_sonnet_45_has_reasoning_strategy(
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
-        caps = orchestrator.model_capabilities("claude-sonnet-4-5-20241022")
-        assert caps.reasoning.mode == ReasoningMode.ANTHROPIC_BUDGET
-        assert caps.supported_effort_levels == ()
+        controls = orchestrator.controls("claude-sonnet-4-5-20241022")
+        assert controls.control_mode == ControlMode.ANTHROPIC_BUDGET
+        assert controls.supported_effort_levels == ()
 
     def test_haiku_45_has_reasoning_strategy(
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
-        caps = orchestrator.model_capabilities("claude-haiku-4-5-20241022")
-        assert caps.reasoning.mode == ReasoningMode.ANTHROPIC_BUDGET
+        controls = orchestrator.controls("claude-haiku-4-5-20241022")
+        assert controls.control_mode == ControlMode.ANTHROPIC_BUDGET
 
     def test_unknown_model_returns_none_strategy(
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
-        caps = orchestrator.model_capabilities("claude-2.1")
-        assert caps.reasoning.mode == ReasoningMode.UNSUPPORTED
-        assert caps.supported_effort_levels == ()
+        controls = orchestrator.controls("claude-2.1")
+        assert controls.control_mode == ControlMode.UNSUPPORTED
+        assert controls.supported_effort_levels == ()
 
 
 class TestValidateRequest:
