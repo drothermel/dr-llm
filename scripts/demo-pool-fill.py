@@ -25,8 +25,6 @@ The demo:
 
 from __future__ import annotations
 
-import time
-from collections.abc import Callable
 from typing import Annotated
 
 import typer
@@ -53,16 +51,14 @@ from dr_llm.pool import (
     GridCell,
     LlmPoolBackend,
     LlmPoolBackendConfig,
-    LlmPoolBackendState,
     PoolSchema,
     PoolStore,
+    drain_pool,
     make_llm_process_fn,
     seed_llm_grid,
 )
 from dr_llm.workers import (
     WorkerConfig,
-    WorkerController,
-    WorkerSnapshot,
     start_workers,
 )
 
@@ -98,49 +94,20 @@ PROMPT_AXIS: Axis[list[Message]] = Axis(
 )
 
 
-def _pool_is_idle(snapshot: WorkerSnapshot[LlmPoolBackendState]) -> bool:
-    backend_state = snapshot.backend_state
-    return backend_state is not None and backend_state.incomplete == 0
-
-
-def _drain(
-    controller: WorkerController[LlmPoolBackendState],
-    *,
-    on_change: Callable[[DemoCounts], None] | None = None,
-    poll_interval_s: float = 0.5,
-) -> WorkerSnapshot[LlmPoolBackendState]:
-    if poll_interval_s <= 0:
-        raise ValueError(f"poll_interval_s must be > 0, got {poll_interval_s}")
-    last_counts: DemoCounts | None = None
-    while True:
-        snapshot = controller.snapshot()
-        counts = DemoCounts.from_pool_snapshot(snapshot)
-        if on_change is not None and counts.changed_from(
-            last_counts, POOL_PROGRESS_FIELDS
-        ):
-            on_change(counts)
-            last_counts = counts
-        if _pool_is_idle(snapshot):
-            return snapshot
-        time.sleep(poll_interval_s)
-
-
-def _build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
-    return cell.values["prompt"], cell.values["llm_config"]
-
-
 def _seed_fill_pool(
     dsn: str,
     pool_name: str,
     num_workers: int,
     samples_per_cell: int,
 ) -> None:
+    def _build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
+        return cell.values["prompt"], cell.values["llm_config"]
+
     schema = PoolSchema.from_axis_names(pool_name, ["llm_config", "prompt"])
     runtime = DbRuntime(DbConfig(dsn=dsn))
     registry = build_default_registry()
     store = PoolStore(schema, runtime)
     store.ensure_schema()
-    controller = None
 
     try:
         seed_result = seed_llm_grid(
@@ -167,16 +134,14 @@ def _seed_fill_pool(
                 thread_name_prefix="pool-fill",
             ),
         )
-        try:
-            _drain(
-                controller,
-                on_change=lambda counts: print(
-                    f"Progress: {counts.format_line(POOL_PROGRESS_FIELDS)}"
-                ),
-            )
-        finally:
-            controller.stop()
-            final_snapshot = controller.join()
+        final_snapshot = drain_pool(
+            controller,
+            on_change=lambda snapshot: print(
+                "Progress: "
+                f"{DemoCounts.from_pool_snapshot(snapshot).format_line(POOL_PROGRESS_FIELDS)}"
+            ),
+            poll_interval_s=0.5,
+        )
 
         assert final_snapshot.backend_state is not None
         print(

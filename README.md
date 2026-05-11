@@ -131,7 +131,9 @@ The recommended way to populate a pool: declare each variant axis (LLM
 configs, prompts, datasets, ...), pass them to `seed_llm_grid`, and let
 parallel workers make the provider calls. `seed_llm_grid` walks the cross
 product, builds per-cell payloads in the shape `make_llm_process_fn` consumes,
-and bulk-inserts the unfilled sample rows in one round-trip.
+and bulk-inserts the unfilled sample rows in one round-trip. After starting
+workers, use `drain_pool` to wait until the pool has no incomplete rows while
+emitting progress snapshots.
 
 Run the maintained worker example instead of copying a README-sized snippet:
 

@@ -116,34 +116,33 @@ def availability_detail(missing: tuple[str, ...]) -> str:
     return ", ".join(missing)
 
 
-def ensure_required_providers_available(providers: list[ProviderName]) -> None:
-    registry = build_default_registry()
-    try:
-        missing: list[str] = []
-        for provider in providers:
-            status = registry.availability_status(provider)
-            if status.available:
-                continue
-            reasons: list[str] = []
-            if status.missing_env_vars:
-                reasons.append(
-                    f"missing env: {availability_detail(status.missing_env_vars)}"
-                )
-            if status.missing_executables:
-                reasons.append(
-                    "missing executable: "
-                    f"{availability_detail(status.missing_executables)}"
-                )
-            missing.append(f"{provider}: {'; '.join(reasons)}")
-        if missing:
-            print_list(
-                "Missing provider requirements:",
-                missing,
-                use_step=False,
+def ensure_required_providers_available(
+    registry: ProviderRegistry,
+    providers: list[ProviderName],
+) -> None:
+    missing: list[str] = []
+    for provider in providers:
+        status = registry.availability_status(provider)
+        if status.available:
+            continue
+        reasons: list[str] = []
+        if status.missing_env_vars:
+            reasons.append(
+                f"missing env: {availability_detail(status.missing_env_vars)}"
             )
-            raise typer.Exit(1)
-    finally:
-        registry.close()
+        if status.missing_executables:
+            reasons.append(
+                "missing executable: "
+                f"{availability_detail(status.missing_executables)}"
+            )
+        missing.append(f"{provider}: {'; '.join(reasons)}")
+    if missing:
+        print_list(
+            "Missing provider requirements:",
+            missing,
+            use_step=False,
+        )
+        raise typer.Exit(1)
 
 
 def make_request(
@@ -338,18 +337,9 @@ def print_summary(
             print(f"  {phase}: {summary.format_line(ATTEMPT_SUMMARY_FIELDS)}")
 
 
-@app.command()
-def main(
-    provider: list[str] | None = typer.Option(
-        None,
-        "--provider",
-        help=(
-            "Providers to include in the sweep. Repeatable. "
-            f"Supported: {SUPPORTED_PROVIDER_NAMES}."
-        ),
-    ),
-) -> None:
-    """Sweep curated models for provider-specific reasoning and effort support."""
+def _resolve_sweep_providers(
+    provider: list[str] | None,
+) -> list[ProviderName]:
     supported_provider_values = {
         provider.value for provider in DEMO_THINKING_SWEEP_MODELS
     }
@@ -362,22 +352,38 @@ def main(
         raise typer.BadParameter(
             f"Unsupported provider(s): {', '.join(sorted(unsupported))}"
         )
-    providers = (
-        [ProviderName(name) for name in provider]
-        if provider
-        else sorted(DEMO_THINKING_SWEEP_MODELS)
-    )
+    if provider:
+        return [ProviderName(name) for name in provider]
+    return sorted(DEMO_THINKING_SWEEP_MODELS)
 
-    ensure_required_providers_available(providers)
+
+def _run_thinking_and_effort_sweep(providers: list[ProviderName]) -> None:
     counts: dict[tuple[str, str], DemoCounts] = defaultdict(DemoCounts)
     registry = build_default_registry()
     try:
+        ensure_required_providers_available(registry, providers)
         run_model_sweep(registry, counts, providers)
         run_thinking_sweep(registry, counts, providers)
         run_effort_sweep(registry, counts, providers)
         print_summary(counts, providers)
     finally:
         registry.close()
+
+
+@app.command()
+def main(
+    provider: list[str] | None = typer.Option(
+        None,
+        "--provider",
+        help=(
+            "Providers to include in the sweep. Repeatable. "
+            f"Supported: {SUPPORTED_PROVIDER_NAMES}."
+        ),
+    ),
+) -> None:
+    """Sweep curated models for provider-specific reasoning and effort support."""
+    providers = _resolve_sweep_providers(provider)
+    _run_thinking_and_effort_sweep(providers)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ from dr_llm.workers import (
     WorkerConfig,
     WorkerController,
     WorkerSnapshot,
+    drain_until,
     start_workers,
 )
 from dr_llm.workers.backend import WorkerBackend
@@ -190,6 +191,140 @@ def _stop_controller(
 ) -> WorkerSnapshot[FakeBackendState]:
     controller.stop()
     return controller.join(timeout=5.0)
+
+
+def _raise_callback_failed(
+    _snapshot: WorkerSnapshot[FakeBackendState],
+) -> None:
+    raise RuntimeError("callback failed")
+
+
+def _raise_predicate_failed(
+    _snapshot: WorkerSnapshot[FakeBackendState],
+) -> bool:
+    raise RuntimeError("predicate failed")
+
+
+def test_drain_until_stops_and_returns_final_snapshot() -> None:
+    backend = FakeWorkerBackend(["a", "b"])
+    controller = start_workers(
+        backend,
+        process_fn=lambda item: {"item": item},
+        config=WorkerConfig(
+            num_workers=1,
+            min_poll_interval_s=0.01,
+            max_poll_interval_s=0.05,
+        ),
+    )
+
+    snapshot = drain_until(
+        controller,
+        is_done=lambda snap: (
+            snap.backend_state is not None
+            and snap.backend_state.completed == 2
+        ),
+        poll_interval_s=0.01,
+    )
+
+    assert snapshot.stop_requested is True
+    assert snapshot.counts.completed == 2
+    assert controller.final_snapshot is snapshot
+    assert snapshot.backend_state is not None
+    assert snapshot.backend_state.queued == 0
+
+
+def test_drain_until_reports_only_snapshot_key_changes() -> None:
+    backend = FakeWorkerBackend([])
+    controller = start_workers(
+        backend,
+        process_fn=lambda item: {"item": item},
+        config=WorkerConfig(
+            num_workers=1,
+            min_poll_interval_s=0.01,
+            max_poll_interval_s=0.02,
+        ),
+    )
+    seen: list[int] = []
+
+    snapshot = drain_until(
+        controller,
+        is_done=lambda snap: snap.counts.idle_polls >= 3,
+        on_change=lambda snap: seen.append(snap.worker_count),
+        snapshot_key=lambda snap: snap.worker_count,
+        poll_interval_s=0.01,
+    )
+
+    assert seen == [1]
+    assert snapshot.stop_requested is True
+
+
+def test_drain_until_stops_and_joins_when_callback_raises() -> None:
+    backend = FakeWorkerBackend([])
+    controller = start_workers(
+        backend,
+        process_fn=lambda item: {"item": item},
+        config=WorkerConfig(
+            num_workers=1,
+            min_poll_interval_s=0.01,
+            max_poll_interval_s=0.02,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="callback failed"):
+        drain_until(
+            controller,
+            is_done=lambda _snap: False,
+            on_change=_raise_callback_failed,
+            poll_interval_s=0.01,
+        )
+
+    assert controller.final_snapshot is not None
+    assert controller.final_snapshot.stop_requested is True
+
+
+def test_drain_until_stops_and_joins_when_predicate_raises() -> None:
+    backend = FakeWorkerBackend([])
+    controller = start_workers(
+        backend,
+        process_fn=lambda item: {"item": item},
+        config=WorkerConfig(
+            num_workers=1,
+            min_poll_interval_s=0.01,
+            max_poll_interval_s=0.02,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="predicate failed"):
+        drain_until(
+            controller,
+            is_done=_raise_predicate_failed,
+            poll_interval_s=0.01,
+        )
+
+    assert controller.final_snapshot is not None
+    assert controller.final_snapshot.stop_requested is True
+
+
+def test_drain_until_rejects_non_positive_poll_interval() -> None:
+    backend = FakeWorkerBackend([])
+    controller = start_workers(
+        backend,
+        process_fn=lambda item: {"item": item},
+        config=WorkerConfig(
+            num_workers=1,
+            min_poll_interval_s=0.01,
+            max_poll_interval_s=0.02,
+        ),
+    )
+    try:
+        with pytest.raises(ValueError, match="poll_interval_s must be > 0"):
+            drain_until(
+                controller,
+                is_done=lambda _snap: True,
+                poll_interval_s=0,
+            )
+    finally:
+        _stop_controller(controller)
 
 
 def test_worker_config_validation() -> None:
