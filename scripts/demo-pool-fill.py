@@ -51,6 +51,7 @@ from dr_llm.pool import (
     GridCell,
     LlmPoolBackend,
     LlmPoolBackendConfig,
+    LlmPoolBackendState,
     PoolSchema,
     PoolStore,
     drain_pool,
@@ -58,6 +59,7 @@ from dr_llm.pool import (
     seed_llm_grid,
 )
 from dr_llm.workers import (
+    WorkerSnapshot,
     WorkerConfig,
     start_workers,
 )
@@ -103,6 +105,10 @@ def _seed_fill_pool(
     def _build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
         return cell.values["prompt"], cell.values["llm_config"]
 
+    def _snapshot_progress(snapshot: WorkerSnapshot[LlmPoolBackendState]) -> None:
+        counts = DemoCounts.from_pool_snapshot(snapshot)
+        print(f"Progress: {counts.format_line(POOL_PROGRESS_FIELDS)}")
+
     schema = PoolSchema.from_axis_names(pool_name, ["llm_config", "prompt"])
     runtime = DbRuntime(DbConfig(dsn=dsn))
     registry = build_default_registry()
@@ -136,10 +142,7 @@ def _seed_fill_pool(
         )
         final_snapshot = drain_pool(
             controller,
-            on_change=lambda snapshot: print(
-                "Progress: "
-                f"{DemoCounts.from_pool_snapshot(snapshot).format_line(POOL_PROGRESS_FIELDS)}"
-            ),
+            on_change=_snapshot_progress,
             poll_interval_s=0.5,
         )
 
@@ -197,9 +200,7 @@ def _ensure_dsn_and_seed_fill_pool(
             cleanup_demo_dsn(lease)
 
     if lease.project_name is not None and not lease.should_destroy_project:
-        print(
-            f"Project '{lease.project_name}' is still running with your data."
-        )
+        print(f"Project '{lease.project_name}' is still running with your data.")
         command_hint(
             "Destroy permanently",
             "uv run dr-llm project destroy "
@@ -212,9 +213,7 @@ def main(
     dsn: Annotated[
         str | None,
         typer.Option(
-            help=(
-                "PostgreSQL DSN. If omitted, a Docker demo project is created."
-            )
+            help=("PostgreSQL DSN. If omitted, a Docker demo project is created.")
         ),
     ] = None,
     project_name: Annotated[
