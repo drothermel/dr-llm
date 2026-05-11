@@ -154,7 +154,7 @@ class GoogleLevelConfig(_GoogleBaseConfig):
             )
         allowed_levels = {
             google_literal_to_thinking_level(level)
-            for level in capabilities.google_levels
+            for level in capabilities.google_thinking_levels
         }
         if self.thinking_level not in allowed_levels:
             allowed = ", ".join(sorted(str(level) for level in allowed_levels))

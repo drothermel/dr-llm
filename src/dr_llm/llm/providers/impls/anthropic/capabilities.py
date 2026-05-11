@@ -14,49 +14,57 @@ from dr_llm.llm.providers.impls.anthropic.families import (
 ANTHROPIC_BUDGET_MIN_TOKENS = 1024
 ANTHROPIC_BUDGET_MAX_TOKENS = 128000
 
-_ANTHROPIC_BUDGET_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.ANTHROPIC_BUDGET,
-    min_budget_tokens=ANTHROPIC_BUDGET_MIN_TOKENS,
-    max_budget_tokens=ANTHROPIC_BUDGET_MAX_TOKENS,
-)
-_ANTHROPIC_SONNET_46_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.ANTHROPIC_EFFORT
-)
-_ANTHROPIC_OPUS_45_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET,
-    min_budget_tokens=ANTHROPIC_BUDGET_MIN_TOKENS,
-    max_budget_tokens=ANTHROPIC_BUDGET_MAX_TOKENS,
-)
-_ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.ANTHROPIC_EFFORT
-)
-
-ANTHROPIC_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
+_ANTHROPIC_OPUS_46_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
         family=AnthropicModelFamily.CLAUDE_OPUS_46,
-        capabilities=_ANTHROPIC_OPUS_46_CAPS,
+        capabilities=ReasoningCapabilities(
+            mode=ReasoningMode.ANTHROPIC_EFFORT
+        ),
     ),
+)
+_ANTHROPIC_SONNET_46_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
         family=AnthropicModelFamily.CLAUDE_SONNET_46,
-        capabilities=_ANTHROPIC_SONNET_46_CAPS,
+        capabilities=ReasoningCapabilities(
+            mode=ReasoningMode.ANTHROPIC_EFFORT
+        ),
     ),
+)
+_ANTHROPIC_OPUS_45_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
         family=AnthropicModelFamily.CLAUDE_OPUS_45,
-        capabilities=_ANTHROPIC_OPUS_45_CAPS,
+        capabilities=ReasoningCapabilities(
+            mode=ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET,
+            min_budget_tokens=ANTHROPIC_BUDGET_MIN_TOKENS,
+            max_budget_tokens=ANTHROPIC_BUDGET_MAX_TOKENS,
+        ),
     ),
-    *(
-        ReasoningCapabilityRule(
-            family=family, capabilities=_ANTHROPIC_BUDGET_CAPS
-        )
-        for family in ANTHROPIC_BUDGET_CAPABILITY_FAMILIES
-    ),
+)
+_ANTHROPIC_BUDGET_RULES: tuple[ReasoningCapabilityRule, ...] = tuple(
+    ReasoningCapabilityRule(
+        family=family,
+        capabilities=ReasoningCapabilities(
+            mode=ReasoningMode.ANTHROPIC_BUDGET,
+            min_budget_tokens=ANTHROPIC_BUDGET_MIN_TOKENS,
+            max_budget_tokens=ANTHROPIC_BUDGET_MAX_TOKENS,
+        ),
+    )
+    for family in ANTHROPIC_BUDGET_CAPABILITY_FAMILIES
 )
 
 
 def reasoning_capabilities_for_anthropic(
     model: str,
 ) -> ReasoningCapabilities | None:
-    return resolve_capability_rules(ANTHROPIC_CAPABILITY_RULES, model)
+    return resolve_capability_rules(
+        (
+            *_ANTHROPIC_OPUS_46_RULES,
+            *_ANTHROPIC_SONNET_46_RULES,
+            *_ANTHROPIC_OPUS_45_RULES,
+            *_ANTHROPIC_BUDGET_RULES,
+        ),
+        model,
+    )
 
 
 def anthropic_reasoning_mode(model: str) -> ReasoningMode:

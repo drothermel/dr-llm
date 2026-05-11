@@ -150,7 +150,7 @@ def _validate_google_level_mode(
 ) -> None:
     allowed_levels = {
         google_literal_to_thinking_level(level)
-        for level in capabilities.google_levels
+        for level in capabilities.google_thinking_levels
     }
     validate_allowed_thinking_levels(
         provider=ProviderName.GOOGLE,

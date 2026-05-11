@@ -30,69 +30,82 @@ class GoogleMaxBudget(IntEnum):
     GEMINI_25_PRO = 32768
 
 
-_GOOGLE_25_FLASH_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.GOOGLE_BUDGET,
-    min_budget_tokens=GoogleMinBudget.GEMINI_25_FLASH,
-    max_budget_tokens=GoogleMaxBudget.GEMINI_25_FLASH,
-    supports_dynamic=True,
+_GOOGLE_25_FLASH_RULES: tuple[ReasoningCapabilityRule, ...] = tuple(
+    ReasoningCapabilityRule(
+        family=family,
+        capabilities=ReasoningCapabilities(
+            mode=ReasoningMode.GOOGLE_BUDGET,
+            min_budget_tokens=GoogleMinBudget.GEMINI_25_FLASH,
+            max_budget_tokens=GoogleMaxBudget.GEMINI_25_FLASH,
+            supports_dynamic=True,
+        ),
+    )
+    for family in GOOGLE_25_FLASH_FAMILIES
 )
-_GOOGLE_25_FLASH_LITE_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.GOOGLE_BUDGET,
-    min_budget_tokens=GoogleMinBudget.GEMINI_25_FLASH_LITE,
-    max_budget_tokens=GoogleMaxBudget.GEMINI_25_FLASH_LITE,
-    supports_dynamic=True,
+_GOOGLE_25_FLASH_LITE_RULES: tuple[ReasoningCapabilityRule, ...] = tuple(
+    ReasoningCapabilityRule(
+        family=family,
+        capabilities=ReasoningCapabilities(
+            mode=ReasoningMode.GOOGLE_BUDGET,
+            min_budget_tokens=GoogleMinBudget.GEMINI_25_FLASH_LITE,
+            max_budget_tokens=GoogleMaxBudget.GEMINI_25_FLASH_LITE,
+            supports_dynamic=True,
+        ),
+    )
+    for family in GOOGLE_25_FLASH_LITE_FAMILIES
 )
-_GOOGLE_25_PRO_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.GOOGLE_BUDGET,
-    min_budget_tokens=GoogleMinBudget.GEMINI_25_PRO,
-    max_budget_tokens=GoogleMaxBudget.GEMINI_25_PRO,
-    supports_dynamic=True,
+_GOOGLE_25_PRO_RULES: tuple[ReasoningCapabilityRule, ...] = tuple(
+    ReasoningCapabilityRule(
+        family=family,
+        capabilities=ReasoningCapabilities(
+            mode=ReasoningMode.GOOGLE_BUDGET,
+            min_budget_tokens=GoogleMinBudget.GEMINI_25_PRO,
+            max_budget_tokens=GoogleMaxBudget.GEMINI_25_PRO,
+            supports_dynamic=True,
+        ),
+    )
+    for family in GOOGLE_25_PRO_FAMILIES
 )
-_GOOGLE_3_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.GOOGLE_LEVEL,
-    google_levels=(
-        GoogleThinkingLevel.MINIMAL,
-        GoogleThinkingLevel.LOW,
-        GoogleThinkingLevel.MEDIUM,
-        GoogleThinkingLevel.HIGH,
-    ),
+_GOOGLE_3_RULES: tuple[ReasoningCapabilityRule, ...] = tuple(
+    ReasoningCapabilityRule(
+        family=family,
+        capabilities=ReasoningCapabilities(
+            mode=ReasoningMode.GOOGLE_LEVEL,
+            google_thinking_levels=(
+                GoogleThinkingLevel.MINIMAL,
+                GoogleThinkingLevel.LOW,
+                GoogleThinkingLevel.MEDIUM,
+                GoogleThinkingLevel.HIGH,
+            ),
+        ),
+    )
+    for family in GOOGLE_3_FAMILIES
 )
-_GEMMA_4_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.GOOGLE_LEVEL,
-    google_levels=(GoogleThinkingLevel.MINIMAL, GoogleThinkingLevel.HIGH),
-)
-
-GOOGLE_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
-    *(
-        ReasoningCapabilityRule(
-            family=family, capabilities=_GOOGLE_25_FLASH_LITE_CAPS
-        )
-        for family in GOOGLE_25_FLASH_LITE_FAMILIES
-    ),
-    *(
-        ReasoningCapabilityRule(
-            family=family, capabilities=_GOOGLE_25_FLASH_CAPS
-        )
-        for family in GOOGLE_25_FLASH_FAMILIES
-    ),
-    *(
-        ReasoningCapabilityRule(
-            family=family, capabilities=_GOOGLE_25_PRO_CAPS
-        )
-        for family in GOOGLE_25_PRO_FAMILIES
-    ),
-    *(
-        ReasoningCapabilityRule(family=family, capabilities=_GOOGLE_3_CAPS)
-        for family in GOOGLE_3_FAMILIES
-    ),
-    *(
-        ReasoningCapabilityRule(family=family, capabilities=_GEMMA_4_CAPS)
-        for family in GEMMA_4_FAMILIES
-    ),
+_GEMMA_4_RULES: tuple[ReasoningCapabilityRule, ...] = tuple(
+    ReasoningCapabilityRule(
+        family=family,
+        capabilities=ReasoningCapabilities(
+            mode=ReasoningMode.GOOGLE_LEVEL,
+            google_thinking_levels=(
+                GoogleThinkingLevel.MINIMAL,
+                GoogleThinkingLevel.HIGH,
+            ),
+        ),
+    )
+    for family in GEMMA_4_FAMILIES
 )
 
 
 def reasoning_capabilities_for_google(
     model: str,
 ) -> ReasoningCapabilities | None:
-    return resolve_capability_rules(GOOGLE_CAPABILITY_RULES, model)
+    return resolve_capability_rules(
+        (
+            *_GOOGLE_25_FLASH_LITE_RULES,
+            *_GOOGLE_25_FLASH_RULES,
+            *_GOOGLE_25_PRO_RULES,
+            *_GOOGLE_3_RULES,
+            *_GEMMA_4_RULES,
+        ),
+        model,
+    )

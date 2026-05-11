@@ -70,7 +70,7 @@ class GoogleOrchestrator(BaseProviderOrchestrator):
         if reasoning.mode == ReasoningMode.GOOGLE_LEVEL:
             return tuple(
                 google_literal_to_thinking_level(level)
-                for level in reasoning.google_levels
+                for level in reasoning.google_thinking_levels
             )
         raise ValueError(
             f"unexpected reasoning mode for provider={self.name!r} "

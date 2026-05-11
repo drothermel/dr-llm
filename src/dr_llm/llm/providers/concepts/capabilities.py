@@ -19,7 +19,7 @@ class ReasoningCapabilities(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     mode: ReasoningMode = ReasoningMode.UNSUPPORTED
-    google_levels: tuple[GoogleThinkingLevel, ...] = ()
+    google_thinking_levels: tuple[GoogleThinkingLevel, ...] = ()
     min_budget_tokens: int | None = None
     max_budget_tokens: int | None = None
     supports_dynamic: bool = False
