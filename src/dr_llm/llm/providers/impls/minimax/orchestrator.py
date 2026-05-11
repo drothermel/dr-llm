@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from dr_llm.llm.catalog.fetchers.static import (
-    _MINIMAX_DOCS_URL,
-    _MINIMAX_TEXT_MODELS,
-    build_static_catalog_entries,
-)
+from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
 from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -30,6 +26,14 @@ from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
 from dr_llm.llm.request import LlmRequest
+
+_MINIMAX_DOCS_URL = "https://platform.minimax.io/docs/guides/models-intro"
+_MINIMAX_TEXT_MODELS = [
+    ("MiniMax-M2.7", "MiniMax M2.7"),
+    ("MiniMax-M2.5", "MiniMax M2.5"),
+    ("MiniMax-M2.1", "MiniMax M2.1 (legacy)"),
+    ("MiniMax-M2", "MiniMax M2 (legacy)"),
+]
 
 
 class MiniMaxOrchestrator(BaseProviderOrchestrator):

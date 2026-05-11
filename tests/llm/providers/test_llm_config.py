@@ -13,6 +13,7 @@ from dr_llm.llm import (
     KimiCodeLlmConfig,
     KimiCodeLlmRequest,
     Message,
+    OpenAILlmRequest,
     OpenAIReasoning,
     ProviderName,
     ReasoningBudget,
@@ -153,7 +154,7 @@ def test_kimi_code_request_rejects_sampling_fields() -> None:
         )
 
 
-def test_to_request() -> None:
+def test_orchestrator_build_request_applies_config_values() -> None:
     config = LlmConfig(
         provider=ProviderName.OPENAI,
         model="gpt-4.1-mini",
@@ -165,9 +166,21 @@ def test_to_request() -> None:
         Message(role="user", content="Hello"),
     ]
 
-    request = config.to_request(messages)
+    registry = build_default_registry()
+    try:
+        request = registry.get(config.provider).build_request(
+            model=config.model,
+            messages=messages,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+            effort=config.effort,
+            reasoning=config.reasoning,
+        )
+    finally:
+        registry.close()
 
     assert request.provider == ProviderName.OPENAI
+    assert isinstance(request, OpenAILlmRequest)
     assert request.model == "gpt-4.1-mini"
     assert request.messages == messages
     assert request.temperature == 0.5
@@ -178,18 +191,29 @@ def test_to_request() -> None:
     assert request.metadata == {}
 
 
-def test_to_request_with_reasoning() -> None:
+def test_orchestrator_build_request_uses_provider_reasoning_defaults() -> None:
     config = LlmConfig(
         provider=ProviderName.GOOGLE,
         model="gemini-2.5-flash",
-        reasoning=ReasoningBudget(tokens=512),
     )
     messages = [Message(role="user", content="Think about this")]
 
-    request = config.to_request(messages)
+    registry = build_default_registry()
+    try:
+        request = registry.get(config.provider).build_request(
+            model=config.model,
+            messages=messages,
+            max_tokens=config.max_tokens,
+            effort=config.effort,
+            reasoning=config.reasoning,
+        )
+    finally:
+        registry.close()
 
     assert request.reasoning is not None
-    assert request.reasoning.kind == "budget"
+    assert request.reasoning == GoogleReasoning(
+        thinking_level=ThinkingLevel.OFF
+    )
 
 
 def test_semantic_validation_is_orchestrator_owned() -> None:

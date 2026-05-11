@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
 from dr_llm.logging.sinks import emit_generation_event
 from dr_llm.llm.names import EffortSpec
-from dr_llm.llm.providers.core.base import Provider
+from dr_llm.llm.providers.core.base import ProviderTransport
 from dr_llm.llm.providers.concepts.reasoning import ReasoningSpec
 from dr_llm.llm.providers.transports.headless_config import (
     HeadlessProviderConfig,
@@ -213,7 +213,7 @@ def sanitize_io_for_logs(
     return sanitized
 
 
-class BaseHeadlessProvider(Provider):
+class BaseHeadlessProvider(ProviderTransport):
     _config: HeadlessProviderConfig
 
     def __init__(self, *, config: HeadlessProviderConfig) -> None:

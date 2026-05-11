@@ -9,7 +9,6 @@ from pydantic import ValidationError
 from dr_llm.llm import (
     EffortSpec,
     build_default_registry,
-    parse_llm_request,
     parse_reasoning_spec,
 )
 from dr_llm.logging.events import generation_log_context
@@ -74,29 +73,22 @@ def query(
         raise typer.BadParameter(str(exc)) from exc
     messages_payload = common._load_messages(messages_file, message or [])
 
-    request_payload: dict[str, object] = {
-        "provider": provider,
-        "model": model,
-        "messages": messages_payload,
-        "effort": effort,
-        "reasoning": reasoning,
-        "metadata": metadata,
-    }
-    if temperature is not None:
-        request_payload["temperature"] = temperature
-    if top_p is not None:
-        request_payload["top_p"] = top_p
-    if max_tokens is not None:
-        request_payload["max_tokens"] = max_tokens
-
-    try:
-        request = parse_llm_request(request_payload)
-    except ValidationError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-
     registry = build_default_registry()
     try:
         orchestrator = registry.get(provider)
+        try:
+            request = orchestrator.build_request(
+                model=model,
+                messages=messages_payload,
+                max_tokens=max_tokens,
+                effort=effort,
+                reasoning=reasoning,
+                temperature=temperature,
+                top_p=top_p,
+                metadata=metadata,
+            )
+        except (ValidationError, ValueError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
         call_id = uuid4().hex
 
         log_context = {

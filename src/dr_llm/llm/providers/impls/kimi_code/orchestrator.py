@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.kimi import fetch_kimi_models
-from dr_llm.llm.catalog.fetchers.static import (
-    _KIMI_CODING_MODELS,
-    build_static_catalog_entries,
-)
+from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
 from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -30,6 +27,11 @@ from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
 from dr_llm.llm.request import LlmRequest
+
+_KIMI_CODING_MODELS = [
+    ("kimi-for-coding", "Kimi For Coding"),
+]
+_KIMI_CODE_DOCS_URL = "https://platform.moonshot.ai/docs/guide/agent/coding"
 
 
 class KimiCodeOrchestrator(BaseProviderOrchestrator):
@@ -111,7 +113,7 @@ class KimiCodeOrchestrator(BaseProviderOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_KIMI_CODING_MODELS,
-            docs_url="https://platform.moonshot.ai/docs/guide/agent/coding",
+            docs_url=_KIMI_CODE_DOCS_URL,
             supports_vision=True,
             capabilities_fn=reasoning_capabilities_for_kimi_code,
         )

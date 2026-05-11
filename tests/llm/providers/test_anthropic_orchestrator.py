@@ -5,7 +5,6 @@ from collections.abc import Generator
 import pytest
 
 from dr_llm.llm.names import (
-    ControlStrategy,
     EffortSpec,
     ProviderName,
     ReasoningMode,
@@ -29,7 +28,6 @@ class TestModelCapabilities:
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
         caps = orchestrator.model_capabilities("claude-opus-4-6")
-        assert caps.control_strategy == ControlStrategy.EFFORT
         assert EffortSpec.MAX in caps.supported_effort_levels
         assert caps.reasoning.mode == ReasoningMode.ANTHROPIC_EFFORT
 
@@ -37,7 +35,6 @@ class TestModelCapabilities:
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
         caps = orchestrator.model_capabilities("claude-sonnet-4-6")
-        assert caps.control_strategy == ControlStrategy.EFFORT
         assert EffortSpec.MAX not in caps.supported_effort_levels
         assert EffortSpec.HIGH in caps.supported_effort_levels
 
@@ -45,7 +42,6 @@ class TestModelCapabilities:
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
         caps = orchestrator.model_capabilities("claude-opus-4-5-20251101")
-        assert caps.control_strategy == ControlStrategy.EFFORT
         assert caps.reasoning.mode == ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET
         assert caps.reasoning.min_budget_tokens == 1024
 
@@ -53,7 +49,6 @@ class TestModelCapabilities:
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
         caps = orchestrator.model_capabilities("claude-sonnet-4-5-20241022")
-        assert caps.control_strategy == ControlStrategy.REASONING
         assert caps.reasoning.mode == ReasoningMode.ANTHROPIC_BUDGET
         assert caps.supported_effort_levels == ()
 
@@ -61,14 +56,12 @@ class TestModelCapabilities:
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
         caps = orchestrator.model_capabilities("claude-haiku-4-5-20241022")
-        assert caps.control_strategy == ControlStrategy.REASONING
         assert caps.reasoning.mode == ReasoningMode.ANTHROPIC_BUDGET
 
     def test_unknown_model_returns_none_strategy(
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
         caps = orchestrator.model_capabilities("claude-2.1")
-        assert caps.control_strategy == ControlStrategy.NONE
         assert caps.reasoning.mode == ReasoningMode.UNSUPPORTED
         assert caps.supported_effort_levels == ()
 

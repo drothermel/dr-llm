@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from dr_llm.llm.catalog.fetchers.static import (
-    _GLM_COMMON_MODELS,
-    build_static_catalog_entries,
-)
+from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
 from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -22,6 +19,13 @@ from dr_llm.llm.providers.transports.openai_compat.orchestrator import (
 )
 from dr_llm.llm.providers.impls.glm.reasoning import validate_reasoning_for_glm
 from dr_llm.llm.request import LlmRequest
+
+_GLM_COMMON_MODELS = [
+    ("glm-4.5", "GLM 4.5"),
+    ("glm-4-air", "GLM 4 Air"),
+    ("glm-4-flash", "GLM 4 Flash"),
+]
+_GLM_DOCS_URL = "https://docs.z.ai/guides/llm/glm-4.5"
 
 
 class GlmOrchestrator(BaseOpenAICompatOrchestrator):
@@ -70,7 +74,7 @@ class GlmOrchestrator(BaseOpenAICompatOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_GLM_COMMON_MODELS,
-            docs_url="https://docs.z.ai/guides/llm/glm-4.5",
+            docs_url=_GLM_DOCS_URL,
             supports_vision=None,
             capabilities_fn=self.reasoning_capabilities,
         )

@@ -20,7 +20,7 @@ from tenacity import (
 
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm.providers.transports.api_config import APIProviderConfig
-from dr_llm.llm.providers.core.base import Provider
+from dr_llm.llm.providers.core.base import ProviderTransport
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
 from dr_llm.llm.request import ApiBackedLlmRequest, LlmRequest
 from dr_llm.llm.response import LlmResponse
@@ -53,7 +53,7 @@ class ApiProviderResponse(Protocol):
     ) -> LlmResponse: ...
 
 
-class ApiProvider(Provider):
+class ApiProvider(ProviderTransport):
     """Template-method base shared by HTTP-backed providers."""
 
     _config: APIProviderConfig

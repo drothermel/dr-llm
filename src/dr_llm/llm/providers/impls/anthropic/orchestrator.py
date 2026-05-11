@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.anthropic import fetch_anthropic_models
-from dr_llm.llm.catalog.fetchers.static import (
-    _ANTHROPIC_COMMON_MODELS,
-    build_static_catalog_entries,
-)
+from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
 from dr_llm.llm.names import (
     ProviderName,
     ReasoningMode,
@@ -39,6 +36,13 @@ from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
 from dr_llm.llm.request import LlmRequest
+
+_ANTHROPIC_COMMON_MODELS = [
+    ("claude-opus-4-6", "Claude Opus 4.6"),
+    ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
+    ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
+]
+_ANTHROPIC_DOCS_URL = "https://docs.anthropic.com/en/docs/about-claude/models"
 
 
 class AnthropicOrchestrator(BaseProviderOrchestrator):
@@ -127,7 +131,7 @@ class AnthropicOrchestrator(BaseProviderOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_ANTHROPIC_COMMON_MODELS,
-            docs_url="https://docs.anthropic.com/en/docs/about-claude/models",
+            docs_url=_ANTHROPIC_DOCS_URL,
             supports_vision=True,
             capabilities_fn=reasoning_capabilities_for_anthropic,
         )

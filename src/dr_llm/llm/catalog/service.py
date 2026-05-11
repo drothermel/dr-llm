@@ -77,8 +77,7 @@ class ModelCatalogService:
 
     def _sync_one_provider(self, target: str) -> ModelCatalogSyncResult:
         try:
-            entries, raw_payload = self._fetch_provider(target)
-            entries = filter_blacklisted_entries(entries)
+            entries, raw_payload = self.fetch_provider_models(target)
             return self._record_sync_success(target, entries, raw_payload)
         except Exception as exc:  # noqa: BLE001
             return self._record_sync_failure(target, exc)
@@ -156,7 +155,14 @@ class ModelCatalogService:
             {self._registry.get(name).name for name in self._registry.names()}
         )
 
-    def _fetch_provider(
+    def fetch_provider_models(
         self, provider: str
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-        return self._registry.get(provider).fetch_models()
+        entries, raw_payload = self._registry.get(provider).fetch_models()
+        return filter_blacklisted_entries(entries), raw_payload
+
+    def fallback_provider_models(
+        self, provider: str
+    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+        entries, raw_payload = self._registry.get(provider).fallback_models()
+        return filter_blacklisted_entries(entries), raw_payload

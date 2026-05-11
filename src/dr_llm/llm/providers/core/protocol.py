@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.names import ThinkingLevel
+from dr_llm.llm.names import EffortSpec, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import ModelCapabilities
 from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
@@ -12,7 +12,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.core.config import ProviderAvailabilityStatus
 from dr_llm.llm.providers.core.reasoning_controls import ReasoningControls
 from dr_llm.llm.providers.core.request_defaults import ProviderRequestDefaults
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.request import LlmRequest, Message
 from dr_llm.llm.response import LlmResponse
 
 
@@ -28,6 +28,19 @@ class ProviderOrchestrator(Protocol):
     def reasoning_controls(self, model: str) -> ReasoningControls: ...
 
     def request_defaults(self, model: str) -> ProviderRequestDefaults: ...
+
+    def build_request(
+        self,
+        *,
+        model: str,
+        messages: list[Message],
+        max_tokens: int | None = None,
+        effort: EffortSpec = EffortSpec.NA,
+        reasoning: ReasoningSpec | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> LlmRequest: ...
 
     def reasoning_for_thinking_level(
         self,

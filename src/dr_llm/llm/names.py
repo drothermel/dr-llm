@@ -3,8 +3,6 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
-
 
 class ProviderName(StrEnum):
     OPENAI = "openai"
@@ -55,12 +53,6 @@ class ReasoningMode(StrEnum):
     MINIMAX_EFFORT = "minimax_effort"
 
 
-class ControlStrategy(StrEnum):
-    REASONING = "reasoning"
-    EFFORT = "effort"
-    NONE = "none"
-
-
 class ReasoningWarningCode(StrEnum):
     UNSUPPORTED_FOR_PROVIDER = "unsupported_for_provider"
     MAPPED_WITH_HEURISTIC = "mapped_with_heuristic"
@@ -68,33 +60,6 @@ class ReasoningWarningCode(StrEnum):
 
 
 OpenRouterEffortLevel = Literal["low", "medium", "high"]
-
-
-class ProviderCategories(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    openai: tuple[ProviderName, ...] = (ProviderName.OPENAI,)
-    sampling_api: tuple[ProviderName, ...] = (
-        ProviderName.OPENROUTER,
-        ProviderName.GLM,
-        ProviderName.GOOGLE,
-        ProviderName.ANTHROPIC,
-        ProviderName.MINIMAX,
-    )
-    kimi_code: tuple[ProviderName, ...] = (ProviderName.KIMI_CODE,)
-    api_backed: tuple[ProviderName, ...] = (
-        ProviderName.OPENAI,
-        ProviderName.OPENROUTER,
-        ProviderName.GLM,
-        ProviderName.GOOGLE,
-        ProviderName.ANTHROPIC,
-        ProviderName.MINIMAX,
-        ProviderName.KIMI_CODE,
-    )
-    headless: tuple[ProviderName, ...] = (
-        ProviderName.CODEX,
-        ProviderName.CLAUDE_CODE,
-    )
 
 
 type SamplingApiProviderName = Literal[

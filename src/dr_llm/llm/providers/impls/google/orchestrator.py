@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.google import fetch_google_models
-from dr_llm.llm.catalog.fetchers.static import (
-    _GOOGLE_COMMON_MODELS,
-    build_static_catalog_entries,
-)
+from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
 from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -30,6 +27,14 @@ from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
 from dr_llm.llm.request import LlmRequest
+
+_GOOGLE_COMMON_MODELS = [
+    ("gemini-2.5-pro-preview-05-06", "Gemini 2.5 Pro"),
+    ("gemini-2.5-flash-preview-04-17", "Gemini 2.5 Flash"),
+    ("gemini-2.0-flash", "Gemini 2.0 Flash"),
+    ("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite"),
+]
+_GOOGLE_DOCS_URL = "https://ai.google.dev/gemini-api/docs/models"
 
 
 class GoogleOrchestrator(BaseProviderOrchestrator):
@@ -114,7 +119,7 @@ class GoogleOrchestrator(BaseProviderOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_GOOGLE_COMMON_MODELS,
-            docs_url="https://ai.google.dev/gemini-api/docs/models",
+            docs_url=_GOOGLE_DOCS_URL,
             supports_vision=None,
             capabilities_fn=reasoning_capabilities_for_google,
         )

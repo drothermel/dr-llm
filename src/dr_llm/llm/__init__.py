@@ -12,7 +12,6 @@ from dr_llm.llm.names import (
     HeadlessProviderName,
     KimiCodeProviderName,
     OpenAIProviderName,
-    ProviderCategories,
     ProviderName,
     SamplingApiProviderName,
     ThinkingLevel,
@@ -36,11 +35,6 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
     parse_reasoning_spec,
-)
-from dr_llm.llm.providers.impls.openrouter.policy import (
-    OpenRouterModelPolicy,
-    OpenRouterReasoningRequestStyle,
-    openrouter_model_policy,
 )
 from dr_llm.llm.providers.core.reasoning_controls import (
     ReasoningControls,
@@ -89,11 +83,8 @@ __all__ = [
     "OpenAILlmConfig",
     "OpenAILlmRequest",
     "OpenAIProviderName",
-    "OpenRouterModelPolicy",
     "OpenRouterReasoning",
-    "OpenRouterReasoningRequestStyle",
     "ProviderAvailabilityStatus",
-    "ProviderCategories",
     "ProviderConfig",
     "ProviderName",
     "ProviderOrchestrator",
@@ -108,7 +99,6 @@ __all__ = [
     "ThinkingLevel",
     "TokenUsage",
     "build_default_registry",
-    "openrouter_model_policy",
     "parse_llm_config",
     "parse_llm_request",
     "parse_reasoning_spec",

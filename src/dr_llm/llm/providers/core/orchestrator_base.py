@@ -9,7 +9,7 @@ from dr_llm.llm.names import (
     ProviderName,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.core.base import Provider
+from dr_llm.llm.providers.core.base import ProviderTransport
 from dr_llm.llm.providers.concepts.capabilities import ModelCapabilities
 from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
@@ -20,14 +20,14 @@ from dr_llm.llm.providers.core.reasoning_controls import ReasoningControls
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
-from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.request import LlmRequest, Message, parse_llm_request
 from dr_llm.llm.response import LlmResponse
 
 CatalogResult = tuple[list[ModelCatalogEntry], dict[str, Any]]
 
 
 class BaseProviderOrchestrator(ABC):
-    def __init__(self, provider: Provider) -> None:
+    def __init__(self, provider: ProviderTransport) -> None:
         self._provider = provider
 
     @property
@@ -76,6 +76,69 @@ class BaseProviderOrchestrator(ABC):
             effort=controls.default_effort,
             reasoning=controls.default_reasoning,
         )
+
+    def build_request(
+        self,
+        *,
+        model: str,
+        messages: list[Message],
+        max_tokens: int | None = None,
+        effort: EffortSpec = EffortSpec.NA,
+        reasoning: ReasoningSpec | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> LlmRequest:
+        defaults = self.request_defaults(model)
+        payload: dict[str, Any] = {
+            "provider": defaults.provider,
+            "model": defaults.model,
+            "messages": messages,
+            "effort": self._resolve_effort(defaults, effort),
+            "reasoning": defaults.reasoning
+            if reasoning is None
+            else reasoning,
+            "metadata": metadata or {},
+        }
+
+        resolved_max_tokens = (
+            defaults.max_tokens if max_tokens is None else max_tokens
+        )
+        if resolved_max_tokens is not None:
+            if defaults.mode == "headless":
+                raise ValueError(
+                    f"max_tokens is not supported for provider={self.name!r}"
+                )
+            payload["max_tokens"] = resolved_max_tokens
+
+        if temperature is not None and not defaults.supports_temperature:
+            raise ValueError(
+                f"temperature is not supported for provider={self.name!r}"
+            )
+        resolved_temperature = (
+            defaults.temperature if temperature is None else temperature
+        )
+        if defaults.supports_temperature:
+            payload["temperature"] = resolved_temperature
+
+        if top_p is not None and not defaults.supports_top_p:
+            raise ValueError(
+                f"top_p is not supported for provider={self.name!r}"
+            )
+        resolved_top_p = defaults.top_p if top_p is None else top_p
+        if defaults.supports_top_p:
+            payload["top_p"] = resolved_top_p
+
+        request = parse_llm_request(payload)
+        self.validate_request(request)
+        return request
+
+    def _resolve_effort(
+        self, defaults: ProviderRequestDefaults, effort: EffortSpec
+    ) -> EffortSpec:
+        if effort == EffortSpec.NA and defaults.effort != EffortSpec.NA:
+            return defaults.effort
+        return effort
 
     @abstractmethod
     def model_capabilities(self, model: str) -> ModelCapabilities: ...

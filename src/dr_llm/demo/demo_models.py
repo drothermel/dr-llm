@@ -9,6 +9,7 @@ from dr_llm.llm import (
     ProviderName,
     build_default_registry,
 )
+from dr_llm.llm.catalog.service import ModelCatalogService
 
 _THINKING_SWEEP_OPENAI_MODELS = [
     "gpt-5.4-mini-2026-03-17",
@@ -40,7 +41,8 @@ def _fallback_model_ids(
 ) -> list[str]:
     registry = build_default_registry()
     try:
-        entries, _raw = registry.get(provider).fallback_models()
+        service = ModelCatalogService(registry=registry)
+        entries, _raw = service.fallback_provider_models(provider)
         model_ids = [entry.model for entry in entries]
     finally:
         registry.close()

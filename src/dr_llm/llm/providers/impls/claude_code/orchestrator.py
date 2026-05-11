@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from dr_llm.llm.catalog.fetchers.static import (
-    _CLAUDE_CODE_DOCS_URL,
-    _CLAUDE_CODE_MODELS,
-    build_static_catalog_entries,
-)
+from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
 from dr_llm.llm.names import (
     ProviderName,
     ThinkingLevel,
@@ -35,6 +31,13 @@ from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
 )
 from dr_llm.llm.request import LlmRequest
+
+_CLAUDE_CODE_DOCS_URL = "https://code.claude.com/docs/en/model-config"
+_CLAUDE_CODE_MODELS = [
+    ("claude-opus-4-6", "Claude Opus 4.6"),
+    ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
+    ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
+]
 
 
 class ClaudeCodeOrchestrator(BaseProviderOrchestrator):

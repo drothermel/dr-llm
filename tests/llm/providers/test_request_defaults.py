@@ -3,16 +3,19 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
+from pydantic import ValidationError
 
 from dr_llm.llm import (
     AnthropicReasoning,
     EffortSpec,
     GoogleReasoning,
+    KimiCodeLlmRequest,
     OpenAIReasoning,
     ProviderName,
     ThinkingLevel,
     build_default_registry,
 )
+from dr_llm.llm.providers.core.request_defaults import ProviderRequestDefaults
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 
 
@@ -105,3 +108,59 @@ def test_request_defaults_expose_headless_and_minimax_defaults(
     )
     assert minimax.supports_temperature
     assert minimax.temperature == 1.0
+
+
+def test_request_defaults_reject_inconsistent_max_token_state() -> None:
+    with pytest.raises(ValidationError, match="max_tokens_required"):
+        ProviderRequestDefaults(
+            provider="test",
+            model="test-model",
+            mode="api",
+            max_tokens_required=True,
+        )
+
+
+def test_request_defaults_reject_unsupported_sampling_defaults() -> None:
+    with pytest.raises(ValidationError, match="supports_temperature"):
+        ProviderRequestDefaults(
+            provider="test",
+            model="test-model",
+            mode="api",
+            temperature=0.7,
+        )
+
+    with pytest.raises(ValidationError, match="supports_top_p"):
+        ProviderRequestDefaults(
+            provider="test",
+            model="test-model",
+            mode="api",
+            top_p=0.9,
+        )
+
+
+def test_build_request_applies_provider_defaults(
+    registry: ProviderRegistry,
+) -> None:
+    request = registry.get(ProviderName.KIMI_CODE).build_request(
+        model="kimi-for-coding",
+        messages=[],
+    )
+
+    assert request.provider == ProviderName.KIMI_CODE
+    assert isinstance(request, KimiCodeLlmRequest)
+    assert request.max_tokens == 16384
+    assert request.effort == EffortSpec.LOW
+    assert request.reasoning == AnthropicReasoning(
+        thinking_level=ThinkingLevel.OFF
+    )
+
+
+def test_build_request_rejects_unsupported_sampling_control(
+    registry: ProviderRegistry,
+) -> None:
+    with pytest.raises(ValueError, match="temperature is not supported"):
+        registry.get(ProviderName.KIMI_CODE).build_request(
+            model="kimi-for-coding",
+            messages=[],
+            temperature=0.2,
+        )

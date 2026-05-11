@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from dr_llm.llm.catalog.fetchers.static import (
-    _OPENAI_COMMON_MODELS,
-    build_static_catalog_entries,
-)
+from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
 from dr_llm.llm.names import ProviderName, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -31,6 +28,19 @@ from dr_llm.llm.providers.impls.openai.thinking import (
     validate_openai_sampling_controls,
 )
 from dr_llm.llm.request import LlmRequest
+
+_OPENAI_COMMON_MODELS = [
+    ("gpt-5.4", "GPT-5.4"),
+    ("gpt-5.4-mini", "GPT-5.4 Mini"),
+    ("gpt-5.3", "GPT-5.3"),
+    ("gpt-5.2", "GPT-5.2"),
+    ("gpt-5.1", "GPT-5.1"),
+    ("gpt-5", "GPT-5"),
+    ("o3", "o3"),
+    ("o3-mini", "o3-mini"),
+    ("o4-mini", "o4-mini"),
+]
+_OPENAI_DOCS_URL = "https://platform.openai.com/docs/models"
 
 
 class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
@@ -69,7 +79,7 @@ class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
         return build_static_catalog_entries(
             provider=self._provider,
             models=_OPENAI_COMMON_MODELS,
-            docs_url="https://platform.openai.com/docs/models",
+            docs_url=_OPENAI_DOCS_URL,
             supports_vision=None,
             capabilities_fn=self.reasoning_capabilities,
         )

@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.llm.catalog.models import ModelCatalogEntry
+from dr_llm.llm.catalog.service import ModelCatalogService
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm.providers.core.registry import build_default_registry
 from dr_llm.llm.providers.core.registry import ProviderRegistry
@@ -91,9 +92,9 @@ def _get_registry(app: FastAPI) -> ProviderRegistry:
 
 
 def _fallback_model_responses(
-    provider: str, registry: ProviderRegistry
+    provider: str, service: ModelCatalogService
 ) -> list[ModelEntryResponse]:
-    entries, _raw = registry.get(provider).fallback_models()
+    entries, _raw = service.fallback_provider_models(provider)
     return [_entry_to_response(entry) for entry in entries]
 
 
@@ -153,10 +154,11 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
             status_code=404, detail=f"Unknown provider: {provider}"
         ) from err
 
+    service = ModelCatalogService(registry=registry)
     is_available = orchestrator.availability_status().available
 
     if not is_available:
-        static = _fallback_model_responses(provider, registry)
+        static = _fallback_model_responses(provider, service)
         return ProviderModelsResponse(
             provider=provider,
             models=static,
@@ -164,9 +166,9 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
         )
 
     try:
-        entries, _raw = orchestrator.fetch_models()
+        entries, _raw = service.fetch_provider_models(provider)
     except (ProviderTransportError, ProviderSemanticError) as exc:
-        static = _fallback_model_responses(provider, registry)
+        static = _fallback_model_responses(provider, service)
         return ProviderModelsResponse(
             provider=provider,
             models=static,
@@ -186,17 +188,18 @@ def sync_provider_models(provider: str, request: Request) -> SyncResultResponse:
     """Trigger a live model sync for a provider."""
     registry = _get_registry(request.app)
     try:
-        orchestrator = registry.get(provider)
+        registry.get(provider)
     except KeyError as err:
         raise HTTPException(
             status_code=404, detail=f"Unknown provider: {provider}"
         ) from err
 
+    service = ModelCatalogService(registry=registry)
     try:
-        entries, _raw = orchestrator.fetch_models()
+        entries, _raw = service.fetch_provider_models(provider)
     except (ProviderTransportError, ProviderSemanticError) as exc:
         error_msg = f"{type(exc).__name__}: {exc}"
-        static = _fallback_model_responses(provider, registry)
+        static = _fallback_model_responses(provider, service)
         return SyncResultResponse(
             provider=provider,
             success=False,

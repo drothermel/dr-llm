@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from dr_llm.llm.catalog.fetchers.static import (
-    _CODEX_DOCS_URL,
-    _CODEX_MODELS,
-    build_static_catalog_entries,
-)
+from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
 from dr_llm.llm.names import (
     ProviderName,
     ThinkingLevel,
@@ -32,6 +28,22 @@ from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
 )
 from dr_llm.llm.request import LlmRequest
+
+_CODEX_DOCS_URL = "https://developers.openai.com/codex/models"
+_CODEX_MODELS = [
+    ("gpt-5.4", "GPT-5.4"),
+    ("gpt-5.4-mini", "GPT-5.4 Mini"),
+    ("gpt-5.3-codex", "GPT-5.3 Codex"),
+    ("gpt-5.3-codex-spark", "GPT-5.3 Codex Spark (Pro only)"),
+    ("gpt-5.2-codex", "GPT-5.2 Codex"),
+    ("gpt-5.2", "GPT-5.2"),
+    ("gpt-5.1-codex-max", "GPT-5.1 Codex Max"),
+    ("gpt-5.1-codex", "GPT-5.1 Codex"),
+    ("gpt-5.1", "GPT-5.1"),
+    ("gpt-5-codex", "GPT-5 Codex"),
+    ("gpt-5.1-codex-mini", "GPT-5.1 Codex Mini"),
+    ("gpt-5", "GPT-5"),
+]
 
 
 class CodexOrchestrator(BaseProviderOrchestrator):

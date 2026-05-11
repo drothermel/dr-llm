@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from dr_llm.llm.names import ControlStrategy, EffortSpec, ReasoningMode
+from dr_llm.llm.names import EffortSpec, ReasoningMode
 
 GoogleThinkingLevel = Literal["minimal", "low", "medium", "high"]
 
@@ -60,7 +60,6 @@ def resolve_capability_rules(
 class ModelCapabilities(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    control_strategy: ControlStrategy
     reasoning: ReasoningCapabilities = ReasoningCapabilities(
         mode=ReasoningMode.UNSUPPORTED
     )
@@ -75,14 +74,7 @@ def build_model_capabilities(
     resolved_reasoning = reasoning or ReasoningCapabilities(
         mode=ReasoningMode.UNSUPPORTED
     )
-    if supported_effort_levels:
-        strategy = ControlStrategy.EFFORT
-    elif resolved_reasoning.supports_reasoning:
-        strategy = ControlStrategy.REASONING
-    else:
-        strategy = ControlStrategy.NONE
     return ModelCapabilities(
-        control_strategy=strategy,
         reasoning=resolved_reasoning,
         supported_effort_levels=supported_effort_levels,
     )

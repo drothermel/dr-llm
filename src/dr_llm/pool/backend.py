@@ -227,10 +227,18 @@ def make_llm_process_fn(
 
         config = parse_llm_config(raw_config)
         messages = [Message(**message) for message in raw_messages]
-        request = config.to_request(messages)
 
         context = get_generation_log_context()
-        orchestrator = registry.get(request.provider)
+        orchestrator = registry.get(config.provider)
+        request = orchestrator.build_request(
+            model=config.model,
+            messages=messages,
+            max_tokens=getattr(config, "max_tokens", None),
+            effort=config.effort,
+            reasoning=config.reasoning,
+            temperature=getattr(config, "temperature", None),
+            top_p=getattr(config, "top_p", None),
+        )
         call_id = uuid4().hex
         worker_payload = {
             "pool_name": context.get("pool_name"),

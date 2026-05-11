@@ -10,8 +10,8 @@ from dr_llm.llm.providers.core.config import (
 )
 
 
-class Provider(ABC):
-    """Abstract provider interface."""
+class ProviderTransport(ABC):
+    """Abstract provider transport interface."""
 
     _config: ProviderConfig
 

@@ -10,12 +10,14 @@ from dr_llm.logging.events import generation_log_context
 from dr_llm.llm import (
     CallMode,
     CodexReasoning,
+    EffortSpec,
     HeadlessLlmConfig,
     LlmResponse,
     Message,
     OpenAILlmConfig as LlmConfig,
     ThinkingLevel,
     TokenUsage,
+    parse_llm_request,
 )
 from dr_llm.pool import backend as pool_backend
 from dr_llm.pool.db.schema import PoolSchema
@@ -57,11 +59,43 @@ def _make_headless_response() -> LlmResponse:
 def _make_registry(response: LlmResponse | None = None) -> MagicMock:
     resp = response or _make_response()
     adapter = MagicMock()
+    adapter.build_request.side_effect = _build_request_for_response(resp)
     adapter.generate.return_value = resp
     adapter.mode = resp.mode
     registry = MagicMock()
     registry.get.return_value = adapter
     return registry
+
+
+def _build_request_for_response(resp: LlmResponse):
+    def _build_request(
+        *,
+        model: str,
+        messages: list[Message],
+        max_tokens: int | None = None,
+        effort: EffortSpec = EffortSpec.NA,
+        reasoning: Any = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        payload: dict[str, Any] = {
+            "provider": resp.provider,
+            "model": model,
+            "messages": messages,
+            "effort": effort,
+            "reasoning": reasoning,
+            "metadata": metadata or {},
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if top_p is not None:
+            payload["top_p"] = top_p
+        return parse_llm_request(payload)
+
+    return _build_request
 
 
 def _sample_request() -> dict[str, Any]:
@@ -141,6 +175,9 @@ def test_failed_worker_call_emits_failure_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = MagicMock()
+    adapter.build_request.side_effect = _build_request_for_response(
+        _make_response()
+    )
     adapter.generate.side_effect = RuntimeError("API down")
     adapter.mode = CallMode.api
     registry = MagicMock()
@@ -172,6 +209,9 @@ def test_failed_worker_call_emits_failure_event(
 
 def test_error_propagates() -> None:
     adapter = MagicMock()
+    adapter.build_request.side_effect = _build_request_for_response(
+        _make_response()
+    )
     adapter.generate.side_effect = RuntimeError("API down")
     adapter.mode = CallMode.api
     registry = MagicMock()

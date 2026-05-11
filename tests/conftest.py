@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
 import os
 from collections.abc import Callable
 from typing import Any
@@ -17,10 +16,11 @@ from dr_llm.llm import (
     ProviderRequestDefaults,
     TokenUsage,
     parse_llm_request,
+    ProviderName,
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.names import ControlStrategy, ReasoningMode, ThinkingLevel
-from dr_llm.llm.providers.core.base import Provider
+from dr_llm.llm.names import ReasoningMode, ThinkingLevel
+from dr_llm.llm.providers.core.base import ProviderTransport
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
     ReasoningCapabilities,
@@ -37,7 +37,7 @@ os.environ.setdefault(
 )
 
 
-class FakeProvider(Provider):
+class FakeProvider(ProviderTransport):
     def __init__(
         self,
         name: str = "fake",
@@ -90,7 +90,6 @@ class FakeOrchestrator:
     def model_capabilities(self, model: str) -> ModelCapabilities:
         del model
         return ModelCapabilities(
-            control_strategy=ControlStrategy.NONE,
             reasoning=ReasoningCapabilities(mode=ReasoningMode.UNSUPPORTED),
         )
 
@@ -113,6 +112,31 @@ class FakeOrchestrator:
             effort=EffortSpec.NA,
             reasoning=None,
         )
+
+    def build_request(
+        self,
+        *,
+        model: str,
+        messages: list[Message],
+        max_tokens: int | None = None,
+        effort: EffortSpec = EffortSpec.NA,
+        reasoning: ReasoningSpec | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> LlmRequest:
+        del temperature, top_p
+        payload: dict[str, Any] = {
+            "provider": self.name,
+            "model": model,
+            "messages": messages,
+            "effort": effort,
+            "reasoning": reasoning,
+            "metadata": metadata or {},
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        return parse_llm_request(payload)
 
     def reasoning_for_thinking_level(
         self,
