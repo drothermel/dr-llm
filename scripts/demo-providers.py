@@ -14,27 +14,20 @@ Usage:
 
 from __future__ import annotations
 
-import subprocess
-
 import typer
 
-from dr_llm.demo import BOLD, RESET, YELLOW, fail, ok, step
+from dr_llm.demo import (
+    fail,
+    ok,
+    print_list,
+    step,
+    stream_models_list,
+    stream_models_sync,
+    warn,
+)
 from dr_llm.llm import build_default_registry
 
 app = typer.Typer()
-
-
-def run_cli_streaming(*args: str) -> None:
-    cmd = ["uv", "run", "dr-llm", *args]
-    print(f"{BOLD}$ {' '.join(cmd)}{RESET}")
-    try:
-        subprocess.run(cmd, check=True, text=True, stderr=subprocess.PIPE)
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or "").strip()
-        detail = f": {stderr}" if stderr else ""
-        raise RuntimeError(
-            f"command {' '.join(exc.cmd)} exited with status {exc.returncode}{detail}"
-        ) from exc
 
 
 @app.command()
@@ -43,17 +36,10 @@ def main() -> None:
     registry = build_default_registry()
     statuses = registry.availability_statuses()
 
-    step("1. Supported providers")
-    for provider in registry.sorted_names():
-        print(f"  - {provider}")
+    print_list("1. Supported providers", registry.sorted_names())
 
-    step("2. Available providers")
     available = registry.available_names(statuses=statuses)
-    if available:
-        for provider in available:
-            print(f"  - {provider}")
-    else:
-        print("  none")
+    print_list("2. Available providers", available)
 
     unavailable = [status for status in statuses if not status.available]
     if unavailable:
@@ -66,9 +52,7 @@ def main() -> None:
                 f"missing executable {executable}"
                 for executable in status.missing_executables
             )
-            print(
-                f"{YELLOW}  - {status.provider}: {', '.join(reasons)}{RESET}"
-            )
+            warn(f"{status.provider}: {', '.join(reasons)}")
 
     if not available:
         raise typer.Exit(1)
@@ -77,9 +61,9 @@ def main() -> None:
     for idx, provider in enumerate(available, start=1):
         step(f"4.{idx}. Provider: {provider}")
         try:
-            run_cli_streaming("models", "sync", "--provider", provider)
+            stream_models_sync(provider)
             print()
-            run_cli_streaming("models", "list", "--provider", provider)
+            stream_models_list(provider)
             ok(f"completed provider demo for {provider}")
         except Exception as exc:
             fail(f"{provider}: {exc}")
@@ -93,7 +77,7 @@ def main() -> None:
     if succeeded:
         print(f"  providers: {', '.join(succeeded)}")
     if failed_providers:
-        print(f"{YELLOW}  failed: {', '.join(failed_providers)}{RESET}")
+        warn(f"failed: {', '.join(failed_providers)}")
 
 
 if __name__ == "__main__":

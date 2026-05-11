@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.0.3 - 2026-05-10
+
+### Added
+
+- Added public `drain_until` worker and `drain_pool` pool helpers for reusable
+  worker-drain flows.
+
+### Changed
+
+- Updated the pool-fill demo to use `drain_pool` for progress-aware worker
+  draining.
+
 ## 4.0.2 - 2026-05-10
 
 ### Changed

@@ -46,6 +46,7 @@ __all__ = [
     "PoolSchema",
     "PoolSchemaError",
     "PoolStore",
+    "PoolSummaryColumn",
     "RequestUpdate",
     "RoundRobinClaimer",
     "assess_pool_creation",
@@ -55,12 +56,17 @@ __all__ = [
     "delete_pools_by_token",
     "discover_pools",
     "discover_pools_from_runtime",
+    "drain_pool",
+    "format_worker_progress_line",
     "inspect_pool",
     "make_llm_process_fn",
     "parse_response_stats",
+    "pool_is_idle",
+    "pool_summary_table",
     "sample_response_stats",
     "seed_grid",
     "seed_llm_grid",
+    "print_pool_summary",
 ]
 
 _EXPORT_MODULES = {
@@ -106,6 +112,7 @@ _EXPORT_MODULES = {
     "PoolSchema": "dr_llm.pool.db",
     "PoolSchemaError": "dr_llm.pool.errors",
     "PoolStore": "dr_llm.pool.pool_store",
+    "PoolSummaryColumn": "dr_llm.pool.summary",
     "RequestUpdate": "dr_llm.pool.store_ops.request_update",
     "RoundRobinClaimer": "dr_llm.pool.claim_strategy",
     "assess_pool_creation": "dr_llm.pool.admin.creation",
@@ -115,12 +122,17 @@ _EXPORT_MODULES = {
     "delete_pools_by_token": "dr_llm.pool.admin.deletion",
     "discover_pools": "dr_llm.pool.admin.discovery",
     "discover_pools_from_runtime": "dr_llm.pool.admin.discovery",
+    "drain_pool": "dr_llm.pool.progress",
+    "format_worker_progress_line": "dr_llm.pool.progress",
     "inspect_pool": "dr_llm.pool.admin.inspection",
     "make_llm_process_fn": "dr_llm.pool.backend",
     "parse_response_stats": "dr_llm.pool.response_stats",
+    "pool_is_idle": "dr_llm.pool.progress",
+    "pool_summary_table": "dr_llm.pool.summary",
     "sample_response_stats": "dr_llm.pool.response_stats",
     "seed_grid": "dr_llm.pool.seed_grid",
     "seed_llm_grid": "dr_llm.pool.seed_grid",
+    "print_pool_summary": "dr_llm.pool.summary",
 }
 
 

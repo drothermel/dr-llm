@@ -1,4 +1,5 @@
 from dr_llm.workers.backend import ErrorDecision, ProcessFn, WorkerBackend
+from dr_llm.workers.drain import drain_until
 from dr_llm.workers.models import (
     WorkerConfig,
     WorkerSnapshot,
@@ -17,6 +18,7 @@ __all__ = [
     "WorkerController",
     "WorkerSnapshot",
     "WorkerStatCounts",
+    "drain_until",
     "run_workers_forever",
     "start_workers",
 ]

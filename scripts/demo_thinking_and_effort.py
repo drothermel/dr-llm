@@ -21,9 +21,15 @@ from collections import defaultdict
 from typing import cast
 
 import typer
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
-from dr_llm.demo import DEMO_PROVIDER_MODELS
+from dr_llm.demo import (
+    ATTEMPT_SUMMARY_FIELDS,
+    DEMO_THINKING_SWEEP_MODELS,
+    DemoCounts,
+    DemoPrompts,
+    print_list,
+)
 from dr_llm.llm import (
     ApiLlmRequest,
     SamplingApiProviderName,
@@ -53,18 +59,11 @@ from dr_llm.llm import (
 app = typer.Typer()
 
 SUPPORTED_PROVIDER_NAMES = ", ".join(
-    sorted(provider.value for provider in DEMO_PROVIDER_MODELS)
+    sorted(provider.value for provider in DEMO_THINKING_SWEEP_MODELS)
 )
-PROMPT = "Reply with exactly OK."
+PROMPT = DemoPrompts.EXACT_OK
 KIMI_CODE_MAX_TOKENS = 2048
 PHASES = ["models", "thinking", "effort"]
-
-
-class SummaryCounts(BaseModel):
-    attempted: int = 0
-    succeeded: int = 0
-    failed: int = 0
-    had_output_text: int = 0
 
 
 def budget_tokens_for_level(
@@ -117,32 +116,33 @@ def availability_detail(missing: tuple[str, ...]) -> str:
     return ", ".join(missing)
 
 
-def ensure_required_providers_available(providers: list[ProviderName]) -> None:
-    registry = build_default_registry()
-    try:
-        missing: list[str] = []
-        for provider in providers:
-            status = registry.availability_status(provider)
-            if status.available:
-                continue
-            reasons: list[str] = []
-            if status.missing_env_vars:
-                reasons.append(
-                    f"missing env: {availability_detail(status.missing_env_vars)}"
-                )
-            if status.missing_executables:
-                reasons.append(
-                    "missing executable: "
-                    f"{availability_detail(status.missing_executables)}"
-                )
-            missing.append(f"{provider}: {'; '.join(reasons)}")
-        if missing:
-            print("Missing provider requirements:")
-            for detail in missing:
-                print(f"  - {detail}")
-            raise typer.Exit(1)
-    finally:
-        registry.close()
+def ensure_required_providers_available(
+    registry: ProviderRegistry,
+    providers: list[ProviderName],
+) -> None:
+    missing: list[str] = []
+    for provider in providers:
+        status = registry.availability_status(provider)
+        if status.available:
+            continue
+        reasons: list[str] = []
+        if status.missing_env_vars:
+            reasons.append(
+                f"missing env: {availability_detail(status.missing_env_vars)}"
+            )
+        if status.missing_executables:
+            reasons.append(
+                "missing executable: "
+                f"{availability_detail(status.missing_executables)}"
+            )
+        missing.append(f"{provider}: {'; '.join(reasons)}")
+    if missing:
+        print_list(
+            "Missing provider requirements:",
+            missing,
+            use_step=False,
+        )
+        raise typer.Exit(1)
 
 
 def make_request(
@@ -200,12 +200,12 @@ def run_attempt(
     thinking_level: ThinkingLevel,
     effort: EffortSpec,
     explicit_reasoning: bool,
-    counts: dict[tuple[str, str], SummaryCounts],
+    counts: dict[tuple[str, str], DemoCounts],
     reasoning_override: ReasoningSpec | None = None,
 ) -> None:
     key = (provider, phase)
     summary = counts[key]
-    summary.attempted += 1
+    summary.increment("attempted")
     print(
         format_attempt(
             provider,
@@ -226,7 +226,7 @@ def run_attempt(
             reasoning_override=reasoning_override,
         )
     except (ValidationError, ValueError) as exc:
-        summary.failed += 1
+        summary.increment("failed")
         print(f"  validation failure: {exc}")
         return
 
@@ -234,13 +234,13 @@ def run_attempt(
     try:
         response = model_provider.generate(request)
     except Exception as exc:  # noqa: BLE001
-        summary.failed += 1
+        summary.increment("failed")
         print(f"  runtime failure: {type(exc).__name__}: {exc}")
         return
 
-    summary.succeeded += 1
+    summary.increment("succeeded")
     if response.text:
-        summary.had_output_text += 1
+        summary.increment("had_output_text")
     print(f"  text: {response.text!r}")
 
 
@@ -250,12 +250,12 @@ def requires_explicit_reasoning(provider: str) -> bool:
 
 def run_model_sweep(
     registry: ProviderRegistry,
-    counts: dict[tuple[str, str], SummaryCounts],
+    counts: dict[tuple[str, str], DemoCounts],
     providers: list[ProviderName],
 ) -> None:
     print("\n== models ==")
     for provider in providers:
-        for model in DEMO_PROVIDER_MODELS[provider]:
+        for model in DEMO_THINKING_SWEEP_MODELS[provider]:
             run_attempt(
                 registry=registry,
                 provider=provider,
@@ -275,14 +275,14 @@ def run_model_sweep(
 
 def run_thinking_sweep(
     registry: ProviderRegistry,
-    counts: dict[tuple[str, str], SummaryCounts],
+    counts: dict[tuple[str, str], DemoCounts],
     providers: list[ProviderName],
 ) -> None:
     print("\n== thinking ==")
     for provider in providers:
         if provider == ProviderName.OPENROUTER:
             continue
-        for model in DEMO_PROVIDER_MODELS[provider]:
+        for model in DEMO_THINKING_SWEEP_MODELS[provider]:
             for thinking_level in supported_thinking_levels(
                 provider=provider, model=model
             ):
@@ -300,14 +300,14 @@ def run_thinking_sweep(
 
 def run_effort_sweep(
     registry: ProviderRegistry,
-    counts: dict[tuple[str, str], SummaryCounts],
+    counts: dict[tuple[str, str], DemoCounts],
     providers: list[ProviderName],
 ) -> None:
     print("\n== effort ==")
     for provider in providers:
         if provider == ProviderName.OPENROUTER:
             continue
-        for model in DEMO_PROVIDER_MODELS[provider]:
+        for model in DEMO_THINKING_SWEEP_MODELS[provider]:
             for effort in supported_effort_levels(
                 provider=provider, model=model
             ):
@@ -326,7 +326,7 @@ def run_effort_sweep(
 
 
 def print_summary(
-    counts: dict[tuple[str, str], SummaryCounts],
+    counts: dict[tuple[str, str], DemoCounts],
     providers: list[ProviderName],
 ) -> None:
     print("\n== summary ==")
@@ -334,13 +334,40 @@ def print_summary(
         print(provider)
         for phase in PHASES:
             summary = counts[(provider, phase)]
-            print(
-                "  "
-                f"{phase}: attempted={summary.attempted} "
-                f"succeeded={summary.succeeded} "
-                f"failed={summary.failed} "
-                f"had_output_text={summary.had_output_text}"
-            )
+            print(f"  {phase}: {summary.format_line(ATTEMPT_SUMMARY_FIELDS)}")
+
+
+def _resolve_sweep_providers(
+    provider: list[str] | None,
+) -> list[ProviderName]:
+    supported_provider_values = {
+        provider.value for provider in DEMO_THINKING_SWEEP_MODELS
+    }
+    unsupported = [
+        name
+        for name in provider or []
+        if name not in supported_provider_values
+    ]
+    if unsupported:
+        raise typer.BadParameter(
+            f"Unsupported provider(s): {', '.join(sorted(unsupported))}"
+        )
+    if provider:
+        return [ProviderName(name) for name in provider]
+    return sorted(DEMO_THINKING_SWEEP_MODELS)
+
+
+def _run_thinking_and_effort_sweep(providers: list[ProviderName]) -> None:
+    counts: dict[tuple[str, str], DemoCounts] = defaultdict(DemoCounts)
+    registry = build_default_registry()
+    try:
+        ensure_required_providers_available(registry, providers)
+        run_model_sweep(registry, counts, providers)
+        run_thinking_sweep(registry, counts, providers)
+        run_effort_sweep(registry, counts, providers)
+        print_summary(counts, providers)
+    finally:
+        registry.close()
 
 
 @app.command()
@@ -355,34 +382,8 @@ def main(
     ),
 ) -> None:
     """Sweep curated models for provider-specific reasoning and effort support."""
-    supported_provider_values = {
-        provider.value for provider in DEMO_PROVIDER_MODELS
-    }
-    unsupported = [
-        name
-        for name in provider or []
-        if name not in supported_provider_values
-    ]
-    if unsupported:
-        raise typer.BadParameter(
-            f"Unsupported provider(s): {', '.join(sorted(unsupported))}"
-        )
-    providers = (
-        [ProviderName(name) for name in provider]
-        if provider
-        else sorted(DEMO_PROVIDER_MODELS)
-    )
-
-    ensure_required_providers_available(providers)
-    counts: dict[tuple[str, str], SummaryCounts] = defaultdict(SummaryCounts)
-    registry = build_default_registry()
-    try:
-        run_model_sweep(registry, counts, providers)
-        run_thinking_sweep(registry, counts, providers)
-        run_effort_sweep(registry, counts, providers)
-        print_summary(counts, providers)
-    finally:
-        registry.close()
+    providers = _resolve_sweep_providers(provider)
+    _run_thinking_and_effort_sweep(providers)
 
 
 if __name__ == "__main__":

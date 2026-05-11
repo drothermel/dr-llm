@@ -3,6 +3,7 @@
 
 Usage:
   uv run python scripts/demo-pool-fill.py
+  uv run python scripts/demo-pool-fill.py --keep-project
   uv run python scripts/demo-pool-fill.py --dsn postgresql://postgres:postgres@localhost:5433/dr_llm_test
 
 Prerequisites:
@@ -10,10 +11,11 @@ Prerequisites:
   2. Docker running, unless --dsn points at an existing Postgres database
 
 When no --dsn is provided, the script auto-creates a temporary Docker-managed
-Postgres project, runs the demo, and destroys it on exit.
+Postgres project. By default the project is destroyed on exit; pass
+--keep-project to inspect the pool afterward.
 
 The demo:
-  - Defines reasoning-valid LlmConfig instances for OpenAI and Google
+  - Uses shared reasoning-valid LlmConfig instances for OpenAI and Google
   - Defines short prompts as Message lists
   - Seeds the (llm_config x prompt) cross product into the samples table
     using ``seed_llm_grid``
@@ -23,22 +25,23 @@ The demo:
 
 from __future__ import annotations
 
-import shutil
-import time
-from collections.abc import Callable
 from typing import Annotated
-from uuid import uuid4
 
 import typer
 
+from dr_llm.demo import (
+    DemoCounts,
+    DemoPrompts,
+    POOL_PROGRESS_FIELDS,
+    cleanup_demo_dsn,
+    command_hint,
+    demo_pool_fill_llm_configs,
+    prepare_demo_dsn,
+)
 from dr_llm.llm import (
-    ApiLlmConfig,
     LlmConfig,
     Message,
-    OpenAILlmConfig,
-    ProviderName,
     build_default_registry,
-    default_reasoning,
 )
 from dr_llm.pool import (
     Axis,
@@ -51,175 +54,71 @@ from dr_llm.pool import (
     LlmPoolBackendState,
     PoolSchema,
     PoolStore,
+    drain_pool,
     make_llm_process_fn,
     seed_llm_grid,
 )
-from dr_llm.project import (
-    CreateProjectRequest,
-    ProjectInfo,
-    create_project,
-    destroy_project,
-)
 from dr_llm.workers import (
-    WorkerConfig,
-    WorkerController,
     WorkerSnapshot,
+    WorkerConfig,
     start_workers,
 )
 
 app = typer.Typer()
 
-LLM_CONFIGS: dict[str, LlmConfig] = {
-    "gpt-5-mini-default": OpenAILlmConfig(
-        provider=ProviderName.OPENAI,
-        model="gpt-5-mini",
-        max_tokens=64,
-        reasoning=default_reasoning(
-            provider=ProviderName.OPENAI, model="gpt-5-mini"
-        ),
-    ),
-    "gemini-flash-default": ApiLlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemini-2.5-flash",
-        max_tokens=64,
-        reasoning=default_reasoning(
-            provider=ProviderName.GOOGLE, model="gemini-2.5-flash"
-        ),
-    ),
-}
-
 PROMPTS: dict[str, list[Message]] = {
-    "haiku": [
-        Message(role="user", content="Write a haiku about programming.")
-    ],
-    "math": [
-        Message(
-            role="user", content="What is 17 * 23? Reply with just the number."
-        )
-    ],
+    "haiku": [Message(role="user", content=DemoPrompts.PROGRAMMING_HAIKU)],
+    "math": [Message(role="user", content=DemoPrompts.TWO_PLUS_TWO)],
 }
 
-ProgressKey = tuple[int, int, int, int, int]
-_UNKNOWN = -1
-
-
-def _format_pool_progress_line(
-    snapshot: WorkerSnapshot[LlmPoolBackendState],
-) -> str:
-    worker_counts = snapshot.counts
-    backend_state = snapshot.backend_state
-    if backend_state is None:
-        incomplete: int | str = "?"
-        complete: int | str = "?"
-    else:
-        incomplete = backend_state.incomplete
-        complete = backend_state.complete
-    return (
-        f"claimed={worker_counts.claimed} "
-        f"completed={worker_counts.completed} "
-        f"failed={worker_counts.failed} "
-        f"incomplete={incomplete} "
-        f"complete={complete}"
-    )
-
-
-def _pool_progress_key(
-    snapshot: WorkerSnapshot[LlmPoolBackendState],
-) -> ProgressKey:
-    worker_counts = snapshot.counts
-    backend_state = snapshot.backend_state
-    if backend_state is None:
-        return (
-            worker_counts.claimed,
-            worker_counts.completed,
-            worker_counts.failed,
-            _UNKNOWN,
-            _UNKNOWN,
+LLM_CONFIG_AXIS: Axis[LlmConfig] = Axis(
+    name="llm_config",
+    members=[
+        AxisMember[LlmConfig](
+            id=cfg_id,
+            value=cfg,
+            metadata={"provider": cfg.provider, "model": cfg.model},
         )
-    return (
-        worker_counts.claimed,
-        worker_counts.completed,
-        worker_counts.failed,
-        backend_state.incomplete,
-        backend_state.complete,
-    )
+        for cfg_id, cfg in demo_pool_fill_llm_configs().items()
+    ],
+)
+
+PROMPT_AXIS: Axis[list[Message]] = Axis(
+    name="prompt",
+    members=[
+        AxisMember[list[Message]](
+            id=prompt_id,
+            value=messages,
+            metadata={"first_user_text": messages[0].content},
+        )
+        for prompt_id, messages in PROMPTS.items()
+    ],
+)
 
 
-def _pool_is_idle(snapshot: WorkerSnapshot[LlmPoolBackendState]) -> bool:
-    backend_state = snapshot.backend_state
-    return backend_state is not None and backend_state.incomplete == 0
-
-
-def _drain(
-    controller: WorkerController[LlmPoolBackendState],
-    *,
-    on_change: Callable[[WorkerSnapshot[LlmPoolBackendState]], None]
-    | None = None,
-    poll_interval_s: float = 0.5,
-) -> WorkerSnapshot[LlmPoolBackendState]:
-    if poll_interval_s <= 0:
-        raise ValueError(f"poll_interval_s must be > 0, got {poll_interval_s}")
-    last_key: ProgressKey | None = None
-    while True:
-        snapshot = controller.snapshot()
-        key = _pool_progress_key(snapshot)
-        if on_change is not None and key != last_key:
-            on_change(snapshot)
-            last_key = key
-        if _pool_is_idle(snapshot):
-            return snapshot
-        time.sleep(poll_interval_s)
-
-
-def _llm_config_axis() -> Axis[LlmConfig]:
-    return Axis(
-        name="llm_config",
-        members=[
-            AxisMember[LlmConfig](
-                id=cfg_id,
-                value=cfg,
-                metadata={"provider": cfg.provider, "model": cfg.model},
-            )
-            for cfg_id, cfg in LLM_CONFIGS.items()
-        ],
-    )
-
-
-def _prompt_axis() -> Axis[list[Message]]:
-    return Axis(
-        name="prompt",
-        members=[
-            AxisMember[list[Message]](
-                id=prompt_id,
-                value=messages,
-                metadata={"first_user_text": messages[0].content},
-            )
-            for prompt_id, messages in PROMPTS.items()
-        ],
-    )
-
-
-def _build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
-    return cell.values["prompt"], cell.values["llm_config"]
-
-
-def _run_demo(
+def _seed_fill_pool(
     dsn: str,
     pool_name: str,
     num_workers: int,
     samples_per_cell: int,
 ) -> None:
+    def _build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
+        return cell.values["prompt"], cell.values["llm_config"]
+
+    def _snapshot_progress(snapshot: WorkerSnapshot[LlmPoolBackendState]) -> None:
+        counts = DemoCounts.from_pool_snapshot(snapshot)
+        print(f"Progress: {counts.format_line(POOL_PROGRESS_FIELDS)}")
+
     schema = PoolSchema.from_axis_names(pool_name, ["llm_config", "prompt"])
     runtime = DbRuntime(DbConfig(dsn=dsn))
     registry = build_default_registry()
     store = PoolStore(schema, runtime)
     store.ensure_schema()
-    controller = None
 
     try:
         seed_result = seed_llm_grid(
             store,
-            axes=[_llm_config_axis(), _prompt_axis()],
+            axes=[LLM_CONFIG_AXIS, PROMPT_AXIS],
             build_request=_build_request,
             n=samples_per_cell,
         )
@@ -241,16 +140,11 @@ def _run_demo(
                 thread_name_prefix="pool-fill",
             ),
         )
-        try:
-            _drain(
-                controller,
-                on_change=lambda snap: print(
-                    f"Progress: {_format_pool_progress_line(snap)}"
-                ),
-            )
-        finally:
-            controller.stop()
-            final_snapshot = controller.join()
+        final_snapshot = drain_pool(
+            controller,
+            on_change=_snapshot_progress,
+            poll_interval_s=0.5,
+        )
 
         assert final_snapshot.backend_state is not None
         print(
@@ -275,14 +169,69 @@ def _run_demo(
         runtime.close()
 
 
+def _ensure_dsn_and_seed_fill_pool(
+    *,
+    dsn: str | None,
+    project_name: str | None,
+    keep_project: bool,
+    pool_name: str,
+    num_workers: int,
+    samples_per_cell: int,
+) -> None:
+    lease = prepare_demo_dsn(
+        dsn=dsn,
+        project_prefix="demo_pool_fill",
+        project_name=project_name,
+        keep_project=keep_project,
+    )
+    if lease.project_name is not None:
+        print(f"Postgres ready at {lease.dsn}")
+
+    try:
+        _seed_fill_pool(
+            lease.dsn,
+            pool_name,
+            num_workers,
+            samples_per_cell,
+        )
+    finally:
+        if lease.should_destroy_project and lease.project_name is not None:
+            print(f"Destroying temporary project '{lease.project_name}'...")
+            cleanup_demo_dsn(lease)
+
+    if lease.project_name is not None and not lease.should_destroy_project:
+        print(f"Project '{lease.project_name}' is still running with your data.")
+        command_hint(
+            "Destroy permanently",
+            "uv run dr-llm project destroy "
+            f"{lease.project_name} --yes-really-delete-everything",
+        )
+
+
 @app.command()
 def main(
     dsn: Annotated[
         str | None,
         typer.Option(
-            help="PostgreSQL DSN. If omitted, a temporary Docker project is created."
+            help=("PostgreSQL DSN. If omitted, a Docker demo project is created.")
         ),
     ] = None,
+    project_name: Annotated[
+        str | None,
+        typer.Option(
+            help=(
+                "Name for the auto-created Docker project. Defaults to a "
+                "unique temporary name."
+            )
+        ),
+    ] = None,
+    keep_project: Annotated[
+        bool,
+        typer.Option(
+            "--keep-project",
+            help="Keep the auto-created Docker project for inspection.",
+        ),
+    ] = False,
     pool_name: Annotated[
         str,
         typer.Option(help="Pool name to create for the demo."),
@@ -299,42 +248,14 @@ def main(
     ] = 1,
 ) -> None:
     """Seed an LLM config x prompt pool and fill it with worker calls."""
-    if dsn is not None:
-        _run_demo(
-            dsn,
-            pool_name,
-            num_workers,
-            samples_per_cell,
-        )
-        return
-
-    # Auto-manage a Docker Postgres project
-    if not shutil.which("docker"):
-        print("Error: Docker is required when no --dsn is provided.")
-        print(
-            "Either install Docker or pass --dsn to use an existing database."
-        )
-        raise typer.Exit(1)
-
-    project_name = f"demo_pool_fill_{uuid4().hex[:8]}"
-    project: ProjectInfo | None = None
-    try:
-        print(f"Creating temporary project '{project_name}'...")
-        project = create_project(
-            CreateProjectRequest(project_name=project_name)
-        )
-        assert project.dsn is not None
-        print(f"Postgres ready at {project.dsn}")
-        _run_demo(
-            project.dsn,
-            pool_name,
-            num_workers,
-            samples_per_cell,
-        )
-    finally:
-        if project is not None:
-            print(f"Destroying temporary project '{project_name}'...")
-            destroy_project(project_name)
+    _ensure_dsn_and_seed_fill_pool(
+        dsn=dsn,
+        project_name=project_name,
+        keep_project=keep_project,
+        pool_name=pool_name,
+        num_workers=num_workers,
+        samples_per_cell=samples_per_cell,
+    )
 
 
 if __name__ == "__main__":

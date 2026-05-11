@@ -6,50 +6,52 @@ Demonstrates the hybrid CLI + Python API workflow (Flow 2):
 - Python API: PoolSchema, PoolStore, PoolSample, bulk_load
 
 Prerequisites:
-  1. Docker running (used to spin up a Postgres container for the pool)
+  1. Docker running, unless --dsn points at an existing Postgres database
   2. At least one provider available:
      - API key env var (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.), or
      - CLI tool installed (claude, codex)
 
 Usage:
   uv run python scripts/demo-pool-providers.py
+  uv run python scripts/demo-pool-providers.py --keep-project
+  uv run python scripts/demo-pool-providers.py --dsn postgresql://postgres:postgres@localhost:5433/dr_llm_test
 
   The script will:
-  - Create a Docker-based Postgres project called 'demo_pool'
+  - Use an existing Postgres DSN or create a Docker-based Postgres project
   - Detect which LLM providers are available
   - Query each provider and store results in a typed pool
   - Print a summary table of all results
-  - Leave the project running so you can inspect the data
-
-  To clean up afterwards:
-    uv run dr-llm project destroy demo_pool --yes-really-delete-everything
+  - Destroy auto-created projects by default; pass --keep-project to inspect
+    the data afterward
 """
 
 from __future__ import annotations
 
-import json
-import shutil
-import subprocess
-from typing import Any
+from typing import Annotated, Any
 
 import typer
 
 from dr_llm.demo import (
-    BOLD,
-    CYAN,
-    GREEN,
-    RED,
-    RESET,
-    YELLOW,
+    DEMO_QUERY_DEFAULT_MODELS,
+    DemoDsnLease,
+    DemoPrompts,
+    cleanup_demo_dsn,
+    command_hint,
     fail,
+    list_models_json,
     ok,
+    prepare_demo_dsn,
+    query_json,
+    show_model_json,
     step,
+    sync_models_json,
     warn,
 )
 from dr_llm.llm import (
     EffortSpec,
     ProviderAvailabilityStatus,
     ProviderName,
+    ProviderRegistry,
     build_default_registry,
     default_effort,
     default_reasoning,
@@ -61,57 +63,23 @@ from dr_llm.pool import (
     PoolSample,
     PoolSchema,
     PoolStore,
-)
-from dr_llm.project import (
-    CreateProjectRequest,
-    ProjectInfo,
-    create_project,
-    destroy_project,
-    maybe_get_project,
+    PoolSummaryColumn,
+    print_pool_summary,
 )
 
 app = typer.Typer()
 
-DEFAULT_PROMPT = "What is 2+2? Answer in one sentence."
-DEFAULT_PROJECT = "demo_pool"
+DEFAULT_PROMPT = DemoPrompts.TWO_PLUS_TWO
+PROJECT_PREFIX = "demo_pool"
 API_TIMEOUT = 120
 HEADLESS_TIMEOUT = 300
 ANTHROPIC_MAX_TOKENS = 256
 
 
-DEFAULT_MODELS: dict[ProviderName, str] = {
-    ProviderName.OPENAI: "gpt-4o-mini",
-    ProviderName.ANTHROPIC: "claude-sonnet-4-20250514",
-    ProviderName.GOOGLE: "gemini-2.5-flash",
-    ProviderName.GLM: "glm-4.5",
-    ProviderName.MINIMAX: "MiniMax-M2",
-    ProviderName.CLAUDE_CODE: "claude-sonnet-4-6",
-    ProviderName.CODEX: "gpt-5.4-mini",
-    ProviderName.KIMI_CODE: "kimi-for-coding",
-}
-
 POOL_SCHEMA = PoolSchema(
     name="provider_queries",
     key_columns=[KeyColumn(name="provider"), KeyColumn(name="model")],
 )
-
-
-# --- Helpers ---
-
-
-def run_cli(*args: str, timeout: int = API_TIMEOUT) -> dict[str, Any]:
-    """Run a dr-llm CLI command and return parsed JSON output."""
-    cmd = ["uv", "run", "dr-llm", *args]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        stderr = result.stderr.strip()[:500]
-        raise RuntimeError(f"CLI command failed: {' '.join(args)}\n{stderr}")
-    return json.loads(result.stdout)
 
 
 # --- Detection ---
@@ -135,30 +103,18 @@ def detect_providers(
     return available
 
 
-# --- Project ---
-
-
-def create_demo_project(project_name: str) -> ProjectInfo:
-    """Create a demo project, destroying any existing one first."""
-    existing = maybe_get_project(project_name)
-    if existing is not None:
-        destroy_project(project_name)
-    return create_project(CreateProjectRequest(project_name=project_name))
-
-
 # --- Model Resolution ---
 
 
 def resolve_model(provider: ProviderName) -> str:
     """Sync catalog, list models, pick default or first available."""
-    run_cli("models", "sync", "--provider", provider, "--verbose")
-    result = run_cli("models", "list", "--provider", provider, "--json")
-    models = result.get("models", [])
+    sync_models_json(provider)
+    models = list_models_json(provider)
     if not models:
         raise RuntimeError(f"No models found for {provider}")
 
     model_ids = [m["model"] for m in models]
-    default_model = DEFAULT_MODELS.get(provider)
+    default_model = DEMO_QUERY_DEFAULT_MODELS.get(provider)
     if default_model and default_model in model_ids:
         return default_model
     if default_model:
@@ -170,11 +126,6 @@ def resolve_model(provider: ProviderName) -> str:
             f"  no default model configured for {provider}, using '{model_ids[0]}'"
         )
     return model_ids[0]
-
-
-def show_model(provider: str, model: str) -> dict[str, Any]:
-    """Show model details via CLI."""
-    return run_cli("models", "show", "--provider", provider, "--model", model)
 
 
 # --- Query ---
@@ -192,7 +143,7 @@ def provider_extra_args(provider: str, model: str) -> list[str]:
         )
     effort = default_effort(provider=provider, model=model)
     if effort != EffortSpec.NA:
-        args.extend(["--effort", effort.value])
+        args.extend(["--effort", effort])
     return args
 
 
@@ -201,25 +152,21 @@ def query_provider(
 ) -> dict[str, Any]:
     """Query a provider via CLI, returning the response dict."""
     timeout = HEADLESS_TIMEOUT if is_headless else API_TIMEOUT
-    args = [
-        "query",
-        "--provider",
-        provider,
-        "--model",
-        model,
-        "--message",
-        prompt,
-    ]
-    if provider in {
+    provider_name = ProviderName(provider)
+    extra_args: list[str] = []
+    if provider_name in {
         ProviderName.ANTHROPIC,
         ProviderName.KIMI_CODE,
         ProviderName.MINIMAX,
     }:
-        args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
-    args.extend(provider_extra_args(provider, model))
-    return run_cli(
-        *args,
+        extra_args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
+    extra_args.extend(provider_extra_args(provider, model))
+    return query_json(
+        provider,
+        model,
+        prompt,
         timeout=timeout,
+        extra_args=extra_args,
     )
 
 
@@ -233,8 +180,6 @@ def store_result(
     prompt: str,
     response: dict[str, Any],
 ) -> None:
-    """Insert a query result into the pool."""
-    usage = response.get("usage") or {}
     store.insert_sample(
         PoolSample(
             key_values={"provider": provider, "model": model},
@@ -243,7 +188,7 @@ def store_result(
             finish_reason=response.get("finish_reason"),
             metadata={
                 "cost": response.get("cost") or {},
-                "usage": usage,
+                "usage": response.get("usage") or {},
                 "latency_ms": response.get("latency_ms", 0),
             },
         )
@@ -252,134 +197,119 @@ def store_result(
 
 def print_summary(store: PoolStore) -> None:
     """Print a summary table of all pool samples."""
-    samples = store.bulk_load()
-    if not samples:
-        print("\nNo samples in pool.")
-        return
-
-    # Column widths
-    prov_w = max(len(s.key_values["provider"]) for s in samples)
-    prov_w = max(prov_w, len("Provider"))
-    model_w = max(len(s.key_values["model"]) for s in samples)
-    model_w = max(model_w, len("Model"))
-    resp_w = 50
-
-    header = (
-        f"{'Provider':<{prov_w}} | {'Model':<{model_w}} | "
-        f"{'Latency':>7} | {'Tokens':>6} | Response"
+    print_pool_summary(
+        store,
+        extra_columns=[
+            PoolSummaryColumn(
+                header="Latency",
+                value=latency_cell,
+                justify="right",
+            ),
+            PoolSummaryColumn(
+                header="Tokens",
+                value=token_cell,
+                justify="right",
+            ),
+        ],
+        response_max_chars=50,
     )
-    sep = f"{'-' * prov_w}-+-{'-' * model_w}-+-{'-' * 7}-+-{'-' * 6}-+-{'-' * resp_w}"
 
-    print(f"\n{BOLD}=== Pool Summary: {POOL_SCHEMA.name} ==={RESET}\n")
-    print(header)
-    print(sep)
 
-    for s in samples:
-        provider = s.key_values["provider"]
-        model = s.key_values["model"]
-        latency = (s.metadata or {}).get("latency_ms", 0)
-        usage = (s.metadata or {}).get("usage", {})
-        tokens = usage.get("total_tokens", 0)
-        text = (s.response or {}).get("text", "")
-        text_trunc = text[: resp_w - 3] + "..." if len(text) > resp_w else text
-        text_trunc = text_trunc.replace("\n", " ")
+def latency_cell(sample: PoolSample) -> str:
+    latency = sample.metadata.get("latency_ms", 0)
+    return f"{latency}ms"
 
-        print(
-            f"{provider:<{prov_w}} | {model:<{model_w}} | "
-            f"{latency:>5}ms | {tokens:>6} | {text_trunc}"
-        )
 
-    print(
-        f"\nTotal: {len(samples)} samples from "
-        f"{len({s.key_values['provider'] for s in samples})} providers"
-    )
+def token_cell(sample: PoolSample) -> int:
+    usage = sample.metadata.get("usage", {})
+    if not isinstance(usage, dict):
+        return 0
+    return int(usage.get("total_tokens", 0) or 0)
 
 
 # --- Main ---
 
 
-@app.command()
-def main(
-    project_name: str = typer.Option(
-        DEFAULT_PROJECT, help="Project name for the demo"
-    ),
-    prompt: str = typer.Option(
-        DEFAULT_PROMPT, help="Prompt to send to each provider"
-    ),
-) -> None:
-    """Query all available LLM providers and store results in a typed pool."""
-    if not shutil.which("docker"):
-        fail(
-            "Docker is required but not found.\n"
-            "  This demo creates a Postgres container to store pool data.\n"
-            "  Install Docker and ensure it's running, then retry."
-        )
-        raise typer.Exit(1)
-
+def _detect_available_providers_or_exit(
+    registry: ProviderRegistry,
+) -> list[ProviderAvailabilityStatus]:
     step("1. Detecting available providers")
-    registry = build_default_registry()
     available = detect_providers(registry.availability_statuses())
     if not available:
-        print(
-            f"\n{RED}No providers available. Set API keys or install CLI tools.{RESET}"
-        )
+        fail("No providers available. Set API keys or install CLI tools.")
         raise typer.Exit(1)
     print(
         f"\n  Found {len(available)} providers: "
         f"{', '.join(status.provider for status in available)}"
     )
+    return available
 
-    step("2. Creating demo project")
-    demo_succeeded = False
-    runtime: DbRuntime | None = None
-    project: ProjectInfo | None = None
+
+def _prepare_demo_pool(dsn: str) -> tuple[DbRuntime, PoolStore]:
+    step("3. Initializing pool")
+    runtime = DbRuntime(DbConfig(dsn=dsn, min_pool_size=1, max_pool_size=4))
     try:
-        project = create_demo_project(project_name)
-        assert project.dsn is not None
-        ok(f"Project '{project_name}' created at {project.dsn}")
-
-        step("3. Initializing pool")
-        runtime = DbRuntime(
-            DbConfig(dsn=project.dsn, min_pool_size=1, max_pool_size=4)
-        )
         store = PoolStore(POOL_SCHEMA, runtime)
         store.ensure_schema()
-        ok(f"Pool '{POOL_SCHEMA.name}' ready")
+    except Exception:
+        runtime.close()
+        raise
+    ok(f"Pool '{POOL_SCHEMA.name}' ready")
+    return runtime, store
 
-        succeeded: list[str] = []
+
+def _query_and_store_provider(
+    *,
+    registry: ProviderRegistry,
+    store: PoolStore,
+    status: ProviderAvailabilityStatus,
+    prompt: str,
+) -> None:
+    provider = status.provider
+    provider_name = ProviderName(provider)
+
+    model = resolve_model(provider_name)
+    ok(f"Using model: {model}")
+
+    info = show_model_json(provider, model)
+    display = info.get("display_name", model)
+    ctx = info.get("context_window")
+    ctx_str = f", context={ctx}" if ctx else ""
+    ok(f"Model info: {display}{ctx_str}")
+
+    is_headless = registry.get(provider).mode == "headless"
+    print(f"  Querying {provider}/{model}...")
+    response = query_provider(provider, model, prompt, is_headless=is_headless)
+    text = (response.get("text") or "")[:80].replace("\n", " ")
+    latency = response.get("latency_ms", "?")
+    ok(f"Response ({latency}ms): {text}")
+
+    store_result(store, provider, model, prompt, response)
+    ok("Stored in pool")
+
+
+def _query_available_providers_pool(
+    *,
+    dsn: str,
+    registry: ProviderRegistry,
+    available: list[ProviderAvailabilityStatus],
+    prompt: str,
+) -> None:
+    runtime: DbRuntime | None = None
+    try:
+        runtime, store = _prepare_demo_pool(dsn)
         failed_providers: list[str] = []
 
         for i, status in enumerate(available, 1):
             provider = status.provider
-            provider_name = ProviderName(provider)
             step(f"4.{i}. Provider: {provider}")
             try:
-                # Resolve model
-                model = resolve_model(provider_name)
-                ok(f"Using model: {model}")
-
-                # Show model info
-                info = show_model(provider, model)
-                display = info.get("display_name", model)
-                ctx = info.get("context_window")
-                ctx_str = f", context={ctx}" if ctx else ""
-                ok(f"Model info: {display}{ctx_str}")
-
-                # Query
-                is_headless = registry.get(provider).mode == "headless"
-                print(f"  Querying {provider}/{model}...")
-                response = query_provider(
-                    provider, model, prompt, is_headless=is_headless
+                _query_and_store_provider(
+                    registry=registry,
+                    store=store,
+                    status=status,
+                    prompt=prompt,
                 )
-                text = (response.get("text") or "")[:80].replace("\n", " ")
-                latency = response.get("latency_ms", "?")
-                ok(f"Response ({latency}ms): {text}")
-
-                # Store in pool
-                store_result(store, provider, model, prompt, response)
-                ok("Stored in pool")
-                succeeded.append(provider)
-
             except Exception as exc:
                 fail(f"{provider}: {exc}")
                 failed_providers.append(provider)
@@ -388,30 +318,107 @@ def main(
         print_summary(store)
 
         if failed_providers:
-            print(
-                f"\n{YELLOW}Failed providers: {', '.join(failed_providers)}{RESET}"
-            )
-
-        demo_succeeded = True
+            warn(f"Failed providers: {', '.join(failed_providers)}")
 
     finally:
         if runtime:
             runtime.close()
-        if not demo_succeeded and project is not None:
-            print(f"\n{BOLD}Cleaning up after failure...{RESET}")
-            try:
-                destroy_project(project_name)
-            except Exception:
-                pass
 
-    print(f"\n{BOLD}{GREEN}Demo complete!{RESET}")
-    print(f"Project '{project_name}' is still running with your data.\n")
-    print(
-        f"  Stop (preserve data):  {CYAN}uv run dr-llm project stop {project_name}{RESET}"
+
+def _print_kept_project_hints(lease: DemoDsnLease) -> None:
+    if lease.project_name is None or lease.should_destroy_project:
+        return
+
+    print(f"Project '{lease.project_name}' is still running with your data.\n")
+    command_hint(
+        "Stop (preserve data)",
+        f"uv run dr-llm project stop {lease.project_name}",
     )
-    print(
-        f"  Destroy permanently:   {CYAN}uv run dr-llm project destroy {project_name} "
-        f"--yes-really-delete-everything{RESET}"
+    command_hint(
+        "Destroy permanently",
+        "uv run dr-llm project destroy "
+        f"{lease.project_name} --yes-really-delete-everything",
+    )
+
+
+def _ensure_dsn_and_query_providers(
+    *,
+    dsn: str | None,
+    project_name: str | None,
+    keep_project: bool,
+    prompt: str,
+) -> None:
+    registry = build_default_registry()
+    try:
+        available = _detect_available_providers_or_exit(registry)
+
+        step("2. Preparing database")
+        lease = prepare_demo_dsn(
+            dsn=dsn,
+            project_prefix=PROJECT_PREFIX,
+            project_name=project_name,
+            keep_project=keep_project,
+        )
+        if lease.project_name is not None:
+            ok(f"Project '{lease.project_name}' ready at {lease.dsn}")
+        else:
+            ok(f"Using database at {lease.dsn}")
+
+        try:
+            _query_available_providers_pool(
+                dsn=lease.dsn,
+                registry=registry,
+                available=available,
+                prompt=prompt,
+            )
+        finally:
+            if lease.should_destroy_project and lease.project_name is not None:
+                step("Destroying temporary project")
+                cleanup_demo_dsn(lease)
+
+        ok("Demo complete!")
+        _print_kept_project_hints(lease)
+    finally:
+        registry.close()
+
+
+@app.command()
+def main(
+    dsn: Annotated[
+        str | None,
+        typer.Option(
+            help=(
+                "PostgreSQL DSN. If omitted, a Docker demo project is created."
+            )
+        ),
+    ] = None,
+    project_name: Annotated[
+        str | None,
+        typer.Option(
+            help=(
+                "Name for the auto-created Docker project. Defaults to a "
+                "unique temporary name."
+            )
+        ),
+    ] = None,
+    keep_project: Annotated[
+        bool,
+        typer.Option(
+            "--keep-project",
+            help="Keep the auto-created Docker project for inspection.",
+        ),
+    ] = False,
+    prompt: Annotated[
+        str,
+        typer.Option(help="Prompt to send to each provider"),
+    ] = DEFAULT_PROMPT,
+) -> None:
+    """Query all available LLM providers and store results in a typed pool."""
+    _ensure_dsn_and_query_providers(
+        dsn=dsn,
+        project_name=project_name,
+        keep_project=keep_project,
+        prompt=prompt,
     )
 
 
