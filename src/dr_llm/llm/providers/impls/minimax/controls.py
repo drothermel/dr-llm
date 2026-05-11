@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,7 +12,7 @@ from dr_llm.llm.names import (
     ControlMode,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
+from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     BaseProviderControlMapping,
@@ -24,35 +23,17 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
+from dr_llm.llm.providers.impls.minimax.families import (
+    MiniMaxFamilies,
+)
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
 
 
-class MiniMaxModelFamily(StrEnum):
-    MINIMAX = "MiniMax-"
-
-    def in_family(self, model: str) -> bool:
-        return model.startswith(self)
+MINIMAX_DEFAULT_SAMPLING = SamplingControls(temperature=1.0, top_p=0.95)
 
 
-MINIMAX_SUPPORTED_MODEL_FAMILIES = (MiniMaxModelFamily.MINIMAX,)
-
-
-def minimax_control_mode(model: str) -> ControlMode:
-    if any(
-        family.in_family(model) for family in MINIMAX_SUPPORTED_MODEL_FAMILIES
-    ):
-        return ControlMode.MINIMAX_EFFORT
-    return ControlMode.UNSUPPORTED
-
-
-def supported_effort_levels_for_minimax(model: str) -> tuple[EffortSpec, ...]:
-    if minimax_control_mode(model) == ControlMode.UNSUPPORTED:
-        return ()
-    return FULL_EFFORT
-
-
-def validate_reasoning_for_minimax(
+def _validate_reasoning_for_minimax(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
     if reasoning is None:
@@ -84,28 +65,29 @@ class MiniMaxControls(BaseModel):
     provider: ProviderName = ProviderName.MINIMAX
     model: str
     mode: CallMode
+    families: MiniMaxFamilies = Field(
+        default_factory=MiniMaxFamilies, exclude=True
+    )
 
     @property
     def control_mode(self) -> ControlMode:
-        return minimax_control_mode(self.model)
+        return self.families.control_mode(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
-        return (ThinkingLevel.NA,)
+        return self.families.supported_thinking_levels(self.model)
 
     @property
     def default_thinking_level(self) -> ThinkingLevel:
-        return ThinkingLevel.NA
+        return self.families.default_thinking_level(self.model)
 
     @property
     def supported_effort_levels(self) -> tuple[EffortSpec, ...]:
-        return supported_effort_levels_for_minimax(self.model)
+        return self.families.supported_effort_levels(self.model)
 
     @property
     def default_effort(self) -> EffortSpec:
-        if self.supported_effort_levels:
-            return self.supported_effort_levels[0]
-        return EffortSpec.NA
+        return self.families.default_effort(self.model)
 
     @property
     def default_reasoning(self) -> ReasoningSpec | None:
@@ -131,7 +113,7 @@ class MiniMaxControls(BaseModel):
             effort=self.default_effort,
             reasoning=self.default_reasoning,
             sampling_supported=True,
-            sampling=SamplingControls(temperature=1.0, top_p=0.95),
+            sampling=MINIMAX_DEFAULT_SAMPLING,
         )
 
     def resolve_reasoning(
@@ -164,7 +146,7 @@ class MiniMaxControls(BaseModel):
             if sampling.is_empty():
                 return None
             return sampling
-        return SamplingControls(temperature=1.0, top_p=0.95)
+        return MINIMAX_DEFAULT_SAMPLING
 
     def reasoning_for_thinking_level(
         self,
@@ -180,42 +162,16 @@ class MiniMaxControls(BaseModel):
         )
 
     def validate_request(self, request: LlmRequest) -> list:
-        _validate_effort(
+        validate_effort(
             provider=self.provider,
             model=self.model,
             effort=request.effort,
             supported_effort_levels=self.supported_effort_levels,
         )
-        validate_reasoning_for_minimax(
+        _validate_reasoning_for_minimax(
             model=request.model, reasoning=request.reasoning
         )
         return []
-
-
-def _validate_effort(
-    *,
-    provider: str,
-    model: str,
-    effort: EffortSpec,
-    supported_effort_levels: tuple[EffortSpec, ...],
-) -> None:
-    if not supported_effort_levels:
-        if effort != EffortSpec.NA:
-            raise ValueError(
-                f"effort is not supported for provider={provider!r} "
-                f"model={model!r}"
-            )
-        return
-    if effort == EffortSpec.NA:
-        raise ValueError(
-            f"effort is required for provider={provider!r} model={model!r}"
-        )
-    if effort not in supported_effort_levels:
-        allowed = ", ".join(str(level) for level in supported_effort_levels)
-        raise ValueError(
-            f"effort={effort!r} is not supported for provider={provider!r} "
-            f"model={model!r}; allowed levels: {allowed}"
-        )
 
 
 class MiniMaxControlMapping(BaseProviderControlMapping):

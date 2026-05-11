@@ -16,11 +16,10 @@ from dr_llm.llm.providers.core.authoring import (
     validate_budget_range,
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.anthropic.controls import (
-    ANTHROPIC_BUDGET_MAX_TOKENS,
-    ANTHROPIC_BUDGET_MIN_TOKENS,
-    anthropic_control_mode,
-    supported_effort_levels_for_anthropic,
+from dr_llm.llm.providers.impls.anthropic.families import (
+    ANTHROPIC_FAMILIES,
+    ANTHROPIC_THINKING_MAX_BUDGET_TOKENS,
+    ANTHROPIC_THINKING_MIN_BUDGET_TOKENS,
 )
 
 type _AnthropicBudgetThinkingLevel = Literal[
@@ -52,7 +51,7 @@ class _AnthropicBaseConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_model_family(self) -> _AnthropicBaseConfig:
-        mode = anthropic_control_mode(self.model)
+        mode = ANTHROPIC_FAMILIES.control_mode(self.model)
         expected_mode = self._expected_control_mode()
         if mode != expected_mode:
             raise ValueError(
@@ -185,7 +184,7 @@ def _validate_anthropic_effort(
 ) -> None:
     if effort is None:
         return
-    allowed = supported_effort_levels_for_anthropic(model)
+    allowed = ANTHROPIC_FAMILIES.supported_effort_levels(model)
     if effort in allowed:
         return
     allowed_values = ", ".join(level.value for level in allowed)
@@ -216,6 +215,6 @@ def _validate_anthropic_budget(
         provider=provider,
         model=model,
         budget_tokens=budget_tokens,
-        min_tokens=ANTHROPIC_BUDGET_MIN_TOKENS,
-        max_tokens=ANTHROPIC_BUDGET_MAX_TOKENS,
+        min_tokens=ANTHROPIC_THINKING_MIN_BUDGET_TOKENS,
+        max_tokens=ANTHROPIC_THINKING_MAX_BUDGET_TOKENS,
     )

@@ -8,9 +8,9 @@ from dr_llm.llm.config import LlmConfig, SamplingControls
 from dr_llm.llm.names import EffortSpec, ProviderName
 from dr_llm.llm.providers.core.authoring import build_provider_config
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.minimax.controls import (
+from dr_llm.llm.providers.impls.minimax.families import (
+    MINIMAX_FAMILIES,
     MiniMaxModelFamily,
-    supported_effort_levels_for_minimax,
 )
 
 type _MiniMaxEffort = Literal[
@@ -40,7 +40,7 @@ class MiniMaxConfig(BaseModel):
             )
         if self.effort is None:
             return self
-        allowed = supported_effort_levels_for_minimax(self.model)
+        allowed = MINIMAX_FAMILIES.supported_effort_levels(self.model)
         if self.effort in allowed:
             return self
         allowed_values = ", ".join(level.value for level in allowed)

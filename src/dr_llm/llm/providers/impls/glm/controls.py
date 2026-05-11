@@ -13,6 +13,7 @@ from dr_llm.llm.names import (
     ControlMode,
     ThinkingLevel,
 )
+from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
     BaseProviderControlMapping,
     GlmReasoning,
@@ -25,40 +26,30 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
+from dr_llm.llm.providers.impls.glm.families import (
+    GLM_FAMILIES,
+    GlmFamilies,
+)
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
 
 
-class GlmModelFamily(StrEnum):
-    GLM5 = "glm-5"
-    GLM47 = "glm-4.7"
-    GLM46 = "glm-4.6"
-    GLM45 = "glm-4.5"
-
-    def in_family(self, model: str) -> bool:
-        return model.startswith(self)
+class GlmThinkingType(StrEnum):
+    DISABLED = "disabled"
+    ENABLED = "enabled"
 
 
-GLM_THINKING_SUPPORTED_FAMILIES = (
-    GlmModelFamily.GLM5,
-    GlmModelFamily.GLM47,
-    GlmModelFamily.GLM46,
-    GlmModelFamily.GLM45,
-)
+GLM_DEFAULT_SAMPLING = SamplingControls(temperature=1.0, top_p=0.95)
 
 
-def glm_control_mode(model: str) -> ControlMode:
-    if any(
-        family.in_family(model) for family in GLM_THINKING_SUPPORTED_FAMILIES
-    ):
-        return ControlMode.GLM
-    return ControlMode.UNSUPPORTED
-
-
-def validate_reasoning_for_glm(
-    *, model: str, reasoning: ReasoningSpec | None
+def _validate_reasoning_for_glm(
+    *,
+    model: str,
+    reasoning: ReasoningSpec | None,
+    families: GlmFamilies | None = None,
 ) -> None:
-    control_mode = glm_control_mode(model)
+    families = families or GLM_FAMILIES
+    control_mode = families.control_mode(model)
     if reasoning is None:
         if not is_control_unsupported(control_mode):
             raise ValueError(
@@ -89,35 +80,27 @@ class GlmControls(BaseModel):
     provider: ProviderName = ProviderName.GLM
     model: str
     mode: CallMode
+    families: GlmFamilies = Field(default_factory=GlmFamilies, exclude=True)
 
     @property
     def control_mode(self) -> ControlMode:
-        return glm_control_mode(self.model)
+        return self.families.control_mode(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
-        if self.control_mode == ControlMode.UNSUPPORTED:
-            return (ThinkingLevel.NA,)
-        if self.control_mode == ControlMode.GLM:
-            return (ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE)
-        raise ValueError(
-            f"unexpected control mode for provider={self.provider!r} "
-            f"model={self.model!r}: {self.control_mode!r}"
-        )
+        return self.families.supported_thinking_levels(self.model)
 
     @property
     def default_thinking_level(self) -> ThinkingLevel:
-        if ThinkingLevel.OFF in self.supported_thinking_levels:
-            return ThinkingLevel.OFF
-        return ThinkingLevel.NA
+        return self.families.default_thinking_level(self.model)
 
     @property
     def supported_effort_levels(self) -> tuple[EffortSpec, ...]:
-        return ()
+        return self.families.supported_effort_levels(self.model)
 
     @property
     def default_effort(self) -> EffortSpec:
-        return EffortSpec.NA
+        return self.families.default_effort(self.model)
 
     @property
     def default_reasoning(self) -> ReasoningSpec | None:
@@ -143,7 +126,7 @@ class GlmControls(BaseModel):
             effort=self.default_effort,
             reasoning=self.default_reasoning,
             sampling_supported=True,
-            sampling=SamplingControls(temperature=1.0, top_p=0.95),
+            sampling=GLM_DEFAULT_SAMPLING,
         )
 
     def resolve_reasoning(
@@ -174,7 +157,7 @@ class GlmControls(BaseModel):
             if sampling.is_empty():
                 return None
             return sampling
-        return SamplingControls(temperature=1.0, top_p=0.95)
+        return GLM_DEFAULT_SAMPLING
 
     def reasoning_for_thinking_level(
         self,
@@ -188,42 +171,18 @@ class GlmControls(BaseModel):
         return GlmReasoning(thinking_level=thinking_level)
 
     def validate_request(self, request: LlmRequest) -> list:
-        _validate_effort(
+        validate_effort(
             provider=self.provider,
             model=self.model,
             effort=request.effort,
             supported_effort_levels=self.supported_effort_levels,
         )
-        validate_reasoning_for_glm(
-            model=request.model, reasoning=request.reasoning
+        _validate_reasoning_for_glm(
+            model=request.model,
+            reasoning=request.reasoning,
+            families=self.families,
         )
         return []
-
-
-def _validate_effort(
-    *,
-    provider: str,
-    model: str,
-    effort: EffortSpec,
-    supported_effort_levels: tuple[EffortSpec, ...],
-) -> None:
-    if not supported_effort_levels:
-        if effort != EffortSpec.NA:
-            raise ValueError(
-                f"effort is not supported for provider={provider!r} "
-                f"model={model!r}"
-            )
-        return
-    if effort == EffortSpec.NA:
-        raise ValueError(
-            f"effort is required for provider={provider!r} model={model!r}"
-        )
-    if effort not in supported_effort_levels:
-        allowed = ", ".join(str(level) for level in supported_effort_levels)
-        raise ValueError(
-            f"effort={effort!r} is not supported for provider={provider!r} "
-            f"model={model!r}; allowed levels: {allowed}"
-        )
 
 
 class GlmControlMapping(BaseProviderControlMapping):
@@ -238,9 +197,13 @@ class GlmControlMapping(BaseProviderControlMapping):
             return cls()
         match config:
             case GlmReasoning(thinking_level=ThinkingLevel.OFF):
-                return cls(extra_body={"thinking": {"type": "disabled"}})
+                return cls(
+                    extra_body={"thinking": {"type": GlmThinkingType.DISABLED}}
+                )
             case GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE):
-                return cls(extra_body={"thinking": {"type": "enabled"}})
+                return cls(
+                    extra_body={"thinking": {"type": GlmThinkingType.ENABLED}}
+                )
         raise ProviderSemanticError(
             unsupported_reasoning_kind_message(ProviderName.GLM, config)
         )

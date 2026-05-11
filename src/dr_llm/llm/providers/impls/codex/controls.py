@@ -13,10 +13,7 @@ from dr_llm.llm.names import (
     ControlMode,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.concepts.model_family import (
-    is_snapshot_of_family,
-    model_matches_any_family,
-)
+from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
     BaseProviderControlMapping,
     CodexReasoning,
@@ -31,78 +28,37 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
+from dr_llm.llm.providers.impls.codex.families import (
+    CODEX_FAMILIES,
+    CodexFamilies,
+)
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
 
 
-class CodexModelFamily(StrEnum):
-    GPT5 = "gpt-5"
-    GPT51 = "gpt-5.1"
-    GPT52 = "gpt-5.2"
-    GPT54 = "gpt-5.4"
-    GPT5_CODEX = "gpt-5-codex"
-    GPT51_CODEX = "gpt-5.1-codex"
-    GPT51_CODEX_MINI = "gpt-5.1-codex-mini"
-    GPT51_CODEX_MAX = "gpt-5.1-codex-max"
-    GPT52_CODEX = "gpt-5.2-codex"
-    GPT53_CODEX = "gpt-5.3-codex"
-    GPT53_CODEX_SPARK = "gpt-5.3-codex-spark"
-    GPT54_MINI = "gpt-5.4-mini"
-
-    def in_family(self, model: str) -> bool:
-        return model == self or is_snapshot_of_family(
-            model=model, family=str(self)
-        )
+class CodexCliConfigKey(StrEnum):
+    MODEL_REASONING_EFFORT = "model_reasoning_effort"
 
 
-CODEX_THINKING_SUPPORTED_MODELS = (
-    CodexModelFamily.GPT5,
-    CodexModelFamily.GPT51,
-    CodexModelFamily.GPT52,
-    CodexModelFamily.GPT54,
-    CodexModelFamily.GPT5_CODEX,
-    CodexModelFamily.GPT51_CODEX,
-    CodexModelFamily.GPT51_CODEX_MINI,
-    CodexModelFamily.GPT51_CODEX_MAX,
-    CodexModelFamily.GPT52_CODEX,
-    CodexModelFamily.GPT53_CODEX,
-    CodexModelFamily.GPT53_CODEX_SPARK,
-    CodexModelFamily.GPT54_MINI,
-)
-CODEX_MINIMAL_THINKING_SUPPORTED_MODELS = (CodexModelFamily.GPT5,)
-CODEX_OFF_THINKING_SUPPORTED_MODELS = (
-    CodexModelFamily.GPT51,
-    CodexModelFamily.GPT52,
-    CodexModelFamily.GPT54,
-    CodexModelFamily.GPT54_MINI,
-)
+class CodexReasoningEffort(StrEnum):
+    NONE = "none"
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
 
 
-def codex_supports_configurable_thinking(model: str) -> bool:
-    return model_matches_any_family(model, CODEX_THINKING_SUPPORTED_MODELS)
-
-
-def codex_supports_minimal_thinking(model: str) -> bool:
-    return model_matches_any_family(
-        model, CODEX_MINIMAL_THINKING_SUPPORTED_MODELS
-    )
-
-
-def codex_supports_off_thinking(model: str) -> bool:
-    return model_matches_any_family(model, CODEX_OFF_THINKING_SUPPORTED_MODELS)
-
-
-def codex_control_mode(model: str) -> ControlMode:
-    if codex_supports_configurable_thinking(model):
-        return ControlMode.CODEX_CLI_EFFORT
-    return ControlMode.UNSUPPORTED
-
-
-def validate_reasoning_for_codex(
-    *, model: str, reasoning: ReasoningSpec | None
+def _validate_reasoning_for_codex(
+    *,
+    model: str,
+    reasoning: ReasoningSpec | None,
+    families: CodexFamilies | None = None,
 ) -> None:
+    families = families or CODEX_FAMILIES
+
     def _validate_native(spec: CodexReasoning) -> None:
-        if not codex_supports_configurable_thinking(model):
+        if not families.supports_configurable_thinking(model):
             raise ValueError(
                 f"{ProviderName.CODEX} thinking is not supported for model={model!r}"
             )
@@ -110,13 +66,13 @@ def validate_reasoning_for_codex(
             provider=ProviderName.CODEX,
             model=model,
             thinking_level=spec.thinking_level,
-            supports_off=codex_supports_off_thinking(model),
-            supports_minimal=codex_supports_minimal_thinking(model),
+            supports_off=families.supports_off_thinking(model),
+            supports_minimal=families.supports_minimal_thinking(model),
             supports_xhigh=True,
         )
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
-        if is_control_unsupported(codex_control_mode(model)):
+        if is_control_unsupported(families.control_mode(model)):
             raise ValueError(
                 f"Reasoning is not supported for provider='{ProviderName.CODEX}' model={model!r}"
             )
@@ -134,7 +90,7 @@ def validate_reasoning_for_codex(
         model=model,
         reasoning=reasoning,
         native_spec_type=CodexReasoning,
-        requires_reasoning=codex_supports_configurable_thinking(model),
+        requires_reasoning=families.supports_configurable_thinking(model),
         validate_native=_validate_native,
         validate_top_budget=_validate_top_budget,
     )
@@ -154,7 +110,14 @@ class CodexHeadlessControlMapping(BaseProviderControlMapping):
             case CodexReasoning(thinking_level=ThinkingLevel.NA):
                 return cls()
             case CodexReasoning(thinking_level=ThinkingLevel.OFF):
-                return cls(cli_args=["-c", 'model_reasoning_effort="none"'])
+                return cls(
+                    cli_args=[
+                        "-c",
+                        _codex_reasoning_effort_config(
+                            CodexReasoningEffort.NONE
+                        ),
+                    ]
+                )
             case CodexReasoning(
                 thinking_level=ThinkingLevel.MINIMAL
                 | ThinkingLevel.LOW
@@ -162,11 +125,12 @@ class CodexHeadlessControlMapping(BaseProviderControlMapping):
                 | ThinkingLevel.HIGH
                 | ThinkingLevel.XHIGH
             ):
-                thinking_level = config.thinking_level
                 return cls(
                     cli_args=[
                         "-c",
-                        f'model_reasoning_effort="{thinking_level}"',
+                        _codex_reasoning_effort_config(
+                            CodexReasoningEffort(config.thinking_level)
+                        ),
                     ]
                 )
         raise HeadlessExecutionError(
@@ -180,49 +144,29 @@ class CodexControls(BaseModel):
     provider: ProviderName = ProviderName.CODEX
     model: str
     mode: CallMode
+    families: CodexFamilies = Field(
+        default_factory=CodexFamilies, exclude=True
+    )
 
     @property
     def control_mode(self) -> ControlMode:
-        return codex_control_mode(self.model)
+        return self.families.control_mode(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
-        if not codex_supports_configurable_thinking(self.model):
-            return (ThinkingLevel.NA,)
-        levels: list[ThinkingLevel] = []
-        if codex_supports_off_thinking(self.model):
-            levels.append(ThinkingLevel.OFF)
-        elif codex_supports_minimal_thinking(self.model):
-            levels.append(ThinkingLevel.MINIMAL)
-        levels.extend(
-            [
-                ThinkingLevel.LOW,
-                ThinkingLevel.MEDIUM,
-                ThinkingLevel.HIGH,
-                ThinkingLevel.XHIGH,
-            ]
-        )
-        return tuple(levels)
+        return self.families.supported_thinking_levels(self.model)
 
     @property
     def default_thinking_level(self) -> ThinkingLevel:
-        levels = self.supported_thinking_levels
-        for level in (
-            ThinkingLevel.OFF,
-            ThinkingLevel.MINIMAL,
-            ThinkingLevel.LOW,
-        ):
-            if level in levels:
-                return level
-        return ThinkingLevel.NA
+        return self.families.default_thinking_level(self.model)
 
     @property
     def supported_effort_levels(self) -> tuple[EffortSpec, ...]:
-        return ()
+        return self.families.supported_effort_levels(self.model)
 
     @property
     def default_effort(self) -> EffortSpec:
-        return EffortSpec.NA
+        return self.families.default_effort(self.model)
 
     @property
     def default_reasoning(self) -> ReasoningSpec | None:
@@ -291,14 +235,16 @@ class CodexControls(BaseModel):
         return CodexReasoning(thinking_level=thinking_level)
 
     def validate_request(self, request: LlmRequest) -> list:
-        _validate_effort(
+        validate_effort(
             provider=self.provider,
             model=self.model,
             effort=request.effort,
             supported_effort_levels=self.supported_effort_levels,
         )
-        validate_reasoning_for_codex(
-            model=request.model, reasoning=request.reasoning
+        _validate_reasoning_for_codex(
+            model=request.model,
+            reasoning=request.reasoning,
+            families=self.families,
         )
         if request.has_sampling_controls:
             raise ValueError(
@@ -307,27 +253,5 @@ class CodexControls(BaseModel):
         return []
 
 
-def _validate_effort(
-    *,
-    provider: str,
-    model: str,
-    effort: EffortSpec,
-    supported_effort_levels: tuple[EffortSpec, ...],
-) -> None:
-    if not supported_effort_levels:
-        if effort != EffortSpec.NA:
-            raise ValueError(
-                f"effort is not supported for provider={provider!r} "
-                f"model={model!r}"
-            )
-        return
-    if effort == EffortSpec.NA:
-        raise ValueError(
-            f"effort is required for provider={provider!r} model={model!r}"
-        )
-    if effort not in supported_effort_levels:
-        allowed = ", ".join(str(level) for level in supported_effort_levels)
-        raise ValueError(
-            f"effort={effort!r} is not supported for provider={provider!r} "
-            f"model={model!r}; allowed levels: {allowed}"
-        )
+def _codex_reasoning_effort_config(effort: CodexReasoningEffort) -> str:
+    return f'{CodexCliConfigKey.MODEL_REASONING_EFFORT}="{effort}"'

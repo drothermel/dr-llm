@@ -119,6 +119,9 @@ optional nested `SamplingControls`. Provider-specific authoring configs such as
 `OpenAIGpt5Config`, `AnthropicBudgetConfig`, `GoogleBudgetConfig`, and
 `CodexGpt54Config` encode provider and model-family constraints, then serialize
 to the common `LlmConfig` shape with `.to_llm_config()`.
+Provider control support is backed by provider-specific family capability
+models, so model matching, thinking levels, effort support, budget bounds, and
+provider defaults are defined in one inspectable data object per provider.
 
 Provider orchestrators construct requests from stored configs or caller inputs.
 Both paths run the same provider validation before generation, so persisted

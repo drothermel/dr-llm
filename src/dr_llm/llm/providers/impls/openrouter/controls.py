@@ -1,22 +1,19 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from functools import cache
-from importlib.resources import files
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
-import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
-    OpenRouterEffortLevel,
     ProviderName,
     ControlMode,
     ThinkingLevel,
 )
+from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
     BaseProviderControlMapping,
     OpenAIReasoning,
@@ -31,9 +28,13 @@ from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
 from dr_llm.llm.providers.impls.openai.controls import (
-    openai_supports_configurable_thinking,
-    openai_supports_minimal_thinking,
-    openai_supports_off_thinking,
+    OpenAIReasoningEffort,
+)
+from dr_llm.llm.providers.impls.openrouter.families import (
+    OPENROUTER_FAMILIES,
+    OpenRouterControlRequestStyle,
+    OpenRouterFamilies,
+    OpenRouterModelPolicy,
 )
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
@@ -42,64 +43,35 @@ if TYPE_CHECKING:
     from dr_llm.llm.catalog.models import ModelCatalogEntry
 
 
-class OpenRouterControlRequestStyle(StrEnum):
-    NONE = "none"
-    ENABLED_FLAG = "enabled_flag"
+class OpenRouterReasoningKey(StrEnum):
+    REASONING = "reasoning"
+    ENABLED = "enabled"
     EFFORT = "effort"
 
 
-class OpenRouterModelPolicy(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    model: str
-    request_style: OpenRouterControlRequestStyle
-    supports_disable: bool
-    allowed_efforts: tuple[OpenRouterEffortLevel, ...] = ()
-    default_enabled: bool | None = None
-    verified: bool = False
-    notes: str | None = None
+OPENROUTER_DEFAULT_SAMPLING = SamplingControls(temperature=1.0, top_p=0.95)
 
 
-@cache
-def _policies() -> dict[str, OpenRouterModelPolicy]:
-    raw = yaml.safe_load(
-        files("dr_llm.llm.providers.impls.openrouter.data")
-        .joinpath("model_policies.yml")
-        .read_text(encoding="utf-8")
-    )
-    return {
-        model: OpenRouterModelPolicy(model=model, **fields)
-        for model, fields in raw.items()
-    }
-
-
-def openrouter_model_policy(model: str) -> OpenRouterModelPolicy | None:
-    return _policies().get(model)
-
-
-def openrouter_control_mode(model: str) -> ControlMode:
-    policy = openrouter_model_policy(model)
-    if policy is None:
-        return ControlMode.UNSUPPORTED
-    return _control_mode_for_policy(policy.request_style)
-
-
-def openrouter_allowed_models() -> tuple[str, ...]:
-    return tuple(_policies())
+def _default_openrouter_families() -> OpenRouterFamilies:
+    return OPENROUTER_FAMILIES
 
 
 def apply_openrouter_model_policies(
     entries: list[ModelCatalogEntry],
+    families: OpenRouterFamilies | None = None,
 ) -> list[ModelCatalogEntry]:
+    families = families or OPENROUTER_FAMILIES
     filtered: list[ModelCatalogEntry] = []
     for entry in entries:
         if entry.provider != ProviderName.OPENROUTER:
             filtered.append(entry)
             continue
-        policy = openrouter_model_policy(entry.model)
+        policy = families.policy_for_model(entry.model)
         if policy is None:
             continue
-        controls = OpenRouterControls(model=entry.model, mode=CallMode.api)
+        controls = OpenRouterControls(
+            model=entry.model, mode=CallMode.api, families=families
+        )
         filtered.append(
             entry.model_copy(
                 update={
@@ -114,24 +86,18 @@ def apply_openrouter_model_policies(
     return filtered
 
 
-def _control_mode_for_policy(
-    request_style: OpenRouterControlRequestStyle,
-) -> ControlMode:
-    if request_style == OpenRouterControlRequestStyle.ENABLED_FLAG:
-        return ControlMode.OPENROUTER_TOGGLE
-    if request_style == OpenRouterControlRequestStyle.EFFORT:
-        return ControlMode.OPENROUTER_EFFORT
-    return ControlMode.UNSUPPORTED
-
-
-def validate_reasoning_for_openrouter(
-    *, model: str, reasoning: ReasoningSpec | None
+def _validate_reasoning_for_openrouter(
+    *,
+    model: str,
+    reasoning: ReasoningSpec | None,
+    families: OpenRouterFamilies | None = None,
 ) -> None:
-    if openrouter_model_policy(model) is None:
+    families = families or OPENROUTER_FAMILIES
+    if families.policy_for_model(model) is None:
         raise ValueError(
             f"{ProviderName.OPENROUTER} model={model!r} is not in the curated allowlist"
         )
-    control_mode = openrouter_control_mode(model)
+    control_mode = families.control_mode(model)
     if reasoning is None:
         if not is_control_unsupported(control_mode):
             raise ValueError(
@@ -143,10 +109,11 @@ def validate_reasoning_for_openrouter(
             model=model,
             enabled=reasoning.enabled,
             effort=reasoning.effort,
+            families=families,
         )
         return
     if isinstance(reasoning, OpenAIReasoning):
-        if not openai_supports_configurable_thinking(model):
+        if not families.openai_families.supports_configurable_thinking(model):
             raise ValueError(
                 f"{ProviderName.OPENAI} thinking is not supported for model={model!r}"
             )
@@ -154,8 +121,10 @@ def validate_reasoning_for_openrouter(
             provider=ProviderName.OPENROUTER,
             model=model,
             thinking_level=reasoning.thinking_level,
-            supports_off=openai_supports_off_thinking(model),
-            supports_minimal=openai_supports_minimal_thinking(model),
+            supports_off=families.openai_families.supports_off_thinking(model),
+            supports_minimal=(
+                families.openai_families.supports_minimal_thinking(model)
+            ),
         )
         return
     if isinstance(reasoning, ReasoningBudget):
@@ -173,30 +142,33 @@ class OpenRouterControls(BaseModel):
     provider: ProviderName = ProviderName.OPENROUTER
     model: str
     mode: CallMode
+    families: OpenRouterFamilies = Field(
+        default_factory=_default_openrouter_families, exclude=True
+    )
 
     @property
     def policy(self) -> OpenRouterModelPolicy | None:
-        return openrouter_model_policy(self.model)
+        return self.families.policy_for_model(self.model)
 
     @property
     def control_mode(self) -> ControlMode:
-        return openrouter_control_mode(self.model)
+        return self.families.control_mode(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
-        return (ThinkingLevel.NA,)
+        return self.families.supported_thinking_levels(self.model)
 
     @property
     def default_thinking_level(self) -> ThinkingLevel:
-        return ThinkingLevel.NA
+        return self.families.default_thinking_level(self.model)
 
     @property
     def supported_effort_levels(self) -> tuple[EffortSpec, ...]:
-        return ()
+        return self.families.supported_effort_levels(self.model)
 
     @property
     def default_effort(self) -> EffortSpec:
-        return EffortSpec.NA
+        return self.families.default_effort(self.model)
 
     @property
     def default_reasoning(self) -> ReasoningSpec | None:
@@ -234,7 +206,7 @@ class OpenRouterControls(BaseModel):
             effort=self.default_effort,
             reasoning=self.default_reasoning,
             sampling_supported=True,
-            sampling=SamplingControls(temperature=1.0, top_p=0.95),
+            sampling=OPENROUTER_DEFAULT_SAMPLING,
         )
 
     def resolve_reasoning(
@@ -265,7 +237,7 @@ class OpenRouterControls(BaseModel):
             if sampling.is_empty():
                 return None
             return sampling
-        return SamplingControls(temperature=1.0, top_p=0.95)
+        return OPENROUTER_DEFAULT_SAMPLING
 
     def reasoning_for_thinking_level(
         self,
@@ -281,42 +253,18 @@ class OpenRouterControls(BaseModel):
         )
 
     def validate_request(self, request: LlmRequest) -> list:
-        _validate_effort(
+        validate_effort(
             provider=self.provider,
             model=self.model,
             effort=request.effort,
             supported_effort_levels=self.supported_effort_levels,
         )
-        validate_reasoning_for_openrouter(
-            model=request.model, reasoning=request.reasoning
+        _validate_reasoning_for_openrouter(
+            model=request.model,
+            reasoning=request.reasoning,
+            families=self.families,
         )
         return []
-
-
-def _validate_effort(
-    *,
-    provider: str,
-    model: str,
-    effort: EffortSpec,
-    supported_effort_levels: tuple[EffortSpec, ...],
-) -> None:
-    if not supported_effort_levels:
-        if effort != EffortSpec.NA:
-            raise ValueError(
-                f"effort is not supported for provider={provider!r} "
-                f"model={model!r}"
-            )
-        return
-    if effort == EffortSpec.NA:
-        raise ValueError(
-            f"effort is required for provider={provider!r} model={model!r}"
-        )
-    if effort not in supported_effort_levels:
-        allowed = ", ".join(str(level) for level in supported_effort_levels)
-        raise ValueError(
-            f"effort={effort!r} is not supported for provider={provider!r} "
-            f"model={model!r}; allowed levels: {allowed}"
-        )
 
 
 def _validate_openrouter_shape(
@@ -324,8 +272,9 @@ def _validate_openrouter_shape(
     model: str,
     enabled: bool | None,
     effort: str | None,
+    families: OpenRouterFamilies,
 ) -> None:
-    policy = openrouter_model_policy(model)
+    policy = families.policy_for_model(model)
     if policy is None:
         raise ValueError(
             f"{ProviderName.OPENROUTER} reasoning is not supported for model={model!r}"
@@ -364,9 +313,7 @@ def _validate_openrouter_shape(
 
 
 class OpenRouterControlMapping(BaseProviderControlMapping):
-    reasoning_effort: (
-        Literal["none", "minimal", "low", "medium", "high"] | None
-    ) = None
+    reasoning_effort: OpenAIReasoningEffort | None = None
     extra_body: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
@@ -380,26 +327,32 @@ class OpenRouterControlMapping(BaseProviderControlMapping):
             case OpenAIReasoning(thinking_level=ThinkingLevel.NA):
                 return cls()
             case OpenAIReasoning(thinking_level=ThinkingLevel.OFF):
-                return cls(reasoning_effort="none")
+                return cls(reasoning_effort=OpenAIReasoningEffort.NONE)
             case OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL):
-                return cls(reasoning_effort="minimal")
+                return cls(reasoning_effort=OpenAIReasoningEffort.MINIMAL)
             case OpenAIReasoning(thinking_level=ThinkingLevel.LOW):
-                return cls(reasoning_effort="low")
+                return cls(reasoning_effort=OpenAIReasoningEffort.LOW)
             case OpenAIReasoning(thinking_level=ThinkingLevel.MEDIUM):
-                return cls(reasoning_effort="medium")
+                return cls(reasoning_effort=OpenAIReasoningEffort.MEDIUM)
             case OpenAIReasoning(thinking_level=ThinkingLevel.HIGH):
-                return cls(reasoning_effort="high")
+                return cls(reasoning_effort=OpenAIReasoningEffort.HIGH)
             case OpenRouterReasoning(enabled=enabled, effort=effort):
                 reasoning_payload: dict[str, Any]
                 if enabled is not None:
-                    reasoning_payload = {"enabled": enabled}
+                    reasoning_payload = {
+                        OpenRouterReasoningKey.ENABLED: enabled
+                    }
                 elif effort is not None:
-                    reasoning_payload = {"effort": effort}
+                    reasoning_payload = {OpenRouterReasoningKey.EFFORT: effort}
                 else:
                     raise ProviderSemanticError(
                         "OpenRouter reasoning serializer received invalid config"
                     )
-                return cls(extra_body={"reasoning": reasoning_payload})
+                return cls(
+                    extra_body={
+                        OpenRouterReasoningKey.REASONING: reasoning_payload
+                    }
+                )
         raise ProviderSemanticError(
             unsupported_reasoning_kind_message(ProviderName.OPENROUTER, config)
         )

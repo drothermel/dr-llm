@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.impls.openrouter.controls import (
+from dr_llm.llm.providers.impls.openrouter.families import (
+    OPENROUTER_FAMILIES,
     OpenRouterControlRequestStyle,
-    _policies,
 )
 
 
 def test_openrouter_policy_applies_verified_overrides() -> None:
-    policies = _policies()
+    policies = OPENROUTER_FAMILIES.policies
     assert policies["deepseek/deepseek-r1"].supports_disable is False
     assert (
         policies["baidu/ernie-4.5-21b-a3b-thinking"].supports_disable is False
@@ -53,7 +53,7 @@ def test_openrouter_policy_applies_verified_overrides() -> None:
 
 
 def test_openrouter_policies_yaml_loads_and_validates() -> None:
-    policies = _policies()
+    policies = OPENROUTER_FAMILIES.policies
     assert len(policies) > 0
     for model, policy in policies.items():
         assert policy.model == model

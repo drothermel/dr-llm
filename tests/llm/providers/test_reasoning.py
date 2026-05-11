@@ -6,22 +6,22 @@ from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
 from dr_llm.llm import ProviderName
 from dr_llm.llm.providers.impls.anthropic.controls import (
     AnthropicControlMapping,
-    validate_reasoning_for_anthropic,
+    _validate_reasoning_for_anthropic,
 )
 from dr_llm.llm.providers.impls.kimi_code.controls import (
     KimiCodeControlMapping,
 )
 from dr_llm.llm.providers.impls.kimi_code.controls import (
-    validate_reasoning_for_kimi_code,
+    _validate_reasoning_for_kimi_code,
 )
 from dr_llm.llm.providers.impls.minimax.controls import MiniMaxControlMapping
 from dr_llm.llm.providers.impls.minimax.controls import (
-    validate_reasoning_for_minimax,
+    _validate_reasoning_for_minimax,
 )
 from dr_llm.llm.providers.impls.google.controls import GoogleControlMapping
 from dr_llm.llm.providers.impls.claude_code.controls import (
     ClaudeHeadlessControlMapping,
-    validate_reasoning_for_claude_code,
+    _validate_reasoning_for_claude_code,
 )
 from dr_llm.llm.providers.impls.codex.controls import (
     CodexHeadlessControlMapping,
@@ -158,7 +158,7 @@ def test_kimi_code_validation_rejects_unsupported_anthropic_levels() -> None:
                 "'na', 'off', 'adaptive', and 'budget'"
             ),
         ):
-            validate_reasoning_for_kimi_code(
+            _validate_reasoning_for_kimi_code(
                 model="kimi-for-coding",
                 reasoning=AnthropicReasoning(thinking_level=thinking_level),
             )
@@ -168,7 +168,7 @@ def test_kimi_code_validation_rejects_budget_tokens_without_budget_level() -> (
     None
 ):
     with pytest.raises(ValueError, match=r"budget_tokens.*thinking_level"):
-        validate_reasoning_for_kimi_code(
+        _validate_reasoning_for_kimi_code(
             model="kimi-for-coding",
             reasoning=AnthropicReasoning(
                 thinking_level=ThinkingLevel.ADAPTIVE,
@@ -186,7 +186,7 @@ def test_anthropic_validation_rejects_budget_tokens_without_budget_level() -> (
     )
 
     with pytest.raises(ValueError, match=r"budget_tokens.*thinking_level"):
-        validate_reasoning_for_anthropic(
+        _validate_reasoning_for_anthropic(
             model="claude-sonnet-4-6",
             reasoning=reasoning,
         )
@@ -197,7 +197,7 @@ def test_minimax_validation_and_serializer_both_require_explicit_na() -> None:
         ValueError,
         match=f"reasoning is required for provider='{ProviderName.MINIMAX}' model='MiniMax-M2.7'",
     ):
-        validate_reasoning_for_minimax(model="MiniMax-M2.7", reasoning=None)
+        _validate_reasoning_for_minimax(model="MiniMax-M2.7", reasoning=None)
 
     with pytest.raises(
         ProviderSemanticError,
@@ -208,7 +208,7 @@ def test_minimax_validation_and_serializer_both_require_explicit_na() -> None:
 
 def test_minimax_validation_rejects_anthropic_budget_tokens() -> None:
     with pytest.raises(ValueError, match="budget_tokens"):
-        validate_reasoning_for_minimax(
+        _validate_reasoning_for_minimax(
             model="MiniMax-M2.7",
             reasoning=AnthropicReasoning(
                 thinking_level=ThinkingLevel.NA,
@@ -234,7 +234,7 @@ def test_claude_headless_accepts_adaptive_and_na() -> None:
 
 def test_claude_headless_validation_rejects_budget_tokens() -> None:
     with pytest.raises(ValueError, match="budget_tokens"):
-        validate_reasoning_for_claude_code(
+        _validate_reasoning_for_claude_code(
             model="claude-sonnet-4-6",
             reasoning=AnthropicReasoning(
                 thinking_level=ThinkingLevel.ADAPTIVE,

@@ -7,8 +7,10 @@ import httpx
 from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.impls.openai.controls import (
-    OPENAI_THINKING_SUPPORTED_MODELS,
     OpenAIControlMapping,
+)
+from dr_llm.llm.providers.impls.openai.families import (
+    OPENAI_FAMILIES,
 )
 from dr_llm.llm.providers.transports.api_provider import ApiProvider
 from dr_llm.llm.providers.transports.openai_compat.config import (
@@ -44,7 +46,7 @@ class OpenAIProvider(ApiProvider):
                 base_url=OpenAIUrls.API_BASE,
                 api_key_env=ApiKeyNames.OPENAI,
                 max_completion_token_model_families=(
-                    OPENAI_THINKING_SUPPORTED_MODELS
+                    OPENAI_FAMILIES.thinking_supported
                 ),
             ),
             client=client,

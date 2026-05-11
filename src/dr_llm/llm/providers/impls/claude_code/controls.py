@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,9 +8,7 @@ from dr_llm.errors import HeadlessExecutionError
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import EffortSpec, ControlMode
 from dr_llm.llm.names import ProviderName, ThinkingLevel
-from dr_llm.llm.providers.concepts.model_family import (
-    model_matches_any_family,
-)
+from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     BaseProviderControlMapping,
@@ -19,44 +16,26 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     unsupported_reasoning_kind_message,
 )
-from dr_llm.llm.providers.impls.anthropic.controls import (
-    anthropic_supports_adaptive_thinking,
-    supported_effort_levels_for_anthropic,
-)
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
+)
+from dr_llm.llm.providers.impls.claude_code.families import (
+    CLAUDE_CODE_FAMILIES,
+    ClaudeCodeFamilies,
 )
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
 
 
-class ClaudeCodeModelFamily(StrEnum):
-    CLAUDE = "claude-"
-
-    def in_family(self, model: str) -> bool:
-        return model.startswith(self)
-
-
-CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES = (ClaudeCodeModelFamily.CLAUDE,)
-
-
-def claude_code_control_mode(model: str) -> ControlMode:
-    if model_matches_any_family(model, CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES):
-        return ControlMode.CLAUDE_CLI_EFFORT
-    return ControlMode.UNSUPPORTED
-
-
-def supported_effort_levels_for_claude_code(
+def _validate_reasoning_for_claude_code(
+    *,
     model: str,
-) -> tuple[EffortSpec, ...]:
-    return supported_effort_levels_for_anthropic(model)
-
-
-def validate_reasoning_for_claude_code(
-    *, model: str, reasoning: ReasoningSpec | None
+    reasoning: ReasoningSpec | None,
+    families: ClaudeCodeFamilies | None = None,
 ) -> None:
+    families = families or CLAUDE_CODE_FAMILIES
     if reasoning is None:
-        if anthropic_supports_adaptive_thinking(model):
+        if families.supports_adaptive_thinking(model):
             msg = (
                 "reasoning is required for "
                 f"provider='{ProviderName.CLAUDE_CODE}' model={model!r}"
@@ -78,7 +57,7 @@ def validate_reasoning_for_claude_code(
     if reasoning.budget_tokens is not None:
         msg = f"{ProviderName.CLAUDE_CODE} does not support budget_tokens"
         raise ValueError(msg)
-    if anthropic_supports_adaptive_thinking(model):
+    if families.supports_adaptive_thinking(model):
         if reasoning.thinking_level != ThinkingLevel.ADAPTIVE:
             msg = f"{ProviderName.CLAUDE_CODE} model {model!r} only supports anthropic thinking_level='adaptive'"
             raise ValueError(msg)
@@ -94,30 +73,29 @@ class ClaudeCodeControls(BaseModel):
     provider: ProviderName = ProviderName.CLAUDE_CODE
     model: str
     mode: CallMode
+    families: ClaudeCodeFamilies = Field(
+        default_factory=ClaudeCodeFamilies, exclude=True
+    )
 
     @property
     def control_mode(self) -> ControlMode:
-        return claude_code_control_mode(self.model)
+        return self.families.control_mode(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
-        if anthropic_supports_adaptive_thinking(self.model):
-            return (ThinkingLevel.ADAPTIVE,)
-        return (ThinkingLevel.NA,)
+        return self.families.supported_thinking_levels(self.model)
 
     @property
     def default_thinking_level(self) -> ThinkingLevel:
-        return self.supported_thinking_levels[0]
+        return self.families.default_thinking_level(self.model)
 
     @property
     def supported_effort_levels(self) -> tuple[EffortSpec, ...]:
-        return supported_effort_levels_for_claude_code(self.model)
+        return self.families.supported_effort_levels(self.model)
 
     @property
     def default_effort(self) -> EffortSpec:
-        if self.supported_effort_levels:
-            return self.supported_effort_levels[0]
-        return EffortSpec.NA
+        return self.families.default_effort(self.model)
 
     @property
     def default_reasoning(self) -> ReasoningSpec | None:
@@ -193,46 +171,22 @@ class ClaudeCodeControls(BaseModel):
         )
 
     def validate_request(self, request: LlmRequest) -> list:
-        _validate_effort(
+        validate_effort(
             provider=self.provider,
             model=self.model,
             effort=request.effort,
             supported_effort_levels=self.supported_effort_levels,
         )
-        validate_reasoning_for_claude_code(
-            model=request.model, reasoning=request.reasoning
+        _validate_reasoning_for_claude_code(
+            model=request.model,
+            reasoning=request.reasoning,
+            families=self.families,
         )
         if request.has_sampling_controls:
             raise ValueError(
                 f"sampling is not supported for provider={self.provider!r}"
             )
         return []
-
-
-def _validate_effort(
-    *,
-    provider: str,
-    model: str,
-    effort: EffortSpec,
-    supported_effort_levels: tuple[EffortSpec, ...],
-) -> None:
-    if not supported_effort_levels:
-        if effort != EffortSpec.NA:
-            raise ValueError(
-                f"effort is not supported for provider={provider!r} "
-                f"model={model!r}"
-            )
-        return
-    if effort == EffortSpec.NA:
-        raise ValueError(
-            f"effort is required for provider={provider!r} model={model!r}"
-        )
-    if effort not in supported_effort_levels:
-        allowed = ", ".join(str(level) for level in supported_effort_levels)
-        raise ValueError(
-            f"effort={effort!r} is not supported for provider={provider!r} "
-            f"model={model!r}; allowed levels: {allowed}"
-        )
 
 
 class ClaudeHeadlessControlMapping(BaseProviderControlMapping):

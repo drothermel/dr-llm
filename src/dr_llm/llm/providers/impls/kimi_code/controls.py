@@ -13,7 +13,7 @@ from dr_llm.llm.names import (
     ControlMode,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
+from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     BaseProviderControlMapping,
@@ -21,44 +21,62 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     require_budget_tokens,
     unsupported_reasoning_kind_message,
-)
-from dr_llm.llm.providers.impls.anthropic.controls import (
-    validate_anthropic_budget_for_provider,
+    validate_budget_range,
 )
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
+)
+from dr_llm.llm.providers.impls.kimi_code.families import (
+    KIMI_CODE_FAMILIES,
+    KimiCodeFamilies,
 )
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
 
 
-class KimiCodeModelFamily(StrEnum):
-    KIMI_FOR_CODING = "kimi-for-coding"
-
-    def in_family(self, model: str) -> bool:
-        return model == self
-
-
-KIMI_CODE_SUPPORTED_MODELS = (KimiCodeModelFamily.KIMI_FOR_CODING,)
+class KimiCodeThinkingType(StrEnum):
+    DISABLED = "disabled"
+    ADAPTIVE = "adaptive"
+    ENABLED = "enabled"
 
 
-def kimi_code_control_mode(model: str) -> ControlMode:
-    if KimiCodeModelFamily.KIMI_FOR_CODING.in_family(model):
-        return ControlMode.KIMI_CODE_EFFORT_AND_BUDGET
-    return ControlMode.UNSUPPORTED
+KIMI_CODE_DEFAULT_MAX_TOKENS = 16384
 
 
-def supported_effort_levels_for_kimi_code(
+def _validate_budget_for_kimi_code(
+    *,
     model: str,
-) -> tuple[EffortSpec, ...]:
-    if kimi_code_control_mode(model) == ControlMode.UNSUPPORTED:
-        return ()
-    return FULL_EFFORT
-
-
-def validate_reasoning_for_kimi_code(
-    *, model: str, reasoning: ReasoningSpec | None
+    budget_tokens: int | None,
+    min_budget_tokens: int | None,
+    max_budget_tokens: int | None,
 ) -> None:
+    if budget_tokens is None:
+        raise ValueError(
+            f"{ProviderName.KIMI_CODE} budget thinking requires budget_tokens "
+            "when thinking_level is 'budget'"
+        )
+    if min_budget_tokens is None or max_budget_tokens is None:
+        raise ValueError(
+            f"{ProviderName.KIMI_CODE} budget thinking is not supported for "
+            f"model={model!r}"
+        )
+    validate_budget_range(
+        provider=ProviderName.KIMI_CODE,
+        model=model,
+        label=f"{ProviderName.KIMI_CODE} budget_tokens",
+        tokens=budget_tokens,
+        min_budget_tokens=min_budget_tokens,
+        max_budget_tokens=max_budget_tokens,
+    )
+
+
+def _validate_reasoning_for_kimi_code(
+    *,
+    model: str,
+    reasoning: ReasoningSpec | None,
+    families: KimiCodeFamilies | None = None,
+) -> None:
+    families = families or KIMI_CODE_FAMILIES
     if reasoning is None:
         return
     if isinstance(reasoning, ReasoningBudget):
@@ -85,12 +103,11 @@ def validate_reasoning_for_kimi_code(
             "'na', 'off', 'adaptive', and 'budget'"
         )
     if reasoning.thinking_level == ThinkingLevel.BUDGET:
-        validate_anthropic_budget_for_provider(
-            provider=ProviderName.KIMI_CODE,
+        _validate_budget_for_kimi_code(
             model=model,
             budget_tokens=reasoning.budget_tokens,
-            min_budget_tokens=1024,
-            max_budget_tokens=128000,
+            min_budget_tokens=families.budget_min_for_model(model),
+            max_budget_tokens=families.budget_max_for_model(model),
         )
         return
     if reasoning.budget_tokens is not None:
@@ -106,53 +123,37 @@ class KimiCodeControls(BaseModel):
     provider: ProviderName = ProviderName.KIMI_CODE
     model: str
     mode: CallMode
+    families: KimiCodeFamilies = Field(
+        default_factory=KimiCodeFamilies, exclude=True
+    )
 
     @property
     def control_mode(self) -> ControlMode:
-        return kimi_code_control_mode(self.model)
+        return self.families.control_mode(self.model)
 
     @property
     def min_budget_tokens(self) -> int | None:
-        if self.control_mode != ControlMode.UNSUPPORTED:
-            return 1024
-        return None
+        return self.families.budget_min_for_model(self.model)
 
     @property
     def max_budget_tokens(self) -> int | None:
-        if self.control_mode != ControlMode.UNSUPPORTED:
-            return 128000
-        return None
+        return self.families.budget_max_for_model(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
-        if self.control_mode == ControlMode.UNSUPPORTED:
-            return (ThinkingLevel.NA,)
-        if self.control_mode == ControlMode.KIMI_CODE_EFFORT_AND_BUDGET:
-            return (
-                ThinkingLevel.OFF,
-                ThinkingLevel.ADAPTIVE,
-                ThinkingLevel.BUDGET,
-            )
-        raise ValueError(
-            f"unexpected control mode for provider={self.provider!r} "
-            f"model={self.model!r}: {self.control_mode!r}"
-        )
+        return self.families.supported_thinking_levels(self.model)
 
     @property
     def default_thinking_level(self) -> ThinkingLevel:
-        if ThinkingLevel.OFF in self.supported_thinking_levels:
-            return ThinkingLevel.OFF
-        return ThinkingLevel.NA
+        return self.families.default_thinking_level(self.model)
 
     @property
     def supported_effort_levels(self) -> tuple[EffortSpec, ...]:
-        return supported_effort_levels_for_kimi_code(self.model)
+        return self.families.supported_effort_levels(self.model)
 
     @property
     def default_effort(self) -> EffortSpec:
-        if self.supported_effort_levels:
-            return self.supported_effort_levels[0]
-        return EffortSpec.NA
+        return self.families.default_effort(self.model)
 
     @property
     def default_reasoning(self) -> ReasoningSpec | None:
@@ -178,7 +179,7 @@ class KimiCodeControls(BaseModel):
             provider=self.provider,
             model=self.model,
             mode=self.mode,
-            max_tokens=16384,
+            max_tokens=KIMI_CODE_DEFAULT_MAX_TOKENS,
             max_tokens_required=True,
             effort=self.default_effort,
             reasoning=self.default_reasoning,
@@ -236,14 +237,16 @@ class KimiCodeControls(BaseModel):
 
     def validate_request(self, request: LlmRequest) -> list:
         self._validate_max_tokens_required(request)
-        _validate_effort(
+        validate_effort(
             provider=self.provider,
             model=self.model,
             effort=request.effort,
             supported_effort_levels=self.supported_effort_levels,
         )
-        validate_reasoning_for_kimi_code(
-            model=request.model, reasoning=request.reasoning
+        _validate_reasoning_for_kimi_code(
+            model=request.model,
+            reasoning=request.reasoning,
+            families=self.families,
         )
         if request.has_sampling_controls:
             raise ValueError(
@@ -262,32 +265,6 @@ def _require_budget_tokens(*, provider: str, budget_tokens: int | None) -> int:
     if budget_tokens is None:
         raise ValueError(f"{provider} budget thinking requires budget_tokens")
     return budget_tokens
-
-
-def _validate_effort(
-    *,
-    provider: str,
-    model: str,
-    effort: EffortSpec,
-    supported_effort_levels: tuple[EffortSpec, ...],
-) -> None:
-    if not supported_effort_levels:
-        if effort != EffortSpec.NA:
-            raise ValueError(
-                f"effort is not supported for provider={provider!r} "
-                f"model={model!r}"
-            )
-        return
-    if effort == EffortSpec.NA:
-        raise ValueError(
-            f"effort is required for provider={provider!r} model={model!r}"
-        )
-    if effort not in supported_effort_levels:
-        allowed = ", ".join(str(level) for level in supported_effort_levels)
-        raise ValueError(
-            f"effort={effort!r} is not supported for provider={provider!r} "
-            f"model={model!r}; allowed levels: {allowed}"
-        )
 
 
 class KimiCodeControlMapping(BaseProviderControlMapping):
@@ -312,13 +289,13 @@ class KimiCodeControlMapping(BaseProviderControlMapping):
                 budget_tokens=None,
                 display=None,
             ):
-                return cls(thinking={"type": "disabled"})
+                return cls(thinking={"type": KimiCodeThinkingType.DISABLED})
             case AnthropicReasoning(
                 thinking_level=ThinkingLevel.ADAPTIVE,
                 budget_tokens=None,
                 display=None,
             ):
-                return cls(thinking={"type": "adaptive"})
+                return cls(thinking={"type": KimiCodeThinkingType.ADAPTIVE})
             case AnthropicReasoning(
                 thinking_level=ThinkingLevel.BUDGET,
                 budget_tokens=budget_tokens,
@@ -328,7 +305,10 @@ class KimiCodeControlMapping(BaseProviderControlMapping):
                     budget_tokens, label=ProviderName.KIMI_CODE, min_value=1
                 )
                 return cls(
-                    thinking={"type": "enabled", "budget_tokens": tokens}
+                    thinking={
+                        "type": KimiCodeThinkingType.ENABLED,
+                        "budget_tokens": tokens,
+                    }
                 )
             case _:
                 raise ProviderSemanticError(

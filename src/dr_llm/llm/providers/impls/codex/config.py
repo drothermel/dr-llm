@@ -12,26 +12,10 @@ from dr_llm.llm.providers.core.authoring import (
     require_model_family,
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.codex.controls import (
-    CODEX_THINKING_SUPPORTED_MODELS,
+from dr_llm.llm.providers.impls.codex.families import (
+    CODEX_FAMILIES,
+    CodexFamilies,
     CodexModelFamily,
-)
-
-_CODEX_GPT5_FAMILIES = (CodexModelFamily.GPT5,)
-_CODEX_GPT51_FAMILIES = (CodexModelFamily.GPT51,)
-_CODEX_GPT52_FAMILIES = (CodexModelFamily.GPT52,)
-_CODEX_GPT54_FAMILIES = (
-    CodexModelFamily.GPT54,
-    CodexModelFamily.GPT54_MINI,
-)
-_CODEX_GPT5_CODEX_FAMILIES = (
-    CodexModelFamily.GPT5_CODEX,
-    CodexModelFamily.GPT51_CODEX,
-    CodexModelFamily.GPT51_CODEX_MINI,
-    CodexModelFamily.GPT51_CODEX_MAX,
-    CodexModelFamily.GPT52_CODEX,
-    CodexModelFamily.GPT53_CODEX,
-    CodexModelFamily.GPT53_CODEX_SPARK,
 )
 
 type _CodexMinimalThinkingLevel = Literal[
@@ -63,6 +47,7 @@ class _CodexBaseConfig(BaseModel):
     model: str
 
     _families: ClassVar[tuple[CodexModelFamily, ...]] = ()
+    _provider_families: ClassVar[CodexFamilies] = CODEX_FAMILIES
 
     @model_validator(mode="after")
     def _validate_model_family(self) -> _CodexBaseConfig:
@@ -99,7 +84,7 @@ class CodexLegacyConfig(BaseModel):
         reject_model_family(
             provider=self.provider,
             model=self.model,
-            families=CODEX_THINKING_SUPPORTED_MODELS,
+            families=CODEX_FAMILIES.thinking_supported,
             config_name=type(self).__name__,
         )
         return self
@@ -115,7 +100,7 @@ class CodexLegacyConfig(BaseModel):
 
 
 class CodexGpt5Config(_CodexBaseConfig):
-    _families: ClassVar[tuple[CodexModelFamily, ...]] = _CODEX_GPT5_FAMILIES
+    _families: ClassVar[tuple[CodexModelFamily, ...]] = CODEX_FAMILIES.gpt5
 
     thinking_level: _CodexMinimalThinkingLevel | None = None
 
@@ -124,7 +109,7 @@ class CodexGpt5Config(_CodexBaseConfig):
 
 
 class CodexGpt51Config(_CodexBaseConfig):
-    _families: ClassVar[tuple[CodexModelFamily, ...]] = _CODEX_GPT51_FAMILIES
+    _families: ClassVar[tuple[CodexModelFamily, ...]] = CODEX_FAMILIES.gpt51
 
     thinking_level: _CodexOffThinkingLevel | None = None
 
@@ -133,7 +118,7 @@ class CodexGpt51Config(_CodexBaseConfig):
 
 
 class CodexGpt52Config(_CodexBaseConfig):
-    _families: ClassVar[tuple[CodexModelFamily, ...]] = _CODEX_GPT52_FAMILIES
+    _families: ClassVar[tuple[CodexModelFamily, ...]] = CODEX_FAMILIES.gpt52
 
     thinking_level: _CodexOffThinkingLevel | None = None
 
@@ -142,7 +127,7 @@ class CodexGpt52Config(_CodexBaseConfig):
 
 
 class CodexGpt54Config(_CodexBaseConfig):
-    _families: ClassVar[tuple[CodexModelFamily, ...]] = _CODEX_GPT54_FAMILIES
+    _families: ClassVar[tuple[CodexModelFamily, ...]] = CODEX_FAMILIES.gpt54
 
     thinking_level: _CodexOffThinkingLevel | None = None
 
@@ -151,9 +136,7 @@ class CodexGpt54Config(_CodexBaseConfig):
 
 
 class CodexGpt5CodexConfig(_CodexBaseConfig):
-    _families: ClassVar[tuple[CodexModelFamily, ...]] = (
-        _CODEX_GPT5_CODEX_FAMILIES
-    )
+    _families: ClassVar[tuple[CodexModelFamily, ...]] = CODEX_FAMILIES.codex
 
     thinking_level: _CodexCodexThinkingLevel | None = None
 

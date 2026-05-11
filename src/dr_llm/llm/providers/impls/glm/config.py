@@ -9,8 +9,8 @@ from dr_llm.llm.names import ProviderName, ControlMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.reasoning import GlmReasoning
 from dr_llm.llm.providers.core.authoring import build_provider_config
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.glm.controls import (
-    glm_control_mode,
+from dr_llm.llm.providers.impls.glm.families import (
+    GLM_FAMILIES,
 )
 
 type _GlmThinkingLevel = Literal[
@@ -32,7 +32,7 @@ class _GlmBaseConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_model_family(self) -> _GlmBaseConfig:
-        mode = _glm_control_mode(self.model)
+        mode = GLM_FAMILIES.control_mode(self.model)
         expected_mode = self._expected_control_mode()
         if mode != expected_mode:
             raise ValueError(
@@ -74,7 +74,3 @@ class GlmThinkingConfig(_GlmBaseConfig):
         if self.thinking_level is None:
             return None
         return GlmReasoning(thinking_level=self.thinking_level)
-
-
-def _glm_control_mode(model: str) -> ControlMode:
-    return glm_control_mode(model)

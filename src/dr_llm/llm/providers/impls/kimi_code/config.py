@@ -13,9 +13,11 @@ from dr_llm.llm.providers.core.authoring import (
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 from dr_llm.llm.providers.impls.kimi_code.controls import (
     KimiCodeControls,
-    supported_effort_levels_for_kimi_code,
 )
-from dr_llm.llm.providers.impls.kimi_code.controls import KimiCodeModelFamily
+from dr_llm.llm.providers.impls.kimi_code.families import (
+    KIMI_CODE_FAMILIES,
+    KimiCodeModelFamily,
+)
 from dr_llm.llm.response import CallMode
 
 type _KimiCodeThinkingLevel = Literal[
@@ -50,7 +52,7 @@ class KimiCodeConfig(BaseModel):
                 f"got model={self.model!r}"
             )
         if self.effort is not None:
-            allowed = supported_effort_levels_for_kimi_code(self.model)
+            allowed = KIMI_CODE_FAMILIES.supported_effort_levels(self.model)
             if self.effort not in allowed:
                 allowed_values = ", ".join(str(level) for level in allowed)
                 raise ValueError(
@@ -69,7 +71,11 @@ class KimiCodeConfig(BaseModel):
         ):
             raise ValueError("budget_tokens requires thinking_level='budget'")
         if self.budget_tokens is not None:
-            controls = KimiCodeControls(model=self.model, mode=CallMode.api)
+            controls = KimiCodeControls(
+                model=self.model,
+                mode=CallMode.api,
+                families=KIMI_CODE_FAMILIES,
+            )
             if (
                 controls.min_budget_tokens is None
                 or controls.max_budget_tokens is None

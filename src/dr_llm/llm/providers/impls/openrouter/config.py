@@ -9,9 +9,9 @@ from dr_llm.llm.names import OpenRouterEffortLevel, ProviderName
 from dr_llm.llm.providers.concepts.reasoning import OpenRouterReasoning
 from dr_llm.llm.providers.core.authoring import build_provider_config
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.openrouter.controls import (
+from dr_llm.llm.providers.impls.openrouter.families import (
+    OPENROUTER_FAMILIES,
     OpenRouterControlRequestStyle,
-    openrouter_model_policy,
 )
 
 
@@ -28,7 +28,7 @@ class _OpenRouterBaseConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_policy(self) -> _OpenRouterBaseConfig:
-        policy = openrouter_model_policy(self.model)
+        policy = OPENROUTER_FAMILIES.policy_for_model(self.model)
         if policy is None:
             raise ValueError(
                 f"{ProviderName.OPENROUTER} model={self.model!r} is not in "
@@ -74,7 +74,7 @@ class OpenRouterToggleConfig(_OpenRouterBaseConfig):
     def _validate_enabled(self) -> OpenRouterToggleConfig:
         if self.enabled is not False:
             return self
-        policy = openrouter_model_policy(self.model)
+        policy = OPENROUTER_FAMILIES.policy_for_model(self.model)
         if policy is not None and policy.supports_disable:
             return self
         raise ValueError(
@@ -98,7 +98,7 @@ class OpenRouterEffortConfig(_OpenRouterBaseConfig):
     def _validate_effort(self) -> OpenRouterEffortConfig:
         if self.effort is None:
             return self
-        policy = openrouter_model_policy(self.model)
+        policy = OPENROUTER_FAMILIES.policy_for_model(self.model)
         if policy is not None and self.effort in policy.allowed_efforts:
             return self
         allowed = (

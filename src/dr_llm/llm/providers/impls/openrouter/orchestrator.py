@@ -8,7 +8,9 @@ from dr_llm.llm.providers.impls.openai_compat_base import (
 from dr_llm.llm.providers.impls.openrouter.controls import (
     OpenRouterControls,
     apply_openrouter_model_policies,
-    openrouter_allowed_models,
+)
+from dr_llm.llm.providers.impls.openrouter.families import (
+    OPENROUTER_FAMILIES,
 )
 from dr_llm.llm.providers.impls.openrouter.provider import (
     OpenRouterProvider,
@@ -34,7 +36,7 @@ class OpenRouterOrchestrator(BaseOpenAICompatOrchestrator):
     def fallback_models(self):
         entries, raw_payload = build_static_catalog_entries(
             provider=self._provider,
-            models=openrouter_allowed_models(),
+            models=OPENROUTER_FAMILIES.allowed_models(),
             docs_url=OpenRouterUrls.MODELS_DOCS,
             supports_vision=None,
             controls_fn=self.controls,

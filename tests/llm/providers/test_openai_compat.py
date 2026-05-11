@@ -21,8 +21,8 @@ from dr_llm.llm import (
 from dr_llm.llm.providers.impls.glm.provider import GlmProvider
 from dr_llm.llm.providers.impls.openai.provider import OpenAIProvider
 from dr_llm.llm.providers.impls.openrouter.provider import OpenRouterProvider
-from dr_llm.llm.providers.impls.openai.controls import (
-    OPENAI_THINKING_SUPPORTED_MODELS,
+from dr_llm.llm.providers.impls.openai.families import (
+    OPENAI_FAMILIES,
 )
 from dr_llm.llm.providers.transports.openai_compat.config import (
     OpenAICompatConfig,
@@ -41,7 +41,9 @@ _CONFIG = OpenAICompatConfig(
     base_url="https://openrouter.ai/api/v1",
     api_key="x",
 )
-_OPENAI_MAX_COMPLETION_TOKEN_MODEL_FAMILIES = OPENAI_THINKING_SUPPORTED_MODELS
+_OPENAI_MAX_COMPLETION_TOKEN_MODEL_FAMILIES = (
+    OPENAI_FAMILIES.thinking_supported
+)
 
 _REASONING_RESPONSE_JSON: dict[str, Any] = {
     "choices": [

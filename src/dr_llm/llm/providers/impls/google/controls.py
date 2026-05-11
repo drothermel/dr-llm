@@ -13,6 +13,7 @@ from dr_llm.llm.names import (
     ControlMode,
     ThinkingLevel,
 )
+from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
     BaseProviderControlMapping,
     GoogleReasoning,
@@ -29,82 +30,39 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
+from dr_llm.llm.providers.impls.google.families import (
+    GOOGLE_FAMILIES,
+    GoogleFamilies,
+    GoogleThinkingLevel,
+)
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
 
 
-class GoogleThinkingLevel(StrEnum):
-    MINIMAL = ThinkingLevel.MINIMAL
-    LOW = ThinkingLevel.LOW
-    MEDIUM = ThinkingLevel.MEDIUM
-    HIGH = ThinkingLevel.HIGH
+class GoogleThinkingPayloadKey(StrEnum):
+    THINKING_BUDGET = "thinkingBudget"
+    THINKING_LEVEL = "thinkingLevel"
+    INCLUDE_THOUGHTS = "includeThoughts"
 
 
-class GoogleModelFamily(StrEnum):
-    GEMINI_25_FLASH_LITE_PREVIEW = "gemini-2.5-flash-lite-preview"
-    GEMINI_25_FLASH_LITE = "gemini-2.5-flash-lite"
-    GEMINI_25_FLASH_PREVIEW = "gemini-2.5-flash-preview"
-    GEMINI_25_FLASH = "gemini-2.5-flash"
-    GEMINI_25_PRO = "gemini-2.5-pro"
-    GEMINI_3 = "gemini-3"
-    GEMMA_4 = "gemma-4"
-
-    def in_family(self, model: str) -> bool:
-        return model.startswith(self)
+class GoogleThinkingBudget(IntEnum):
+    OFF = 0
+    ADAPTIVE = -1
 
 
-GOOGLE_25_FLASH_LITE_FAMILIES = (
-    GoogleModelFamily.GEMINI_25_FLASH_LITE_PREVIEW,
-    GoogleModelFamily.GEMINI_25_FLASH_LITE,
-)
-GOOGLE_25_FLASH_FAMILIES = (
-    GoogleModelFamily.GEMINI_25_FLASH_PREVIEW,
-    GoogleModelFamily.GEMINI_25_FLASH,
-)
-GOOGLE_25_PRO_FAMILIES = (GoogleModelFamily.GEMINI_25_PRO,)
-GOOGLE_3_FAMILIES = (GoogleModelFamily.GEMINI_3,)
-GEMMA_4_FAMILIES = (GoogleModelFamily.GEMMA_4,)
+GOOGLE_DEFAULT_SAMPLING = SamplingControls(temperature=1.0, top_p=0.95)
 
 
-class GoogleMinBudget(IntEnum):
-    GEMINI_25_FLASH = 1
-    GEMINI_25_FLASH_LITE = 512
-    GEMINI_25_PRO = 128
-
-
-class GoogleMaxBudget(IntEnum):
-    GEMINI_25_FLASH = 24576
-    GEMINI_25_FLASH_LITE = 24576
-    GEMINI_25_PRO = 32768
-
-
-def google_control_mode(model: str) -> ControlMode:
-    if any(
-        family.in_family(model)
-        for family in (
-            *GOOGLE_25_FLASH_LITE_FAMILIES,
-            *GOOGLE_25_FLASH_FAMILIES,
-            *GOOGLE_25_PRO_FAMILIES,
-        )
-    ):
-        return ControlMode.GOOGLE_BUDGET
-    if any(
-        family.in_family(model)
-        for family in (*GOOGLE_3_FAMILIES, *GEMMA_4_FAMILIES)
-    ):
-        return ControlMode.GOOGLE_LEVEL
-    return ControlMode.UNSUPPORTED
-
-
-# Google Generative Language API `thinkingBudget` sentinel values.
-_GOOGLE_THINKING_BUDGET_OFF = 0
-_GOOGLE_THINKING_BUDGET_ADAPTIVE = -1
-
-
-def validate_reasoning_for_google(
-    *, model: str, reasoning: ReasoningSpec | None
+def _validate_reasoning_for_google(
+    *,
+    model: str,
+    reasoning: ReasoningSpec | None,
+    families: GoogleFamilies | None = None,
 ) -> None:
-    controls = GoogleControls(model=model, mode=CallMode.api)
+    families = families or GOOGLE_FAMILIES
+    controls = GoogleControls(
+        model=model, mode=CallMode.api, families=families
+    )
 
     def _validate_top_budget(budget: ReasoningBudget) -> None:
         if controls.control_mode == ControlMode.UNSUPPORTED:
@@ -131,9 +89,9 @@ def validate_reasoning_for_google(
         native_spec_type=GoogleReasoning,
         requires_reasoning=not is_control_unsupported(controls.control_mode),
         validate_native=lambda spec: _validate_google_reasoning_shape(
-            model=model,
             thinking_level=spec.thinking_level,
             budget_tokens=spec.budget_tokens,
+            controls=controls,
         ),
         validate_top_budget=_validate_top_budget,
     )
@@ -141,24 +99,22 @@ def validate_reasoning_for_google(
 
 def _validate_google_reasoning_shape(
     *,
-    model: str,
     thinking_level: ThinkingLevel,
     budget_tokens: int | None,
+    controls: "GoogleControls",
 ) -> None:
-    controls = GoogleControls(model=model, mode=CallMode.api)
     if is_control_unsupported(controls.control_mode):
         if thinking_level == ThinkingLevel.NA:
             return
         raise ValueError(
-            f"{ProviderName.GOOGLE} thinking is not supported for model={model!r}"
+            f"{ProviderName.GOOGLE} thinking is not supported for model={controls.model!r}"
         )
     if thinking_level == ThinkingLevel.NA:
         raise ValueError(
-            f"thinking_level='na' is not supported for provider='{ProviderName.GOOGLE}' model={model!r}"
+            f"thinking_level='na' is not supported for provider='{ProviderName.GOOGLE}' model={controls.model!r}"
         )
     if controls.control_mode == ControlMode.GOOGLE_BUDGET:
         _validate_google_budget_mode(
-            model=model,
             thinking_level=thinking_level,
             budget_tokens=budget_tokens,
             controls=controls,
@@ -166,19 +122,17 @@ def _validate_google_reasoning_shape(
         return
     if controls.control_mode == ControlMode.GOOGLE_LEVEL:
         _validate_google_level_mode(
-            model=model,
             thinking_level=thinking_level,
             controls=controls,
         )
         return
     raise ValueError(
-        f"Reasoning is not supported for provider='{ProviderName.GOOGLE}' model={model!r}"
+        f"Reasoning is not supported for provider='{ProviderName.GOOGLE}' model={controls.model!r}"
     )
 
 
 def _validate_google_budget_mode(
     *,
-    model: str,
     thinking_level: ThinkingLevel,
     budget_tokens: int | None,
     controls: "GoogleControls",
@@ -189,7 +143,7 @@ def _validate_google_budget_mode(
         if controls.supports_dynamic:
             return
         raise ValueError(
-            f"{ProviderName.GOOGLE} dynamic thinking is not supported for model={model!r}"
+            f"{ProviderName.GOOGLE} dynamic thinking is not supported for model={controls.model!r}"
         )
     if thinking_level == ThinkingLevel.BUDGET:
         if budget_tokens is None:
@@ -199,7 +153,7 @@ def _validate_google_budget_mode(
             )
         validate_budget_range(
             provider=ProviderName.GOOGLE,
-            model=model,
+            model=controls.model,
             label=f"{ProviderName.GOOGLE} thinking_budget",
             tokens=budget_tokens,
             min_budget_tokens=controls.min_budget_tokens,
@@ -207,13 +161,12 @@ def _validate_google_budget_mode(
         )
         return
     raise ValueError(
-        f"{ProviderName.GOOGLE} model {model!r} does not support thinking_level={thinking_level!r}; use off, adaptive, or budget"
+        f"{ProviderName.GOOGLE} model {controls.model!r} does not support thinking_level={thinking_level!r}; use off, adaptive, or budget"
     )
 
 
 def _validate_google_level_mode(
     *,
-    model: str,
     thinking_level: ThinkingLevel,
     controls: "GoogleControls",
 ) -> None:
@@ -223,7 +176,7 @@ def _validate_google_level_mode(
     }
     validate_allowed_thinking_levels(
         provider=ProviderName.GOOGLE,
-        model=model,
+        model=controls.model,
         thinking_level=thinking_level,
         allowed_levels=allowed_levels,
         allow_na=False,
@@ -236,104 +189,45 @@ class GoogleControls(BaseModel):
     provider: ProviderName = ProviderName.GOOGLE
     model: str
     mode: CallMode
+    families: GoogleFamilies = Field(
+        default_factory=GoogleFamilies, exclude=True
+    )
 
     @property
     def control_mode(self) -> ControlMode:
-        return google_control_mode(self.model)
+        return self.families.control_mode(self.model)
 
     @property
     def min_budget_tokens(self) -> int | None:
-        if any(
-            family.in_family(self.model)
-            for family in GOOGLE_25_FLASH_LITE_FAMILIES
-        ):
-            return GoogleMinBudget.GEMINI_25_FLASH_LITE
-        if any(
-            family.in_family(self.model) for family in GOOGLE_25_FLASH_FAMILIES
-        ):
-            return GoogleMinBudget.GEMINI_25_FLASH
-        if any(
-            family.in_family(self.model) for family in GOOGLE_25_PRO_FAMILIES
-        ):
-            return GoogleMinBudget.GEMINI_25_PRO
-        return None
+        return self.families.min_budget_tokens(self.model)
 
     @property
     def max_budget_tokens(self) -> int | None:
-        if any(
-            family.in_family(self.model)
-            for family in GOOGLE_25_FLASH_LITE_FAMILIES
-        ):
-            return GoogleMaxBudget.GEMINI_25_FLASH_LITE
-        if any(
-            family.in_family(self.model) for family in GOOGLE_25_FLASH_FAMILIES
-        ):
-            return GoogleMaxBudget.GEMINI_25_FLASH
-        if any(
-            family.in_family(self.model) for family in GOOGLE_25_PRO_FAMILIES
-        ):
-            return GoogleMaxBudget.GEMINI_25_PRO
-        return None
+        return self.families.max_budget_tokens(self.model)
 
     @property
     def supports_dynamic(self) -> bool:
-        return self.control_mode == ControlMode.GOOGLE_BUDGET
+        return self.families.supports_dynamic(self.model)
 
     @property
     def google_thinking_levels(self) -> tuple[GoogleThinkingLevel, ...]:
-        if any(family.in_family(self.model) for family in GOOGLE_3_FAMILIES):
-            return (
-                GoogleThinkingLevel.MINIMAL,
-                GoogleThinkingLevel.LOW,
-                GoogleThinkingLevel.MEDIUM,
-                GoogleThinkingLevel.HIGH,
-            )
-        if any(family.in_family(self.model) for family in GEMMA_4_FAMILIES):
-            return (
-                GoogleThinkingLevel.MINIMAL,
-                GoogleThinkingLevel.HIGH,
-            )
-        return ()
+        return self.families.google_thinking_levels(self.model)
 
     @property
     def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
-        if self.control_mode == ControlMode.UNSUPPORTED:
-            return (ThinkingLevel.NA,)
-        if self.control_mode == ControlMode.GOOGLE_BUDGET:
-            return (
-                ThinkingLevel.ADAPTIVE,
-                ThinkingLevel.OFF,
-                ThinkingLevel.BUDGET,
-            )
-        if self.control_mode == ControlMode.GOOGLE_LEVEL:
-            return tuple(
-                google_literal_to_thinking_level(level)
-                for level in self.google_thinking_levels
-            )
-        raise ValueError(
-            f"unexpected control mode for provider={self.provider!r} "
-            f"model={self.model!r}: {self.control_mode!r}"
-        )
+        return self.families.supported_thinking_levels(self.model)
 
     @property
     def default_thinking_level(self) -> ThinkingLevel:
-        levels = self.supported_thinking_levels
-        for level in (
-            ThinkingLevel.OFF,
-            ThinkingLevel.MINIMAL,
-            ThinkingLevel.ADAPTIVE,
-        ):
-            if level in levels:
-                return level
-        return ThinkingLevel.NA
+        return self.families.default_thinking_level(self.model)
 
     @property
     def supported_effort_levels(self) -> tuple[EffortSpec, ...]:
-        return ()
+        return self.families.supported_effort_levels(self.model)
 
     @property
     def default_effort(self) -> EffortSpec:
-        return EffortSpec.NA
+        return self.families.default_effort(self.model)
 
     @property
     def default_reasoning(self) -> ReasoningSpec | None:
@@ -364,7 +258,7 @@ class GoogleControls(BaseModel):
             effort=self.default_effort,
             reasoning=self.default_reasoning,
             sampling_supported=True,
-            sampling=SamplingControls(temperature=1.0, top_p=0.95),
+            sampling=GOOGLE_DEFAULT_SAMPLING,
         )
 
     def resolve_reasoning(
@@ -395,7 +289,7 @@ class GoogleControls(BaseModel):
             if sampling.is_empty():
                 return None
             return sampling
-        return SamplingControls(temperature=1.0, top_p=0.95)
+        return GOOGLE_DEFAULT_SAMPLING
 
     def reasoning_for_thinking_level(
         self,
@@ -416,14 +310,16 @@ class GoogleControls(BaseModel):
         return GoogleReasoning(thinking_level=thinking_level)
 
     def validate_request(self, request: LlmRequest) -> list:
-        _validate_effort(
+        validate_effort(
             provider=self.provider,
             model=self.model,
             effort=request.effort,
             supported_effort_levels=self.supported_effort_levels,
         )
-        validate_reasoning_for_google(
-            model=request.model, reasoning=request.reasoning
+        _validate_reasoning_for_google(
+            model=request.model,
+            reasoning=request.reasoning,
+            families=self.families,
         )
         return []
 
@@ -432,32 +328,6 @@ def _require_budget_tokens(*, provider: str, budget_tokens: int | None) -> int:
     if budget_tokens is None:
         raise ValueError(f"{provider} budget thinking requires budget_tokens")
     return budget_tokens
-
-
-def _validate_effort(
-    *,
-    provider: str,
-    model: str,
-    effort: EffortSpec,
-    supported_effort_levels: tuple[EffortSpec, ...],
-) -> None:
-    if not supported_effort_levels:
-        if effort != EffortSpec.NA:
-            raise ValueError(
-                f"effort is not supported for provider={provider!r} "
-                f"model={model!r}"
-            )
-        return
-    if effort == EffortSpec.NA:
-        raise ValueError(
-            f"effort is required for provider={provider!r} model={model!r}"
-        )
-    if effort not in supported_effort_levels:
-        allowed = ", ".join(str(level) for level in supported_effort_levels)
-        raise ValueError(
-            f"effort={effort!r} is not supported for provider={provider!r} "
-            f"model={model!r}; allowed levels: {allowed}"
-        )
 
 
 class GoogleControlMapping(BaseProviderControlMapping):
@@ -472,7 +342,9 @@ class GoogleControlMapping(BaseProviderControlMapping):
             return cls()
         match config:
             case ReasoningBudget(tokens=tokens):
-                return cls(payload={"thinkingBudget": tokens})
+                return cls(
+                    payload={GoogleThinkingPayloadKey.THINKING_BUDGET: tokens}
+                )
             case GoogleReasoning(
                 thinking_level=thinking_level,
                 budget_tokens=budget_tokens,
@@ -485,7 +357,9 @@ class GoogleControlMapping(BaseProviderControlMapping):
                     budget_tokens=budget_tokens,
                 )
                 if include_thoughts is not None:
-                    payload["includeThoughts"] = include_thoughts
+                    payload[GoogleThinkingPayloadKey.INCLUDE_THOUGHTS] = (
+                        include_thoughts
+                    )
                 return cls(payload=payload)
             case _:
                 raise ProviderSemanticError(
@@ -509,17 +383,23 @@ def _build_thinking_payload(
     budget_tokens: int | None,
 ) -> dict[str, Any]:
     if thinking_level == ThinkingLevel.OFF:
-        return {"thinkingBudget": _GOOGLE_THINKING_BUDGET_OFF}
+        return {
+            GoogleThinkingPayloadKey.THINKING_BUDGET: GoogleThinkingBudget.OFF
+        }
     if thinking_level == ThinkingLevel.ADAPTIVE:
-        return {"thinkingBudget": _GOOGLE_THINKING_BUDGET_ADAPTIVE}
+        return {
+            GoogleThinkingPayloadKey.THINKING_BUDGET: (
+                GoogleThinkingBudget.ADAPTIVE
+            )
+        }
     if thinking_level == ThinkingLevel.BUDGET:
         return {
-            "thinkingBudget": require_budget_tokens(
+            GoogleThinkingPayloadKey.THINKING_BUDGET: require_budget_tokens(
                 budget_tokens, label=ProviderName.GOOGLE, min_value=0
             )
         }
     if thinking_level in _GOOGLE_LITERAL_LEVELS:
-        return {"thinkingLevel": str(thinking_level)}
+        return {GoogleThinkingPayloadKey.THINKING_LEVEL: str(thinking_level)}
     raise ProviderSemanticError(
         f"{ProviderName.GOOGLE} reasoning config did not contain a serializable setting"
     )

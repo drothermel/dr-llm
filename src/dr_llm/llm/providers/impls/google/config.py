@@ -17,7 +17,9 @@ from dr_llm.llm.providers.core.authoring import (
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 from dr_llm.llm.providers.impls.google.controls import (
     GoogleControls,
-    google_control_mode,
+)
+from dr_llm.llm.providers.impls.google.families import (
+    GOOGLE_FAMILIES,
 )
 from dr_llm.llm.response import CallMode
 
@@ -47,7 +49,7 @@ class _GoogleBaseConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_model_family(self) -> _GoogleBaseConfig:
-        mode = _google_control_mode(self.model)
+        mode = GOOGLE_FAMILIES.control_mode(self.model)
         expected_mode = self._expected_control_mode()
         if mode != expected_mode:
             raise ValueError(
@@ -104,7 +106,9 @@ class GoogleBudgetConfig(_GoogleBaseConfig):
         ):
             raise ValueError("budget_tokens requires thinking_level='budget'")
         if self.budget_tokens is not None:
-            controls = GoogleControls(model=self.model, mode=CallMode.api)
+            controls = GoogleControls(
+                model=self.model, mode=CallMode.api, families=GOOGLE_FAMILIES
+            )
             if (
                 controls.min_budget_tokens is None
                 or controls.max_budget_tokens is None
@@ -147,7 +151,9 @@ class GoogleLevelConfig(_GoogleBaseConfig):
             )
         if self.thinking_level is None:
             return self
-        controls = GoogleControls(model=self.model, mode=CallMode.api)
+        controls = GoogleControls(
+            model=self.model, mode=CallMode.api, families=GOOGLE_FAMILIES
+        )
         if not controls.google_thinking_levels:
             raise ValueError(
                 f"{type(self).__name__} thinking is not supported for "
@@ -173,7 +179,3 @@ class GoogleLevelConfig(_GoogleBaseConfig):
             thinking_level=self.thinking_level,
             include_thoughts=self.include_thoughts,
         )
-
-
-def _google_control_mode(model: str) -> ControlMode:
-    return google_control_mode(model)
