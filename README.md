@@ -94,6 +94,11 @@ uv run python scripts/demo_thinking_and_effort.py --provider openai
 | `claude-code` | Claude Code CLI (headless) | `claude` executable |
 | `kimi-code` | Kimi Code API (Anthropic-compatible) | `KIMI_API_KEY` |
 
+Provider implementation details live under
+`src/dr_llm/llm/providers/impls/<provider>/`. When a provider needs a default
+API URL or environment variable name, that default is defined in that provider's
+`provider.py`; the default registry only registers orchestrators.
+
 Headless providers shell out to CLI tools. `minimax` and `kimi-code` are direct Anthropic-compatible `/messages` API providers. Headless input shapes do not expose `temperature`, `top_p`, or `max_tokens`. `kimi-code` rejects `temperature` and `top_p`; its orchestrator supplies the provider max-token default when callers omit it.
 
 Some provider orchestrators use static fallback catalogs when a provider has no
