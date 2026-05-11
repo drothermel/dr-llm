@@ -113,7 +113,14 @@ optional nested `SamplingControls`. Provider-specific authoring configs such as
 `CodexGpt54Config` encode provider and model-family constraints, then serialize
 to the common `LlmConfig` shape with `.to_llm_config()`.
 
-Provider orchestrators construct requests from stored configs or caller inputs. They apply provider defaults for effort, reasoning, max tokens, and sampling controls before generation. For generic sampling-capable API providers, omitted sampling controls default to `temperature=1.0` and `top_p=0.95`. OpenAI omits those fields unless you set them explicitly. `kimi-code` and headless providers reject those fields entirely.
+Provider orchestrators construct requests from stored configs or caller inputs.
+Both paths run the same provider validation before generation, so persisted
+`LlmConfig` values cannot bypass mode, max-token, sampling, effort, or reasoning
+constraints. Orchestrators apply provider defaults for effort, reasoning, max
+tokens, and sampling controls before generation. For generic sampling-capable
+API providers, omitted sampling controls default to `temperature=1.0` and
+`top_p=0.95`. OpenAI omits those fields unless you set them explicitly.
+`kimi-code` and headless providers reject those fields entirely.
 
 Use `build_default_registry().get(provider).request_defaults(model)` when
 inspecting generic provider requests. It returns the orchestrator-owned defaults

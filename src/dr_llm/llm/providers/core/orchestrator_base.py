@@ -254,6 +254,8 @@ class BaseProviderOrchestrator(ABC):
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
         self._validate_provider(request)
+        self._validate_mode(request)
+        self._validate_supported_request_controls(request)
         self._validate_effort(request)
         return []
 
@@ -332,6 +334,28 @@ class BaseProviderOrchestrator(ABC):
             raise ValueError(
                 f"request provider {request.provider!r} does not match "
                 f"orchestrator provider {self.name!r}"
+            )
+
+    def _validate_mode(self, request: LlmRequest) -> None:
+        if request.mode != self.mode:
+            raise ValueError(
+                f"request mode {request.mode!r} does not match "
+                f"orchestrator mode {self.mode!r}"
+            )
+
+    def _validate_supported_request_controls(
+        self, request: LlmRequest
+    ) -> None:
+        if request.max_tokens is not None and self.mode == CallMode.headless:
+            raise ValueError(
+                f"max_tokens is not supported for provider={self.name!r}"
+            )
+        if not request.has_sampling_controls:
+            return
+        defaults = self.request_defaults(request.model)
+        if not defaults.sampling_supported:
+            raise ValueError(
+                f"sampling is not supported for provider={self.name!r}"
             )
 
     def _validate_effort(self, request: LlmRequest) -> None:

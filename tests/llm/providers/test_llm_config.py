@@ -524,3 +524,92 @@ def test_build_request_from_config_rejects_provider_mismatch() -> None:
             )
     finally:
         registry.close()
+
+
+@pytest.mark.parametrize(
+    ("provider", "config", "match_pattern"),
+    [
+        (
+            ProviderName.CODEX,
+            CodexGpt54Config(
+                model="gpt-5.4-mini",
+                thinking_level=ThinkingLevel.OFF,
+            )
+            .to_llm_config()
+            .model_copy(update={"max_tokens": 100}),
+            "max_tokens is not supported",
+        ),
+        (
+            ProviderName.CLAUDE_CODE,
+            ClaudeCodeAdaptiveConfig(model="claude-sonnet-4-6")
+            .to_llm_config()
+            .model_copy(update={"max_tokens": 100}),
+            "max_tokens is not supported",
+        ),
+        (
+            ProviderName.CODEX,
+            CodexGpt54Config(
+                model="gpt-5.4-mini",
+                thinking_level=ThinkingLevel.OFF,
+            )
+            .to_llm_config()
+            .model_copy(
+                update={"sampling": SamplingControls(temperature=0.2)}
+            ),
+            "sampling is not supported",
+        ),
+        (
+            ProviderName.CLAUDE_CODE,
+            ClaudeCodeAdaptiveConfig(model="claude-sonnet-4-6")
+            .to_llm_config()
+            .model_copy(update={"sampling": SamplingControls(top_p=0.9)}),
+            "sampling is not supported",
+        ),
+        (
+            ProviderName.KIMI_CODE,
+            KimiCodeConfig(model="kimi-for-coding")
+            .to_llm_config()
+            .model_copy(
+                update={"sampling": SamplingControls(temperature=0.2)}
+            ),
+            "sampling is not supported",
+        ),
+    ],
+)
+def test_build_request_from_config_rejects_unsupported_stored_controls(
+    provider: ProviderName, config: LlmConfig, match_pattern: str
+) -> None:
+    messages = [Message(role="user", content="Hello")]
+
+    registry = build_default_registry()
+    try:
+        with pytest.raises(ValueError, match=match_pattern):
+            build_request_from_config(
+                registry.get(provider),
+                config,
+                messages,
+            )
+    finally:
+        registry.close()
+
+
+def test_build_request_from_config_accepts_supported_stored_sampling() -> None:
+    config = LlmConfig(
+        provider=ProviderName.OPENAI,
+        model="gpt-4.1-mini",
+        mode=CallMode.api,
+        sampling=SamplingControls(temperature=0.4, top_p=0.8),
+    )
+    messages = [Message(role="user", content="Hello")]
+
+    registry = build_default_registry()
+    try:
+        request = build_request_from_config(
+            registry.get(ProviderName.OPENAI),
+            config,
+            messages,
+        )
+    finally:
+        registry.close()
+
+    assert request.sampling == SamplingControls(temperature=0.4, top_p=0.8)
