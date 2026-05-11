@@ -5,7 +5,7 @@ app = marimo.App(width="columns")
 
 with app.setup:
     from dr_llm.llm import (
-        ApiLlmRequest,
+        LlmRequest,
         ModelCapabilities,
         ProviderName,
         ProviderOrchestrator,
@@ -529,7 +529,7 @@ def _(inspect):
                 mo.md(r"""
                 ## Request Payload
                 """),
-                inspect(ApiLlmRequest),
+                inspect(LlmRequest),
             ],
             gap=1,
         )

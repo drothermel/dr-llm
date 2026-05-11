@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -10,11 +9,11 @@ from dr_llm.logging.events import generation_log_context
 from dr_llm.llm import (
     CallMode,
     CodexReasoning,
-    EffortSpec,
-    HeadlessLlmConfig,
+    LlmConfig,
     LlmResponse,
     Message,
-    OpenAILlmConfig as LlmConfig,
+    ProviderName,
+    SamplingControls,
     ThinkingLevel,
     TokenUsage,
     parse_llm_request,
@@ -60,7 +59,9 @@ def _make_registry(response: LlmResponse | None = None) -> MagicMock:
     resp = response or _make_response()
     orchestrator = MagicMock()
     orchestrator.name = resp.provider
-    orchestrator.build_request.side_effect = _build_request_for_response(resp)
+    orchestrator.build_request_from_config.side_effect = (
+        _build_request_from_config_for_response(resp)
+    )
     orchestrator.generate.return_value = resp
     orchestrator.mode = resp.mode
     registry = MagicMock()
@@ -68,40 +69,36 @@ def _make_registry(response: LlmResponse | None = None) -> MagicMock:
     return registry
 
 
-def _build_request_for_response(resp: LlmResponse):
-    def _build_request(
+def _build_request_from_config_for_response(resp: LlmResponse):
+    def _build_request_from_config(
         *,
-        model: str,
+        config: LlmConfig,
         messages: list[Message],
-        max_tokens: int | None = None,
-        effort: EffortSpec = EffortSpec.NA,
-        reasoning: Any = None,
-        temperature: float | None = None,
-        top_p: float | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Any:
         payload: dict[str, Any] = {
             "provider": resp.provider,
-            "model": model,
+            "model": config.model,
+            "mode": resp.mode,
             "messages": messages,
-            "effort": effort,
-            "reasoning": reasoning,
+            "effort": config.effort,
+            "reasoning": config.reasoning,
+            "sampling": config.sampling,
             "metadata": metadata or {},
         }
-        if max_tokens is not None:
-            payload["max_tokens"] = max_tokens
-        if temperature is not None:
-            payload["temperature"] = temperature
-        if top_p is not None:
-            payload["top_p"] = top_p
+        if config.max_tokens is not None:
+            payload["max_tokens"] = config.max_tokens
         return parse_llm_request(payload)
 
-    return _build_request
+    return _build_request_from_config
 
 
 def _sample_request() -> dict[str, Any]:
     config = LlmConfig(
-        provider=ProviderName.OPENAI, model="gpt-4.1-mini", temperature=0.5
+        provider=ProviderName.OPENAI,
+        model="gpt-4.1-mini",
+        mode=CallMode.api,
+        sampling=SamplingControls(temperature=0.5),
     )
     messages = [Message(role="user", content="Say hello")]
     return {
@@ -122,7 +119,7 @@ def test_dispatches_via_registry() -> None:
     call_args = orchestrator.generate.call_args[0][0]
     assert call_args.provider == ProviderName.OPENAI
     assert call_args.model == "gpt-4.1-mini"
-    assert call_args.temperature == 0.5
+    assert call_args.sampling_temperature == 0.5
     assert len(call_args.messages) == 1
     assert call_args.messages[0].content == "Say hello"
     assert result.text == "hello world"
@@ -177,8 +174,8 @@ def test_failed_worker_call_emits_failure_event(
 ) -> None:
     orchestrator = MagicMock()
     orchestrator.name = ProviderName.OPENAI
-    orchestrator.build_request.side_effect = _build_request_for_response(
-        _make_response()
+    orchestrator.build_request_from_config.side_effect = (
+        _build_request_from_config_for_response(_make_response())
     )
     orchestrator.generate.side_effect = RuntimeError("API down")
     orchestrator.mode = CallMode.api
@@ -212,8 +209,8 @@ def test_failed_worker_call_emits_failure_event(
 def test_error_propagates() -> None:
     orchestrator = MagicMock()
     orchestrator.name = ProviderName.OPENAI
-    orchestrator.build_request.side_effect = _build_request_for_response(
-        _make_response()
+    orchestrator.build_request_from_config.side_effect = (
+        _build_request_from_config_for_response(_make_response())
     )
     orchestrator.generate.side_effect = RuntimeError("API down")
     orchestrator.mode = CallMode.api
@@ -238,7 +235,11 @@ def test_missing_llm_config_key_raises() -> None:
 def test_missing_prompt_key_raises() -> None:
     registry = _make_registry()
     process_fn = pool_backend.make_llm_process_fn(registry)
-    config = LlmConfig(provider=ProviderName.OPENAI, model="gpt-4.1-mini")
+    config = LlmConfig(
+        provider=ProviderName.OPENAI,
+        model="gpt-4.1-mini",
+        mode=CallMode.api,
+    )
     sample = _make_sample({"llm_config": config.model_dump()})
 
     with pytest.raises(KeyError, match="prompt"):
@@ -260,7 +261,11 @@ def test_explicit_none_request_field_raises_value_error() -> None:
 
 def test_custom_key_names() -> None:
     registry = _make_registry()
-    config = LlmConfig(provider=ProviderName.OPENAI, model="gpt-4.1-mini")
+    config = LlmConfig(
+        provider=ProviderName.OPENAI,
+        model="gpt-4.1-mini",
+        mode=CallMode.api,
+    )
     messages = [Message(role="user", content="custom")]
     process_fn = pool_backend.make_llm_process_fn(
         registry, llm_config_key="model_cfg", prompt_key="msgs"
@@ -300,7 +305,10 @@ def test_seed_llm_grid_round_trips_with_make_llm_process_fn() -> None:
     store, captured = _make_seed_store(schema)
 
     cfg = LlmConfig(
-        provider=ProviderName.OPENAI, model="gpt-4.1-mini", temperature=0.5
+        provider=ProviderName.OPENAI,
+        model="gpt-4.1-mini",
+        mode=CallMode.api,
+        sampling=SamplingControls(temperature=0.5),
     )
     msgs = [Message(role="user", content="round trip")]
 
@@ -340,7 +348,7 @@ def test_seed_llm_grid_round_trips_with_make_llm_process_fn() -> None:
     call_args = registry.get.return_value.generate.call_args[0][0]
     assert call_args.provider == ProviderName.OPENAI
     assert call_args.model == "gpt-4.1-mini"
-    assert call_args.temperature == 0.5
+    assert call_args.sampling_temperature == 0.5
     assert call_args.messages[0].content == "round trip"
 
 
@@ -351,16 +359,17 @@ def test_seed_llm_grid_round_trips_headless_config() -> None:
     )
     store, captured = _make_seed_store(schema)
 
-    cfg = HeadlessLlmConfig(
+    cfg = LlmConfig(
         provider=ProviderName.CODEX,
         model="gpt-5.4-mini",
+        mode=CallMode.headless,
         reasoning=CodexReasoning(thinking_level=ThinkingLevel.XHIGH),
     )
     msgs = [Message(role="user", content="headless round trip")]
 
     def _build_request(
         cell: GridCell,
-    ) -> tuple[list[Message], HeadlessLlmConfig]:
+    ) -> tuple[list[Message], LlmConfig]:
         assert cell.values["llm_config"] == cfg
         assert cell.values["prompt"] == msgs
         return msgs, cfg
@@ -370,7 +379,7 @@ def test_seed_llm_grid_round_trips_headless_config() -> None:
         axes=[
             Axis(
                 name="llm_config",
-                members=[AxisMember[HeadlessLlmConfig](id="cfg1", value=cfg)],
+                members=[AxisMember[LlmConfig](id="cfg1", value=cfg)],
             ),
             Axis(
                 name="prompt",
@@ -396,14 +405,18 @@ def test_seed_llm_grid_round_trips_headless_config() -> None:
     assert call_args.reasoning == CodexReasoning(
         thinking_level=ThinkingLevel.XHIGH
     )
-    assert not hasattr(call_args, "temperature")
+    assert call_args.sampling is None
 
 
 def test_seed_llm_grid_honors_custom_request_keys() -> None:
     schema = PoolSchema.from_axis_names("rt2", ["llm_config", "prompt"])
     store, captured = _make_seed_store(schema)
 
-    cfg = LlmConfig(provider=ProviderName.OPENAI, model="gpt-4.1-mini")
+    cfg = LlmConfig(
+        provider=ProviderName.OPENAI,
+        model="gpt-4.1-mini",
+        mode=CallMode.api,
+    )
     msgs = [Message(role="user", content="hi")]
 
     seed_llm_grid(

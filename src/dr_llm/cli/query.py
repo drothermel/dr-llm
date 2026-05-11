@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from dr_llm.llm import (
     EffortSpec,
+    SamplingControls,
     build_default_registry,
     parse_reasoning_spec,
 )
@@ -72,6 +73,11 @@ def query(
     except ValidationError as exc:
         raise typer.BadParameter(str(exc)) from exc
     messages_payload = common._load_messages(messages_file, message or [])
+    sampling = (
+        SamplingControls(temperature=temperature, top_p=top_p)
+        if temperature is not None or top_p is not None
+        else None
+    )
 
     registry = build_default_registry()
     try:
@@ -83,8 +89,7 @@ def query(
                 max_tokens=max_tokens,
                 effort=effort,
                 reasoning=reasoning,
-                temperature=temperature,
-                top_p=top_p,
+                sampling=sampling,
                 metadata=metadata,
             )
         except (ValidationError, ValueError) as exc:

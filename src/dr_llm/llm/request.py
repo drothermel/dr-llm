@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    computed_field,
+)
 
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import EffortSpec, ProviderName
@@ -29,6 +35,21 @@ class LlmRequest(BaseModel):
     reasoning: ReasoningSpec | None = None
     sampling: SamplingControls | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @computed_field
+    @property
+    def has_sampling_controls(self) -> bool:
+        return self.sampling is not None and not self.sampling.is_empty()
+
+    @computed_field
+    @property
+    def sampling_temperature(self) -> float | None:
+        return self.sampling.temperature if self.sampling is not None else None
+
+    @computed_field
+    @property
+    def sampling_top_p(self) -> float | None:
+        return self.sampling.top_p if self.sampling is not None else None
 
 
 LLM_REQUEST_ADAPTER = TypeAdapter(LlmRequest)

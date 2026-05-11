@@ -106,7 +106,12 @@ The Python API exposes the same provider and pool primitives used by the demo
 scripts. Keep README examples small; use the demos above for maintained
 end-to-end workflows.
 
-`OpenAILlmRequest` / `OpenAILlmConfig` are the concrete request/config shapes for `provider="openai"`. `ApiLlmRequest` / `ApiLlmConfig` are the concrete shapes for the remaining sampling-capable API providers. `KimiCodeLlmRequest` / `KimiCodeLlmConfig` are the concrete shapes for `kimi-code`. `HeadlessLlmRequest` / `HeadlessLlmConfig` are the concrete shapes for CLI-backed providers. `LlmRequest` and `LlmConfig` remain available as unions, and `parse_llm_config(...)` validates stored config payloads into the correct concrete model by `provider`.
+`LlmConfig` and `LlmRequest` are the shared runtime shapes for all providers.
+They carry `provider`, `model`, `mode`, reasoning, effort, token limits, and
+optional nested `SamplingControls`. Provider-specific authoring configs such as
+`OpenAIGpt5Config`, `AnthropicBudgetConfig`, `GoogleBudgetConfig`, and
+`CodexGpt54Config` encode provider and model-family constraints, then serialize
+to the common `LlmConfig` shape with `.to_llm_config()`.
 
 Provider orchestrators construct requests from stored configs or caller inputs. They apply provider defaults for effort, reasoning, max tokens, and sampling controls before generation. For generic sampling-capable API providers, omitted sampling controls default to `temperature=1.0` and `top_p=0.95`. OpenAI omits those fields unless you set them explicitly. `kimi-code` and headless providers reject those fields entirely.
 

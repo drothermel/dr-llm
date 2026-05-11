@@ -207,7 +207,9 @@ def _validate_anthropic_budget(
     budget_tokens: int | None,
 ) -> None:
     if thinking_level == ThinkingLevel.BUDGET and budget_tokens is None:
-        raise ValueError(f"{config_name} budget thinking requires budget_tokens")
+        raise ValueError(
+            f"{config_name} budget thinking requires budget_tokens"
+        )
     if thinking_level != ThinkingLevel.BUDGET and budget_tokens is not None:
         raise ValueError("budget_tokens requires thinking_level='budget'")
     if budget_tokens is None:

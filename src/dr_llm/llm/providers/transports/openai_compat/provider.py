@@ -12,7 +12,7 @@ from dr_llm.llm.providers.transports.openai_compat.request import (
 from dr_llm.llm.providers.transports.openai_compat.response import (
     OpenAICompatResponse,
 )
-from dr_llm.llm.request import ApiBackedLlmRequest
+from dr_llm.llm.request import LlmRequest
 
 
 class OpenAICompatProvider(ApiProvider):
@@ -30,9 +30,7 @@ class OpenAICompatProvider(ApiProvider):
     def config(self) -> OpenAICompatConfig:
         return self._config
 
-    def _build_request(
-        self, request: ApiBackedLlmRequest
-    ) -> OpenAICompatRequest:
+    def _build_request(self, request: LlmRequest) -> OpenAICompatRequest:
         return OpenAICompatRequest.from_llm_request(request, self._config)
 
     def _parse_response(

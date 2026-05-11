@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from dr_llm.llm import AnthropicReasoning, EffortSpec, ThinkingLevel
-from dr_llm.llm.providers.impls.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.impls.anthropic.provider_config import (
+    AnthropicProviderConfig,
+)
 from dr_llm.llm.providers.impls.minimax.provider import (
     MINIMAX_BASE_URL,
     MINIMAX_PROVIDER_NAME,
@@ -22,8 +24,8 @@ _MOCK_RESPONSE: dict[str, Any] = {
 }
 
 
-def _minimax_test_config() -> AnthropicConfig:
-    return AnthropicConfig(
+def _minimax_test_config() -> AnthropicProviderConfig:
+    return AnthropicProviderConfig(
         name=MINIMAX_PROVIDER_NAME,
         base_url=MINIMAX_BASE_URL,
         api_key="test-key",

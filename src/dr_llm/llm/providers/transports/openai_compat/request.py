@@ -5,22 +5,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError
-from dr_llm.llm.names import ProviderName
-from dr_llm.llm.providers.transports.api_config import resolve_api_key
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
+from dr_llm.llm.providers.transports.api_config import resolve_api_key
 from dr_llm.llm.providers.transports.openai_compat.reasoning import (
     OpenAICompatReasoningConfig,
 )
-from dr_llm.llm.providers.impls.openai.thinking import (
-    openai_uses_max_completion_tokens,
-)
-from dr_llm.llm.request import (
-    ApiBackedLlmRequest,
-    ApiLlmRequest,
-    Message,
-    OpenAILlmRequest,
-)
+from dr_llm.llm.request import LlmRequest, Message
 
 if TYPE_CHECKING:
     from dr_llm.llm.providers.transports.openai_compat.config import (
@@ -41,6 +31,7 @@ class OpenAICompatRequest(BaseModel):
     extra_body: dict[str, Any] = Field(default_factory=dict)
     base_url: str = Field(exclude=True)
     chat_path: str = Field(exclude=True)
+    max_completion_token_model_prefixes: tuple[str, ...] = Field(exclude=True)
     api_key_env: str = Field(exclude=True)
     api_key: str = Field(exclude=True, repr=False)
     idempotency_key: str = Field(exclude=True)
@@ -51,13 +42,9 @@ class OpenAICompatRequest(BaseModel):
     @classmethod
     def from_llm_request(
         cls,
-        request: ApiBackedLlmRequest,
+        request: LlmRequest,
         config: OpenAICompatConfig,
     ) -> OpenAICompatRequest:
-        if not isinstance(request, (ApiLlmRequest, OpenAILlmRequest)):
-            raise ProviderSemanticError(
-                f"{config.name} requires a sampling-capable API request shape"
-            )
         reasoning_mapping = OpenAICompatReasoningConfig.from_base(
             request.reasoning,
             provider=request.provider,
@@ -69,13 +56,16 @@ class OpenAICompatRequest(BaseModel):
             provider=request.provider,
             model=request.model,
             messages=cls._to_openai_messages(request.messages),
-            temperature=request.temperature,
-            top_p=request.top_p,
+            temperature=request.sampling_temperature,
+            top_p=request.sampling_top_p,
             max_tokens=request.max_tokens,
             reasoning_effort=reasoning_effort,
             extra_body=extra_body,
             base_url=config.base_url,
             chat_path=config.chat_path,
+            max_completion_token_model_prefixes=(
+                config.max_completion_token_model_prefixes
+            ),
             api_key_env=config.api_key_env,
             api_key=resolve_api_key(config, label=request.provider),
             idempotency_key=cls._resolve_idempotency_key(request=request),
@@ -90,9 +80,7 @@ class OpenAICompatRequest(BaseModel):
         ]
 
     @staticmethod
-    def _resolve_idempotency_key(
-        *, request: ApiLlmRequest | OpenAILlmRequest
-    ) -> str:
+    def _resolve_idempotency_key(*, request: LlmRequest) -> str:
         raw_idempotency_key = request.metadata.get("idempotency_key")
         if isinstance(raw_idempotency_key, str) and raw_idempotency_key:
             return raw_idempotency_key
@@ -112,11 +100,7 @@ class OpenAICompatRequest(BaseModel):
         payload = self.model_dump(
             mode="json", exclude_none=True, exclude={"extra_body"}
         )
-        if (
-            self.provider == ProviderName.OPENAI
-            and "max_tokens" in payload
-            and openai_uses_max_completion_tokens(self.model)
-        ):
+        if "max_tokens" in payload and self._uses_max_completion_tokens():
             payload["max_completion_tokens"] = payload.pop("max_tokens")
         overlapping_keys = sorted(set(self.extra_body) & set(payload))
         if overlapping_keys:
@@ -126,3 +110,9 @@ class OpenAICompatRequest(BaseModel):
             )
         payload.update(self.extra_body)
         return payload
+
+    def _uses_max_completion_tokens(self) -> bool:
+        return any(
+            self.model == prefix or self.model.startswith(f"{prefix}-")
+            for prefix in self.max_completion_token_model_prefixes
+        )

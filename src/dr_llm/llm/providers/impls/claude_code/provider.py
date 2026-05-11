@@ -22,7 +22,7 @@ from dr_llm.llm.providers.impls.claude_code.reasoning import (
 from dr_llm.llm.providers.transports.headless_config import (
     ClaudeCodeProviderConfig,
 )
-from dr_llm.llm.request import HeadlessLlmRequest
+from dr_llm.llm.request import LlmRequest
 
 
 CLAUDE_DEFAULT_COMMAND = [
@@ -155,7 +155,7 @@ class ClaudeCodeProvider(BaseHeadlessProvider):
 
     def subprocess_env(
         self,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         payload: HeadlessRequestPayload,
     ) -> dict[str, str]:
         del request, payload
@@ -169,7 +169,7 @@ class ClaudeCodeProvider(BaseHeadlessProvider):
 
     def command_for_request(
         self,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         payload: HeadlessRequestPayload,
         reasoning_mapping: HeadlessReasoningResult,
     ) -> list[str]:
@@ -190,13 +190,13 @@ class ClaudeCodeProvider(BaseHeadlessProvider):
         return command
 
     def reasoning_mapping(
-        self, request: HeadlessLlmRequest
+        self, request: LlmRequest
     ) -> HeadlessReasoningResult:
         return ClaudeHeadlessReasoningConfig.from_base(request.reasoning)
 
     def stdin_for_request(
         self,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         payload: HeadlessRequestPayload,
     ) -> str:
         del payload
@@ -206,7 +206,7 @@ class ClaudeCodeProvider(BaseHeadlessProvider):
     def parse_stdout(
         self,
         *,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         stdout: str,
         stderr: str,
     ) -> ParsedHeadlessOutput:

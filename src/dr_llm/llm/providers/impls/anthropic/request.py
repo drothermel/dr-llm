@@ -82,12 +82,8 @@ class AnthropicRequest(BaseModel):
             messages=cls._to_anthropic_messages(request.messages),
             max_tokens=request.max_tokens,
             system=system or None,
-            temperature=request.sampling.temperature
-            if request.sampling is not None
-            else None,
-            top_p=request.sampling.top_p
-            if request.sampling is not None
-            else None,
+            temperature=request.sampling_temperature,
+            top_p=request.sampling_top_p,
             thinking=resolved_reasoning_mapping.thinking or None,
             output_config=output_config,
             base_url=config.base_url,

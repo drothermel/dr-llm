@@ -6,7 +6,9 @@ import pytest
 
 from dr_llm.llm import ProviderName
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.providers.impls.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.impls.anthropic.provider_config import (
+    AnthropicProviderConfig,
+)
 from dr_llm.llm.providers.impls.google.orchestrator import GoogleOrchestrator
 from dr_llm.llm.providers.impls.google.provider import GoogleProvider
 from dr_llm.llm.providers.impls.kimi_code.orchestrator import (
@@ -63,7 +65,7 @@ def test_kimi_orchestrator_fetches_with_wrapped_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = KimiCodeProvider(
-        config=AnthropicConfig(
+        config=AnthropicProviderConfig(
             name=ProviderName.KIMI_CODE,
             base_url="https://api.kimi.com/coding/v1/messages",
             api_key_env="KIMI_API_KEY",

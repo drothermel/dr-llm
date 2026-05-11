@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dr_llm.llm import (
+    CallMode,
     Message,
     ProviderName,
     parse_llm_config,
@@ -15,12 +16,17 @@ def test_provider_name_members_behave_like_strings() -> None:
 
 def test_provider_name_discriminators_accept_raw_strings() -> None:
     config = parse_llm_config(
-        {"provider": str(ProviderName.OPENAI), "model": "gpt-4.1-mini"}
+        {
+            "provider": str(ProviderName.OPENAI),
+            "model": "gpt-4.1-mini",
+            "mode": CallMode.api,
+        }
     )
     request = parse_llm_request(
         {
             "provider": str(ProviderName.OPENAI),
             "model": "gpt-4.1-mini",
+            "mode": CallMode.api,
             "messages": [Message(role="user", content="hi")],
         }
     )

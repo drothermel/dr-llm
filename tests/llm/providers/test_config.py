@@ -7,7 +7,9 @@ import pytest
 
 from dr_llm.llm.providers.transports.api_config import APIProviderConfig
 from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
-from dr_llm.llm.providers.impls.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.impls.anthropic.provider_config import (
+    AnthropicProviderConfig,
+)
 from dr_llm.llm.providers.impls.google.provider import GoogleProvider
 from dr_llm.llm.providers.impls.kimi_code.provider import KimiCodeProvider
 from dr_llm.llm.providers.impls.minimax.provider import MiniMaxProvider
@@ -109,7 +111,7 @@ def test_available_names_accepts_precomputed_statuses() -> None:
             )
         ),
         lambda: AnthropicProvider(
-            config=AnthropicConfig(
+            config=AnthropicProviderConfig(
                 api_key_env="ANTHROPIC_API_KEY",
                 api_key="inline-key",
             )
@@ -123,7 +125,7 @@ def test_available_names_accepts_precomputed_statuses() -> None:
             )
         ),
         lambda: KimiCodeProvider(
-            config=AnthropicConfig(
+            config=AnthropicProviderConfig(
                 name=ProviderName.KIMI_CODE,
                 base_url="https://api.kimi.com/coding/v1/messages",
                 api_key_env="KIMI_API_KEY",
@@ -131,7 +133,7 @@ def test_available_names_accepts_precomputed_statuses() -> None:
             )
         ),
         lambda: MiniMaxProvider(
-            config=AnthropicConfig(
+            config=AnthropicProviderConfig(
                 name=ProviderName.MINIMAX,
                 base_url="https://api.minimax.io/anthropic/v1/messages",
                 api_key_env="MINIMAX_API_KEY",

@@ -128,7 +128,9 @@ class BaseProviderOrchestrator(ABC):
             budget_tokens=budget_tokens,
         )
         resolved_effort = (
-            defaults.effort if effort is None else self._resolve_effort(defaults, effort)
+            defaults.effort
+            if effort is None
+            else self._resolve_effort(defaults, effort)
         )
         payload: dict[str, Any] = {
             "provider": defaults.provider,

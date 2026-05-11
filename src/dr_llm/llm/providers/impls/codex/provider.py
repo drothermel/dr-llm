@@ -23,7 +23,7 @@ from dr_llm.llm.providers.impls.codex.reasoning import (
     CodexHeadlessReasoningConfig,
 )
 from dr_llm.llm.providers.transports.headless_config import CodexProviderConfig
-from dr_llm.llm.request import HeadlessLlmRequest
+from dr_llm.llm.request import LlmRequest
 
 
 CODEX_DEFAULT_COMMAND = [
@@ -243,7 +243,7 @@ class CodexProvider(BaseHeadlessProvider):
 
     def command_for_request(
         self,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         payload: HeadlessRequestPayload,
         reasoning_mapping: HeadlessReasoningResult,
     ) -> list[str]:
@@ -263,13 +263,13 @@ class CodexProvider(BaseHeadlessProvider):
         return command
 
     def reasoning_mapping(
-        self, request: HeadlessLlmRequest
+        self, request: LlmRequest
     ) -> HeadlessReasoningResult:
         return CodexHeadlessReasoningConfig.from_base(request.reasoning)
 
     def stdin_for_request(
         self,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         payload: HeadlessRequestPayload,
     ) -> str:
         del payload
@@ -279,7 +279,7 @@ class CodexProvider(BaseHeadlessProvider):
     def parse_stdout(
         self,
         *,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         stdout: str,
         stderr: str,
     ) -> ParsedHeadlessOutput:

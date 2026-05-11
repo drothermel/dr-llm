@@ -4,14 +4,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.providers.transports.api_config import (
     APIProviderConfig,
     resolve_api_key,
 )
 from dr_llm.llm.providers.impls.google.reasoning import GoogleReasoningConfig
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
-from dr_llm.llm.request import ApiBackedLlmRequest, ApiLlmRequest, Message
+from dr_llm.llm.request import LlmRequest, Message
 
 
 class _GoogleGenerationConfig(BaseModel):
@@ -58,13 +57,9 @@ class GoogleRequest(BaseModel):
     @classmethod
     def from_llm_request(
         cls,
-        request: ApiBackedLlmRequest,
+        request: LlmRequest,
         config: APIProviderConfig,
     ) -> GoogleRequest:
-        if not isinstance(request, ApiLlmRequest):
-            raise ProviderSemanticError(
-                "google requires a sampling-capable API request shape"
-            )
         reasoning_mapping = GoogleReasoningConfig.from_base(request.reasoning)
         system = "\n".join(
             message.content
@@ -129,7 +124,7 @@ class GoogleRequest(BaseModel):
     @staticmethod
     def _generation_config(
         *,
-        request: ApiLlmRequest,
+        request: LlmRequest,
         reasoning_payload: dict[str, Any],
     ) -> _GoogleGenerationConfig | None:
         thinking_config = (
@@ -138,14 +133,13 @@ class GoogleRequest(BaseModel):
             else None
         )
         if (
-            request.temperature is not None
-            or request.top_p is not None
+            request.has_sampling_controls
             or request.max_tokens is not None
             or thinking_config is not None
         ):
             return _GoogleGenerationConfig(
-                temperature=request.temperature,
-                topP=request.top_p,
+                temperature=request.sampling_temperature,
+                topP=request.sampling_top_p,
                 maxOutputTokens=request.max_tokens,
                 thinkingConfig=thinking_config,
             )

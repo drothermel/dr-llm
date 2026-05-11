@@ -13,6 +13,7 @@ _CODEX_CLI_EFFORT_CAPS = ReasoningCapabilities(
     mode=ReasoningMode.CODEX_CLI_EFFORT
 )
 
+
 def codex_supports_configurable_thinking(model: str) -> bool:
     return matches_family(
         normalized=model, families=CODEX_THINKING_SUPPORTED_MODELS

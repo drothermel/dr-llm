@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dr_llm.llm import (
-    ApiLlmConfig,
+    GoogleBudgetConfig,
     LlmConfig,
-    OpenAILlmConfig,
+    OpenAIGpt5Config,
     ProviderName,
     build_default_registry,
 )
@@ -81,22 +81,14 @@ def demo_pool_fill_llm_configs() -> dict[str, LlmConfig]:
     registry = build_default_registry()
     try:
         return {
-            "gpt-5-mini-default": OpenAILlmConfig(
-                provider=ProviderName.OPENAI,
+            "gpt-5-mini-default": OpenAIGpt5Config(
                 model="gpt-5-mini",
                 max_tokens=64,
-                reasoning=registry.get(ProviderName.OPENAI)
-                .request_defaults("gpt-5-mini")
-                .reasoning,
-            ),
-            "gemini-flash-default": ApiLlmConfig(
-                provider=ProviderName.GOOGLE,
+            ).to_llm_config(registry),
+            "gemini-flash-default": GoogleBudgetConfig(
                 model="gemini-2.5-flash",
                 max_tokens=64,
-                reasoning=registry.get(ProviderName.GOOGLE)
-                .request_defaults("gemini-2.5-flash")
-                .reasoning,
-            ),
+            ).to_llm_config(registry),
         }
     finally:
         registry.close()

@@ -10,6 +10,9 @@ from dr_llm.llm.providers.concepts.capabilities import (
     resolve_capability_rules,
 )
 from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
+from dr_llm.llm.providers.impls.claude_code.families import (
+    CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES,
+)
 
 _CLAUDE_HEADLESS_CAPS = ReasoningCapabilities(
     mode=ReasoningMode.CLAUDE_CLI_EFFORT
@@ -19,8 +22,11 @@ _CLAUDE_HEADLESS_EFFORT_SUPPORTED_SET = frozenset(
 )
 
 CLAUDE_HEADLESS_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
-    ReasoningCapabilityRule(
-        model_prefix="claude-", capabilities=_CLAUDE_HEADLESS_CAPS
+    *(
+        ReasoningCapabilityRule(
+            model_prefix=family, capabilities=_CLAUDE_HEADLESS_CAPS
+        )
+        for family in CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES
     ),
 )
 

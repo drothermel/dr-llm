@@ -1,3 +1,3 @@
-from dr_llm.llm.providers.core.request_defaults import ProviderRequestDefaults
+from __future__ import annotations
 
-__all__ = ["ProviderRequestDefaults"]
+__all__: list[str] = []

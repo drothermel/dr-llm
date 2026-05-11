@@ -28,6 +28,9 @@ from dr_llm.llm.providers.impls.minimax.orchestrator import (
 )
 from dr_llm.llm.providers.impls.minimax.provider import MiniMaxProvider
 from dr_llm.llm.providers.impls.openai.orchestrator import OpenAIOrchestrator
+from dr_llm.llm.providers.impls.openai.families import (
+    OPENAI_THINKING_SUPPORTED_MODELS,
+)
 from dr_llm.llm.providers.impls.openrouter.orchestrator import (
     OpenRouterOrchestrator,
 )
@@ -54,6 +57,9 @@ _OPENAI_COMPAT_ORCHESTRATORS = {
     ProviderName.OPENROUTER: OpenRouterOrchestrator,
     ProviderName.GLM: GlmOrchestrator,
 }
+_OPENAI_MAX_COMPLETION_TOKEN_MODEL_PREFIXES = tuple(
+    str(family) for family in OPENAI_THINKING_SUPPORTED_MODELS
+)
 
 
 def build_default_registry() -> ProviderRegistry:
@@ -65,6 +71,11 @@ def build_default_registry() -> ProviderRegistry:
                 name=name,
                 base_url=base_url,
                 api_key_env=api_key_env,
+                max_completion_token_model_prefixes=(
+                    _OPENAI_MAX_COMPLETION_TOKEN_MODEL_PREFIXES
+                    if name == ProviderName.OPENAI
+                    else ()
+                ),
             ),
         )
         registry.register(_OPENAI_COMPAT_ORCHESTRATORS[name](provider))

@@ -16,7 +16,7 @@ from dr_llm.llm.providers.concepts.reasoning import ReasoningSpec
 from dr_llm.llm.providers.transports.headless_config import (
     HeadlessProviderConfig,
 )
-from dr_llm.llm.request import HeadlessLlmRequest, LlmRequest, Message
+from dr_llm.llm.request import LlmRequest, Message
 from dr_llm.llm.response import CallMode, LlmResponse
 from dr_llm.llm.providers.core.usage import (
     CostInfo,
@@ -55,9 +55,7 @@ class HeadlessRequestPayload(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
-    def from_llm_request(
-        cls, request: HeadlessLlmRequest
-    ) -> HeadlessRequestPayload:
+    def from_llm_request(cls, request: LlmRequest) -> HeadlessRequestPayload:
         return cls(
             provider=request.provider,
             model=request.model,
@@ -220,13 +218,13 @@ class BaseHeadlessProvider(ProviderTransport):
         self._config = config
 
     def payload_for_request(
-        self, request: HeadlessLlmRequest
+        self, request: LlmRequest
     ) -> HeadlessRequestPayload:
         return HeadlessRequestPayload.from_llm_request(request)
 
     def command_for_request(
         self,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         payload: HeadlessRequestPayload,
         reasoning_mapping: HeadlessReasoningResult,
     ) -> list[str]:
@@ -234,21 +232,21 @@ class BaseHeadlessProvider(ProviderTransport):
 
     def stdin_for_request(
         self,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         payload: HeadlessRequestPayload,
     ) -> str:
         return json.dumps(payload.json_payload(), ensure_ascii=True)
 
     def subprocess_env(
         self,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         payload: HeadlessRequestPayload,
     ) -> dict[str, str]:
         del request, payload
         return {**os.environ, **self._config.env_overrides}
 
     def reasoning_mapping(
-        self, request: HeadlessLlmRequest
+        self, request: LlmRequest
     ) -> HeadlessReasoningResult:
         raise NotImplementedError(
             "subclasses must implement reasoning_mapping"
@@ -257,7 +255,7 @@ class BaseHeadlessProvider(ProviderTransport):
     def parse_stdout(
         self,
         *,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         stdout: str,
         stderr: str,
     ) -> ParsedHeadlessOutput:
@@ -278,9 +276,9 @@ class BaseHeadlessProvider(ProviderTransport):
         return ParsedHeadlessOutput.from_body(body=body, raw_json=body)
 
     def generate(self, request: LlmRequest) -> LlmResponse:
-        if not isinstance(request, HeadlessLlmRequest):
+        if request.mode != CallMode.headless:
             raise ProviderSemanticError(
-                f"{self.name} only accepts headless request shapes"
+                f"{self.name} only accepts headless requests"
             )
         payload = self.payload_for_request(request)
         reasoning_mapping = self.reasoning_mapping(request)
@@ -322,7 +320,7 @@ class BaseHeadlessProvider(ProviderTransport):
         *,
         command: list[str],
         stdin_text: str,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         payload: HeadlessRequestPayload,
         logged_stdin: str,
     ) -> tuple[subprocess.CompletedProcess[str], int]:
@@ -390,7 +388,7 @@ class BaseHeadlessProvider(ProviderTransport):
     def _build_response_from_output(
         self,
         *,
-        request: HeadlessLlmRequest,
+        request: LlmRequest,
         proc: subprocess.CompletedProcess[str],
         latency_ms: int,
         reasoning_mapping: HeadlessReasoningResult,

@@ -83,9 +83,7 @@ class ApiProvider(ProviderTransport):
         self.close()
 
     @abstractmethod
-    def _build_request(
-        self, request: LlmRequest
-    ) -> ApiProviderRequest:
+    def _build_request(self, request: LlmRequest) -> ApiProviderRequest:
         """Translate an ``LlmRequest`` into an ``ApiProviderRequest``."""
 
     @abstractmethod

@@ -9,11 +9,13 @@ import pytest
 from dr_llm.llm import (
     CallMode,
     EffortSpec,
+    LlmConfig,
     LlmRequest,
     LlmResponse,
     Message,
     ProviderConfig,
     ProviderRequestDefaults,
+    SamplingControls,
     TokenUsage,
     parse_llm_request,
     ProviderName,
@@ -119,24 +121,66 @@ class FakeOrchestrator:
         model: str,
         messages: list[Message],
         max_tokens: int | None = None,
-        effort: EffortSpec = EffortSpec.NA,
+        effort: EffortSpec | None = None,
         reasoning: ReasoningSpec | None = None,
-        temperature: float | None = None,
-        top_p: float | None = None,
+        thinking_level: ThinkingLevel | None = None,
+        budget_tokens: int | None = None,
+        sampling: SamplingControls | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> LlmRequest:
-        del temperature, top_p
+        del thinking_level, budget_tokens
         payload: dict[str, Any] = {
             "provider": self.name,
             "model": model,
+            "mode": self.mode,
             "messages": messages,
-            "effort": effort,
+            "effort": EffortSpec.NA if effort is None else effort,
             "reasoning": reasoning,
+            "sampling": sampling,
             "metadata": metadata or {},
         }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
         return parse_llm_request(payload)
+
+    def build_config(
+        self,
+        *,
+        model: str,
+        max_tokens: int | None = None,
+        effort: EffortSpec | None = None,
+        reasoning: ReasoningSpec | None = None,
+        thinking_level: ThinkingLevel | None = None,
+        budget_tokens: int | None = None,
+        sampling: SamplingControls | None = None,
+    ) -> LlmConfig:
+        del thinking_level, budget_tokens
+        payload: dict[str, Any] = {
+            "provider": self.name,
+            "model": model,
+            "mode": self.mode,
+            "effort": EffortSpec.NA if effort is None else effort,
+            "reasoning": reasoning,
+            "sampling": sampling,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        return LlmConfig(**payload)
+
+    def build_request_from_config(
+        self,
+        *,
+        config: LlmConfig,
+        messages: list[Message],
+        metadata: dict[str, Any] | None = None,
+    ) -> LlmRequest:
+        return parse_llm_request(
+            {
+                **config.model_dump(mode="python"),
+                "messages": messages,
+                "metadata": metadata or {},
+            }
+        )
 
     def reasoning_for_thinking_level(
         self,
@@ -175,9 +219,17 @@ def make_request(**overrides: Any) -> LlmRequest:
     defaults: dict[str, Any] = {
         "provider": ProviderName.OPENAI,
         "model": "gpt-4.1-mini",
+        "mode": CallMode.api,
         "messages": [Message(role="user", content="hello")],
     }
     defaults.update(overrides)
+    if "mode" not in overrides and defaults["provider"] in {
+        ProviderName.CODEX,
+        ProviderName.CLAUDE_CODE,
+        str(ProviderName.CODEX),
+        str(ProviderName.CLAUDE_CODE),
+    }:
+        defaults["mode"] = CallMode.headless
     return parse_llm_request(defaults)
 
 

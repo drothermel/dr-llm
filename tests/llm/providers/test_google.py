@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
 from collections.abc import Mapping
 from typing import Any, cast
 
@@ -9,11 +8,11 @@ import pytest
 
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm import (
-    ApiLlmRequest,
-    EffortSpec,
+    CallMode,
     GoogleReasoning,
-    KimiCodeLlmRequest,
+    LlmRequest,
     Message,
+    ProviderName,
     ReasoningBudget,
     ThinkingLevel,
 )
@@ -62,8 +61,8 @@ _THOUGHT_RESPONSE = {
 
 def _make_api_request(
     overrides: Mapping[str, Any] | None = None,
-) -> ApiLlmRequest:
-    return cast(ApiLlmRequest, make_request(**(overrides or {})))
+) -> LlmRequest:
+    return make_request(**(overrides or {}))
 
 
 def test_rejects_unsupported_message_role() -> None:
@@ -211,16 +210,16 @@ def test_response_filters_thought_parts_out_of_visible_text() -> None:
     ]
 
 
-def test_rejects_kimi_code_request_shape() -> None:
-    request = KimiCodeLlmRequest(
-        provider=ProviderName.KIMI_CODE,
-        model="kimi-for-coding",
+def test_provider_rejects_headless_request_mode() -> None:
+    request = make_request(
+        provider=ProviderName.CODEX,
+        model="gpt-5.4",
+        mode=CallMode.headless,
         messages=[Message(role="user", content="hi")],
-        max_tokens=256,
-        effort=EffortSpec.HIGH,
     )
+    adapter = GoogleProvider(config=_GOOGLE_CONFIG)
 
     with pytest.raises(
-        ProviderSemanticError, match="sampling-capable API request shape"
+        ProviderSemanticError, match="only accepts API-backed requests"
     ):
-        GoogleRequest.from_llm_request(request, _GOOGLE_CONFIG)
+        adapter.generate(request)

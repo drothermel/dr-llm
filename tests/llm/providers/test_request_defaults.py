@@ -10,9 +10,9 @@ from dr_llm.llm import (
     CallMode,
     EffortSpec,
     GoogleReasoning,
-    KimiCodeLlmRequest,
     OpenAIReasoning,
     ProviderName,
+    SamplingControls,
     ThinkingLevel,
     build_default_registry,
 )
@@ -40,10 +40,8 @@ def test_request_defaults_expose_openai_sampling_and_reasoning_policy(
     assert defaults.reasoning == OpenAIReasoning(
         thinking_level=ThinkingLevel.MINIMAL
     )
-    assert defaults.supports_temperature
-    assert defaults.temperature is None
-    assert defaults.supports_top_p
-    assert defaults.top_p is None
+    assert defaults.sampling_supported
+    assert defaults.sampling == SamplingControls()
 
 
 def test_request_defaults_expose_google_sampling_defaults(
@@ -56,10 +54,8 @@ def test_request_defaults_expose_google_sampling_defaults(
     assert defaults.reasoning == GoogleReasoning(
         thinking_level=ThinkingLevel.OFF
     )
-    assert defaults.supports_temperature
-    assert defaults.temperature == 1.0
-    assert defaults.supports_top_p
-    assert defaults.top_p == 0.95
+    assert defaults.sampling_supported
+    assert defaults.sampling == SamplingControls(temperature=1.0, top_p=0.95)
 
 
 def test_request_defaults_expose_required_max_tokens(
@@ -74,10 +70,8 @@ def test_request_defaults_expose_required_max_tokens(
 
     assert anthropic.max_tokens_required
     assert anthropic.max_tokens == 4096
-    assert anthropic.supports_temperature
-    assert anthropic.temperature == 1.0
-    assert anthropic.supports_top_p
-    assert anthropic.top_p == 0.95
+    assert anthropic.sampling_supported
+    assert anthropic.sampling == SamplingControls(temperature=1.0, top_p=0.95)
 
     assert kimi.max_tokens_required
     assert kimi.max_tokens == 16384
@@ -85,8 +79,8 @@ def test_request_defaults_expose_required_max_tokens(
     assert kimi.reasoning == AnthropicReasoning(
         thinking_level=ThinkingLevel.OFF
     )
-    assert not kimi.supports_temperature
-    assert not kimi.supports_top_p
+    assert not kimi.sampling_supported
+    assert kimi.sampling is None
 
 
 def test_request_defaults_expose_headless_and_minimax_defaults(
@@ -99,16 +93,16 @@ def test_request_defaults_expose_headless_and_minimax_defaults(
     minimax = registry.get(ProviderName.MINIMAX).request_defaults("MiniMax-M2")
 
     assert codex.mode == CallMode.headless
-    assert not codex.supports_temperature
+    assert not codex.sampling_supported
     assert claude.mode == CallMode.headless
-    assert not claude.supports_top_p
+    assert not claude.sampling_supported
 
     assert minimax.effort == EffortSpec.LOW
     assert minimax.reasoning == AnthropicReasoning(
         thinking_level=ThinkingLevel.NA
     )
-    assert minimax.supports_temperature
-    assert minimax.temperature == 1.0
+    assert minimax.sampling_supported
+    assert minimax.sampling == SamplingControls(temperature=1.0, top_p=0.95)
 
 
 def test_request_defaults_reject_inconsistent_max_token_state() -> None:
@@ -122,20 +116,12 @@ def test_request_defaults_reject_inconsistent_max_token_state() -> None:
 
 
 def test_request_defaults_reject_unsupported_sampling_defaults() -> None:
-    with pytest.raises(ValidationError, match="supports_temperature"):
+    with pytest.raises(ValidationError, match="sampling_supported"):
         ProviderRequestDefaults(
             provider="test",
             model="test-model",
             mode=CallMode.api,
-            temperature=0.7,
-        )
-
-    with pytest.raises(ValidationError, match="supports_top_p"):
-        ProviderRequestDefaults(
-            provider="test",
-            model="test-model",
-            mode=CallMode.api,
-            top_p=0.9,
+            sampling=SamplingControls(temperature=0.7),
         )
 
 
@@ -148,7 +134,7 @@ def test_build_request_applies_provider_defaults(
     )
 
     assert request.provider == ProviderName.KIMI_CODE
-    assert isinstance(request, KimiCodeLlmRequest)
+    assert request.mode == CallMode.api
     assert request.max_tokens == 16384
     assert request.effort == EffortSpec.LOW
     assert request.reasoning == AnthropicReasoning(
@@ -159,9 +145,9 @@ def test_build_request_applies_provider_defaults(
 def test_build_request_rejects_unsupported_sampling_control(
     registry: ProviderRegistry,
 ) -> None:
-    with pytest.raises(ValueError, match="temperature is not supported"):
+    with pytest.raises(ValueError, match="sampling is not supported"):
         registry.get(ProviderName.KIMI_CODE).build_request(
             model="kimi-for-coding",
             messages=[],
-            temperature=0.2,
+            sampling=SamplingControls(temperature=0.2),
         )
