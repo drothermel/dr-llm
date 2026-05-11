@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -10,17 +11,18 @@ from dr_llm.llm.catalog.fetchers.common import (
     require_api_key,
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
+from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
-from dr_llm.llm.providers.kimi_code.capabilities import (
-    reasoning_capabilities_for_kimi_code,
-)
 
+CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
 
 KIMI_CATALOG_URL = "https://api.kimi.com/coding/v1/models"
 
 
 def fetch_kimi_models(
     provider: KimiCodeProvider,
+    *,
+    capabilities_fn: CapabilitiesFn,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     provider_name = provider.name
     key = require_api_key(
@@ -42,9 +44,7 @@ def fetch_kimi_models(
             context_window=as_int(item.get("context_length")),
             max_output_tokens=as_int(item.get("max_output_tokens")),
             supports_reasoning=as_bool(item.get("supports_reasoning")),
-            reasoning_capabilities=reasoning_capabilities_for_kimi_code(
-                model_id
-            ),
+            reasoning_capabilities=capabilities_fn(model_id),
             supports_vision=True,
             metadata=item,
             fetched_at=now,

@@ -7,8 +7,7 @@ from dr_llm.llm.catalog.fetchers.openai_compat import (
     fetch_openai_compat_models,
 )
 from dr_llm.llm.catalog.fetchers.static import (
-    fetch_static_headless_models,
-    fetch_static_minimax_models,
+    build_static_catalog_entries,
 )
 
 
@@ -17,6 +16,5 @@ __all__ = [
     "fetch_google_models",
     "fetch_kimi_models",
     "fetch_openai_compat_models",
-    "fetch_static_headless_models",
-    "fetch_static_minimax_models",
+    "build_static_catalog_entries",
 ]

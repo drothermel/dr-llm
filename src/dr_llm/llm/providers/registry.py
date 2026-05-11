@@ -24,8 +24,14 @@ from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
 from dr_llm.llm.providers.minimax.orchestrator import MiniMaxOrchestrator
 from dr_llm.llm.providers.minimax.provider import MiniMaxProvider
 from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
-from dr_llm.llm.providers.openai_compat.orchestrator import (
-    OpenAICompatOrchestrator,
+from dr_llm.llm.providers.openai_compat.glm_orchestrator import (
+    GlmOrchestrator,
+)
+from dr_llm.llm.providers.openai_compat.openai_orchestrator import (
+    OpenAIOrchestrator,
+)
+from dr_llm.llm.providers.openai_compat.openrouter_orchestrator import (
+    OpenRouterOrchestrator,
 )
 from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
 from dr_llm.llm.providers.protocol import ProviderOrchestrator
@@ -111,6 +117,12 @@ _OPENAI_COMPAT_PROVIDERS: tuple[tuple[ProviderName, str, str], ...] = (
     (ProviderName.GLM, "https://api.z.ai/api/coding/paas/v4", "ZAI_API_KEY"),
 )
 
+_OPENAI_COMPAT_ORCHESTRATORS = {
+    ProviderName.OPENAI: OpenAIOrchestrator,
+    ProviderName.OPENROUTER: OpenRouterOrchestrator,
+    ProviderName.GLM: GlmOrchestrator,
+}
+
 
 def build_default_registry() -> ProviderRegistry:
     registry = ProviderRegistry()
@@ -123,7 +135,7 @@ def build_default_registry() -> ProviderRegistry:
                 api_key_env=api_key_env,
             ),
         )
-        registry.register(OpenAICompatOrchestrator(provider))
+        registry.register(_OPENAI_COMPAT_ORCHESTRATORS[name](provider))
 
     minimax = MiniMaxProvider()
     registry.register(MiniMaxOrchestrator(minimax))

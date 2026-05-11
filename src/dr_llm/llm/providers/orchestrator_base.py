@@ -7,18 +7,13 @@ from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
-    ReasoningMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.base import Provider
 from dr_llm.llm.providers.concepts.capabilities import ModelCapabilities
 from dr_llm.llm.providers.concepts.reasoning import (
-    AnthropicReasoning,
-    GlmReasoning,
-    GoogleReasoning,
     ReasoningSpec,
     ReasoningWarning,
-    google_literal_to_thinking_level,
 )
 from dr_llm.llm.providers.config import ProviderAvailabilityStatus
 from dr_llm.llm.providers.reasoning_controls import ReasoningControls
@@ -50,19 +45,22 @@ class BaseProviderOrchestrator(ABC):
         self._provider.close()
 
     def reasoning_controls(self, model: str) -> ReasoningControls:
-        supported_levels = self.supported_thinking_levels(model)
+        capabilities = self.model_capabilities(model)
+        supported_levels = self._supported_thinking_levels(
+            model=model, capabilities=capabilities
+        )
         default_level = self.default_thinking_level(model, supported_levels)
         return ReasoningControls(
             provider=self.name,
             model=model,
             supported_thinking_levels=supported_levels,
             default_thinking_level=default_level,
-            supported_effort_levels=self.model_capabilities(
-                model
-            ).supported_effort_levels,
-            default_effort=self.default_effort(model),
+            supported_effort_levels=capabilities.supported_effort_levels,
+            default_effort=self.default_effort(capabilities),
             default_reasoning=self.default_reasoning(
-                model=model, thinking_level=default_level
+                model=model,
+                thinking_level=default_level,
+                capabilities=capabilities,
             ),
         )
 
@@ -89,40 +87,14 @@ class BaseProviderOrchestrator(ABC):
     def supported_thinking_levels(
         self, model: str
     ) -> tuple[ThinkingLevel, ...]:
-        capabilities = self.model_capabilities(model).reasoning
-        if capabilities.mode == ReasoningMode.UNSUPPORTED:
-            return (ThinkingLevel.NA,)
-        if capabilities.mode == ReasoningMode.GOOGLE_BUDGET:
-            return (
-                ThinkingLevel.ADAPTIVE,
-                ThinkingLevel.OFF,
-                ThinkingLevel.BUDGET,
-            )
-        if capabilities.mode == ReasoningMode.GOOGLE_LEVEL:
-            return tuple(
-                google_literal_to_thinking_level(level)
-                for level in capabilities.google_levels
-            )
-        if capabilities.mode == ReasoningMode.GLM:
-            return (ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE)
-        if capabilities.mode == ReasoningMode.ANTHROPIC_BUDGET:
-            return (ThinkingLevel.OFF, ThinkingLevel.BUDGET)
-        if capabilities.mode == ReasoningMode.ANTHROPIC_EFFORT:
-            return (ThinkingLevel.OFF,)
-        if capabilities.mode == ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET:
-            return (ThinkingLevel.OFF, ThinkingLevel.BUDGET)
-        if capabilities.mode == ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET:
-            return (
-                ThinkingLevel.OFF,
-                ThinkingLevel.ADAPTIVE,
-                ThinkingLevel.BUDGET,
-            )
-        if capabilities.mode == ReasoningMode.MINIMAX_EFFORT:
-            return (ThinkingLevel.NA,)
-        raise ValueError(
-            f"unexpected reasoning mode for provider={self.name!r} "
-            f"model={model!r}: {capabilities.mode!r}"
+        return self._supported_thinking_levels(
+            model=model, capabilities=self.model_capabilities(model)
         )
+
+    @abstractmethod
+    def _supported_thinking_levels(
+        self, *, model: str, capabilities: ModelCapabilities
+    ) -> tuple[ThinkingLevel, ...]: ...
 
     def default_thinking_level(
         self,
@@ -142,54 +114,36 @@ class BaseProviderOrchestrator(ABC):
                 return level
         return ThinkingLevel.NA
 
-    def default_effort(self, model: str) -> EffortSpec:
-        effort_levels = self.model_capabilities(model).supported_effort_levels
+    def default_effort(self, capabilities: ModelCapabilities) -> EffortSpec:
+        effort_levels = capabilities.supported_effort_levels
         if effort_levels:
             return effort_levels[0]
         return EffortSpec.NA
 
     def default_reasoning(
-        self, *, model: str, thinking_level: ThinkingLevel | None = None
+        self,
+        *,
+        model: str,
+        thinking_level: ThinkingLevel | None = None,
+        capabilities: ModelCapabilities | None = None,
     ) -> ReasoningSpec | None:
         level = thinking_level or self.default_thinking_level(model)
-        budget_tokens = self.model_capabilities(
-            model
-        ).reasoning.min_budget_tokens
+        resolved_capabilities = capabilities or self.model_capabilities(model)
+        budget_tokens = resolved_capabilities.reasoning.min_budget_tokens
         return self.reasoning_for_thinking_level(
             model=model,
             thinking_level=level,
             budget_tokens=budget_tokens,
         )
 
+    @abstractmethod
     def reasoning_for_thinking_level(
         self,
         *,
         model: str,
         thinking_level: ThinkingLevel,
         budget_tokens: int | None = None,
-    ) -> ReasoningSpec | None:
-        del model
-        if self.name == ProviderName.GOOGLE:
-            return self._google_reasoning_for_thinking_level(
-                thinking_level=thinking_level, budget_tokens=budget_tokens
-            )
-        if self.name == ProviderName.GLM:
-            if thinking_level == ThinkingLevel.NA:
-                return None
-            return GlmReasoning(thinking_level=thinking_level)
-        if self.name in {ProviderName.ANTHROPIC, ProviderName.KIMI_CODE}:
-            return self._anthropic_reasoning_for_thinking_level(
-                thinking_level=thinking_level,
-                budget_tokens=budget_tokens,
-                explicit_na=False,
-            )
-        if self.name == ProviderName.MINIMAX:
-            return self._anthropic_reasoning_for_thinking_level(
-                thinking_level=thinking_level,
-                budget_tokens=budget_tokens,
-                explicit_na=True,
-            )
-        raise ValueError(f"unsupported provider: {self.name!r}")
+    ) -> ReasoningSpec | None: ...
 
     def _validate_provider(self, request: LlmRequest) -> None:
         if request.provider != self.name:
@@ -228,39 +182,6 @@ class BaseProviderOrchestrator(ABC):
             raise ValueError(
                 f"max_tokens is required for provider={self.name!r}"
             )
-
-    def _google_reasoning_for_thinking_level(
-        self,
-        *,
-        thinking_level: ThinkingLevel,
-        budget_tokens: int | None,
-    ) -> GoogleReasoning | None:
-        if thinking_level == ThinkingLevel.NA:
-            return None
-        if thinking_level == ThinkingLevel.BUDGET:
-            return GoogleReasoning(
-                thinking_level=thinking_level,
-                budget_tokens=self._require_budget_tokens(budget_tokens),
-            )
-        return GoogleReasoning(thinking_level=thinking_level)
-
-    def _anthropic_reasoning_for_thinking_level(
-        self,
-        *,
-        thinking_level: ThinkingLevel,
-        budget_tokens: int | None,
-        explicit_na: bool,
-    ) -> AnthropicReasoning | None:
-        if thinking_level == ThinkingLevel.NA:
-            if explicit_na:
-                return AnthropicReasoning(thinking_level=ThinkingLevel.NA)
-            return None
-        if thinking_level == ThinkingLevel.BUDGET:
-            return AnthropicReasoning(
-                thinking_level=thinking_level,
-                budget_tokens=self._require_budget_tokens(budget_tokens),
-            )
-        return AnthropicReasoning(thinking_level=thinking_level)
 
     def _require_budget_tokens(self, budget_tokens: int | None) -> int:
         if budget_tokens is None:

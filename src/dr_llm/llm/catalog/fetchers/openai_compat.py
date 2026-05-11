@@ -3,38 +3,25 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from collections.abc import Callable
+
 from dr_llm.llm.catalog.fetchers.common import (
     api_key_from_env,
     fetch_models_with_template,
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogPricing
 from dr_llm.llm.coercion import as_float, as_int
-from dr_llm.llm.names import ProviderName, ReasoningMode
+from dr_llm.llm.names import ReasoningMode
 from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
-from dr_llm.llm.providers.openai_compat.glm_capabilities import (
-    reasoning_capabilities_for_glm,
-)
-from dr_llm.llm.providers.openai_compat.thinking import (
-    reasoning_capabilities_for_openai,
-)
-from dr_llm.llm.providers.openrouter.policy import (
-    reasoning_capabilities_for_openrouter,
-)
 
-
-def _resolve_capabilities_for_provider(
-    provider_name: str, model: str
-) -> ReasoningCapabilities | None:
-    if provider_name == ProviderName.OPENROUTER:
-        return reasoning_capabilities_for_openrouter(model)
-    if provider_name == ProviderName.GLM:
-        return reasoning_capabilities_for_glm(model)
-    return reasoning_capabilities_for_openai(model)
+CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
 
 
 def fetch_openai_compat_models(
     provider: OpenAICompatProvider,
+    *,
+    capabilities_fn: CapabilitiesFn,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     base = provider.config.base_url.rstrip("/")
     endpoint = f"{base}/models"
@@ -49,7 +36,10 @@ def fetch_openai_compat_models(
         item: dict[str, Any], now: datetime
     ) -> ModelCatalogEntry | None:
         return _process_openai_model_item(
-            item=item, now=now, provider_name=provider.name
+            item=item,
+            now=now,
+            provider_name=provider.name,
+            capabilities_fn=capabilities_fn,
         )
 
     return fetch_models_with_template(
@@ -65,14 +55,13 @@ def _process_openai_model_item(
     item: dict[str, Any],
     now: datetime,
     provider_name: str,
+    capabilities_fn: CapabilitiesFn,
 ) -> ModelCatalogEntry | None:
     model_id = str(item.get("id") or item.get("name") or "").strip()
     if not model_id:
         return None
     pricing = _parse_pricing(item.get("pricing"))
-    reasoning_capabilities = _resolve_capabilities_for_provider(
-        provider_name, model_id
-    )
+    reasoning_capabilities = capabilities_fn(model_id)
     supports_reasoning, reasoning_capabilities = _resolve_reasoning_support(
         supported_params=item.get("supported_parameters"),
         reasoning_capabilities=reasoning_capabilities,

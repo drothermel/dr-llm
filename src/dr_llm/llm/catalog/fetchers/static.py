@@ -7,19 +7,6 @@ from typing import Any
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.base import Provider
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
-from dr_llm.llm.providers.headless.claude.capabilities import (
-    reasoning_capabilities_for_claude_code,
-)
-from dr_llm.llm.providers.headless.claude.provider import (
-    ClaudeHeadlessProvider,
-)
-from dr_llm.llm.providers.headless.codex.capabilities import (
-    reasoning_capabilities_for_codex,
-)
-from dr_llm.llm.providers.headless.codex.provider import CodexHeadlessProvider
-from dr_llm.llm.providers.minimax.capabilities import (
-    reasoning_capabilities_for_minimax,
-)
 
 CODEX_DOCS_URL = "https://developers.openai.com/codex/models"
 
@@ -60,7 +47,7 @@ MINIMAX_TEXT_MODELS = [
 ]
 
 
-def _build_static_catalog_entries(
+def build_static_catalog_entries(
     *,
     provider: Provider,
     models: list[tuple[str, str]],
@@ -84,40 +71,3 @@ def _build_static_catalog_entries(
         for model_id, display_name in models
     ]
     return entries, source_meta
-
-
-def fetch_static_headless_models(
-    provider: CodexHeadlessProvider | ClaudeHeadlessProvider,
-) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    if isinstance(provider, CodexHeadlessProvider):
-        return _build_static_catalog_entries(
-            provider=provider,
-            models=CODEX_MODELS,
-            docs_url=CODEX_DOCS_URL,
-            supports_vision=None,
-            capabilities_fn=reasoning_capabilities_for_codex,
-        )
-    if isinstance(provider, ClaudeHeadlessProvider):
-        return _build_static_catalog_entries(
-            provider=provider,
-            models=CLAUDE_CODE_MODELS,
-            docs_url=CLAUDE_CODE_DOCS_URL,
-            supports_vision=True,
-            capabilities_fn=reasoning_capabilities_for_claude_code,
-        )
-    raise ValueError(
-        "Unsupported static headless provider for catalog fetch: "
-        f"type={type(provider).__name__} name={provider.name!r}"
-    )
-
-
-def fetch_static_minimax_models(
-    provider: Provider,
-) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-    return _build_static_catalog_entries(
-        provider=provider,
-        models=MINIMAX_TEXT_MODELS,
-        docs_url=MINIMAX_DOCS_URL,
-        supports_vision=None,
-        capabilities_fn=reasoning_capabilities_for_minimax,
-    )

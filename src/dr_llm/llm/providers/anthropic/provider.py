@@ -3,6 +3,7 @@ from __future__ import annotations
 import httpx
 
 from dr_llm.llm.providers.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.anthropic.reasoning import AnthropicReasoningConfig
 from dr_llm.llm.providers.anthropic.request import AnthropicRequest
 from dr_llm.llm.providers.anthropic.response import AnthropicResponse
 from dr_llm.llm.providers.api_provider import ApiProvider
@@ -24,7 +25,13 @@ class AnthropicProvider(ApiProvider):
         return self._config
 
     def _build_request(self, request: ApiBackedLlmRequest) -> AnthropicRequest:
-        return AnthropicRequest.from_llm_request(request, self._config)
+        return AnthropicRequest.from_llm_request(
+            request,
+            self._config,
+            reasoning_mapping=AnthropicReasoningConfig.from_base(
+                request.reasoning
+            ),
+        )
 
     def _parse_response(self, response: httpx.Response) -> AnthropicResponse:
         return AnthropicResponse.from_http_response(response)

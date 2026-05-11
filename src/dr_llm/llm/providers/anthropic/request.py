@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.llm.names import EffortSpec, ProviderName
+from dr_llm.llm.names import EffortSpec
 from dr_llm.llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.llm.providers.anthropic.reasoning import AnthropicReasoningConfig
-from dr_llm.llm.providers.kimi_code.reasoning import KimiCodeReasoningConfig
-from dr_llm.llm.providers.minimax.reasoning import MiniMaxReasoningConfig
 from dr_llm.llm.providers.api_config import resolve_api_key
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
 from dr_llm.llm.request import ApiBackedLlmRequest, Message
+
+
+class AnthropicReasoningPayload(Protocol):
+    thinking: dict[str, Any]
+    warnings: list[ReasoningWarning]
 
 
 class _AnthropicRequestTextBlock(BaseModel):
@@ -49,24 +52,16 @@ class AnthropicRequest(BaseModel):
         cls,
         request: ApiBackedLlmRequest,
         config: AnthropicConfig,
+        *,
+        reasoning_mapping: AnthropicReasoningPayload | None = None,
+        require_max_tokens: bool = True,
     ) -> AnthropicRequest:
-        if (
-            request.max_tokens is None
-            and request.provider != ProviderName.MINIMAX
-        ):
+        if require_max_tokens and request.max_tokens is None:
             raise cls._missing_max_tokens_error(request.provider)
-        if request.provider == ProviderName.KIMI_CODE:
-            reasoning_mapping = KimiCodeReasoningConfig.from_base(
-                request.reasoning
-            )
-        elif request.provider == ProviderName.MINIMAX:
-            reasoning_mapping = MiniMaxReasoningConfig.from_base(
-                request.reasoning
-            )
-        else:
-            reasoning_mapping = AnthropicReasoningConfig.from_base(
-                request.reasoning
-            )
+        resolved_reasoning_mapping = (
+            reasoning_mapping
+            or AnthropicReasoningConfig.from_base(request.reasoning)
+        )
         output_config = (
             {"effort": request.effort}
             if request.effort != EffortSpec.NA
@@ -85,12 +80,12 @@ class AnthropicRequest(BaseModel):
             system=system or None,
             temperature=getattr(request, "temperature", None),
             top_p=getattr(request, "top_p", None),
-            thinking=reasoning_mapping.thinking or None,
+            thinking=resolved_reasoning_mapping.thinking or None,
             output_config=output_config,
             base_url=config.base_url,
             api_key=resolve_api_key(config, label="Anthropic"),
             anthropic_version=config.anthropic_version,
-            warnings=reasoning_mapping.warnings,
+            warnings=resolved_reasoning_mapping.warnings,
         )
 
     @staticmethod

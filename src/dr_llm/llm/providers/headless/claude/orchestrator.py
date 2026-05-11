@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from dr_llm.llm.catalog.fetchers.static import fetch_static_headless_models
+from dr_llm.llm.catalog.fetchers.static import (
+    CLAUDE_CODE_DOCS_URL,
+    CLAUDE_CODE_MODELS,
+    build_static_catalog_entries,
+)
 from dr_llm.llm.names import (
-    ControlStrategy,
     ProviderName,
-    ReasoningMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.anthropic.thinking import (
@@ -12,7 +14,7 @@ from dr_llm.llm.providers.anthropic.thinking import (
 )
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
-    ReasoningCapabilities,
+    build_model_capabilities,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
@@ -44,23 +46,11 @@ class ClaudeHeadlessOrchestrator(BaseProviderOrchestrator):
         return ProviderName.CLAUDE_CODE
 
     def model_capabilities(self, model: str) -> ModelCapabilities:
-        reasoning = reasoning_capabilities_for_claude_code(model)
-        effort_levels = supported_effort_levels_for_claude_code(model)
-        if reasoning is None:
-            reasoning = ReasoningCapabilities(mode=ReasoningMode.UNSUPPORTED)
-        control_strategy = (
-            ControlStrategy.EFFORT
-            if effort_levels
-            else (
-                ControlStrategy.REASONING
-                if reasoning.mode != ReasoningMode.UNSUPPORTED
-                else ControlStrategy.NONE
-            )
-        )
-        return ModelCapabilities(
-            control_strategy=control_strategy,
-            reasoning=reasoning,
-            supported_effort_levels=effort_levels,
+        return build_model_capabilities(
+            reasoning=reasoning_capabilities_for_claude_code(model),
+            supported_effort_levels=supported_effort_levels_for_claude_code(
+                model
+            ),
         )
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
@@ -71,11 +61,18 @@ class ClaudeHeadlessOrchestrator(BaseProviderOrchestrator):
         return []
 
     def fetch_models(self):
-        return fetch_static_headless_models(self._provider)
+        return build_static_catalog_entries(
+            provider=self._provider,
+            models=CLAUDE_CODE_MODELS,
+            docs_url=CLAUDE_CODE_DOCS_URL,
+            supports_vision=True,
+            capabilities_fn=reasoning_capabilities_for_claude_code,
+        )
 
-    def supported_thinking_levels(
-        self, model: str
+    def _supported_thinking_levels(
+        self, *, model: str, capabilities: ModelCapabilities
     ) -> tuple[ThinkingLevel, ...]:
+        del capabilities
         if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
             return (ThinkingLevel.ADAPTIVE,)
         return (ThinkingLevel.NA,)

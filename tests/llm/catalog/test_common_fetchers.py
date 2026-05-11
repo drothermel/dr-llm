@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any, cast
-
 import pytest
 
 from dr_llm.errors import ProviderSemanticError
@@ -9,18 +7,6 @@ from dr_llm.llm.catalog.fetchers.common import (
     fetch_models_with_template,
     require_api_key,
 )
-from dr_llm.llm.catalog.fetchers.static import fetch_static_headless_models
-from dr_llm.llm import LlmRequest, LlmResponse, ProviderConfig
-from dr_llm.llm.providers.base import Provider
-from tests.conftest import make_response
-
-
-class _UnsupportedProvider(Provider):
-    def __init__(self) -> None:
-        self._config = ProviderConfig(name="unsupported-headless")
-
-    def generate(self, request: LlmRequest) -> LlmResponse:
-        return make_response(provider=request.provider, model=request.model)
 
 
 def test_require_api_key_uses_env_fallback_for_whitespace_explicit_value(
@@ -92,18 +78,3 @@ def test_fetch_models_with_template_raises_when_items_key_is_not_a_list(
             items_key="models",
             item_processor=lambda item, fetched_at: None,
         )
-
-
-def test_fetch_static_headless_models_raises_for_unknown_provider_type() -> (
-    None
-):
-    provider = cast(Any, _UnsupportedProvider())
-
-    with pytest.raises(
-        ValueError,
-        match=(
-            "Unsupported static headless provider for catalog fetch: "
-            "type=_UnsupportedProvider name='unsupported-headless'"
-        ),
-    ):
-        fetch_static_headless_models(provider)

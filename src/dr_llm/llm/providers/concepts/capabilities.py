@@ -65,3 +65,24 @@ class ModelCapabilities(BaseModel):
         mode=ReasoningMode.UNSUPPORTED
     )
     supported_effort_levels: tuple[EffortSpec, ...] = ()
+
+
+def build_model_capabilities(
+    *,
+    reasoning: ReasoningCapabilities | None,
+    supported_effort_levels: tuple[EffortSpec, ...] = (),
+) -> ModelCapabilities:
+    resolved_reasoning = reasoning or ReasoningCapabilities(
+        mode=ReasoningMode.UNSUPPORTED
+    )
+    if supported_effort_levels:
+        strategy = ControlStrategy.EFFORT
+    elif resolved_reasoning.supports_reasoning:
+        strategy = ControlStrategy.REASONING
+    else:
+        strategy = ControlStrategy.NONE
+    return ModelCapabilities(
+        control_strategy=strategy,
+        reasoning=resolved_reasoning,
+        supported_effort_levels=supported_effort_levels,
+    )

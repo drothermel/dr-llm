@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from dr_llm.llm.catalog.fetchers.static import fetch_static_headless_models
+from dr_llm.llm.catalog.fetchers.static import (
+    CODEX_DOCS_URL,
+    CODEX_MODELS,
+    build_static_catalog_entries,
+)
 from dr_llm.llm.names import (
-    ControlStrategy,
     ProviderName,
-    ReasoningMode,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
-    ReasoningCapabilities,
+    build_model_capabilities,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
     CodexReasoning,
@@ -41,18 +43,8 @@ class CodexHeadlessOrchestrator(BaseProviderOrchestrator):
         return ProviderName.CODEX
 
     def model_capabilities(self, model: str) -> ModelCapabilities:
-        reasoning = reasoning_capabilities_for_codex(model)
-        if reasoning is None:
-            reasoning = ReasoningCapabilities(mode=ReasoningMode.UNSUPPORTED)
-        control_strategy = (
-            ControlStrategy.REASONING
-            if reasoning.mode != ReasoningMode.UNSUPPORTED
-            else ControlStrategy.NONE
-        )
-        return ModelCapabilities(
-            control_strategy=control_strategy,
-            reasoning=reasoning,
-            supported_effort_levels=(),
+        return build_model_capabilities(
+            reasoning=reasoning_capabilities_for_codex(model)
         )
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
@@ -63,11 +55,18 @@ class CodexHeadlessOrchestrator(BaseProviderOrchestrator):
         return []
 
     def fetch_models(self):
-        return fetch_static_headless_models(self._provider)
+        return build_static_catalog_entries(
+            provider=self._provider,
+            models=CODEX_MODELS,
+            docs_url=CODEX_DOCS_URL,
+            supports_vision=None,
+            capabilities_fn=reasoning_capabilities_for_codex,
+        )
 
-    def supported_thinking_levels(
-        self, model: str
+    def _supported_thinking_levels(
+        self, *, model: str, capabilities: ModelCapabilities
     ) -> tuple[ThinkingLevel, ...]:
+        del capabilities
         if not codex_supports_configurable_thinking(model):
             return (ThinkingLevel.NA,)
         levels: list[ThinkingLevel] = []

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.anthropic import fetch_anthropic_models
 from dr_llm.llm.names import (
-    ControlStrategy,
     ProviderName,
     ReasoningMode,
     ThinkingLevel,
@@ -22,9 +21,13 @@ from dr_llm.llm.providers.anthropic.thinking import (
 )
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
-    ReasoningCapabilities,
+    build_model_capabilities,
 )
-from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
+from dr_llm.llm.providers.concepts.reasoning import (
+    AnthropicReasoning,
+    ReasoningSpec,
+    ReasoningWarning,
+)
 from dr_llm.llm.providers.orchestrator_base import BaseProviderOrchestrator
 from dr_llm.llm.request import LlmRequest
 
@@ -40,37 +43,49 @@ class AnthropicOrchestrator(BaseProviderOrchestrator):
         return ProviderName.ANTHROPIC
 
     def model_capabilities(self, model: str) -> ModelCapabilities:
-        reasoning = reasoning_capabilities_for_anthropic(model)
-        effort_levels = supported_effort_levels_for_anthropic(model)
-        if reasoning is None:
-            reasoning = ReasoningCapabilities(mode=ReasoningMode.UNSUPPORTED)
-        control_strategy = (
-            ControlStrategy.EFFORT
-            if effort_levels
-            else (
-                ControlStrategy.REASONING
-                if reasoning.mode != ReasoningMode.UNSUPPORTED
-                else ControlStrategy.NONE
-            )
-        )
-        return ModelCapabilities(
-            control_strategy=control_strategy,
-            reasoning=reasoning,
-            supported_effort_levels=effort_levels,
+        return build_model_capabilities(
+            reasoning=reasoning_capabilities_for_anthropic(model),
+            supported_effort_levels=supported_effort_levels_for_anthropic(
+                model
+            ),
         )
 
-    def supported_thinking_levels(
-        self, model: str
+    def _supported_thinking_levels(
+        self, *, model: str, capabilities: ModelCapabilities
     ) -> tuple[ThinkingLevel, ...]:
-        capabilities = self.model_capabilities(model).reasoning
-        if capabilities.mode == ReasoningMode.ANTHROPIC_EFFORT:
+        reasoning = capabilities.reasoning
+        if reasoning.mode == ReasoningMode.UNSUPPORTED:
+            return (ThinkingLevel.NA,)
+        if reasoning.mode == ReasoningMode.ANTHROPIC_BUDGET:
+            return (ThinkingLevel.OFF, ThinkingLevel.BUDGET)
+        if reasoning.mode == ReasoningMode.ANTHROPIC_EFFORT:
             return self._supported_effort_thinking_levels(model)
-        if capabilities.mode == ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET:
+        if reasoning.mode == ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET:
             return (
                 *self._supported_effort_thinking_levels(model),
                 ThinkingLevel.BUDGET,
             )
-        return super().supported_thinking_levels(model)
+        raise ValueError(
+            f"unexpected reasoning mode for provider={self.name!r} "
+            f"model={model!r}: {reasoning.mode!r}"
+        )
+
+    def reasoning_for_thinking_level(
+        self,
+        *,
+        model: str,
+        thinking_level: ThinkingLevel,
+        budget_tokens: int | None = None,
+    ) -> ReasoningSpec | None:
+        del model
+        if thinking_level == ThinkingLevel.NA:
+            return None
+        if thinking_level == ThinkingLevel.BUDGET:
+            return AnthropicReasoning(
+                thinking_level=thinking_level,
+                budget_tokens=self._require_budget_tokens(budget_tokens),
+            )
+        return AnthropicReasoning(thinking_level=thinking_level)
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
         super().validate_request(request)
@@ -81,7 +96,10 @@ class AnthropicOrchestrator(BaseProviderOrchestrator):
         return []
 
     def fetch_models(self):
-        return fetch_anthropic_models(self._provider)
+        return fetch_anthropic_models(
+            self._provider,
+            capabilities_fn=reasoning_capabilities_for_anthropic,
+        )
 
     def _supported_effort_thinking_levels(
         self, model: str

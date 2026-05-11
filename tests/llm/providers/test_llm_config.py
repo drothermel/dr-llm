@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from dr_llm.llm import (
     AnthropicReasoning,
     EffortSpec,
+    GlmReasoning,
     GoogleReasoning,
     HeadlessLlmConfig,
     HeadlessLlmRequest,
@@ -233,6 +234,96 @@ def test_openai_sampling_semantics_are_orchestrator_owned() -> None:
     try:
         with pytest.raises(ValueError, match="thinking_level='off'"):
             registry.get(ProviderName.OPENAI).validate_request(request)
+    finally:
+        registry.close()
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "request_fields", "error_match"),
+    [
+        (
+            ProviderName.GOOGLE,
+            "gemini-2.5-flash",
+            {"reasoning": AnthropicReasoning(thinking_level=ThinkingLevel.NA)},
+            "google reasoning is not supported",
+        ),
+        (
+            ProviderName.KIMI_CODE,
+            "kimi-for-coding",
+            {
+                "max_tokens": 2048,
+                "effort": EffortSpec.HIGH,
+                "reasoning": ReasoningBudget(tokens=1024),
+            },
+            "kimi-code requires anthropic reasoning configs",
+        ),
+        (
+            ProviderName.MINIMAX,
+            "MiniMax-M2.7",
+            {"effort": EffortSpec.LOW},
+            "reasoning is required",
+        ),
+        (
+            ProviderName.CLAUDE_CODE,
+            "claude-sonnet-4-6",
+            {
+                "effort": EffortSpec.MEDIUM,
+                "reasoning": AnthropicReasoning(
+                    thinking_level=ThinkingLevel.OFF
+                ),
+            },
+            "only supports anthropic thinking_level='adaptive'",
+        ),
+        (
+            ProviderName.CODEX,
+            "gpt-5.4-mini",
+            {"reasoning": AnthropicReasoning(thinking_level=ThinkingLevel.NA)},
+            "reasoning is not supported",
+        ),
+        (
+            ProviderName.GLM,
+            "glm-4.5",
+            {},
+            "reasoning is required",
+        ),
+        (
+            ProviderName.OPENROUTER,
+            "openai/gpt-4.1",
+            {},
+            "not in the curated allowlist",
+        ),
+    ],
+)
+def test_provider_semantic_validation_is_orchestrator_owned(
+    provider: ProviderName,
+    model: str,
+    request_fields: dict[str, object],
+    error_match: str,
+) -> None:
+    request = LlmRequest(
+        provider=provider,
+        model=model,
+        messages=[Message(role="user", content="Hello")],
+        **request_fields,
+    )
+    registry = build_default_registry()
+    try:
+        with pytest.raises(ValueError, match=error_match):
+            registry.get(provider).validate_request(request)
+    finally:
+        registry.close()
+
+
+def test_glm_orchestrator_accepts_native_reasoning() -> None:
+    request = LlmRequest(
+        provider=ProviderName.GLM,
+        model="glm-4.5",
+        messages=[Message(role="user", content="Hello")],
+        reasoning=GlmReasoning(thinking_level=ThinkingLevel.OFF),
+    )
+    registry = build_default_registry()
+    try:
+        assert registry.get(ProviderName.GLM).validate_request(request) == []
     finally:
         registry.close()
 

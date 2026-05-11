@@ -36,7 +36,10 @@ def test_google_catalog_fetch_passes_api_key_via_header(
         )
     )
 
-    entries, payload = fetch_google_models(provider)
+    entries, payload = fetch_google_models(
+        provider,
+        capabilities_fn=lambda model: None,
+    )
 
     assert entries == []
     assert payload == {"models": []}

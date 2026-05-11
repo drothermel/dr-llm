@@ -1,12 +1,20 @@
 from __future__ import annotations
 
-from dr_llm.llm.catalog.fetchers.static import fetch_static_minimax_models
-from dr_llm.llm.names import ControlStrategy, ProviderName, ReasoningMode
+from dr_llm.llm.catalog.fetchers.static import (
+    MINIMAX_DOCS_URL,
+    MINIMAX_TEXT_MODELS,
+    build_static_catalog_entries,
+)
+from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
-    ReasoningCapabilities,
+    build_model_capabilities,
 )
-from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
+from dr_llm.llm.providers.concepts.reasoning import (
+    AnthropicReasoning,
+    ReasoningSpec,
+    ReasoningWarning,
+)
 from dr_llm.llm.providers.minimax.capabilities import (
     reasoning_capabilities_for_minimax,
     supported_effort_levels_for_minimax,
@@ -30,24 +38,36 @@ class MiniMaxOrchestrator(BaseProviderOrchestrator):
         return ProviderName.MINIMAX
 
     def model_capabilities(self, model: str) -> ModelCapabilities:
-        reasoning = reasoning_capabilities_for_minimax(model)
-        effort_levels = supported_effort_levels_for_minimax(model)
-        if reasoning is None:
-            reasoning = ReasoningCapabilities(mode=ReasoningMode.UNSUPPORTED)
-        control_strategy = (
-            ControlStrategy.EFFORT
-            if effort_levels
-            else (
-                ControlStrategy.REASONING
-                if reasoning.mode != ReasoningMode.UNSUPPORTED
-                else ControlStrategy.NONE
-            )
+        return build_model_capabilities(
+            reasoning=reasoning_capabilities_for_minimax(model),
+            supported_effort_levels=supported_effort_levels_for_minimax(model),
         )
-        return ModelCapabilities(
-            control_strategy=control_strategy,
-            reasoning=reasoning,
-            supported_effort_levels=effort_levels,
+
+    def _supported_thinking_levels(
+        self, *, model: str, capabilities: ModelCapabilities
+    ) -> tuple[ThinkingLevel, ...]:
+        reasoning = capabilities.reasoning
+        if reasoning.mode in {
+            ReasoningMode.UNSUPPORTED,
+            ReasoningMode.MINIMAX_EFFORT,
+        }:
+            return (ThinkingLevel.NA,)
+        raise ValueError(
+            f"unexpected reasoning mode for provider={self.name!r} "
+            f"model={model!r}: {reasoning.mode!r}"
         )
+
+    def reasoning_for_thinking_level(
+        self,
+        *,
+        model: str,
+        thinking_level: ThinkingLevel,
+        budget_tokens: int | None = None,
+    ) -> ReasoningSpec | None:
+        del model, budget_tokens
+        if thinking_level == ThinkingLevel.NA:
+            return AnthropicReasoning(thinking_level=ThinkingLevel.NA)
+        return AnthropicReasoning(thinking_level=thinking_level)
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
         super().validate_request(request)
@@ -57,4 +77,10 @@ class MiniMaxOrchestrator(BaseProviderOrchestrator):
         return []
 
     def fetch_models(self):
-        return fetch_static_minimax_models(self._provider)
+        return build_static_catalog_entries(
+            provider=self._provider,
+            models=MINIMAX_TEXT_MODELS,
+            docs_url=MINIMAX_DOCS_URL,
+            supports_vision=None,
+            capabilities_fn=reasoning_capabilities_for_minimax,
+        )

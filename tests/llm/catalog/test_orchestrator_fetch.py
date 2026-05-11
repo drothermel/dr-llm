@@ -12,10 +12,11 @@ from dr_llm.llm.providers.google.provider import GoogleProvider
 from dr_llm.llm.providers.kimi_code.orchestrator import KimiCodeOrchestrator
 from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
 from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
-from dr_llm.llm.providers.openai_compat.orchestrator import (
-    OpenAICompatOrchestrator,
+from dr_llm.llm.providers.openai_compat.openai_orchestrator import (
+    OpenAIOrchestrator,
 )
 from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
+from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 
 
 class _GoogleSubclassProvider(GoogleProvider):
@@ -34,8 +35,11 @@ def test_google_orchestrator_fetches_with_wrapped_provider(
 
     def fake_fetch_google_models(
         received_provider: GoogleProvider,
+        *,
+        capabilities_fn,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         assert received_provider is provider
+        assert capabilities_fn("gemini-test") is None
         return expected
 
     monkeypatch.setattr(
@@ -61,10 +65,13 @@ def test_kimi_orchestrator_fetches_with_wrapped_provider(
 
     def fake_fetch_kimi_models(
         received_provider: KimiCodeProvider,
+        *,
+        capabilities_fn,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         assert received_provider is provider
         assert received_provider.config.api_key == "kimi-secret"
         assert received_provider.name == ProviderName.KIMI_CODE
+        assert capabilities_fn("kimi-for-coding") is not None
         return [], {"source": "kimi"}
 
     monkeypatch.setattr(
@@ -86,16 +93,19 @@ def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
             api_key="openai-secret",
         )
     )
-    orchestrator = OpenAICompatOrchestrator(provider)
+    orchestrator = OpenAIOrchestrator(provider)
 
     def fake_fetch_openai_compat_models(
         received_provider: OpenAICompatProvider,
+        *,
+        capabilities_fn,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         assert received_provider is provider
+        assert isinstance(capabilities_fn("gpt-5-mini"), ReasoningCapabilities)
         return [], {"source": "openai_compat"}
 
     monkeypatch.setattr(
-        "dr_llm.llm.providers.openai_compat.orchestrator.fetch_openai_compat_models",
+        "dr_llm.llm.providers.openai_compat.orchestrator_base.fetch_openai_compat_models",
         fake_fetch_openai_compat_models,
     )
 

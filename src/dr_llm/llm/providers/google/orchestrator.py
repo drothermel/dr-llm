@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.google import fetch_google_models
-from dr_llm.llm.names import ControlStrategy, ProviderName, ReasoningMode
+from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
-    ReasoningCapabilities,
+    build_model_capabilities,
 )
-from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
+from dr_llm.llm.providers.concepts.reasoning import (
+    GoogleReasoning,
+    ReasoningSpec,
+    ReasoningWarning,
+    google_literal_to_thinking_level,
+)
 from dr_llm.llm.providers.google.capabilities import (
     reasoning_capabilities_for_google,
 )
@@ -27,19 +32,48 @@ class GoogleOrchestrator(BaseProviderOrchestrator):
         return ProviderName.GOOGLE
 
     def model_capabilities(self, model: str) -> ModelCapabilities:
-        reasoning = reasoning_capabilities_for_google(model)
-        if reasoning is None:
-            reasoning = ReasoningCapabilities(mode=ReasoningMode.UNSUPPORTED)
-        control_strategy = (
-            ControlStrategy.REASONING
-            if reasoning.mode != ReasoningMode.UNSUPPORTED
-            else ControlStrategy.NONE
+        return build_model_capabilities(
+            reasoning=reasoning_capabilities_for_google(model)
         )
-        return ModelCapabilities(
-            control_strategy=control_strategy,
-            reasoning=reasoning,
-            supported_effort_levels=(),
+
+    def _supported_thinking_levels(
+        self, *, model: str, capabilities: ModelCapabilities
+    ) -> tuple[ThinkingLevel, ...]:
+        reasoning = capabilities.reasoning
+        if reasoning.mode == ReasoningMode.UNSUPPORTED:
+            return (ThinkingLevel.NA,)
+        if reasoning.mode == ReasoningMode.GOOGLE_BUDGET:
+            return (
+                ThinkingLevel.ADAPTIVE,
+                ThinkingLevel.OFF,
+                ThinkingLevel.BUDGET,
+            )
+        if reasoning.mode == ReasoningMode.GOOGLE_LEVEL:
+            return tuple(
+                google_literal_to_thinking_level(level)
+                for level in reasoning.google_levels
+            )
+        raise ValueError(
+            f"unexpected reasoning mode for provider={self.name!r} "
+            f"model={model!r}: {reasoning.mode!r}"
         )
+
+    def reasoning_for_thinking_level(
+        self,
+        *,
+        model: str,
+        thinking_level: ThinkingLevel,
+        budget_tokens: int | None = None,
+    ) -> ReasoningSpec | None:
+        del model
+        if thinking_level == ThinkingLevel.NA:
+            return None
+        if thinking_level == ThinkingLevel.BUDGET:
+            return GoogleReasoning(
+                thinking_level=thinking_level,
+                budget_tokens=self._require_budget_tokens(budget_tokens),
+            )
+        return GoogleReasoning(thinking_level=thinking_level)
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
         super().validate_request(request)
@@ -49,4 +83,7 @@ class GoogleOrchestrator(BaseProviderOrchestrator):
         return []
 
     def fetch_models(self):
-        return fetch_google_models(self._provider)
+        return fetch_google_models(
+            self._provider,
+            capabilities_fn=reasoning_capabilities_for_google,
+        )

@@ -237,9 +237,9 @@ def run_attempt(
         print(f"  validation failure: {exc}")
         return
 
-    model_provider = registry.get(provider)
+    orchestrator = registry.get(provider)
     try:
-        response = model_provider.generate(request)
+        response = orchestrator.generate(request)
     except Exception as exc:  # noqa: BLE001
         summary.increment("failed")
         print(f"  runtime failure: {type(exc).__name__}: {exc}")

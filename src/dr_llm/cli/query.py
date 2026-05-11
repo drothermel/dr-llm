@@ -96,14 +96,14 @@ def query(
 
     registry = build_default_registry()
     try:
-        model_provider = registry.get(provider)
+        orchestrator = registry.get(provider)
         call_id = uuid4().hex
 
         log_context = {
             "call_id": call_id,
             "provider": request.provider,
             "model": request.model,
-            "mode": model_provider.mode,
+            "mode": orchestrator.mode,
         }
         with generation_log_context(log_context):
             emit_generation_event(
@@ -118,7 +118,7 @@ def query(
                 },
             )
             try:
-                response = model_provider.generate(request)
+                response = orchestrator.generate(request)
             except Exception as exc:  # noqa: BLE001
                 emit_generation_event(
                     event_type="llm_call.failed",

@@ -230,7 +230,7 @@ def make_llm_process_fn(
         request = config.to_request(messages)
 
         context = get_generation_log_context()
-        model_provider = registry.get(request.provider)
+        orchestrator = registry.get(request.provider)
         call_id = uuid4().hex
         worker_payload = {
             "pool_name": context.get("pool_name"),
@@ -245,7 +245,7 @@ def make_llm_process_fn(
                 "call_id": call_id,
                 "provider": request.provider,
                 "model": request.model,
-                "mode": model_provider.mode,
+                "mode": orchestrator.mode,
             }
         ):
             emit_generation_event(
@@ -261,7 +261,7 @@ def make_llm_process_fn(
                 },
             )
             try:
-                response = model_provider.generate(request)
+                response = orchestrator.generate(request)
             except Exception as exc:  # noqa: BLE001
                 emit_generation_event(
                     event_type="llm_call.failed",
