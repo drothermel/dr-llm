@@ -11,16 +11,14 @@ from dr_llm.llm.providers.impls.kimi_code.families import (
     KimiCodeModelFamily,
 )
 
-_KIMI_CODE_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET,
-    min_budget_tokens=1024,
-    max_budget_tokens=128000,
-)
-
 KIMI_CODE_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
         exact_model=KimiCodeModelFamily.KIMI_FOR_CODING,
-        capabilities=_KIMI_CODE_CAPS,
+        capabilities=ReasoningCapabilities(
+            mode=ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET,
+            min_budget_tokens=1024,
+            max_budget_tokens=128000,
+        ),
     ),
 )
 

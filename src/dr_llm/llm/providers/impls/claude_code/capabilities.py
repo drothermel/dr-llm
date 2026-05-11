@@ -13,14 +13,13 @@ from dr_llm.llm.providers.impls.claude_code.families import (
     CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES,
 )
 
-_CLAUDE_HEADLESS_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.CLAUDE_CLI_EFFORT
-)
-
 CLAUDE_HEADLESS_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     *(
         ReasoningCapabilityRule(
-            model_prefix=family, capabilities=_CLAUDE_HEADLESS_CAPS
+            model_prefix=family,
+            capabilities=ReasoningCapabilities(
+                mode=ReasoningMode.CLAUDE_CLI_EFFORT
+            ),
         )
         for family in CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES
     ),

@@ -9,10 +9,6 @@ from dr_llm.llm.providers.impls.codex.families import (
     CODEX_THINKING_SUPPORTED_MODELS,
 )
 
-_CODEX_CLI_EFFORT_CAPS = ReasoningCapabilities(
-    mode=ReasoningMode.CODEX_CLI_EFFORT
-)
-
 
 def codex_supports_configurable_thinking(model: str) -> bool:
     return matches_family(
@@ -38,5 +34,5 @@ def reasoning_capabilities_for_codex(
     model: str,
 ) -> ReasoningCapabilities | None:
     if codex_supports_configurable_thinking(model):
-        return _CODEX_CLI_EFFORT_CAPS
+        return ReasoningCapabilities(mode=ReasoningMode.CODEX_CLI_EFFORT)
     return None

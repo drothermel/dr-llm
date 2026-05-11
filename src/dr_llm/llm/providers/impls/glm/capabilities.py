@@ -10,12 +10,11 @@ from dr_llm.llm.providers.impls.glm.families import (
     GLM_THINKING_SUPPORTED_FAMILIES,
 )
 
-_GLM_THINKING_CAPS = ReasoningCapabilities(mode=ReasoningMode.GLM)
-
 GLM_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     *(
         ReasoningCapabilityRule(
-            model_prefix=family, capabilities=_GLM_THINKING_CAPS
+            model_prefix=family,
+            capabilities=ReasoningCapabilities(mode=ReasoningMode.GLM),
         )
         for family in GLM_THINKING_SUPPORTED_FAMILIES
     ),

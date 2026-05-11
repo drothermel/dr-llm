@@ -11,12 +11,13 @@ from dr_llm.llm.providers.impls.minimax.families import (
     MINIMAX_SUPPORTED_MODEL_FAMILIES,
 )
 
-_MINIMAX_CAPS = ReasoningCapabilities(mode=ReasoningMode.MINIMAX_EFFORT)
-
 MINIMAX_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     *(
         ReasoningCapabilityRule(
-            model_prefix=family, capabilities=_MINIMAX_CAPS
+            model_prefix=family,
+            capabilities=ReasoningCapabilities(
+                mode=ReasoningMode.MINIMAX_EFFORT
+            ),
         )
         for family in MINIMAX_SUPPORTED_MODEL_FAMILIES
     ),
