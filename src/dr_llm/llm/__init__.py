@@ -1,38 +1,19 @@
-from dr_llm.llm.catalog.fetchers.static import (
-    CLAUDE_CODE_MODELS,
-    CODEX_MODELS,
-    KIMI_CODING_MODELS,
-    MINIMAX_TEXT_MODELS,
-)
 from dr_llm.llm.config import (
-    ApiLlmConfig,
-    HeadlessLlmConfig,
-    KimiCodeLlmConfig,
     LlmConfig,
-    OpenAILlmConfig,
+    SamplingControls,
+    build_request_from_config,
     parse_llm_config,
 )
 from dr_llm.llm.names import (
-    ApiBackedProviderName,
-    HeadlessProviderName,
-    KimiCodeProviderName,
-    OpenAIProviderName,
-    ProviderCategories,
+    EffortSpec,
     ProviderName,
-    SamplingApiProviderName,
+    ThinkingLevel,
 )
-from dr_llm.llm.providers.config import (
-    ProviderAvailabilityStatus,
-    ProviderConfig,
+from dr_llm.llm.providers.concepts.capabilities import (
+    ModelCapabilities,
+    ReasoningCapabilities,
 )
-from dr_llm.llm.providers.effort import EffortSpec, supported_effort_levels
-from dr_llm.llm.providers.openrouter.policy import (
-    OpenRouterModelPolicy,
-    OpenRouterReasoningRequestStyle,
-    openrouter_allowed_models,
-    openrouter_model_policy,
-)
-from dr_llm.llm.providers.reasoning import (
+from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
     GlmReasoning,
@@ -42,93 +23,155 @@ from dr_llm.llm.providers.reasoning import (
     ReasoningBudget,
     ReasoningSpec,
     ReasoningWarning,
-    ThinkingLevel,
     parse_reasoning_spec,
 )
-from dr_llm.llm.providers.reasoning_capabilities import (
-    reasoning_capabilities_for_model,
+from dr_llm.llm.providers.core.config import (
+    ProviderAvailabilityStatus,
+    ProviderConfig,
 )
-from dr_llm.llm.providers.reasoning_controls import (
+from dr_llm.llm.providers.core.authoring import LlmAuthoringConfig
+from dr_llm.llm.providers.core.protocol import ProviderOrchestrator
+from dr_llm.llm.providers.core.reasoning_controls import (
     ReasoningControls,
-    default_effort,
-    default_reasoning,
-    default_thinking_level,
-    reasoning_controls_for_model,
-    reasoning_for_thinking_level,
-    supported_thinking_levels,
 )
-from dr_llm.llm.providers.registry import (
+from dr_llm.llm.providers.core.registry import (
     ProviderRegistry,
-    build_default_registry,
 )
-from dr_llm.llm.providers.usage import CostInfo, TokenUsage
+from dr_llm.llm.providers.core.request_defaults import ProviderRequestDefaults
+from dr_llm.llm.providers.core.usage import CostInfo, TokenUsage
+from dr_llm.llm.providers.default_registry import build_default_registry
+from dr_llm.llm.providers.impls.anthropic import (
+    AnthropicBudgetConfig,
+    AnthropicEffortAndBudgetConfig,
+    AnthropicEffortConfig,
+    AnthropicLegacyConfig,
+    AnthropicModelFamily,
+)
+from dr_llm.llm.providers.impls.claude_code import (
+    ClaudeCodeAdaptiveConfig,
+    ClaudeCodeEffortConfig,
+    ClaudeCodeLegacyConfig,
+    ClaudeCodeModelFamily,
+)
+from dr_llm.llm.providers.impls.codex import (
+    CodexGpt5CodexConfig,
+    CodexGpt5Config,
+    CodexGpt51Config,
+    CodexGpt52Config,
+    CodexGpt54Config,
+    CodexLegacyConfig,
+    CodexModelFamily,
+)
+from dr_llm.llm.providers.impls.glm import (
+    GlmLegacyConfig,
+    GlmModelFamily,
+    GlmThinkingConfig,
+)
+from dr_llm.llm.providers.impls.google import (
+    GoogleBudgetConfig,
+    GoogleLegacyConfig,
+    GoogleLevelConfig,
+    GoogleModelFamily,
+)
+from dr_llm.llm.providers.impls.kimi_code import (
+    KimiCodeConfig,
+    KimiCodeModelFamily,
+)
+from dr_llm.llm.providers.impls.minimax import (
+    MiniMaxConfig,
+    MiniMaxModelFamily,
+)
+from dr_llm.llm.providers.impls.openai import (
+    OpenAIGpt5Config,
+    OpenAIGpt51Config,
+    OpenAIGpt52Config,
+    OpenAIGpt53Config,
+    OpenAIGpt54Config,
+    OpenAILegacyConfig,
+    OpenAIModelFamily,
+)
+from dr_llm.llm.providers.impls.openrouter import (
+    OpenRouterEffortConfig,
+    OpenRouterNoReasoningConfig,
+    OpenRouterToggleConfig,
+)
 from dr_llm.llm.request import (
-    ApiLlmRequest,
-    HeadlessLlmRequest,
-    KimiCodeLlmRequest,
     LlmRequest,
     Message,
-    OpenAILlmRequest,
     parse_llm_request,
 )
 from dr_llm.llm.response import CallMode, LlmResponse
 
 __all__ = [
-    "ApiLlmConfig",
-    "ApiLlmRequest",
-    "ApiBackedProviderName",
+    "AnthropicBudgetConfig",
+    "AnthropicEffortAndBudgetConfig",
+    "AnthropicEffortConfig",
+    "AnthropicLegacyConfig",
+    "AnthropicModelFamily",
     "AnthropicReasoning",
-    "CLAUDE_CODE_MODELS",
     "CallMode",
+    "ClaudeCodeAdaptiveConfig",
+    "ClaudeCodeEffortConfig",
+    "ClaudeCodeLegacyConfig",
+    "ClaudeCodeModelFamily",
+    "CodexGpt5CodexConfig",
+    "CodexGpt5Config",
+    "CodexGpt51Config",
+    "CodexGpt52Config",
+    "CodexGpt54Config",
+    "CodexLegacyConfig",
+    "CodexModelFamily",
     "CodexReasoning",
-    "CODEX_MODELS",
     "CostInfo",
     "EffortSpec",
+    "GlmLegacyConfig",
+    "GlmModelFamily",
     "GlmReasoning",
+    "GlmThinkingConfig",
+    "GoogleBudgetConfig",
+    "GoogleLegacyConfig",
+    "GoogleLevelConfig",
+    "GoogleModelFamily",
     "GoogleReasoning",
-    "HeadlessLlmConfig",
-    "HeadlessLlmRequest",
-    "HeadlessProviderName",
-    "KimiCodeLlmConfig",
-    "KimiCodeLlmRequest",
-    "KimiCodeProviderName",
-    "KIMI_CODING_MODELS",
+    "KimiCodeConfig",
+    "KimiCodeModelFamily",
+    "LlmAuthoringConfig",
     "LlmConfig",
     "LlmRequest",
     "LlmResponse",
-    "MINIMAX_TEXT_MODELS",
     "Message",
+    "MiniMaxConfig",
+    "MiniMaxModelFamily",
+    "ModelCapabilities",
+    "OpenAIGpt5Config",
+    "OpenAIGpt51Config",
+    "OpenAIGpt52Config",
+    "OpenAIGpt53Config",
+    "OpenAIGpt54Config",
+    "OpenAILegacyConfig",
+    "OpenAIModelFamily",
     "OpenAIReasoning",
-    "OpenAILlmConfig",
-    "OpenAILlmRequest",
-    "OpenAIProviderName",
-    "OpenRouterModelPolicy",
+    "OpenRouterEffortConfig",
+    "OpenRouterNoReasoningConfig",
     "OpenRouterReasoning",
-    "OpenRouterReasoningRequestStyle",
+    "OpenRouterToggleConfig",
     "ProviderAvailabilityStatus",
-    "ProviderCategories",
     "ProviderConfig",
     "ProviderName",
+    "ProviderOrchestrator",
     "ProviderRegistry",
+    "ProviderRequestDefaults",
     "ReasoningBudget",
+    "ReasoningCapabilities",
     "ReasoningControls",
     "ReasoningSpec",
     "ReasoningWarning",
-    "SamplingApiProviderName",
+    "SamplingControls",
     "ThinkingLevel",
     "TokenUsage",
     "build_default_registry",
-    "default_effort",
-    "default_reasoning",
-    "default_thinking_level",
-    "openrouter_allowed_models",
-    "openrouter_model_policy",
+    "build_request_from_config",
     "parse_llm_config",
     "parse_llm_request",
     "parse_reasoning_spec",
-    "reasoning_capabilities_for_model",
-    "reasoning_controls_for_model",
-    "reasoning_for_thinking_level",
-    "supported_effort_levels",
-    "supported_thinking_levels",
 ]

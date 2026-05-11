@@ -1,5 +1,46 @@
 # Changelog
 
+## 4.1.0 - 2026-05-11
+
+### Added
+
+- Added provider orchestrators for OpenAI, Anthropic, Google, OpenRouter, GLM,
+  Codex, Claude Code, Kimi Code, and MiniMax to own provider-specific request
+  defaults, validation, reasoning controls, catalog policy, and generation.
+- Added provider-specific authoring config models such as `OpenAIGpt52Config`,
+  `AnthropicBudgetConfig`, `GoogleBudgetConfig`, `CodexGpt54Config`, and related
+  model-family config helpers that serialize to the shared `LlmConfig` shape.
+- Added `ProviderRequestDefaults` and orchestrator `request_defaults(...)`
+  helpers for inspecting default effort, reasoning, sampling, token, and mode
+  behavior by provider/model.
+
+### Changed
+
+- Replaced the provider-specific runtime config/request union with shared
+  `LlmConfig` and `LlmRequest` models plus optional nested `SamplingControls`.
+- Moved provider implementation modules under `dr_llm.llm.providers.impls`,
+  shared orchestration and registry code under `dr_llm.llm.providers.core`, and
+  reusable reasoning/capability concepts under `dr_llm.llm.providers.concepts`.
+- Centralized provider defaults and validation in orchestrators so stored
+  configs and direct request construction follow the same provider constraints.
+- Updated model catalog sync, CLI flows, demo scripts, notebooks, README
+  examples, and tests to use orchestrator-backed provider access.
+- Kimi Code max-token defaults are now supplied by its orchestrator when callers
+  omit them.
+
+### Breaking
+
+- `ProviderRegistry` now registers and returns provider orchestrators instead of
+  raw provider transports.
+- Removed old concrete runtime config/request classes such as
+  `OpenAILlmConfig`, `ApiLlmConfig`, `KimiCodeLlmConfig`, `HeadlessLlmConfig`,
+  `OpenAILlmRequest`, `ApiLlmRequest`, `KimiCodeLlmRequest`, and
+  `HeadlessLlmRequest`; use `LlmConfig`, `LlmRequest`, orchestrator
+  `build_request(...)`, or provider-specific authoring configs instead.
+- Direct imports from the previous provider package layout, including central
+  reasoning/default helper modules, must move to the new `core`, `concepts`, or
+  `impls` modules.
+
 ## 4.0.3 - 2026-05-10
 
 ### Added

@@ -9,10 +9,10 @@ from dr_llm.llm import (
     GlmReasoning,
     GoogleReasoning,
     Message,
-    ReasoningBudget,
     ThinkingLevel,
     TokenUsage,
 )
+from dr_llm.llm.providers.concepts.reasoning import ReasoningBudget
 
 
 def test_message_rejects_unknown_role() -> None:

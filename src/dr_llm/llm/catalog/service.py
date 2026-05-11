@@ -12,11 +12,7 @@ from dr_llm.llm.catalog.models import (
     ModelCatalogSyncResult,
 )
 from dr_llm.llm.catalog.model_blacklist import filter_blacklisted_entries
-from dr_llm.llm.catalog.fetchers import fetch_models_for_provider
-from dr_llm.llm.providers.openrouter.policy import (
-    apply_openrouter_model_policies,
-)
-from dr_llm.llm.providers.registry import ProviderRegistry
+from dr_llm.llm.providers.core.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +77,7 @@ class ModelCatalogService:
 
     def _sync_one_provider(self, target: str) -> ModelCatalogSyncResult:
         try:
-            entries, raw_payload = self._fetch_provider(target)
-            entries = apply_openrouter_model_policies(
-                filter_blacklisted_entries(entries)
-            )
+            entries, raw_payload = self.fetch_provider_models(target)
             return self._record_sync_success(target, entries, raw_payload)
         except Exception as exc:  # noqa: BLE001
             return self._record_sync_failure(target, exc)
@@ -162,7 +155,14 @@ class ModelCatalogService:
             {self._registry.get(name).name for name in self._registry.names()}
         )
 
-    def _fetch_provider(
+    def fetch_provider_models(
         self, provider: str
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-        return fetch_models_for_provider(self._registry.get(provider))
+        entries, raw_payload = self._registry.get(provider).fetch_models()
+        return filter_blacklisted_entries(entries), raw_payload
+
+    def fallback_provider_models(
+        self, provider: str
+    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+        entries, raw_payload = self._registry.get(provider).fallback_models()
+        return filter_blacklisted_entries(entries), raw_payload

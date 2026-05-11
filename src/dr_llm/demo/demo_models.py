@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 from dr_llm.llm import (
-    ApiLlmConfig,
-    CLAUDE_CODE_MODELS,
-    KIMI_CODING_MODELS,
+    GoogleBudgetConfig,
     LlmConfig,
-    MINIMAX_TEXT_MODELS,
-    OpenAILlmConfig,
+    OpenAIGpt5Config,
     ProviderName,
-    default_reasoning,
-    openrouter_allowed_models,
+    build_default_registry,
 )
+from dr_llm.llm.catalog.service import ModelCatalogService
 
 _THINKING_SWEEP_OPENAI_MODELS = [
     "gpt-5.4-mini-2026-03-17",
@@ -22,18 +19,6 @@ _THINKING_SWEEP_OPENAI_MODELS = [
     "gpt-5.4-nano-2026-03-17",
     "gpt-5-nano-2025-08-07",
     "gpt-4.1-nano-2025-04-14",
-]
-_THINKING_SWEEP_CODEX_MODELS = [
-    "gpt-5.1-codex-mini",
-]
-_THINKING_SWEEP_CLAUDE_MODELS = [
-    model_id for model_id, _display_name in CLAUDE_CODE_MODELS
-]
-_THINKING_SWEEP_KIMI_CODE_MODELS = [
-    model_id for model_id, _display_name in KIMI_CODING_MODELS
-]
-_THINKING_SWEEP_MINIMAX_MODELS = [
-    model_id for model_id, _display_name in MINIMAX_TEXT_MODELS
 ]
 _THINKING_SWEEP_GOOGLE_MODELS = [
     "gemini-3-flash-preview",
@@ -49,15 +34,31 @@ _THINKING_SWEEP_GOOGLE_MODELS = [
     "gemma-4-26b-a4b-it",
     "gemma-4-31b-it",
 ]
-_THINKING_SWEEP_OPENROUTER_MODELS = list(openrouter_allowed_models())
+
+
+def _fallback_model_ids(
+    provider: ProviderName, preferred: tuple[str, ...] = ()
+) -> list[str]:
+    service = ModelCatalogService(registry=_DEMO_PROVIDER_REGISTRY)
+    entries, _raw = service.fallback_provider_models(provider)
+    model_ids = [entry.model for entry in entries]
+    if not preferred:
+        return model_ids
+    selected = [model for model in preferred if model in model_ids]
+    return selected or model_ids[:1]
+
+
+_DEMO_PROVIDER_REGISTRY = build_default_registry()
 
 DEMO_THINKING_SWEEP_MODELS: dict[ProviderName, list[str]] = {
-    ProviderName.CLAUDE_CODE: _THINKING_SWEEP_CLAUDE_MODELS,
-    ProviderName.MINIMAX: _THINKING_SWEEP_MINIMAX_MODELS,
-    ProviderName.KIMI_CODE: _THINKING_SWEEP_KIMI_CODE_MODELS,
-    ProviderName.OPENROUTER: _THINKING_SWEEP_OPENROUTER_MODELS,
+    ProviderName.CLAUDE_CODE: _fallback_model_ids(ProviderName.CLAUDE_CODE),
+    ProviderName.MINIMAX: _fallback_model_ids(ProviderName.MINIMAX),
+    ProviderName.KIMI_CODE: _fallback_model_ids(ProviderName.KIMI_CODE),
+    ProviderName.OPENROUTER: _fallback_model_ids(ProviderName.OPENROUTER),
     ProviderName.OPENAI: _THINKING_SWEEP_OPENAI_MODELS,
-    ProviderName.CODEX: _THINKING_SWEEP_CODEX_MODELS,
+    ProviderName.CODEX: _fallback_model_ids(
+        ProviderName.CODEX, preferred=("gpt-5.1-codex-mini",)
+    ),
     ProviderName.GOOGLE: _THINKING_SWEEP_GOOGLE_MODELS,
 }
 
@@ -75,24 +76,20 @@ DEMO_QUERY_DEFAULT_MODELS: dict[ProviderName, str] = {
 
 def demo_pool_fill_llm_configs() -> dict[str, LlmConfig]:
     """Build fresh LLM configs for the pool-fill demo."""
-    return {
-        "gpt-5-mini-default": OpenAILlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-5-mini",
-            max_tokens=64,
-            reasoning=default_reasoning(
-                provider=ProviderName.OPENAI, model="gpt-5-mini"
-            ),
-        ),
-        "gemini-flash-default": ApiLlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemini-2.5-flash",
-            max_tokens=64,
-            reasoning=default_reasoning(
-                provider=ProviderName.GOOGLE, model="gemini-2.5-flash"
-            ),
-        ),
-    }
+    registry = build_default_registry()
+    try:
+        return {
+            "gpt-5-mini-default": OpenAIGpt5Config(
+                model="gpt-5-mini",
+                max_tokens=64,
+            ).to_llm_config(registry),
+            "gemini-flash-default": GoogleBudgetConfig(
+                model="gemini-2.5-flash",
+                max_tokens=64,
+            ).to_llm_config(registry),
+        }
+    finally:
+        registry.close()
 
 
 __all__ = [

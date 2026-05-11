@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from dr_llm.llm import AnthropicReasoning, EffortSpec, ThinkingLevel
-from dr_llm.llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.llm.providers.kimi_code import (
+from dr_llm.llm.providers.impls.anthropic.provider_config import (
+    AnthropicProviderConfig,
+)
+from dr_llm.llm.providers.impls.kimi_code.provider import (
     KIMI_CODE_BASE_URL,
     KIMI_CODE_PROVIDER_NAME,
     KimiCodeProvider,
@@ -19,8 +21,8 @@ _MOCK_RESPONSE: dict[str, Any] = {
 }
 
 
-def _kimi_test_config() -> AnthropicConfig:
-    return AnthropicConfig(
+def _kimi_test_config() -> AnthropicProviderConfig:
+    return AnthropicProviderConfig(
         name=KIMI_CODE_PROVIDER_NAME,
         base_url=KIMI_CODE_BASE_URL,
         api_key="test-key",

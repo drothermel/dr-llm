@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.usage import CostInfo, TokenUsage, parse_reasoning
+from dr_llm.llm.providers.core.usage import (
+    CostInfo,
+    TokenUsage,
+    parse_reasoning,
+)
 
 
 def test_token_usage_defaults_total():

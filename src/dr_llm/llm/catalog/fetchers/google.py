@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -11,14 +12,16 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.coercion import as_int
-from dr_llm.llm.providers.google.provider import GoogleProvider
-from dr_llm.llm.providers.reasoning_capabilities import (
-    reasoning_capabilities_for_model,
-)
+from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.impls.google.provider import GoogleProvider
+
+CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
 
 
 def fetch_google_models(
     provider: GoogleProvider,
+    *,
+    capabilities_fn: CapabilitiesFn,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     key = require_api_key(
         api_key=provider.config.api_key,
@@ -51,10 +54,7 @@ def fetch_google_models(
             context_window=as_int(item.get("inputTokenLimit")),
             max_output_tokens=as_int(item.get("outputTokenLimit")),
             supports_reasoning=supports_reasoning,
-            reasoning_capabilities=reasoning_capabilities_for_model(
-                provider=provider.name,
-                model=model_name,
-            ),
+            reasoning_capabilities=capabilities_fn(model_name),
             supports_vision=supports_vision,
             metadata=item,
             fetched_at=now,

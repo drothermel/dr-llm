@@ -57,7 +57,8 @@ uv run dr-llm models show --provider openai --model gpt-4.1
 
 Catalog data is cached locally at `~/.dr_llm/catalog_cache/`. No database required.
 Human-readable and JSON model listings also include the repo's curated blacklist,
-and OpenRouter listings are filtered through the local reasoning-policy allowlist.
+and provider orchestrators own any provider-specific catalog policy, such as
+OpenRouter's reasoning-policy allowlist.
 
 ## Demo Scripts
 
@@ -93,9 +94,11 @@ uv run python scripts/demo_thinking_and_effort.py --provider openai
 | `claude-code` | Claude Code CLI (headless) | `claude` executable |
 | `kimi-code` | Kimi Code API (Anthropic-compatible) | `KIMI_API_KEY` |
 
-Headless providers shell out to CLI tools. `minimax` and `kimi-code` are direct Anthropic-compatible `/messages` API providers. Headless input shapes do not expose `temperature`, `top_p`, or `max_tokens`. `kimi-code` rejects `temperature` and `top_p`, but still requires `max_tokens`.
+Headless providers shell out to CLI tools. `minimax` and `kimi-code` are direct Anthropic-compatible `/messages` API providers. Headless input shapes do not expose `temperature`, `top_p`, or `max_tokens`. `kimi-code` rejects `temperature` and `top_p`; its orchestrator supplies the provider max-token default when callers omit it.
 
-Some providers use static model lists for `models sync` (no `/models` endpoint). The CLI notes when a list may be out of date and links to docs.
+Some provider orchestrators use static fallback catalogs when a provider has no
+`/models` endpoint or live discovery is unavailable. The CLI notes when a list
+may be out of date and links to docs.
 
 ## Python API
 
@@ -103,22 +106,48 @@ The Python API exposes the same provider and pool primitives used by the demo
 scripts. Keep README examples small; use the demos above for maintained
 end-to-end workflows.
 
-`OpenAILlmRequest` / `OpenAILlmConfig` are the concrete request/config shapes for `provider="openai"`. `ApiLlmRequest` / `ApiLlmConfig` are the concrete shapes for the remaining sampling-capable API providers. `KimiCodeLlmRequest` / `KimiCodeLlmConfig` are the concrete shapes for `kimi-code`. `HeadlessLlmRequest` / `HeadlessLlmConfig` are the concrete shapes for CLI-backed providers. `LlmRequest` and `LlmConfig` remain available as unions, and `parse_llm_request(...)` / `parse_llm_config(...)` validate raw payloads into the correct concrete model by `provider`.
+`LlmConfig` and `LlmRequest` are the shared runtime shapes for all providers.
+They carry `provider`, `model`, `mode`, reasoning, effort, token limits, and
+optional nested `SamplingControls`. Provider-specific authoring configs such as
+`OpenAIGpt5Config`, `AnthropicBudgetConfig`, `GoogleBudgetConfig`, and
+`CodexGpt54Config` encode provider and model-family constraints, then serialize
+to the common `LlmConfig` shape with `.to_llm_config()`.
 
-For generic sampling-capable API providers, omitted sampling controls default to `temperature=1.0` and `top_p=0.95`. OpenAI omits those fields unless you set them explicitly. `kimi-code` and headless providers reject those fields entirely.
+Provider orchestrators construct requests from stored configs or caller inputs.
+Both paths run the same provider validation before generation, so persisted
+`LlmConfig` values cannot bypass mode, max-token, sampling, effort, or reasoning
+constraints. Orchestrators apply provider defaults for effort, reasoning, max
+tokens, and sampling controls before generation. For generic sampling-capable
+API providers, omitted sampling controls default to `temperature=1.0` and
+`top_p=0.95`. OpenAI omits those fields unless you set them explicitly.
+`kimi-code` and headless providers reject those fields entirely.
+
+Use `build_default_registry().get(provider).request_defaults(model)` when
+inspecting generic provider requests. It returns the orchestrator-owned defaults
+for effort, reasoning, token limits, and supported sampling controls.
 
 ### Calling a provider
 
 ```python
-from dr_llm.llm import Message, OpenAILlmRequest, build_default_registry
+from dr_llm.llm import (
+    Message,
+    OpenAIGpt52Config,
+    SamplingControls,
+    ThinkingLevel,
+    build_default_registry,
+)
 
 registry = build_default_registry()
-adapter = registry.get("openai")
+orchestrator = registry.get("openai")
+config = OpenAIGpt52Config(
+    model="gpt-5.2-mini",
+    thinking_level=ThinkingLevel.OFF,
+    sampling=SamplingControls(temperature=0.7, top_p=0.95),
+).to_llm_config(registry)
 
-response = adapter.generate(
-    OpenAILlmRequest(
-        provider="openai",
-        model="gpt-4.1",
+response = orchestrator.generate(
+    orchestrator.build_request_from_config(
+        config=config,
         messages=[Message(role="user", content="hello")],
     )
 )
@@ -172,7 +201,7 @@ dr-llm query --provider openrouter --model openai/gpt-oss-20b --reasoning-json '
 # OpenAI omits temperature/top_p unless you set them explicitly.
 # OpenAI GPT-5 custom temperature/top_p controls are only supported on gpt-5.2/gpt-5.4 with reasoning off.
 # --temperature, --top-p, and --max-tokens are rejected for headless providers (codex, claude-code)
-# --temperature and --top-p are also rejected for kimi-code; --max-tokens is required there
+# --temperature and --top-p are also rejected for kimi-code; its orchestrator supplies max-token defaults
 
 # Projects (Docker-managed Postgres)
 dr-llm project create NAME

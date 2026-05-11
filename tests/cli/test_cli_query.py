@@ -9,15 +9,48 @@ from typer.testing import CliRunner
 
 import dr_llm.cli.query as query_cli
 from dr_llm.cli import app
-from dr_llm.llm import TokenUsage
+from dr_llm.llm import (
+    CallMode,
+    EffortSpec,
+    SamplingControls,
+    TokenUsage,
+    parse_llm_request,
+)
 from tests.conftest import make_response
 
 runner = CliRunner()
 
 
 class _FakeProvider:
-    name = ProviderName.OPENAI
-    mode = "api"
+    mode = CallMode.api
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def build_request(
+        self,
+        *,
+        model: str,
+        messages: list[Any],
+        max_tokens: int | None = None,
+        effort: EffortSpec = EffortSpec.NA,
+        reasoning: Any = None,
+        sampling: SamplingControls | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        payload: dict[str, Any] = {
+            "provider": self.name,
+            "model": model,
+            "mode": self.mode,
+            "messages": messages,
+            "effort": effort,
+            "reasoning": reasoning,
+            "sampling": sampling,
+            "metadata": metadata or {},
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        return parse_llm_request(payload)
 
     def generate(self, request: Any) -> Any:
         return make_response(
@@ -31,8 +64,8 @@ class _FakeProvider:
 
 
 class _FakeRegistry:
-    def get(self, _name: str) -> _FakeProvider:
-        return _FakeProvider()
+    def get(self, name: str) -> _FakeProvider:
+        return _FakeProvider(name)
 
     def close(self) -> None:
         pass

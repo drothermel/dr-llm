@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
-from typing import Any, cast
+from typing import Any
 
 import httpx
 import pytest
@@ -9,15 +8,17 @@ import pytest
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm import (
     AnthropicReasoning,
-    ApiLlmRequest,
     EffortSpec,
-    KimiCodeLlmRequest,
+    LlmRequest,
     Message,
+    ProviderName,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
-from dr_llm.llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.llm.providers.anthropic.request import AnthropicRequest
+from dr_llm.llm.providers.impls.anthropic.provider_config import (
+    AnthropicProviderConfig,
+)
+from dr_llm.llm.providers.impls.anthropic.request import AnthropicRequest
+from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 
@@ -28,14 +29,14 @@ _MOCK_RESPONSE: dict[str, Any] = {
 }
 
 
-def _make_config() -> AnthropicConfig:
-    return AnthropicConfig(
+def _make_config() -> AnthropicProviderConfig:
+    return AnthropicProviderConfig(
         api_key="x", base_url="https://api.anthropic.com/v1/messages"
     )
 
 
-def _make_api_request(**overrides: Any) -> ApiLlmRequest | KimiCodeLlmRequest:
-    return cast(ApiLlmRequest | KimiCodeLlmRequest, make_request(**overrides))
+def _make_api_request(**overrides: object) -> LlmRequest:
+    return make_request(**overrides)
 
 
 def test_payload_serializes_messages() -> None:

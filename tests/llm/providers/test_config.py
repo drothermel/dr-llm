@@ -5,20 +5,26 @@ from collections.abc import Callable
 
 import pytest
 
-from dr_llm.llm.providers.api_config import APIProviderConfig
-from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
-from dr_llm.llm.providers.anthropic.config import AnthropicConfig
-from dr_llm.llm.providers.google.provider import GoogleProvider
-from dr_llm.llm.providers.kimi_code import KimiCodeProvider
-from dr_llm.llm.providers.minimax import MiniMaxProvider
-from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
-from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
-from dr_llm.llm.providers.config import (
+from dr_llm.llm.providers.transports.api_config import APIProviderConfig
+from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
+from dr_llm.llm.providers.impls.anthropic.provider_config import (
+    AnthropicProviderConfig,
+)
+from dr_llm.llm.providers.impls.google.provider import GoogleProvider
+from dr_llm.llm.providers.impls.kimi_code.provider import KimiCodeProvider
+from dr_llm.llm.providers.impls.minimax.provider import MiniMaxProvider
+from dr_llm.llm.providers.transports.openai_compat.provider import (
+    OpenAICompatProvider,
+)
+from dr_llm.llm.providers.transports.openai_compat.config import (
+    OpenAICompatConfig,
+)
+from dr_llm.llm.providers.core.config import (
     ProviderAvailabilityStatus,
     ProviderConfig,
 )
-from dr_llm.llm.providers.registry import ProviderRegistry
-from tests.conftest import FakeProvider
+from dr_llm.llm.providers.core.registry import ProviderRegistry
+from tests.conftest import FakeOrchestrator, FakeProvider
 
 
 def test_availability_reports_missing_requirements(
@@ -26,7 +32,7 @@ def test_availability_reports_missing_requirements(
 ) -> None:
     monkeypatch.delenv("FAKE_ENV", raising=False)
     monkeypatch.setattr(
-        "dr_llm.llm.providers.config.shutil.which",
+        "dr_llm.llm.providers.core.config.shutil.which",
         lambda exe: None if exe == "fake-cli" else "/usr/bin/ok",
     )
 
@@ -53,13 +59,13 @@ def test_registry_available_names_filters_unavailable(
     monkeypatch.setenv("READY_ENV", "present")
     monkeypatch.delenv("MISSING_ENV", raising=False)
     monkeypatch.setattr(
-        "dr_llm.llm.providers.config.shutil.which",
+        "dr_llm.llm.providers.core.config.shutil.which",
         lambda exe: "/usr/bin/ready" if exe == "ready-cli" else None,
     )
 
     registry = ProviderRegistry()
     registry.register(
-        FakeProvider(
+        FakeOrchestrator(
             name="ready-provider",
             config=ProviderConfig(
                 name="ready-provider",
@@ -69,7 +75,7 @@ def test_registry_available_names_filters_unavailable(
         )
     )
     registry.register(
-        FakeProvider(
+        FakeOrchestrator(
             name="missing-provider",
             config=ProviderConfig(
                 name="missing-provider",
@@ -105,7 +111,7 @@ def test_available_names_accepts_precomputed_statuses() -> None:
             )
         ),
         lambda: AnthropicProvider(
-            config=AnthropicConfig(
+            config=AnthropicProviderConfig(
                 api_key_env="ANTHROPIC_API_KEY",
                 api_key="inline-key",
             )
@@ -119,7 +125,7 @@ def test_available_names_accepts_precomputed_statuses() -> None:
             )
         ),
         lambda: KimiCodeProvider(
-            config=AnthropicConfig(
+            config=AnthropicProviderConfig(
                 name=ProviderName.KIMI_CODE,
                 base_url="https://api.kimi.com/coding/v1/messages",
                 api_key_env="KIMI_API_KEY",
@@ -127,7 +133,7 @@ def test_available_names_accepts_precomputed_statuses() -> None:
             )
         ),
         lambda: MiniMaxProvider(
-            config=AnthropicConfig(
+            config=AnthropicProviderConfig(
                 name=ProviderName.MINIMAX,
                 base_url="https://api.minimax.io/anthropic/v1/messages",
                 api_key_env="MINIMAX_API_KEY",

@@ -34,50 +34,56 @@ app = typer.Typer()
 def main() -> None:
     """Show providers and demo catalog sync/list commands for available ones."""
     registry = build_default_registry()
-    statuses = registry.availability_statuses()
+    try:
+        statuses = registry.availability_statuses()
 
-    print_list("1. Supported providers", registry.sorted_names())
+        print_list("1. Supported providers", registry.sorted_names())
 
-    available = registry.available_names(statuses=statuses)
-    print_list("2. Available providers", available)
+        available = registry.available_names(statuses=statuses)
+        print_list("2. Available providers", available)
 
-    unavailable = [status for status in statuses if not status.available]
-    if unavailable:
-        step("3. Missing requirements")
-        for status in unavailable:
-            reasons = [
-                f"missing env {env_var}" for env_var in status.missing_env_vars
-            ]
-            reasons.extend(
-                f"missing executable {executable}"
-                for executable in status.missing_executables
-            )
-            warn(f"{status.provider}: {', '.join(reasons)}")
+        unavailable = [status for status in statuses if not status.available]
+        if unavailable:
+            step("3. Missing requirements")
+            for status in unavailable:
+                reasons = [
+                    f"missing env {env_var}"
+                    for env_var in status.missing_env_vars
+                ]
+                reasons.extend(
+                    f"missing executable {executable}"
+                    for executable in status.missing_executables
+                )
+                warn(f"{status.provider}: {', '.join(reasons)}")
 
-    if not available:
-        raise typer.Exit(1)
+        if not available:
+            raise typer.Exit(1)
 
-    failed_providers: list[str] = []
-    for idx, provider in enumerate(available, start=1):
-        step(f"4.{idx}. Provider: {provider}")
-        try:
-            stream_models_sync(provider)
-            print()
-            stream_models_list(provider)
-            ok(f"completed provider demo for {provider}")
-        except Exception as exc:
-            fail(f"{provider}: {exc}")
-            failed_providers.append(provider)
+        failed_providers: list[str] = []
+        for idx, provider in enumerate(available, start=1):
+            step(f"4.{idx}. Provider: {provider}")
+            try:
+                stream_models_sync(provider)
+                print()
+                stream_models_list(provider)
+                ok(f"completed provider demo for {provider}")
+            except Exception as exc:
+                fail(f"{provider}: {exc}")
+                failed_providers.append(provider)
 
-    step("5. Summary")
-    succeeded = [
-        provider for provider in available if provider not in failed_providers
-    ]
-    print(f"  succeeded: {len(succeeded)}")
-    if succeeded:
-        print(f"  providers: {', '.join(succeeded)}")
-    if failed_providers:
-        warn(f"failed: {', '.join(failed_providers)}")
+        step("5. Summary")
+        succeeded = [
+            provider
+            for provider in available
+            if provider not in failed_providers
+        ]
+        print(f"  succeeded: {len(succeeded)}")
+        if succeeded:
+            print(f"  providers: {', '.join(succeeded)}")
+        if failed_providers:
+            warn(f"failed: {', '.join(failed_providers)}")
+    finally:
+        registry.close()
 
 
 if __name__ == "__main__":

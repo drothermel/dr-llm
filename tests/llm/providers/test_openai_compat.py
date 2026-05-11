@@ -1,28 +1,38 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any
 
 import httpx
 import pytest
 
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm import (
-    ApiLlmRequest,
-    EffortSpec,
+    CallMode,
     GlmReasoning,
-    KimiCodeLlmRequest,
+    LlmRequest,
     Message,
-    OpenAILlmRequest,
     OpenAIReasoning,
     OpenRouterReasoning,
+    ProviderName,
+    SamplingControls,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
-from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
-from dr_llm.llm.providers.openai_compat.request import OpenAICompatRequest
-from dr_llm.llm.providers.openai_compat.response import OpenAICompatResponse
+from dr_llm.llm.providers.transports.openai_compat.provider import (
+    OpenAICompatProvider,
+)
+from dr_llm.llm.providers.impls.openai.families import (
+    OPENAI_THINKING_SUPPORTED_MODELS,
+)
+from dr_llm.llm.providers.transports.openai_compat.config import (
+    OpenAICompatConfig,
+)
+from dr_llm.llm.providers.transports.openai_compat.request import (
+    OpenAICompatRequest,
+)
+from dr_llm.llm.providers.transports.openai_compat.response import (
+    OpenAICompatResponse,
+)
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 
@@ -30,6 +40,9 @@ _CONFIG = OpenAICompatConfig(
     name=ProviderName.OPENROUTER,
     base_url="https://openrouter.ai/api/v1",
     api_key="x",
+)
+_OPENAI_MAX_COMPLETION_TOKEN_MODEL_PREFIXES = tuple(
+    str(family) for family in OPENAI_THINKING_SUPPORTED_MODELS
 )
 
 _REASONING_RESPONSE_JSON: dict[str, Any] = {
@@ -60,10 +73,8 @@ _REASONING_RESPONSE_JSON: dict[str, Any] = {
 
 def _make_api_request(
     overrides: Mapping[str, Any] | None = None,
-) -> ApiLlmRequest | OpenAILlmRequest:
-    return cast(
-        ApiLlmRequest | OpenAILlmRequest, make_request(**(overrides or {}))
-    )
+) -> LlmRequest:
+    return make_request(**(overrides or {}))
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +211,9 @@ def test_openai_gpt5_swaps_max_tokens_for_max_completion_tokens() -> None:
         name=ProviderName.OPENAI,
         base_url="https://api.openai.com/v1",
         api_key="x",
+        max_completion_token_model_prefixes=(
+            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_PREFIXES
+        ),
     )
     request = _make_api_request(
         {
@@ -222,6 +236,9 @@ def test_openai_legacy_model_keeps_max_tokens() -> None:
         name=ProviderName.OPENAI,
         base_url="https://api.openai.com/v1",
         api_key="x",
+        max_completion_token_model_prefixes=(
+            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_PREFIXES
+        ),
     )
     request = _make_api_request(
         {
@@ -234,6 +251,43 @@ def test_openai_legacy_model_keeps_max_tokens() -> None:
         request, openai_config
     )
     payload = provider_request.json_payload()
+    assert payload["max_tokens"] == 64
+    assert "max_completion_tokens" not in payload
+
+
+def test_openrouter_does_not_inherit_openai_max_completion_tokens() -> None:
+    request = _make_api_request(
+        {
+            "provider": ProviderName.OPENROUTER,
+            "model": "openai/gpt-5",
+            "max_tokens": 64,
+        }
+    )
+    provider_request = OpenAICompatRequest.from_llm_request(request, _CONFIG)
+    payload = provider_request.json_payload()
+
+    assert payload["max_tokens"] == 64
+    assert "max_completion_tokens" not in payload
+
+
+def test_glm_does_not_inherit_openai_max_completion_tokens() -> None:
+    glm_config = OpenAICompatConfig(
+        name=ProviderName.GLM,
+        base_url="https://api.z.ai/api/coding/paas/v4",
+        api_key="x",
+    )
+    request = _make_api_request(
+        {
+            "provider": ProviderName.GLM,
+            "model": "gpt-5-mini",
+            "max_tokens": 64,
+        }
+    )
+    provider_request = OpenAICompatRequest.from_llm_request(
+        request, glm_config
+    )
+    payload = provider_request.json_payload()
+
     assert payload["max_tokens"] == 64
     assert "max_completion_tokens" not in payload
 
@@ -269,8 +323,7 @@ def test_openai_request_serializes_explicit_sampling_fields() -> None:
         {
             "provider": ProviderName.OPENAI,
             "model": "gpt-5.4",
-            "temperature": 0.3,
-            "top_p": 0.8,
+            "sampling": SamplingControls(temperature=0.3, top_p=0.8),
             "reasoning": OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
         }
     )
@@ -291,6 +344,7 @@ def test_request_rejects_extra_body_key_collisions() -> None:
         extra_body={"model": "other-model"},
         base_url="https://openrouter.ai/api/v1",
         chat_path="/chat/completions",
+        max_completion_token_model_prefixes=(),
         api_key_env="OPENROUTER_API_KEY",
         api_key="x",
         idempotency_key="fixed-key",
@@ -335,16 +389,16 @@ def test_response_parses_reasoning_and_cost() -> None:
     assert result.latency_ms == 42
 
 
-def test_rejects_kimi_code_request_shape() -> None:
-    request = KimiCodeLlmRequest(
-        provider=ProviderName.KIMI_CODE,
-        model="kimi-for-coding",
+def test_provider_rejects_headless_request_mode() -> None:
+    request = make_request(
+        provider=ProviderName.OPENAI,
+        model="gpt-5.4",
+        mode=CallMode.headless,
         messages=[Message(role="user", content="hi")],
-        max_tokens=256,
-        effort=EffortSpec.HIGH,
     )
+    adapter = OpenAICompatProvider(config=_CONFIG)
 
     with pytest.raises(
-        ProviderSemanticError, match="sampling-capable API request shape"
+        ProviderSemanticError, match="only accepts API-backed requests"
     ):
-        OpenAICompatRequest.from_llm_request(request, _CONFIG)
+        adapter.generate(request)

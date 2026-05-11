@@ -6,17 +6,21 @@ import subprocess
 from typing import cast
 
 import pytest
-from pydantic import ValidationError
 
 from dr_llm.llm import (
     AnthropicReasoning,
     CodexReasoning,
     EffortSpec,
-    ReasoningBudget,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.headless.claude import ClaudeHeadlessProvider
-from dr_llm.llm.providers.headless.codex import CodexHeadlessProvider
+from dr_llm.llm.providers.concepts.reasoning import ReasoningBudget
+from dr_llm.llm.providers.impls.claude_code.provider import (
+    ClaudeCodeProvider,
+)
+from dr_llm.llm.providers.impls.codex.orchestrator import (
+    CodexOrchestrator,
+)
+from dr_llm.llm.providers.impls.codex.provider import CodexProvider
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_subprocess_mock
 
@@ -42,7 +46,7 @@ def test_codex_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     captured, fake_run = make_subprocess_mock(stdout)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    adapter = CodexHeadlessProvider()
+    adapter = CodexProvider()
     request = make_request(
         provider=ProviderName.CODEX,
         model="gpt-5.1-codex-mini",
@@ -98,7 +102,7 @@ def test_codex_uses_cli_default_timeout(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    adapter = CodexHeadlessProvider()
+    adapter = CodexProvider()
     request = make_request(
         provider=ProviderName.CODEX,
         model="gpt-5.1-codex-mini",
@@ -133,7 +137,7 @@ def test_codex_command_includes_reasoning_effort_config(
     captured, fake_run = make_subprocess_mock(stdout)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    adapter = CodexHeadlessProvider()
+    adapter = CodexProvider()
     request = make_request(
         provider=ProviderName.CODEX,
         model="gpt-5.1-codex-mini",
@@ -160,7 +164,7 @@ def test_claude_command_and_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     captured, fake_run = make_subprocess_mock(stdout)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    adapter = ClaudeHeadlessProvider()
+    adapter = ClaudeCodeProvider()
     request = make_request(
         provider=ProviderName.CLAUDE_CODE,
         model="claude-sonnet-4-6",
@@ -211,7 +215,7 @@ def test_claude_uses_cli_default_timeout(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    adapter = ClaudeHeadlessProvider()
+    adapter = ClaudeCodeProvider()
     request = make_request(
         provider=ProviderName.CLAUDE_CODE,
         model="claude-sonnet-4-6",
@@ -240,7 +244,7 @@ def test_claude_command_includes_effort(
     captured, fake_run = make_subprocess_mock(stdout)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    adapter = ClaudeHeadlessProvider()
+    adapter = ClaudeCodeProvider()
     request = make_request(
         provider=ProviderName.CLAUDE_CODE,
         model="claude-sonnet-4-6",
@@ -276,10 +280,12 @@ def test_codex_rejects_reasoning_before_subprocess(
     captured, fake_run = make_subprocess_mock(stdout)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    with pytest.raises(ValidationError):
-        make_request(
-            provider=ProviderName.CODEX,
-            model="gpt-5.1-codex-mini",
-            reasoning=ReasoningBudget(tokens=1024),
-        )
+    request = make_request(
+        provider=ProviderName.CODEX,
+        model="gpt-5.1-codex-mini",
+        reasoning=ReasoningBudget(tokens=1024),
+    )
+    orchestrator = CodexOrchestrator(CodexProvider())
+    with pytest.raises(ValueError, match="reasoning budget is not supported"):
+        orchestrator.generate(request)
     assert "command" not in captured

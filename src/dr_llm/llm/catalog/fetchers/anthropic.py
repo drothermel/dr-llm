@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -11,14 +12,16 @@ from dr_llm.llm.catalog.fetchers.common import (
     require_api_key,
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
-from dr_llm.llm.providers.reasoning_capabilities import (
-    reasoning_capabilities_for_model,
-)
+from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
+
+CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
 
 
 def fetch_anthropic_models(
     provider: AnthropicProvider,
+    *,
+    capabilities_fn: CapabilitiesFn,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     parsed = urlsplit(provider.config.base_url)
     path = parsed.path.rstrip("/")
@@ -52,10 +55,7 @@ def fetch_anthropic_models(
             display_name=str(item.get("display_name") or model_id),
             context_window=as_int(item.get("context_window")),
             max_output_tokens=as_int(item.get("max_output_tokens")),
-            reasoning_capabilities=reasoning_capabilities_for_model(
-                provider=provider.name,
-                model=model_id,
-            ),
+            reasoning_capabilities=capabilities_fn(model_id),
             supports_vision=None,
             metadata=item,
             fetched_at=now,

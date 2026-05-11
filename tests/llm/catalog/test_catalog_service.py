@@ -4,26 +4,12 @@ from dr_llm.llm import ProviderName
 import asyncio
 from typing import Any
 
-import pytest
-
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.catalog.service import ModelCatalogService
 from dr_llm.llm import (
-    LlmRequest,
-    LlmResponse,
-    ProviderConfig,
     ProviderRegistry,
 )
-from dr_llm.llm.providers.base import Provider
-from tests.conftest import make_response
-
-
-class _DummyProvider(Provider):
-    def __init__(self) -> None:
-        self._config = ProviderConfig(name="dummy")
-
-    def generate(self, request: LlmRequest) -> LlmResponse:
-        return make_response(provider=request.provider, model=request.model)
+from tests.conftest import FakeOrchestrator
 
 
 class _FakeRepo:
@@ -73,21 +59,12 @@ class _FakeRepo:
         return None
 
 
-def test_sync_writes_snapshots_and_replaces_models(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    registry = ProviderRegistry()
-    registry.register(_DummyProvider())
-    repo = _FakeRepo()
-    service = ModelCatalogService(registry=registry, repository=repo)
-
-    def fake_fetch(
-        provider: Any,
-    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+def test_sync_writes_snapshots_and_replaces_models() -> None:
+    def fake_fetch() -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         return (
             [
                 ModelCatalogEntry(
-                    provider=provider.name,
+                    provider="dummy",
                     model="dummy-model",
                     source_quality="live",
                 )
@@ -95,10 +72,13 @@ def test_sync_writes_snapshots_and_replaces_models(
             {"data": [{"id": "dummy-model"}]},
         )
 
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_models_for_provider",
-        fake_fetch,
+    registry = ProviderRegistry()
+    registry.register(
+        FakeOrchestrator(name="dummy", fetch_models_fn=fake_fetch)
     )
+    repo = _FakeRepo()
+    service = ModelCatalogService(registry=registry, repository=repo)
+
     results = asyncio.run(service.sync_models_detailed(provider="dummy"))
     assert len(results) == 1
     assert results[0].success
@@ -108,24 +88,17 @@ def test_sync_writes_snapshots_and_replaces_models(
     assert repo.replaced["dummy"][0].model == "dummy-model"
 
 
-def test_sync_records_failure_on_fetch_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_sync_records_failure_on_fetch_error() -> None:
+    def failing_fetch() -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+        raise RuntimeError("network timeout")
+
     registry = ProviderRegistry()
-    registry.register(_DummyProvider())
+    registry.register(
+        FakeOrchestrator(name="dummy", fetch_models_fn=failing_fetch)
+    )
     repo = _FakeRepo()
     service = ModelCatalogService(registry=registry, repository=repo)
 
-    def failing_fetch(
-        provider: Any,
-    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
-        del provider
-        raise RuntimeError("network timeout")
-
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_models_for_provider",
-        failing_fetch,
-    )
     results = asyncio.run(service.sync_models_detailed(provider="dummy"))
     assert len(results) == 1
     assert not results[0].success
@@ -134,30 +107,17 @@ def test_sync_records_failure_on_fetch_error(
     assert repo.snapshots[0]["status"] == "failed"
 
 
-def test_sync_filters_blacklisted_models_before_replace(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class _AnthropicDummyProvider(_DummyProvider):
-        def __init__(self) -> None:
-            self._config = ProviderConfig(name=ProviderName.ANTHROPIC)
-
-    registry = ProviderRegistry()
-    registry.register(_AnthropicDummyProvider())
-    repo = _FakeRepo()
-    service = ModelCatalogService(registry=registry, repository=repo)
-
-    def fake_fetch(
-        provider: Any,
-    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+def test_sync_filters_blacklisted_models_before_replace() -> None:
+    def fake_fetch() -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         return (
             [
                 ModelCatalogEntry(
-                    provider=provider.name,
+                    provider=ProviderName.ANTHROPIC,
                     model="claude-3-haiku-20240307",
                     source_quality="live",
                 ),
                 ModelCatalogEntry(
-                    provider=provider.name,
+                    provider=ProviderName.ANTHROPIC,
                     model="claude-haiku-4-5-20251001",
                     source_quality="live",
                 ),
@@ -165,10 +125,15 @@ def test_sync_filters_blacklisted_models_before_replace(
             {"data": [{"id": "claude-3-haiku-20240307"}]},
         )
 
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_models_for_provider",
-        fake_fetch,
+    registry = ProviderRegistry()
+    registry.register(
+        FakeOrchestrator(
+            name=ProviderName.ANTHROPIC, fetch_models_fn=fake_fetch
+        )
     )
+    repo = _FakeRepo()
+    service = ModelCatalogService(registry=registry, repository=repo)
+
     results = asyncio.run(
         service.sync_models_detailed(provider=ProviderName.ANTHROPIC)
     )
@@ -180,37 +145,24 @@ def test_sync_filters_blacklisted_models_before_replace(
     ] == ["claude-haiku-4-5-20251001"]
 
 
-def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class _OpenRouterDummyProvider(_DummyProvider):
-        def __init__(self) -> None:
-            self._config = ProviderConfig(name=ProviderName.OPENROUTER)
-
-    registry = ProviderRegistry()
-    registry.register(_OpenRouterDummyProvider())
-    repo = _FakeRepo()
-    service = ModelCatalogService(registry=registry, repository=repo)
-
-    def fake_fetch(
-        provider: Any,
-    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+def test_sync_uses_orchestrator_catalog_result() -> None:
+    def fake_fetch() -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         return (
             [
                 ModelCatalogEntry(
-                    provider=provider.name,
+                    provider=ProviderName.OPENROUTER,
                     model="deepseek/deepseek-chat-v3.1",
                     supports_reasoning=False,
                     source_quality="live",
                 ),
                 ModelCatalogEntry(
-                    provider=provider.name,
+                    provider=ProviderName.OPENROUTER,
                     model="deepseek/deepseek-chat",
                     supports_reasoning=True,
                     source_quality="live",
                 ),
                 ModelCatalogEntry(
-                    provider=provider.name,
+                    provider=ProviderName.OPENROUTER,
                     model="unknown/model",
                     source_quality="live",
                 ),
@@ -218,10 +170,15 @@ def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata(
             {"data": []},
         )
 
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_models_for_provider",
-        fake_fetch,
+    registry = ProviderRegistry()
+    registry.register(
+        FakeOrchestrator(
+            name=ProviderName.OPENROUTER, fetch_models_fn=fake_fetch
+        )
     )
+    repo = _FakeRepo()
+    service = ModelCatalogService(registry=registry, repository=repo)
+
     results = asyncio.run(
         service.sync_models_detailed(provider=ProviderName.OPENROUTER)
     )
@@ -232,16 +189,17 @@ def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata(
     ] == [
         "deepseek/deepseek-chat-v3.1",
         "deepseek/deepseek-chat",
+        "unknown/model",
     ]
-    assert repo.replaced[ProviderName.OPENROUTER][0].supports_reasoning is True
     assert (
-        repo.replaced[ProviderName.OPENROUTER][1].supports_reasoning is False
+        repo.replaced[ProviderName.OPENROUTER][0].supports_reasoning is False
     )
+    assert repo.replaced[ProviderName.OPENROUTER][1].supports_reasoning is True
 
 
-def test_sync_records_failure_when_replace_fails_without_success_snapshot(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_sync_records_failure_when_replace_fails_without_success_snapshot() -> (
+    None
+):
     class _ReplaceFailsRepo(_FakeRepo):
         def replace_provider_models(
             self,
@@ -254,18 +212,11 @@ def test_sync_records_failure_when_replace_fails_without_success_snapshot(
                 f"replace failed for {provider} with {len(entries)} entries"
             )
 
-    registry = ProviderRegistry()
-    registry.register(_DummyProvider())
-    repo = _ReplaceFailsRepo()
-    service = ModelCatalogService(registry=registry, repository=repo)
-
-    def fake_fetch(
-        provider: Any,
-    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+    def fake_fetch() -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         return (
             [
                 ModelCatalogEntry(
-                    provider=provider.name,
+                    provider="dummy",
                     model="dummy-model",
                     source_quality="live",
                 )
@@ -273,10 +224,12 @@ def test_sync_records_failure_when_replace_fails_without_success_snapshot(
             {"data": [{"id": "dummy-model"}]},
         )
 
-    monkeypatch.setattr(
-        "dr_llm.llm.catalog.service.fetch_models_for_provider",
-        fake_fetch,
+    registry = ProviderRegistry()
+    registry.register(
+        FakeOrchestrator(name="dummy", fetch_models_fn=fake_fetch)
     )
+    repo = _ReplaceFailsRepo()
+    service = ModelCatalogService(registry=registry, repository=repo)
 
     results = asyncio.run(service.sync_models_detailed(provider="dummy"))
 

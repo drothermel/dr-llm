@@ -4,8 +4,8 @@ from dr_llm.llm import ProviderName
 from typing import Any
 
 from dr_llm.llm.catalog.fetchers.google import fetch_google_models
-from dr_llm.llm.providers.api_config import APIProviderConfig
-from dr_llm.llm.providers.google.provider import GoogleProvider
+from dr_llm.llm.providers.transports.api_config import APIProviderConfig
+from dr_llm.llm.providers.impls.google.provider import GoogleProvider
 
 
 def test_google_catalog_fetch_passes_api_key_via_header(
@@ -36,7 +36,10 @@ def test_google_catalog_fetch_passes_api_key_via_header(
         )
     )
 
-    entries, payload = fetch_google_models(provider)
+    entries, payload = fetch_google_models(
+        provider,
+        capabilities_fn=lambda model: None,
+    )
 
     assert entries == []
     assert payload == {"models": []}

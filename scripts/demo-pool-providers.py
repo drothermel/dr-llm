@@ -48,13 +48,12 @@ from dr_llm.demo import (
     warn,
 )
 from dr_llm.llm import (
+    CallMode,
     EffortSpec,
     ProviderAvailabilityStatus,
     ProviderName,
     ProviderRegistry,
     build_default_registry,
-    default_effort,
-    default_reasoning,
 )
 from dr_llm.pool import (
     DbConfig,
@@ -73,7 +72,6 @@ DEFAULT_PROMPT = DemoPrompts.TWO_PLUS_TWO
 PROJECT_PREFIX = "demo_pool"
 API_TIMEOUT = 120
 HEADLESS_TIMEOUT = 300
-ANTHROPIC_MAX_TOKENS = 256
 
 
 POOL_SCHEMA = PoolSchema(
@@ -131,9 +129,12 @@ def resolve_model(provider: ProviderName) -> str:
 # --- Query ---
 
 
-def provider_extra_args(provider: str, model: str) -> list[str]:
+def provider_extra_args(
+    registry: ProviderRegistry, provider: str, model: str
+) -> list[str]:
     args: list[str] = []
-    reasoning = default_reasoning(provider=provider, model=model)
+    defaults = registry.get(provider).request_defaults(model)
+    reasoning = defaults.reasoning
     if reasoning is not None:
         args.extend(
             [
@@ -141,26 +142,27 @@ def provider_extra_args(provider: str, model: str) -> list[str]:
                 reasoning.model_dump_json(exclude_none=True),
             ]
         )
-    effort = default_effort(provider=provider, model=model)
+    effort = defaults.effort
     if effort != EffortSpec.NA:
         args.extend(["--effort", effort])
     return args
 
 
 def query_provider(
-    provider: str, model: str, prompt: str, *, is_headless: bool = False
+    registry: ProviderRegistry,
+    provider: str,
+    model: str,
+    prompt: str,
+    *,
+    is_headless: bool = False,
 ) -> dict[str, Any]:
     """Query a provider via CLI, returning the response dict."""
     timeout = HEADLESS_TIMEOUT if is_headless else API_TIMEOUT
-    provider_name = ProviderName(provider)
+    defaults = registry.get(provider).request_defaults(model)
     extra_args: list[str] = []
-    if provider_name in {
-        ProviderName.ANTHROPIC,
-        ProviderName.KIMI_CODE,
-        ProviderName.MINIMAX,
-    }:
-        extra_args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
-    extra_args.extend(provider_extra_args(provider, model))
+    if defaults.max_tokens is not None:
+        extra_args.extend(["--max-tokens", str(defaults.max_tokens)])
+    extra_args.extend(provider_extra_args(registry, provider, model))
     return query_json(
         provider,
         model,
@@ -277,9 +279,11 @@ def _query_and_store_provider(
     ctx_str = f", context={ctx}" if ctx else ""
     ok(f"Model info: {display}{ctx_str}")
 
-    is_headless = registry.get(provider).mode == "headless"
+    is_headless = registry.get(provider).mode == CallMode.headless
     print(f"  Querying {provider}/{model}...")
-    response = query_provider(provider, model, prompt, is_headless=is_headless)
+    response = query_provider(
+        registry, provider, model, prompt, is_headless=is_headless
+    )
     text = (response.get("text") or "")[:80].replace("\n", " ")
     latency = response.get("latency_ms", "?")
     ok(f"Response ({latency}ms): {text}")

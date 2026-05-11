@@ -1,989 +1,625 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
+from typing import Protocol
+
 import pytest
 from pydantic import ValidationError
 
 from dr_llm.llm import (
-    AnthropicReasoning,
-    CodexReasoning,
+    AnthropicBudgetConfig,
+    AnthropicEffortAndBudgetConfig,
+    AnthropicEffortConfig,
+    AnthropicLegacyConfig,
+    ClaudeCodeAdaptiveConfig,
+    ClaudeCodeEffortConfig,
+    ClaudeCodeLegacyConfig,
+    CodexGpt5CodexConfig,
+    CodexGpt5Config,
+    CodexGpt51Config,
+    CodexGpt52Config,
+    CodexGpt54Config,
+    CodexLegacyConfig,
     EffortSpec,
-    GlmReasoning,
-    GoogleReasoning,
-    HeadlessLlmConfig,
-    HeadlessLlmRequest,
-    KimiCodeLlmConfig,
-    KimiCodeLlmRequest,
+    GlmLegacyConfig,
+    GlmThinkingConfig,
+    GoogleBudgetConfig,
+    GoogleLegacyConfig,
+    GoogleLevelConfig,
+    KimiCodeConfig,
+    LlmConfig,
+    LlmRequest,
     Message,
-    OpenAIReasoning,
-    OpenRouterReasoning,
-    ReasoningBudget,
+    MiniMaxConfig,
+    OpenAIGpt5Config,
+    OpenAIGpt51Config,
+    OpenAIGpt52Config,
+    OpenAIGpt53Config,
+    OpenAIGpt54Config,
+    OpenAILegacyConfig,
+    OpenRouterEffortConfig,
+    OpenRouterNoReasoningConfig,
+    OpenRouterToggleConfig,
+    ProviderName,
+    SamplingControls,
     ThinkingLevel,
+    build_default_registry,
+    build_request_from_config,
     parse_llm_config,
     parse_llm_request,
 )
+from dr_llm.llm.providers.concepts.reasoning import (
+    AnthropicReasoning,
+    CodexReasoning,
+    GlmReasoning,
+    GoogleReasoning,
+    OpenAIReasoning,
+    OpenRouterReasoning,
+)
+from dr_llm.llm.response import CallMode
 
 
-def LlmConfig(**kwargs: object):
-    return parse_llm_config(kwargs)
+class SupportsToLlmConfig(Protocol):
+    def to_llm_config(self) -> LlmConfig: ...
 
 
-def LlmRequest(**kwargs: object):
-    return parse_llm_request(kwargs)
-
-
-def test_basic_construction() -> None:
-    config = LlmConfig(provider=ProviderName.OPENAI, model="gpt-4.1-mini")
+def test_normalized_config_construction() -> None:
+    sampling = SamplingControls(temperature=0.7, top_p=0.9)
+    config = LlmConfig(
+        provider=ProviderName.OPENAI,
+        model="gpt-4.1-mini",
+        mode=CallMode.api,
+        max_tokens=1024,
+        sampling=sampling,
+    )
 
     assert config.provider == ProviderName.OPENAI
     assert config.model == "gpt-4.1-mini"
-    assert config.temperature is None
-    assert config.top_p is None
-    assert config.max_tokens is None
+    assert config.max_tokens == 1024
+    assert config.sampling == sampling
     assert config.effort == EffortSpec.NA
     assert config.reasoning is None
 
 
-def test_construction_with_all_fields() -> None:
-    reasoning = GoogleReasoning(thinking_level=ThinkingLevel.LOW)
-    config = LlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemini-3-flash-preview",
-        temperature=0.7,
-        top_p=0.9,
-        max_tokens=1024,
-        reasoning=reasoning,
-    )
-
-    assert config.temperature == 0.7
-    assert config.top_p == 0.9
-    assert config.max_tokens == 1024
-    assert config.reasoning is not None
-    assert config.reasoning.kind == ProviderName.GOOGLE
-
-
-def test_headless_config_rejects_sampling_fields() -> None:
+def test_old_flat_sampling_fields_are_rejected() -> None:
     with pytest.raises(ValidationError, match="temperature"):
-        HeadlessLlmConfig.model_validate(
-            {
-                "provider": ProviderName.CODEX,
-                "model": "gpt-5.4-mini",
-                "temperature": 0.2,
-            }
-        )
-
-    with pytest.raises(ValidationError, match="top_p"):
         parse_llm_config(
             {
-                "provider": ProviderName.CLAUDE_CODE,
-                "model": "claude-sonnet-4-6",
-                "top_p": 0.5,
-            }
-        )
-
-
-def test_headless_request_rejects_sampling_and_max_tokens() -> None:
-    with pytest.raises(ValidationError, match="max_tokens"):
-        parse_llm_request(
-            {
-                "provider": ProviderName.CODEX,
-                "model": "gpt-5.4-mini",
-                "messages": [{"role": "user", "content": "hi"}],
-                "max_tokens": 32,
-            }
-        )
-
-    with pytest.raises(ValidationError, match="temperature"):
-        HeadlessLlmRequest.model_validate(
-            {
-                "provider": ProviderName.CLAUDE_CODE,
-                "model": "claude-sonnet-4-6",
-                "messages": [{"role": "user", "content": "hi"}],
-                "temperature": 0.2,
-            }
-        )
-
-
-def test_kimi_code_config_rejects_sampling_fields() -> None:
-    with pytest.raises(ValidationError, match="temperature"):
-        KimiCodeLlmConfig.model_validate(
-            {
-                "provider": ProviderName.KIMI_CODE,
-                "model": "kimi-for-coding",
-                "max_tokens": 256,
-                "effort": EffortSpec.HIGH,
-                "temperature": 0.2,
-            }
-        )
-
-    with pytest.raises(ValidationError, match="top_p"):
-        parse_llm_config(
-            {
-                "provider": ProviderName.KIMI_CODE,
-                "model": "kimi-for-coding",
-                "max_tokens": 256,
-                "effort": "high",
-                "top_p": 0.5,
-            }
-        )
-
-
-def test_kimi_code_request_rejects_sampling_fields() -> None:
-    with pytest.raises(ValidationError, match="temperature"):
-        KimiCodeLlmRequest.model_validate(
-            {
-                "provider": ProviderName.KIMI_CODE,
-                "model": "kimi-for-coding",
-                "messages": [{"role": "user", "content": "hi"}],
-                "max_tokens": 256,
-                "effort": EffortSpec.HIGH,
-                "temperature": 0.2,
+                "provider": ProviderName.OPENAI,
+                "model": "gpt-4.1-mini",
+                "mode": CallMode.api,
+                "temperature": 0.7,
             }
         )
 
     with pytest.raises(ValidationError, match="top_p"):
         parse_llm_request(
             {
-                "provider": ProviderName.KIMI_CODE,
-                "model": "kimi-for-coding",
+                "provider": ProviderName.OPENAI,
+                "model": "gpt-4.1-mini",
+                "mode": CallMode.api,
                 "messages": [{"role": "user", "content": "hi"}],
-                "max_tokens": 256,
-                "effort": "high",
-                "top_p": 0.5,
+                "top_p": 0.9,
             }
         )
 
 
-def test_to_request() -> None:
-    config = LlmConfig(
-        provider=ProviderName.OPENAI,
+def test_orchestrator_build_request_applies_normalized_config() -> None:
+    config = OpenAILegacyConfig(
         model="gpt-4.1-mini",
-        temperature=0.5,
         max_tokens=100,
-    )
+        sampling=SamplingControls(temperature=0.5),
+    ).to_llm_config()
     messages = [
         Message(role="system", content="You are helpful."),
         Message(role="user", content="Hello"),
     ]
 
-    request = config.to_request(messages)
+    registry = build_default_registry()
+    try:
+        request = build_request_from_config(
+            registry.get(config.provider),
+            config,
+            messages,
+        )
+    finally:
+        registry.close()
 
+    assert isinstance(request, LlmRequest)
     assert request.provider == ProviderName.OPENAI
     assert request.model == "gpt-4.1-mini"
     assert request.messages == messages
-    assert request.temperature == 0.5
+    assert request.sampling == SamplingControls(temperature=0.5)
     assert request.max_tokens == 100
-    assert request.top_p is None
-    assert request.effort == EffortSpec.NA
-    assert request.reasoning is None
     assert request.metadata == {}
 
 
-def test_to_request_with_reasoning() -> None:
-    config = LlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemini-2.5-flash",
-        reasoning=ReasoningBudget(tokens=512),
-    )
-    messages = [Message(role="user", content="Think about this")]
-
-    request = config.to_request(messages)
-
-    assert request.reasoning is not None
-    assert request.reasoning.kind == "budget"
-
-
-def test_to_request_with_effort() -> None:
-    config = LlmConfig(
-        provider=ProviderName.ANTHROPIC,
-        model="claude-sonnet-4-6",
-        max_tokens=256,
-        effort=EffortSpec.MEDIUM,
-        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
-    )
-    messages = [Message(role="user", content="Think about this")]
-
-    request = config.to_request(messages)
-
-    assert request.effort == EffortSpec.MEDIUM
-
-
-def test_kimi_code_to_request_omits_sampling_fields() -> None:
-    config = LlmConfig(
-        provider=ProviderName.KIMI_CODE,
-        model="kimi-for-coding",
-        max_tokens=256,
-        effort=EffortSpec.HIGH,
-    )
-    messages = [Message(role="user", content="Think about this")]
-
-    request = config.to_request(messages)
-
-    assert request.provider == ProviderName.KIMI_CODE
-    assert request.model == "kimi-for-coding"
-    assert request.messages == messages
-    assert request.max_tokens == 256
-    assert request.effort == EffortSpec.HIGH
-    assert request.reasoning is None
-    assert request.metadata == {}
-    assert "temperature" not in request.model_dump()
-    assert "top_p" not in request.model_dump()
-
-
-def test_rejects_non_na_effort_for_unsupported_provider() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-4.1-mini",
-            effort=EffortSpec.MEDIUM,
-        )
-
-
-def test_rejects_na_effort_for_supported_anthropic_model() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.ANTHROPIC,
-            model="claude-sonnet-4-6",
-            max_tokens=256,
-            effort=EffortSpec.NA,
-        )
-
-
-def test_rejects_non_na_effort_for_unsupported_anthropic_model() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.ANTHROPIC,
-            model="claude-sonnet-4-5-20250929",
-            max_tokens=256,
-            effort=EffortSpec.MEDIUM,
-        )
-
-
-def test_rejects_na_effort_for_supported_claude_code_model() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.CLAUDE_CODE,
-            model="claude-sonnet-4-6",
-            effort=EffortSpec.NA,
-        )
-
-
-def test_rejects_non_na_effort_for_unsupported_claude_code_model() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.CLAUDE_CODE,
-            model="claude-haiku-4-5-20251001",
-            effort=EffortSpec.MEDIUM,
-        )
-
-
-def test_claude_code_accepts_max_effort() -> None:
-    LlmConfig(
-        provider=ProviderName.CLAUDE_CODE,
-        model="claude-sonnet-4-6",
-        effort=EffortSpec.MAX,
-        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
-    )
-
-
-def test_minimax_requires_effort_and_reasoning() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.MINIMAX,
-            model="MiniMax-M2.7",
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.MINIMAX,
-            model="MiniMax-M2.7",
-            effort=EffortSpec.LOW,
-        )
-
-
-def test_minimax_accepts_all_effort_levels() -> None:
-    for effort in (
-        EffortSpec.LOW,
-        EffortSpec.MEDIUM,
-        EffortSpec.HIGH,
-        EffortSpec.MAX,
-    ):
-        LlmConfig(
-            provider=ProviderName.MINIMAX,
-            model="MiniMax-M2.7",
-            effort=effort,
-            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.NA),
-        )
-
-
-def test_minimax_accepts_optional_max_tokens_and_explicit_na_reasoning() -> (
-    None
-):
-    LlmConfig(
-        provider=ProviderName.MINIMAX,
-        model="MiniMax-M2.7",
-        effort=EffortSpec.LOW,
-        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.NA),
-    )
-    LlmConfig(
-        provider=ProviderName.MINIMAX,
-        model="MiniMax-M2.7",
-        max_tokens=4096,
-        effort=EffortSpec.LOW,
-        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.NA),
-    )
-
-
-def test_minimax_rejects_explicit_thinking_controls() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.MINIMAX,
-            model="MiniMax-M2.7",
-            effort=EffortSpec.LOW,
-            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.MINIMAX,
-            model="MiniMax-M2.7",
-            effort=EffortSpec.LOW,
-            reasoning=AnthropicReasoning(
-                thinking_level=ThinkingLevel.ADAPTIVE
+@pytest.mark.parametrize(
+    ("config", "expected_reasoning"),
+    [
+        (
+            OpenAILegacyConfig(model="gpt-4.1-mini"),
+            None,
+        ),
+        (
+            OpenAIGpt5Config(
+                model="gpt-5-mini",
+                thinking_level=ThinkingLevel.MINIMAL,
             ),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.MINIMAX,
-            model="MiniMax-M2.7",
-            effort=EffortSpec.LOW,
-            reasoning=AnthropicReasoning(
-                thinking_level=ThinkingLevel.BUDGET,
-                budget_tokens=2048,
+            OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL),
+        ),
+        (
+            OpenAIGpt51Config(
+                model="gpt-5.1-mini",
+                thinking_level=ThinkingLevel.OFF,
             ),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.MINIMAX,
-            model="MiniMax-M2.7",
-            effort=EffortSpec.LOW,
-            reasoning=AnthropicReasoning(
-                thinking_level=ThinkingLevel.NA,
-                display="omitted",
+            OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
+        ),
+        (
+            OpenAIGpt52Config(
+                model="gpt-5.2-mini",
+                thinking_level=ThinkingLevel.OFF,
+                sampling=SamplingControls(temperature=0.7, top_p=0.95),
             ),
-        )
+            OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
+        ),
+        (
+            OpenAIGpt53Config(
+                model="gpt-5.3-mini",
+                thinking_level=ThinkingLevel.HIGH,
+            ),
+            OpenAIReasoning(thinking_level=ThinkingLevel.HIGH),
+        ),
+        (
+            OpenAIGpt54Config(
+                model="gpt-5.4-mini",
+                thinking_level=ThinkingLevel.OFF,
+                sampling=SamplingControls(temperature=0.7),
+            ),
+            OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
+        ),
+    ],
+)
+def test_openai_authoring_configs_to_llm_config(
+    config: SupportsToLlmConfig, expected_reasoning: object
+) -> None:
+    llm_config = config.to_llm_config()
+
+    assert llm_config.provider == ProviderName.OPENAI
+    assert llm_config.mode == CallMode.api
+    assert llm_config.reasoning == expected_reasoning
 
 
-def test_kimi_code_requires_effort_and_max_tokens() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.KIMI_CODE,
-            model="kimi-for-coding",
-            max_tokens=256,
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.KIMI_CODE,
-            model="kimi-for-coding",
-            effort=EffortSpec.HIGH,
-        )
-
-
-def test_kimi_code_accepts_off_adaptive_and_budget_with_effort() -> None:
-    for reasoning in (
-        None,
-        AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
-        AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
-        AnthropicReasoning(
+@pytest.mark.parametrize(
+    "config",
+    [
+        AnthropicLegacyConfig(model="claude-3-5-sonnet-latest"),
+        AnthropicBudgetConfig(
+            model="claude-sonnet-4-20250514",
             thinking_level=ThinkingLevel.BUDGET,
             budget_tokens=1024,
         ),
-    ):
-        LlmConfig(
-            provider=ProviderName.KIMI_CODE,
-            model="kimi-for-coding",
-            max_tokens=2048,
+        AnthropicEffortConfig(
+            model="claude-sonnet-4-6",
+            effort=EffortSpec.MEDIUM,
+            thinking_level=ThinkingLevel.ADAPTIVE,
+        ),
+        AnthropicEffortAndBudgetConfig(
+            model="claude-opus-4-5-20251101",
             effort=EffortSpec.HIGH,
-            reasoning=reasoning,
-        )
+            thinking_level=ThinkingLevel.BUDGET,
+            budget_tokens=2048,
+        ),
+    ],
+)
+def test_anthropic_authoring_configs_to_llm_config(
+    config: SupportsToLlmConfig,
+) -> None:
+    llm_config = config.to_llm_config()
+
+    assert llm_config.provider == ProviderName.ANTHROPIC
+    assert llm_config.mode == CallMode.api
+    assert llm_config.max_tokens == 4096
 
 
-def test_kimi_code_rejects_display_and_top_level_budget() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.KIMI_CODE,
-            model="kimi-for-coding",
-            max_tokens=2048,
-            effort=EffortSpec.HIGH,
-            reasoning=AnthropicReasoning(
+@pytest.mark.parametrize(
+    ("config", "expected_reasoning"),
+    [
+        (GoogleLegacyConfig(model="gemini-2.0-flash"), None),
+        (
+            GoogleBudgetConfig(
+                model="gemini-2.5-flash",
+                thinking_level=ThinkingLevel.BUDGET,
+                budget_tokens=1,
+            ),
+            GoogleReasoning(
+                thinking_level=ThinkingLevel.BUDGET,
+                budget_tokens=1,
+            ),
+        ),
+        (
+            GoogleLevelConfig(
+                model="gemini-3-flash-preview",
+                thinking_level=ThinkingLevel.LOW,
+                include_thoughts=True,
+            ),
+            GoogleReasoning(
+                thinking_level=ThinkingLevel.LOW,
+                include_thoughts=True,
+            ),
+        ),
+    ],
+)
+def test_google_authoring_configs_to_llm_config(
+    config: SupportsToLlmConfig, expected_reasoning: object
+) -> None:
+    llm_config = config.to_llm_config()
+
+    assert llm_config.provider == ProviderName.GOOGLE
+    assert llm_config.mode == CallMode.api
+    assert llm_config.reasoning == expected_reasoning
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_reasoning"),
+    [
+        (GlmLegacyConfig(model="glm-4-air"), None),
+        (
+            GlmThinkingConfig(
+                model="glm-4.5",
+                thinking_level=ThinkingLevel.OFF,
+            ),
+            GlmReasoning(thinking_level=ThinkingLevel.OFF),
+        ),
+    ],
+)
+def test_glm_authoring_configs_to_llm_config(
+    config: SupportsToLlmConfig, expected_reasoning: object
+) -> None:
+    llm_config = config.to_llm_config()
+
+    assert llm_config.provider == ProviderName.GLM
+    assert llm_config.reasoning == expected_reasoning
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_reasoning"),
+    [
+        (
+            OpenRouterNoReasoningConfig(model="deepseek/deepseek-chat"),
+            None,
+        ),
+        (
+            OpenRouterToggleConfig(
+                model="deepseek/deepseek-chat-v3.1",
+                enabled=False,
+            ),
+            OpenRouterReasoning(enabled=False),
+        ),
+        (
+            OpenRouterEffortConfig(
+                model="openai/gpt-oss-120b",
+                effort="medium",
+            ),
+            OpenRouterReasoning(effort="medium"),
+        ),
+    ],
+)
+def test_openrouter_authoring_configs_to_llm_config(
+    config: SupportsToLlmConfig, expected_reasoning: object
+) -> None:
+    llm_config = config.to_llm_config()
+
+    assert llm_config.provider == ProviderName.OPENROUTER
+    assert llm_config.reasoning == expected_reasoning
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_reasoning"),
+    [
+        (CodexLegacyConfig(model="gpt-4.1"), None),
+        (
+            CodexGpt5Config(
+                model="gpt-5",
+                thinking_level=ThinkingLevel.MINIMAL,
+            ),
+            CodexReasoning(thinking_level=ThinkingLevel.MINIMAL),
+        ),
+        (
+            CodexGpt51Config(
+                model="gpt-5.1",
+                thinking_level=ThinkingLevel.OFF,
+            ),
+            CodexReasoning(thinking_level=ThinkingLevel.OFF),
+        ),
+        (
+            CodexGpt52Config(
+                model="gpt-5.2",
+                thinking_level=ThinkingLevel.HIGH,
+            ),
+            CodexReasoning(thinking_level=ThinkingLevel.HIGH),
+        ),
+        (
+            CodexGpt54Config(
+                model="gpt-5.4-mini",
+                thinking_level=ThinkingLevel.OFF,
+            ),
+            CodexReasoning(thinking_level=ThinkingLevel.OFF),
+        ),
+        (
+            CodexGpt5CodexConfig(
+                model="gpt-5.3-codex",
+                thinking_level=ThinkingLevel.XHIGH,
+            ),
+            CodexReasoning(thinking_level=ThinkingLevel.XHIGH),
+        ),
+    ],
+)
+def test_codex_authoring_configs_to_llm_config(
+    config: SupportsToLlmConfig, expected_reasoning: object
+) -> None:
+    llm_config = config.to_llm_config()
+
+    assert llm_config.provider == ProviderName.CODEX
+    assert llm_config.mode == CallMode.headless
+    assert llm_config.reasoning == expected_reasoning
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_provider"),
+    [
+        (
+            ClaudeCodeLegacyConfig(model="claude-3-5-sonnet-latest"),
+            ProviderName.CLAUDE_CODE,
+        ),
+        (
+            ClaudeCodeAdaptiveConfig(model="claude-sonnet-4-6"),
+            ProviderName.CLAUDE_CODE,
+        ),
+        (
+            ClaudeCodeEffortConfig(
+                model="claude-opus-4-5-20251101",
+                effort=EffortSpec.HIGH,
+            ),
+            ProviderName.CLAUDE_CODE,
+        ),
+        (
+            KimiCodeConfig(
+                model="kimi-for-coding",
                 thinking_level=ThinkingLevel.BUDGET,
                 budget_tokens=1024,
-                display="omitted",
             ),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.KIMI_CODE,
-            model="kimi-for-coding",
-            max_tokens=2048,
-            effort=EffortSpec.HIGH,
-            reasoning=ReasoningBudget(tokens=1024),
-        )
+            ProviderName.KIMI_CODE,
+        ),
+        (
+            MiniMaxConfig(model="MiniMax-M2.7", effort=EffortSpec.MEDIUM),
+            ProviderName.MINIMAX,
+        ),
+    ],
+)
+def test_headless_and_narrow_authoring_configs_to_llm_config(
+    config: SupportsToLlmConfig, expected_provider: ProviderName
+) -> None:
+    llm_config = config.to_llm_config()
+
+    assert llm_config.provider == expected_provider
 
 
-def test_llm_request_rejects_na_effort_for_supported_anthropic_model() -> None:
-    with pytest.raises(ValidationError):
-        LlmRequest(
-            provider=ProviderName.ANTHROPIC,
-            model="claude-opus-4-6",
-            messages=[Message(role="user", content="Hello")],
-            max_tokens=256,
-            effort=EffortSpec.NA,
-        )
+def test_anthropic_authoring_config_uses_family_capabilities_for_snapshots() -> (
+    None
+):
+    config = AnthropicEffortAndBudgetConfig(
+        model="claude-opus-4-5-20261201",
+        effort=EffortSpec.HIGH,
+        thinking_level=ThinkingLevel.BUDGET,
+        budget_tokens=2048,
+    ).to_llm_config()
+
+    assert config.effort == EffortSpec.HIGH
+    assert config.reasoning == AnthropicReasoning(
+        thinking_level=ThinkingLevel.BUDGET,
+        budget_tokens=2048,
+    )
 
 
-def test_anthropic_config_requires_max_tokens() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.ANTHROPIC,
-            model="claude-sonnet-4-6",
-            effort=EffortSpec.MEDIUM,
-        )
+def test_claude_code_authoring_configs_use_anthropic_family_capabilities() -> (
+    None
+):
+    adaptive_config = ClaudeCodeAdaptiveConfig(
+        model="claude-sonnet-4-6-20261201"
+    ).to_llm_config()
+    effort_config = ClaudeCodeEffortConfig(
+        model="claude-opus-4-5-20261201",
+        effort=EffortSpec.HIGH,
+    ).to_llm_config()
+
+    assert adaptive_config.reasoning == AnthropicReasoning(
+        thinking_level=ThinkingLevel.ADAPTIVE
+    )
+    assert effort_config.effort == EffortSpec.HIGH
 
 
-def test_anthropic_request_requires_max_tokens() -> None:
-    with pytest.raises(ValidationError):
-        LlmRequest(
-            provider=ProviderName.ANTHROPIC,
-            model="claude-sonnet-4-6",
-            messages=[Message(role="user", content="Hello")],
-            effort=EffortSpec.MEDIUM,
-        )
+@pytest.mark.parametrize(
+    ("config_factory", "match_pattern"),
+    [
+        (
+            lambda: OpenAIGpt5Config(model="gpt-5.2-mini"),
+            "OpenAIGpt5Config only supports",
+        ),
+        (
+            lambda: OpenAIGpt52Config(
+                model="gpt-5.2-mini",
+                thinking_level=ThinkingLevel.HIGH,
+                sampling=SamplingControls(temperature=0.7),
+            ),
+            "custom sampling requires thinking_level='off'",
+        ),
+        (
+            lambda: GoogleBudgetConfig(
+                model="gemini-2.5-flash-lite",
+                thinking_level=ThinkingLevel.BUDGET,
+                budget_tokens=1,
+            ),
+            "budget_tokens must be between",
+        ),
+        (
+            lambda: OpenRouterToggleConfig(
+                model="deepseek/deepseek-r1",
+                enabled=False,
+            ),
+            "reasoning cannot be disabled",
+        ),
+        (
+            lambda: KimiCodeConfig(model="kimi-k2"),
+            "KimiCodeConfig only supports",
+        ),
+        (
+            lambda: MiniMaxConfig(model="not-minimax"),
+            "MiniMaxConfig only supports",
+        ),
+    ],
+)
+def test_authoring_configs_reject_invalid_family_or_controls(
+    config_factory, match_pattern: str
+) -> None:
+    with pytest.raises(ValueError, match=match_pattern):
+        config_factory()
 
 
-def test_glm_request_requires_explicit_reasoning() -> None:
-    with pytest.raises(ValidationError):
-        LlmRequest(
-            provider=ProviderName.GLM,
-            model="glm-4.5",
-            messages=[Message(role="user", content="Hello")],
-        )
+def test_provider_reasoning_shape_can_parse_before_validation() -> None:
+    config = LlmConfig(
+        provider=ProviderName.GOOGLE,
+        model="gemini-2.5-flash",
+        mode=CallMode.api,
+        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
+    )
+
+    assert config.reasoning == AnthropicReasoning(
+        thinking_level=ThinkingLevel.OFF
+    )
 
 
-def test_rejects_reasoning_for_unsupported_model() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-4.1-mini",
-            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
-        )
+def test_build_config_rejects_provider_specific_reasoning_mismatch() -> None:
+    registry = build_default_registry()
+    try:
+        with pytest.raises(ValueError, match="openai reasoning"):
+            registry.get(ProviderName.OPENAI).build_config(
+                model="gpt-5-mini",
+                reasoning=GoogleReasoning(thinking_level=ThinkingLevel.OFF),
+            )
+    finally:
+        registry.close()
 
 
-def test_supported_models_require_explicit_reasoning() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-5-mini",
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.CODEX,
-            model="gpt-5.1-codex-mini",
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GLM,
-            model="glm-4.5",
-        )
-
-
-def test_rejects_provider_specific_reasoning_on_wrong_provider() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-5-mini",
-            reasoning=GoogleReasoning(thinking_level=ThinkingLevel.LOW),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-5-mini",
-            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.NA),
-        )
-
-
-def test_openai_gpt5_family_accepts_provider_shaped_reasoning() -> None:
-    LlmConfig(
-        provider=ProviderName.OPENAI,
+def test_openai_config_does_not_store_empty_sampling_default() -> None:
+    config = OpenAIGpt5Config(
         model="gpt-5-mini",
-        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL),
-    )
+        thinking_level=ThinkingLevel.MINIMAL,
+    ).to_llm_config()
 
-    LlmConfig(
-        provider=ProviderName.OPENAI,
-        model="gpt-5.2",
-        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
-    )
-    LlmConfig(
-        provider=ProviderName.OPENROUTER,
-        model="openai/gpt-oss-20b",
-        reasoning=OpenRouterReasoning(effort="medium"),
-    )
+    assert config.sampling is None
+    assert "sampling" not in config.model_dump(mode="json", exclude_none=True)
 
 
-def test_openai_rejects_sampling_for_older_gpt5_models() -> None:
-    with pytest.raises(ValidationError, match="does not support"):
-        LlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-5-mini",
-            temperature=0.2,
-            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL),
-        )
+def test_build_request_from_config_rejects_provider_mismatch() -> None:
+    config = OpenAILegacyConfig(model="gpt-4.1-mini").to_llm_config()
+    messages = [Message(role="user", content="Hello")]
+
+    registry = build_default_registry()
+    try:
+        with pytest.raises(ValueError, match="does not match"):
+            build_request_from_config(
+                registry.get(ProviderName.GOOGLE),
+                config,
+                messages,
+            )
+    finally:
+        registry.close()
 
 
-def test_openai_rejects_sampling_for_gpt5_when_reasoning_is_not_explicitly_off() -> (
-    None
-):
-    with pytest.raises(
-        ValidationError,
-        match=r"require OpenAIReasoning\(thinking_level='off'\)",
-    ):
-        LlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-5.4",
-            temperature=0.2,
-            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
-        )
+@pytest.mark.parametrize(
+    ("provider", "config", "match_pattern"),
+    [
+        (
+            ProviderName.CODEX,
+            CodexGpt54Config(
+                model="gpt-5.4-mini",
+                thinking_level=ThinkingLevel.OFF,
+            )
+            .to_llm_config()
+            .model_copy(update={"max_tokens": 100}),
+            "max_tokens is not supported",
+        ),
+        (
+            ProviderName.CLAUDE_CODE,
+            ClaudeCodeAdaptiveConfig(model="claude-sonnet-4-6")
+            .to_llm_config()
+            .model_copy(update={"max_tokens": 100}),
+            "max_tokens is not supported",
+        ),
+        (
+            ProviderName.CODEX,
+            CodexGpt54Config(
+                model="gpt-5.4-mini",
+                thinking_level=ThinkingLevel.OFF,
+            )
+            .to_llm_config()
+            .model_copy(
+                update={"sampling": SamplingControls(temperature=0.2)}
+            ),
+            "sampling is not supported",
+        ),
+        (
+            ProviderName.CLAUDE_CODE,
+            ClaudeCodeAdaptiveConfig(model="claude-sonnet-4-6")
+            .to_llm_config()
+            .model_copy(update={"sampling": SamplingControls(top_p=0.9)}),
+            "sampling is not supported",
+        ),
+        (
+            ProviderName.KIMI_CODE,
+            KimiCodeConfig(model="kimi-for-coding")
+            .to_llm_config()
+            .model_copy(
+                update={"sampling": SamplingControls(temperature=0.2)}
+            ),
+            "sampling is not supported",
+        ),
+    ],
+)
+def test_build_request_from_config_rejects_unsupported_stored_controls(
+    provider: ProviderName, config: LlmConfig, match_pattern: str
+) -> None:
+    messages = [Message(role="user", content="Hello")]
+
+    registry = build_default_registry()
+    try:
+        with pytest.raises(ValueError, match=match_pattern):
+            build_request_from_config(
+                registry.get(provider),
+                config,
+                messages,
+            )
+    finally:
+        registry.close()
 
 
-def test_openai_accepts_sampling_for_gpt52_and_gpt54_when_reasoning_is_off() -> (
-    None
-):
+def test_build_request_from_config_accepts_supported_stored_sampling() -> None:
     config = LlmConfig(
         provider=ProviderName.OPENAI,
-        model="gpt-5.4",
-        temperature=0.2,
-        top_p=0.8,
-        reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
+        model="gpt-4.1-mini",
+        mode=CallMode.api,
+        sampling=SamplingControls(temperature=0.4, top_p=0.8),
     )
-    assert config.temperature == 0.2
-    assert config.top_p == 0.8
+    messages = [Message(role="user", content="Hello")]
 
-    request = LlmRequest(
-        provider=ProviderName.OPENAI,
-        model="gpt-5.2",
-        messages=[{"role": "user", "content": "hi"}],
-        temperature=0.3,
-        top_p=0.7,
-        reasoning={"kind": ProviderName.OPENAI, "thinking_level": "off"},
-    )
-    assert request.temperature == 0.3
-    assert request.top_p == 0.7
-
-
-def test_openrouter_requires_allowlisted_models() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENROUTER,
-            model="openai/gpt-4.1",
+    registry = build_default_registry()
+    try:
+        request = build_request_from_config(
+            registry.get(ProviderName.OPENAI),
+            config,
+            messages,
         )
+    finally:
+        registry.close()
 
-
-def test_openrouter_validates_manual_reasoning_modes() -> None:
-    LlmConfig(
-        provider=ProviderName.OPENROUTER,
-        model="deepseek/deepseek-chat-v3.1",
-        reasoning=OpenRouterReasoning(enabled=False),
-    )
-    LlmConfig(
-        provider=ProviderName.OPENROUTER,
-        model="deepseek/deepseek-r1",
-        reasoning=OpenRouterReasoning(enabled=True),
-    )
-    LlmConfig(
-        provider=ProviderName.OPENROUTER,
-        model="deepseek/deepseek-chat",
-    )
-
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENROUTER,
-            model="deepseek/deepseek-chat-v3.1",
-            reasoning=OpenRouterReasoning(effort="low"),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENROUTER,
-            model="deepseek/deepseek-r1",
-            reasoning=OpenRouterReasoning(enabled=False),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENROUTER,
-            model="deepseek/deepseek-chat",
-            reasoning=OpenRouterReasoning(enabled=True),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENROUTER,
-            model="openai/gpt-oss-20b",
-            reasoning=OpenRouterReasoning(enabled=True),
-        )
-
-
-def test_openrouter_supported_models_require_explicit_reasoning() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENROUTER,
-            model="deepseek/deepseek-chat-v3.1",
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENROUTER,
-            model="openai/gpt-oss-20b",
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENROUTER,
-            model="deepseek/deepseek-chat-v3.1",
-            reasoning=ReasoningBudget(tokens=1024),
-        )
-
-
-def test_openai_gpt5_rejects_off_before_51() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-5-mini",
-            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.OFF),
-        )
-
-
-def test_openai_51_plus_rejects_minimal() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-5.1",
-            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-5.1",
-            reasoning=ReasoningBudget(tokens=1024),
-        )
-
-
-def test_codex_accepts_provider_shaped_reasoning() -> None:
-    LlmConfig(
-        provider=ProviderName.CODEX,
-        model="gpt-5.1-codex-mini",
-        reasoning=CodexReasoning(thinking_level=ThinkingLevel.LOW),
-    )
-    LlmConfig(
-        provider=ProviderName.CODEX,
-        model="gpt-5.4",
-        reasoning=CodexReasoning(thinking_level=ThinkingLevel.OFF),
-    )
-    LlmConfig(
-        provider=ProviderName.CODEX,
-        model="gpt-5.1-codex-mini",
-        reasoning=CodexReasoning(thinking_level=ThinkingLevel.XHIGH),
-    )
-
-
-def test_codex_rejects_unsupported_model_specific_thinking_levels() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.CODEX,
-            model="gpt-5.1-codex-mini",
-            reasoning=CodexReasoning(thinking_level=ThinkingLevel.MINIMAL),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.CODEX,
-            model="gpt-5.2-codex",
-            reasoning=CodexReasoning(thinking_level=ThinkingLevel.OFF),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.CODEX,
-            model="gpt-5.1-codex-mini",
-            reasoning=CodexReasoning(thinking_level=ThinkingLevel.OFF),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.CODEX,
-            model="gpt-5-codex",
-            reasoning=CodexReasoning(thinking_level=ThinkingLevel.MINIMAL),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.CODEX,
-            model="gpt-5.4",
-            reasoning=CodexReasoning(thinking_level=ThinkingLevel.NA),
-        )
-
-
-def test_openai_and_codex_reject_top_level_effort() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.OPENAI,
-            model="gpt-5-mini",
-            effort=EffortSpec.HIGH,
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.CODEX,
-            model="gpt-5.1-codex-mini",
-            effort=EffortSpec.HIGH,
-        )
-
-
-def test_glm_requires_explicit_reasoning_and_rejects_effort() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GLM,
-            model="glm-4.5",
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GLM,
-            model="glm-4.5",
-            effort=EffortSpec.HIGH,
-            reasoning=GlmReasoning(thinking_level=ThinkingLevel.OFF),
-        )
-
-
-def test_google_supported_models_require_explicit_reasoning() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemini-2.5-flash",
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemini-3-flash-preview",
-        )
-
-
-def test_google_budget_models_accept_only_budget_family_controls() -> None:
-    LlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemini-2.5-flash",
-        reasoning=GoogleReasoning(thinking_level=ThinkingLevel.OFF),
-    )
-    LlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemini-2.5-flash",
-        reasoning=GoogleReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
-    )
-    LlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemini-2.5-flash",
-        reasoning=GoogleReasoning(
-            thinking_level=ThinkingLevel.BUDGET,
-            budget_tokens=1024,
-        ),
-    )
-    LlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemini-2.5-flash",
-        reasoning=ReasoningBudget(tokens=1024),
-    )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemini-2.5-flash",
-            reasoning=GoogleReasoning(thinking_level=ThinkingLevel.NA),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemini-2.5-flash",
-            reasoning=GoogleReasoning(thinking_level=ThinkingLevel.MINIMAL),
-        )
-
-
-def test_google_level_models_accept_only_level_controls() -> None:
-    LlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemini-3-flash-preview",
-        reasoning=GoogleReasoning(thinking_level=ThinkingLevel.MINIMAL),
-    )
-    LlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemma-4-31b-it",
-        reasoning=GoogleReasoning(thinking_level=ThinkingLevel.HIGH),
-    )
-    LlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemma-4-31b-it",
-        reasoning=GoogleReasoning(thinking_level=ThinkingLevel.MINIMAL),
-    )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemini-3-flash-preview",
-            reasoning=GoogleReasoning(thinking_level=ThinkingLevel.OFF),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemini-3-flash-preview",
-            reasoning=GoogleReasoning(
-                thinking_level=ThinkingLevel.BUDGET,
-                budget_tokens=1024,
-            ),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemma-4-31b-it",
-            reasoning=GoogleReasoning(thinking_level=ThinkingLevel.LOW),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemma-4-31b-it",
-            reasoning=GoogleReasoning(thinking_level=ThinkingLevel.MEDIUM),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemini-3-flash-preview",
-            reasoning=ReasoningBudget(tokens=1024),
-        )
-
-
-def test_google_unsupported_models_allow_omission_and_reject_explicit_reasoning() -> (
-    None
-):
-    LlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemini-2.0-flash-lite-001",
-    )
-    LlmConfig(
-        provider=ProviderName.GOOGLE,
-        model="gemma-3-1b-it",
-    )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemini-2.0-flash-lite-001",
-            reasoning=GoogleReasoning(thinking_level=ThinkingLevel.MINIMAL),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GOOGLE,
-            model="gemma-3-1b-it",
-            reasoning=GoogleReasoning(thinking_level=ThinkingLevel.MINIMAL),
-        )
-
-
-def test_glm_accepts_explicit_off_and_adaptive() -> None:
-    LlmConfig(
-        provider=ProviderName.GLM,
-        model="glm-4.5",
-        reasoning=GlmReasoning(thinking_level=ThinkingLevel.OFF),
-    )
-    LlmConfig(
-        provider=ProviderName.GLM,
-        model="glm-4.5",
-        reasoning=GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
-    )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GLM,
-            model="glm-4.5",
-            reasoning=ReasoningBudget(tokens=1024),
-        )
-
-
-def test_glm_rejects_unsupported_thinking_levels_and_wrong_kinds() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GLM,
-            model="glm-4.5",
-            reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
-        )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.GLM,
-            model="glm-4.5",
-            reasoning=GlmReasoning(thinking_level=ThinkingLevel.HIGH),
-        )
-
-
-def test_allows_combining_effort_with_anthropic_off() -> None:
-    LlmConfig(
-        provider=ProviderName.ANTHROPIC,
-        model="claude-sonnet-4-6",
-        max_tokens=256,
-        effort=EffortSpec.HIGH,
-        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
-    )
-
-
-def test_anthropic_adaptive_requires_model_support_not_effort() -> None:
-    LlmConfig(
-        provider=ProviderName.ANTHROPIC,
-        model="claude-sonnet-4-6",
-        max_tokens=256,
-        effort=EffortSpec.MEDIUM,
-        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
-    )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.ANTHROPIC,
-            model="claude-opus-4-5",
-            max_tokens=256,
-            reasoning=AnthropicReasoning(
-                thinking_level=ThinkingLevel.ADAPTIVE
-            ),
-        )
-
-
-def test_anthropic_budget_requires_budget_supported_model() -> None:
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.ANTHROPIC,
-            model="claude-sonnet-4-6",
-            max_tokens=4096,
-            effort=EffortSpec.MEDIUM,
-            reasoning=AnthropicReasoning(
-                thinking_level=ThinkingLevel.BUDGET,
-                budget_tokens=2048,
-            ),
-        )
-
-
-def test_claude_code_accepts_adaptive_only_for_46_models() -> None:
-    LlmConfig(
-        provider=ProviderName.CLAUDE_CODE,
-        model="claude-sonnet-4-6",
-        effort=EffortSpec.MEDIUM,
-        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE),
-    )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.CLAUDE_CODE,
-            model="claude-sonnet-4-6",
-            effort=EffortSpec.MEDIUM,
-            reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.OFF),
-        )
-
-
-def test_claude_code_haiku_accepts_na_only() -> None:
-    LlmConfig(
-        provider=ProviderName.CLAUDE_CODE,
-        model="claude-haiku-4-5-20251001",
-        reasoning=AnthropicReasoning(thinking_level=ThinkingLevel.NA),
-    )
-    with pytest.raises(ValidationError):
-        LlmConfig(
-            provider=ProviderName.CLAUDE_CODE,
-            model="claude-haiku-4-5-20251001",
-            reasoning=AnthropicReasoning(
-                thinking_level=ThinkingLevel.ADAPTIVE
-            ),
-        )
+    assert request.sampling == SamplingControls(temperature=0.4, top_p=0.8)

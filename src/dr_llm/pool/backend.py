@@ -11,6 +11,7 @@ from dr_llm.llm import (
     LlmResponse,
     Message,
     ProviderRegistry,
+    build_request_from_config,
     parse_llm_config,
 )
 from dr_llm.logging.events import (
@@ -227,10 +228,10 @@ def make_llm_process_fn(
 
         config = parse_llm_config(raw_config)
         messages = [Message(**message) for message in raw_messages]
-        request = config.to_request(messages)
 
         context = get_generation_log_context()
-        model_provider = registry.get(request.provider)
+        orchestrator = registry.get(config.provider)
+        request = build_request_from_config(orchestrator, config, messages)
         call_id = uuid4().hex
         worker_payload = {
             "pool_name": context.get("pool_name"),
@@ -245,7 +246,7 @@ def make_llm_process_fn(
                 "call_id": call_id,
                 "provider": request.provider,
                 "model": request.model,
-                "mode": model_provider.mode,
+                "mode": orchestrator.mode,
             }
         ):
             emit_generation_event(
@@ -261,7 +262,7 @@ def make_llm_process_fn(
                 },
             )
             try:
-                response = model_provider.generate(request)
+                response = orchestrator.generate(request)
             except Exception as exc:  # noqa: BLE001
                 emit_generation_event(
                     event_type="llm_call.failed",
