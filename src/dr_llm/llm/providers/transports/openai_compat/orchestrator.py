@@ -17,6 +17,9 @@ from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
     CatalogResult,
 )
+from dr_llm.llm.providers.core.request_defaults import (
+    ProviderRequestDefaults,
+)
 
 
 class BaseOpenAICompatOrchestrator(BaseProviderOrchestrator):
@@ -34,6 +37,17 @@ class BaseOpenAICompatOrchestrator(BaseProviderOrchestrator):
         return fetch_openai_compat_models(
             self._provider,
             capabilities_fn=self.reasoning_capabilities,
+        )
+
+    def request_defaults(self, model: str) -> ProviderRequestDefaults:
+        defaults = super().request_defaults(model)
+        return defaults.model_copy(
+            update={
+                "supports_temperature": True,
+                "temperature": 1.0,
+                "supports_top_p": True,
+                "top_p": 0.95,
+            }
         )
 
     @abstractmethod

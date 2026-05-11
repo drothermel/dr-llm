@@ -12,9 +12,6 @@ from dr_llm.llm.catalog.models import (
     ModelCatalogSyncResult,
 )
 from dr_llm.llm.catalog.model_blacklist import filter_blacklisted_entries
-from dr_llm.llm.providers.impls.openrouter.policy import (
-    apply_openrouter_model_policies,
-)
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
@@ -81,9 +78,7 @@ class ModelCatalogService:
     def _sync_one_provider(self, target: str) -> ModelCatalogSyncResult:
         try:
             entries, raw_payload = self._fetch_provider(target)
-            entries = apply_openrouter_model_policies(
-                filter_blacklisted_entries(entries)
-            )
+            entries = filter_blacklisted_entries(entries)
             return self._record_sync_success(target, entries, raw_payload)
         except Exception as exc:  # noqa: BLE001
             return self._record_sync_failure(target, exc)

@@ -19,6 +19,9 @@ from dr_llm.llm.providers.transports.openai_compat.config import (
 from dr_llm.llm.providers.impls.openai.orchestrator import (
     OpenAIOrchestrator,
 )
+from dr_llm.llm.providers.impls.openrouter.orchestrator import (
+    OpenRouterOrchestrator,
+)
 from dr_llm.llm.providers.transports.openai_compat.provider import (
     OpenAICompatProvider,
 )
@@ -116,3 +119,55 @@ def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
     )
 
     assert orchestrator.fetch_models() == ([], {"source": "openai_compat"})
+
+
+def test_openrouter_orchestrator_applies_policy_to_live_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = OpenAICompatProvider(
+        config=OpenAICompatConfig(
+            name=ProviderName.OPENROUTER,
+            base_url="https://openrouter.ai/api/v1",
+            api_key_env="OPENROUTER_API_KEY",
+            api_key="openrouter-secret",
+        )
+    )
+    orchestrator = OpenRouterOrchestrator(provider)
+    entries = [
+        ModelCatalogEntry(
+            provider=ProviderName.OPENROUTER,
+            model="deepseek/deepseek-chat-v3.1",
+            supports_reasoning=False,
+            source_quality="live",
+        ),
+        ModelCatalogEntry(
+            provider=ProviderName.OPENROUTER,
+            model="deepseek/deepseek-chat",
+            supports_reasoning=True,
+            source_quality="live",
+        ),
+        ModelCatalogEntry(
+            provider=ProviderName.OPENROUTER,
+            model="unknown/model",
+            source_quality="live",
+        ),
+    ]
+
+    def fake_fetch_models(_orchestrator):
+        return entries, {"source": "openrouter"}
+
+    monkeypatch.setattr(
+        "dr_llm.llm.providers.impls.openrouter.orchestrator."
+        "BaseOpenAICompatOrchestrator.fetch_models",
+        fake_fetch_models,
+    )
+
+    filtered, raw_payload = orchestrator.fetch_models()
+
+    assert raw_payload == {"source": "openrouter"}
+    assert [entry.model for entry in filtered] == [
+        "deepseek/deepseek-chat-v3.1",
+        "deepseek/deepseek-chat",
+    ]
+    assert filtered[0].supports_reasoning is True
+    assert filtered[1].supports_reasoning is False

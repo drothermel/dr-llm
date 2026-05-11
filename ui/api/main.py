@@ -9,16 +9,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.llm.catalog.fetchers.static import (
-    CLAUDE_CODE_MODELS,
-    CODEX_MODELS,
-    KIMI_CODING_MODELS,
-    MINIMAX_TEXT_MODELS,
-)
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
-from dr_llm.llm.providers.impls.openrouter.policy import apply_openrouter_model_policies
-from dr_llm.llm.providers.impls.openrouter.policy import openrouter_allowed_models
 from dr_llm.llm.providers.core.registry import build_default_registry
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 
@@ -70,73 +62,6 @@ class SyncResultResponse(BaseModel):
     error: str | None = None
 
 
-# ---------------------------------------------------------------------------
-# Static model fallback data (for providers without API keys)
-# ---------------------------------------------------------------------------
-
-# Well-known models for API providers (shown when keys are missing)
-_OPENAI_COMMON_MODELS = [
-    ("gpt-5.4", "GPT-5.4"),
-    ("gpt-5.4-mini", "GPT-5.4 Mini"),
-    ("gpt-5.3", "GPT-5.3"),
-    ("gpt-5.2", "GPT-5.2"),
-    ("gpt-5.1", "GPT-5.1"),
-    ("gpt-5", "GPT-5"),
-    ("o3", "o3"),
-    ("o3-mini", "o3-mini"),
-    ("o4-mini", "o4-mini"),
-]
-
-_ANTHROPIC_COMMON_MODELS = [
-    ("claude-opus-4-6", "Claude Opus 4.6"),
-    ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
-    ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
-]
-
-_GOOGLE_COMMON_MODELS = [
-    ("gemini-2.5-pro-preview-05-06", "Gemini 2.5 Pro"),
-    ("gemini-2.5-flash-preview-04-17", "Gemini 2.5 Flash"),
-    ("gemini-2.0-flash", "Gemini 2.0 Flash"),
-    ("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite"),
-]
-
-_OPENROUTER_COMMON_MODELS = [
-    (model_id, model_id) for model_id in openrouter_allowed_models()
-]
-
-_GLM_COMMON_MODELS = [
-    ("glm-4.5", "GLM 4.5"),
-    ("glm-4-air", "GLM 4 Air"),
-    ("glm-4-flash", "GLM 4 Flash"),
-]
-
-STATIC_MODELS: dict[str, list[tuple[str, str]]] = {
-    "codex": CODEX_MODELS,
-    "claude-code": CLAUDE_CODE_MODELS,
-    "kimi-code": KIMI_CODING_MODELS,
-    "minimax": MINIMAX_TEXT_MODELS,
-    "openrouter": _OPENROUTER_COMMON_MODELS,
-    "openai": _OPENAI_COMMON_MODELS,
-    "anthropic": _ANTHROPIC_COMMON_MODELS,
-    "google": _GOOGLE_COMMON_MODELS,
-    "glm": _GLM_COMMON_MODELS,
-}
-
-
-def _static_models_for_provider(provider: str) -> list[ModelEntryResponse]:
-    """Return hardcoded model entries when live fetching isn't possible."""
-    models = STATIC_MODELS.get(provider, [])
-    return [
-        ModelEntryResponse(
-            provider=provider,
-            model=model_id,
-            display_name=display_name,
-            source_quality="static",
-        )
-        for model_id, display_name in models
-    ]
-
-
 def _entry_to_response(entry: ModelCatalogEntry) -> ModelEntryResponse:
     return ModelEntryResponse(
         provider=entry.provider,
@@ -163,6 +88,13 @@ def _get_registry(app: FastAPI) -> ProviderRegistry:
             detail="service unavailable: registry not initialized",
         )
     return registry
+
+
+def _fallback_model_responses(
+    provider: str, registry: ProviderRegistry
+) -> list[ModelEntryResponse]:
+    entries, _raw = registry.get(provider).fallback_models()
+    return [_entry_to_response(entry) for entry in entries]
 
 
 @asynccontextmanager
@@ -221,25 +153,20 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
             status_code=404, detail=f"Unknown provider: {provider}"
         ) from err
 
-    # Check if provider is available (has required env vars / executables)
-    is_available = registry.availability_status(provider).available
+    is_available = orchestrator.availability_status().available
 
     if not is_available:
-        # Return static/hardcoded models
-        static = _static_models_for_provider(provider)
+        static = _fallback_model_responses(provider, registry)
         return ProviderModelsResponse(
             provider=provider,
             models=static,
             source="static",
         )
 
-    # Try live fetch
     try:
         entries, _raw = orchestrator.fetch_models()
-        entries = apply_openrouter_model_policies(entries)
     except (ProviderTransportError, ProviderSemanticError) as exc:
-        # Fall back to static
-        static = _static_models_for_provider(provider)
+        static = _fallback_model_responses(provider, registry)
         return ProviderModelsResponse(
             provider=provider,
             models=static,
@@ -267,10 +194,9 @@ def sync_provider_models(provider: str, request: Request) -> SyncResultResponse:
 
     try:
         entries, _raw = orchestrator.fetch_models()
-        entries = apply_openrouter_model_policies(entries)
     except (ProviderTransportError, ProviderSemanticError) as exc:
         error_msg = f"{type(exc).__name__}: {exc}"
-        static = _static_models_for_provider(provider)
+        static = _fallback_model_responses(provider, registry)
         return SyncResultResponse(
             provider=provider,
             success=False,

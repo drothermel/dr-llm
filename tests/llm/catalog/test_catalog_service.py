@@ -145,9 +145,7 @@ def test_sync_filters_blacklisted_models_before_replace() -> None:
     ] == ["claude-haiku-4-5-20251001"]
 
 
-def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata() -> (
-    None
-):
+def test_sync_uses_orchestrator_catalog_result() -> None:
     def fake_fetch() -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         return (
             [
@@ -191,11 +189,12 @@ def test_sync_applies_openrouter_policy_filter_and_reasoning_metadata() -> (
     ] == [
         "deepseek/deepseek-chat-v3.1",
         "deepseek/deepseek-chat",
+        "unknown/model",
     ]
-    assert repo.replaced[ProviderName.OPENROUTER][0].supports_reasoning is True
     assert (
-        repo.replaced[ProviderName.OPENROUTER][1].supports_reasoning is False
+        repo.replaced[ProviderName.OPENROUTER][0].supports_reasoning is False
     )
+    assert repo.replaced[ProviderName.OPENROUTER][1].supports_reasoning is True
 
 
 def test_sync_records_failure_when_replace_fails_without_success_snapshot() -> (

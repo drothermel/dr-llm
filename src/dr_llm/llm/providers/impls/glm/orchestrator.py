@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from dr_llm.llm.catalog.fetchers.static import (
+    _GLM_COMMON_MODELS,
+    build_static_catalog_entries,
+)
 from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -31,11 +35,11 @@ class GlmOrchestrator(BaseOpenAICompatOrchestrator):
         return reasoning_capabilities_for_glm(model)
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
-        super().validate_request(request)
+        warnings = super().validate_request(request)
         validate_reasoning_for_glm(
             model=request.model, reasoning=request.reasoning
         )
-        return []
+        return warnings
 
     def _supported_thinking_levels(
         self, *, model: str, capabilities: ModelCapabilities
@@ -61,3 +65,12 @@ class GlmOrchestrator(BaseOpenAICompatOrchestrator):
         if thinking_level == ThinkingLevel.NA:
             return None
         return GlmReasoning(thinking_level=thinking_level)
+
+    def fallback_models(self):
+        return build_static_catalog_entries(
+            provider=self._provider,
+            models=_GLM_COMMON_MODELS,
+            docs_url="https://docs.z.ai/guides/llm/glm-4.5",
+            supports_vision=None,
+            capabilities_fn=self.reasoning_capabilities,
+        )

@@ -13,9 +13,6 @@ from pydantic import ValidationError
 from dr_llm.errors import PersistenceError
 from dr_llm.llm.catalog.model_blacklist import filter_blacklisted_entries
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogQuery
-from dr_llm.llm.providers.impls.openrouter.policy import (
-    apply_openrouter_model_policies,
-)
 
 _DEFAULT_CACHE_DIR = Path.home() / ".dr_llm" / "catalog_cache"
 
@@ -105,9 +102,7 @@ class FileCatalogStore:
             raise CatalogCacheCorruptError(
                 f"corrupt catalog cache {path}: {exc}"
             ) from exc
-        return apply_openrouter_model_policies(
-            filter_blacklisted_entries(chunk)
-        )
+        return filter_blacklisted_entries(chunk)
 
     def _load_provider(self, provider: str) -> list[ModelCatalogEntry]:
         path = self._cache_dir / f"{provider}.json"

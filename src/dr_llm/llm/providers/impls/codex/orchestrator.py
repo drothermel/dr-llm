@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.static import (
-    CODEX_DOCS_URL,
-    CODEX_MODELS,
+    _CODEX_DOCS_URL,
+    _CODEX_MODELS,
     build_static_catalog_entries,
 )
 from dr_llm.llm.names import (
@@ -50,20 +50,23 @@ class CodexOrchestrator(BaseProviderOrchestrator):
         )
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
-        super().validate_request(request)
+        warnings = super().validate_request(request)
         validate_reasoning_for_codex(
             model=request.model, reasoning=request.reasoning
         )
-        return []
+        return warnings
 
     def fetch_models(self):
         return build_static_catalog_entries(
             provider=self._provider,
-            models=CODEX_MODELS,
-            docs_url=CODEX_DOCS_URL,
+            models=_CODEX_MODELS,
+            docs_url=_CODEX_DOCS_URL,
             supports_vision=None,
             capabilities_fn=reasoning_capabilities_for_codex,
         )
+
+    def fallback_models(self):
+        return self.fetch_models()
 
     def _supported_thinking_levels(
         self, *, model: str, capabilities: ModelCapabilities

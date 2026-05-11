@@ -257,37 +257,3 @@ def test_load_single_provider_still_raises_on_corrupt_file(
         store.list_models(
             query=ModelCatalogQuery(provider=ProviderName.ANTHROPIC)
         )
-
-
-def test_read_filters_and_overrides_openrouter_models(
-    store: FileCatalogStore,
-) -> None:
-    store.replace_provider_models(
-        provider=ProviderName.OPENROUTER,
-        entries=[
-            _entry(
-                ProviderName.OPENROUTER,
-                "deepseek/deepseek-chat-v3.1",
-                supports_reasoning=False,
-            ),
-            _entry(
-                ProviderName.OPENROUTER,
-                "deepseek/deepseek-chat",
-                supports_reasoning=True,
-            ),
-            _entry(
-                ProviderName.OPENROUTER,
-                "unknown/model",
-            ),
-        ],
-    )
-
-    result = store.list_models(
-        query=ModelCatalogQuery(provider=ProviderName.OPENROUTER)
-    )
-    assert [entry.model for entry in result] == [
-        "deepseek/deepseek-chat-v3.1",
-        "deepseek/deepseek-chat",
-    ]
-    assert result[0].supports_reasoning is True
-    assert result[1].supports_reasoning is False

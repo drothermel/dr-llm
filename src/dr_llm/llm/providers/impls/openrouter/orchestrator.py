@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
 from dr_llm.llm.names import ProviderName, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -18,6 +19,8 @@ from dr_llm.llm.providers.impls.openrouter.reasoning import (
 )
 from dr_llm.llm.providers.impls.openrouter.policy import (
     OpenRouterReasoningRequestStyle,
+    apply_openrouter_model_policies,
+    openrouter_allowed_models,
     openrouter_model_policy,
     reasoning_capabilities_for_openrouter,
 )
@@ -35,11 +38,28 @@ class OpenRouterOrchestrator(BaseOpenAICompatOrchestrator):
         return reasoning_capabilities_for_openrouter(model)
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
-        super().validate_request(request)
+        warnings = super().validate_request(request)
         validate_reasoning_for_openrouter(
             model=request.model, reasoning=request.reasoning
         )
-        return []
+        return warnings
+
+    def fetch_models(self):
+        entries, raw_payload = super().fetch_models()
+        return apply_openrouter_model_policies(entries), raw_payload
+
+    def fallback_models(self):
+        models = [
+            (model_id, model_id) for model_id in openrouter_allowed_models()
+        ]
+        entries, raw_payload = build_static_catalog_entries(
+            provider=self._provider,
+            models=models,
+            docs_url="https://openrouter.ai/models",
+            supports_vision=None,
+            capabilities_fn=self.reasoning_capabilities,
+        )
+        return apply_openrouter_model_policies(entries), raw_payload
 
     def _supported_thinking_levels(
         self, *, model: str, capabilities: ModelCapabilities

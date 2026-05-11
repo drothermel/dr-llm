@@ -17,6 +17,9 @@ from dr_llm.llm.providers.concepts.reasoning import (
 )
 from dr_llm.llm.providers.core.config import ProviderAvailabilityStatus
 from dr_llm.llm.providers.core.reasoning_controls import ReasoningControls
+from dr_llm.llm.providers.core.request_defaults import (
+    ProviderRequestDefaults,
+)
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import LlmResponse
 
@@ -64,11 +67,24 @@ class BaseProviderOrchestrator(ABC):
             ),
         )
 
+    def request_defaults(self, model: str) -> ProviderRequestDefaults:
+        controls = self.reasoning_controls(model)
+        return ProviderRequestDefaults(
+            provider=self.name,
+            model=model,
+            mode=self.mode,
+            effort=controls.default_effort,
+            reasoning=controls.default_reasoning,
+        )
+
     @abstractmethod
     def model_capabilities(self, model: str) -> ModelCapabilities: ...
 
     @abstractmethod
     def fetch_models(self) -> CatalogResult: ...
+
+    def fallback_models(self) -> CatalogResult:
+        return [], {"source": "static"}
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
         self._validate_provider(request)

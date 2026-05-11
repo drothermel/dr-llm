@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.anthropic import fetch_anthropic_models
+from dr_llm.llm.catalog.fetchers.static import (
+    _ANTHROPIC_COMMON_MODELS,
+    build_static_catalog_entries,
+)
 from dr_llm.llm.names import (
     ProviderName,
     ReasoningMode,
@@ -30,6 +34,9 @@ from dr_llm.llm.providers.concepts.reasoning import (
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
+)
+from dr_llm.llm.providers.core.request_defaults import (
+    ProviderRequestDefaults,
 )
 from dr_llm.llm.request import LlmRequest
 
@@ -90,16 +97,38 @@ class AnthropicOrchestrator(BaseProviderOrchestrator):
         return AnthropicReasoning(thinking_level=thinking_level)
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
-        super().validate_request(request)
+        warnings = super().validate_request(request)
         self._validate_max_tokens_required(request)
         validate_reasoning_for_anthropic(
             model=request.model, reasoning=request.reasoning
         )
-        return []
+        return warnings
+
+    def request_defaults(self, model: str) -> ProviderRequestDefaults:
+        defaults = super().request_defaults(model)
+        return defaults.model_copy(
+            update={
+                "max_tokens": 4096,
+                "max_tokens_required": True,
+                "supports_temperature": True,
+                "temperature": 1.0,
+                "supports_top_p": True,
+                "top_p": 0.95,
+            }
+        )
 
     def fetch_models(self):
         return fetch_anthropic_models(
             self._provider,
+            capabilities_fn=reasoning_capabilities_for_anthropic,
+        )
+
+    def fallback_models(self):
+        return build_static_catalog_entries(
+            provider=self._provider,
+            models=_ANTHROPIC_COMMON_MODELS,
+            docs_url="https://docs.anthropic.com/en/docs/about-claude/models",
+            supports_vision=True,
             capabilities_fn=reasoning_capabilities_for_anthropic,
         )
 

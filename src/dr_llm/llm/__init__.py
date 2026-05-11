@@ -1,9 +1,3 @@
-from dr_llm.llm.catalog.fetchers.static import (
-    CLAUDE_CODE_MODELS,
-    CODEX_MODELS,
-    KIMI_CODING_MODELS,
-    MINIMAX_TEXT_MODELS,
-)
 from dr_llm.llm.config import (
     ApiLlmConfig,
     HeadlessLlmConfig,
@@ -46,12 +40,12 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.impls.openrouter.policy import (
     OpenRouterModelPolicy,
     OpenRouterReasoningRequestStyle,
-    openrouter_allowed_models,
     openrouter_model_policy,
 )
 from dr_llm.llm.providers.core.reasoning_controls import (
     ReasoningControls,
 )
+from dr_llm.llm.providers.core.request_defaults import ProviderRequestDefaults
 from dr_llm.llm.providers.core.protocol import ProviderOrchestrator
 from dr_llm.llm.providers.core.registry import (
     ProviderRegistry,
@@ -74,10 +68,8 @@ __all__ = [
     "ApiLlmRequest",
     "ApiBackedProviderName",
     "AnthropicReasoning",
-    "CLAUDE_CODE_MODELS",
     "CallMode",
     "CodexReasoning",
-    "CODEX_MODELS",
     "CostInfo",
     "EffortSpec",
     "GlmReasoning",
@@ -88,11 +80,9 @@ __all__ = [
     "KimiCodeLlmConfig",
     "KimiCodeLlmRequest",
     "KimiCodeProviderName",
-    "KIMI_CODING_MODELS",
     "LlmConfig",
     "LlmRequest",
     "LlmResponse",
-    "MINIMAX_TEXT_MODELS",
     "Message",
     "ModelCapabilities",
     "OpenAIReasoning",
@@ -107,6 +97,7 @@ __all__ = [
     "ProviderConfig",
     "ProviderName",
     "ProviderOrchestrator",
+    "ProviderRequestDefaults",
     "ProviderRegistry",
     "ReasoningBudget",
     "ReasoningCapabilities",
@@ -117,7 +108,6 @@ __all__ = [
     "ThinkingLevel",
     "TokenUsage",
     "build_default_registry",
-    "openrouter_allowed_models",
     "openrouter_model_policy",
     "parse_llm_config",
     "parse_llm_request",

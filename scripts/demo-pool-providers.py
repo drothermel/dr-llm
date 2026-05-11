@@ -71,7 +71,6 @@ DEFAULT_PROMPT = DemoPrompts.TWO_PLUS_TWO
 PROJECT_PREFIX = "demo_pool"
 API_TIMEOUT = 120
 HEADLESS_TIMEOUT = 300
-ANTHROPIC_MAX_TOKENS = 256
 
 
 POOL_SCHEMA = PoolSchema(
@@ -133,8 +132,8 @@ def provider_extra_args(
     registry: ProviderRegistry, provider: str, model: str
 ) -> list[str]:
     args: list[str] = []
-    controls = registry.get(provider).reasoning_controls(model)
-    reasoning = controls.default_reasoning
+    defaults = registry.get(provider).request_defaults(model)
+    reasoning = defaults.reasoning
     if reasoning is not None:
         args.extend(
             [
@@ -142,7 +141,7 @@ def provider_extra_args(
                 reasoning.model_dump_json(exclude_none=True),
             ]
         )
-    effort = controls.default_effort
+    effort = defaults.effort
     if effort != EffortSpec.NA:
         args.extend(["--effort", effort])
     return args
@@ -158,14 +157,10 @@ def query_provider(
 ) -> dict[str, Any]:
     """Query a provider via CLI, returning the response dict."""
     timeout = HEADLESS_TIMEOUT if is_headless else API_TIMEOUT
-    provider_name = ProviderName(provider)
+    defaults = registry.get(provider).request_defaults(model)
     extra_args: list[str] = []
-    if provider_name in {
-        ProviderName.ANTHROPIC,
-        ProviderName.KIMI_CODE,
-        ProviderName.MINIMAX,
-    }:
-        extra_args.extend(["--max-tokens", str(ANTHROPIC_MAX_TOKENS)])
+    if defaults.max_tokens is not None:
+        extra_args.extend(["--max-tokens", str(defaults.max_tokens)])
     extra_args.extend(provider_extra_args(registry, provider, model))
     return query_json(
         provider,

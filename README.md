@@ -57,7 +57,8 @@ uv run dr-llm models show --provider openai --model gpt-4.1
 
 Catalog data is cached locally at `~/.dr_llm/catalog_cache/`. No database required.
 Human-readable and JSON model listings also include the repo's curated blacklist,
-and OpenRouter listings are filtered through the local reasoning-policy allowlist.
+and provider orchestrators own any provider-specific catalog policy, such as
+OpenRouter's reasoning-policy allowlist.
 
 ## Demo Scripts
 
@@ -95,7 +96,9 @@ uv run python scripts/demo_thinking_and_effort.py --provider openai
 
 Headless providers shell out to CLI tools. `minimax` and `kimi-code` are direct Anthropic-compatible `/messages` API providers. Headless input shapes do not expose `temperature`, `top_p`, or `max_tokens`. `kimi-code` rejects `temperature` and `top_p`, but still requires `max_tokens`.
 
-Some providers use static model lists for `models sync` (no `/models` endpoint). The CLI notes when a list may be out of date and links to docs.
+Some provider orchestrators use static fallback catalogs when a provider has no
+`/models` endpoint or live discovery is unavailable. The CLI notes when a list
+may be out of date and links to docs.
 
 ## Python API
 
@@ -106,6 +109,10 @@ end-to-end workflows.
 `OpenAILlmRequest` / `OpenAILlmConfig` are the concrete request/config shapes for `provider="openai"`. `ApiLlmRequest` / `ApiLlmConfig` are the concrete shapes for the remaining sampling-capable API providers. `KimiCodeLlmRequest` / `KimiCodeLlmConfig` are the concrete shapes for `kimi-code`. `HeadlessLlmRequest` / `HeadlessLlmConfig` are the concrete shapes for CLI-backed providers. `LlmRequest` and `LlmConfig` remain available as unions, and `parse_llm_request(...)` / `parse_llm_config(...)` validate raw payloads into the correct concrete model by `provider`.
 
 For generic sampling-capable API providers, omitted sampling controls default to `temperature=1.0` and `top_p=0.95`. OpenAI omits those fields unless you set them explicitly. `kimi-code` and headless providers reject those fields entirely.
+
+Use `build_default_registry().get(provider).request_defaults(model)` when
+building generic provider requests. It returns the orchestrator-owned defaults
+for effort, reasoning, token limits, and supported sampling controls.
 
 ### Calling a provider
 

@@ -6,6 +6,15 @@ from fastapi.testclient import TestClient
 
 from dr_llm.llm import ProviderConfig, ProviderRegistry
 from dr_llm.llm.catalog.models import ModelCatalogEntry
+from dr_llm.llm.providers.impls.openrouter.orchestrator import (
+    OpenRouterOrchestrator,
+)
+from dr_llm.llm.providers.transports.openai_compat.config import (
+    OpenAICompatConfig,
+)
+from dr_llm.llm.providers.transports.openai_compat.provider import (
+    OpenAICompatProvider,
+)
 from tests.conftest import FakeOrchestrator
 from ui.api import main as ui_api
 
@@ -38,7 +47,7 @@ def test_providers_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     assert getattr(ui_api.app.state, "registry", None) is None
 
 
-def test_openrouter_models_endpoint_applies_policy_filter(
+def test_models_endpoint_uses_orchestrator_catalog_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     entries = [
@@ -78,19 +87,23 @@ def test_openrouter_models_endpoint_applies_policy_filter(
     assert [model["model"] for model in payload["models"]] == [
         "deepseek/deepseek-chat-v3.1",
         "deepseek/deepseek-chat",
+        "unknown/model",
     ]
-    assert payload["models"][0]["supports_reasoning"] is True
-    assert payload["models"][1]["supports_reasoning"] is False
+    assert payload["models"][0]["supports_reasoning"] is False
+    assert payload["models"][1]["supports_reasoning"] is True
 
 
-def test_openrouter_static_models_use_curated_policy(
+def test_openrouter_static_models_come_from_orchestrator_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    orchestrator = FakeOrchestrator(
-        ProviderName.OPENROUTER,
-        config=ProviderConfig(
-            name=ProviderName.OPENROUTER,
-            required_env_vars=["MISSING_TEST_ENV"],
+    orchestrator = OpenRouterOrchestrator(
+        OpenAICompatProvider(
+            config=OpenAICompatConfig(
+                name=ProviderName.OPENROUTER,
+                base_url="https://openrouter.ai/api/v1",
+                api_key_env="MISSING_TEST_ENV",
+                required_env_vars=["MISSING_TEST_ENV"],
+            )
         ),
     )
     registry = ProviderRegistry()

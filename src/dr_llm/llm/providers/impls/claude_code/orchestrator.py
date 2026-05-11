@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.static import (
-    CLAUDE_CODE_DOCS_URL,
-    CLAUDE_CODE_MODELS,
+    _CLAUDE_CODE_DOCS_URL,
+    _CLAUDE_CODE_MODELS,
     build_static_catalog_entries,
 )
 from dr_llm.llm.names import (
@@ -56,20 +56,23 @@ class ClaudeCodeOrchestrator(BaseProviderOrchestrator):
         )
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
-        super().validate_request(request)
+        warnings = super().validate_request(request)
         validate_reasoning_for_claude_code(
             model=request.model, reasoning=request.reasoning
         )
-        return []
+        return warnings
 
     def fetch_models(self):
         return build_static_catalog_entries(
             provider=self._provider,
-            models=CLAUDE_CODE_MODELS,
-            docs_url=CLAUDE_CODE_DOCS_URL,
+            models=_CLAUDE_CODE_MODELS,
+            docs_url=_CLAUDE_CODE_DOCS_URL,
             supports_vision=True,
             capabilities_fn=reasoning_capabilities_for_claude_code,
         )
+
+    def fallback_models(self):
+        return self.fetch_models()
 
     def _supported_thinking_levels(
         self, *, model: str, capabilities: ModelCapabilities

@@ -41,7 +41,6 @@ from dr_llm.llm import (
     LlmRequest,
     Message,
     OpenRouterReasoning,
-    ProviderCategories,
     ProviderRegistry,
     ProviderName,
     ReasoningSpec,
@@ -55,7 +54,6 @@ SUPPORTED_PROVIDER_NAMES = ", ".join(
     sorted(provider.value for provider in DEMO_THINKING_SWEEP_MODELS)
 )
 PROMPT = DemoPrompts.EXACT_OK
-KIMI_CODE_MAX_TOKENS = 2048
 PHASES = ["models", "thinking", "effort"]
 
 
@@ -153,9 +151,9 @@ def make_request(
     explicit_reasoning: bool = False,
     reasoning_override: ReasoningSpec | None = None,
 ) -> LlmRequest:
-    max_tokens = (
-        KIMI_CODE_MAX_TOKENS if provider == ProviderName.KIMI_CODE else None
-    )
+    orchestrator = registry.get(provider)
+    defaults = orchestrator.request_defaults(model)
+    max_tokens = defaults.max_tokens
     reasoning = reasoning_override or registry.get(
         provider
     ).reasoning_for_thinking_level(
@@ -166,10 +164,8 @@ def make_request(
         ),
     )
     if explicit_reasoning and reasoning is None:
-        reasoning = (
-            registry.get(provider).reasoning_controls(model).default_reasoning
-        )
-    if provider in ProviderCategories().headless:
+        reasoning = defaults.reasoning
+    if orchestrator.mode == "headless":
         return HeadlessLlmRequest(
             provider=cast(HeadlessProviderName, provider),
             model=model,
@@ -182,7 +178,7 @@ def make_request(
             provider=cast(KimiCodeProviderName, provider),
             model=model,
             messages=[Message(role="user", content=PROMPT)],
-            max_tokens=KIMI_CODE_MAX_TOKENS,
+            max_tokens=max_tokens,
             effort=effort,
             reasoning=reasoning,
         )
@@ -251,8 +247,10 @@ def run_attempt(
     print(f"  text: {response.text!r}")
 
 
-def requires_explicit_reasoning(provider: str) -> bool:
-    return provider == ProviderName.MINIMAX
+def requires_explicit_reasoning(
+    registry: ProviderRegistry, provider: str, model: str
+) -> bool:
+    return registry.get(provider).request_defaults(model).reasoning is not None
 
 
 def run_model_sweep(
@@ -271,7 +269,9 @@ def run_model_sweep(
                 phase="models",
                 thinking_level=controls.default_thinking_level,
                 effort=controls.default_effort,
-                explicit_reasoning=requires_explicit_reasoning(provider),
+                explicit_reasoning=requires_explicit_reasoning(
+                    registry, provider, model
+                ),
                 counts=counts,
                 reasoning_override=controls.default_reasoning,
             )
@@ -320,7 +320,9 @@ def run_effort_sweep(
                     phase="effort",
                     thinking_level=controls.default_thinking_level,
                     effort=effort,
-                    explicit_reasoning=requires_explicit_reasoning(provider),
+                    explicit_reasoning=requires_explicit_reasoning(
+                        registry, provider, model
+                    ),
                     counts=counts,
                 )
 

@@ -11,6 +11,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
 )
 from dr_llm.llm.providers.core.config import ProviderAvailabilityStatus
 from dr_llm.llm.providers.core.reasoning_controls import ReasoningControls
+from dr_llm.llm.providers.core.request_defaults import ProviderRequestDefaults
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import LlmResponse
 
@@ -25,6 +26,8 @@ class ProviderOrchestrator(Protocol):
     def model_capabilities(self, model: str) -> ModelCapabilities: ...
 
     def reasoning_controls(self, model: str) -> ReasoningControls: ...
+
+    def request_defaults(self, model: str) -> ProviderRequestDefaults: ...
 
     def reasoning_for_thinking_level(
         self,
@@ -41,6 +44,10 @@ class ProviderOrchestrator(Protocol):
     def generate(self, request: LlmRequest) -> LlmResponse: ...
 
     def fetch_models(
+        self,
+    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]: ...
+
+    def fallback_models(
         self,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]: ...
 

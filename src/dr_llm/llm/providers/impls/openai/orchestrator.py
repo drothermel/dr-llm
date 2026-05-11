@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from dr_llm.llm.catalog.fetchers.static import (
+    _OPENAI_COMMON_MODELS,
+    build_static_catalog_entries,
+)
 from dr_llm.llm.names import ProviderName, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -12,6 +16,9 @@ from dr_llm.llm.providers.concepts.reasoning import (
 )
 from dr_llm.llm.providers.transports.openai_compat.orchestrator import (
     BaseOpenAICompatOrchestrator,
+)
+from dr_llm.llm.providers.core.request_defaults import (
+    ProviderRequestDefaults,
 )
 from dr_llm.llm.providers.impls.openai.reasoning import (
     validate_reasoning_for_openai,
@@ -37,7 +44,7 @@ class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
         return reasoning_capabilities_for_openai(model)
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
-        super().validate_request(request)
+        warnings = super().validate_request(request)
         validate_reasoning_for_openai(
             model=request.model, reasoning=request.reasoning
         )
@@ -47,7 +54,25 @@ class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
             temperature=getattr(request, "temperature", None),
             top_p=getattr(request, "top_p", None),
         )
-        return []
+        return warnings
+
+    def request_defaults(self, model: str) -> ProviderRequestDefaults:
+        defaults = super().request_defaults(model)
+        return defaults.model_copy(
+            update={
+                "temperature": None,
+                "top_p": None,
+            }
+        )
+
+    def fallback_models(self):
+        return build_static_catalog_entries(
+            provider=self._provider,
+            models=_OPENAI_COMMON_MODELS,
+            docs_url="https://platform.openai.com/docs/models",
+            supports_vision=None,
+            capabilities_fn=self.reasoning_capabilities,
+        )
 
     def _supported_thinking_levels(
         self, *, model: str, capabilities: ModelCapabilities

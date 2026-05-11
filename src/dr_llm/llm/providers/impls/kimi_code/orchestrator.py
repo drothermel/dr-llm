@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.kimi import fetch_kimi_models
+from dr_llm.llm.catalog.fetchers.static import (
+    _KIMI_CODING_MODELS,
+    build_static_catalog_entries,
+)
 from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -21,6 +25,9 @@ from dr_llm.llm.providers.impls.kimi_code.reasoning import (
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
+)
+from dr_llm.llm.providers.core.request_defaults import (
+    ProviderRequestDefaults,
 )
 from dr_llm.llm.request import LlmRequest
 
@@ -78,15 +85,33 @@ class KimiCodeOrchestrator(BaseProviderOrchestrator):
         return AnthropicReasoning(thinking_level=thinking_level)
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
-        super().validate_request(request)
+        warnings = super().validate_request(request)
         self._validate_max_tokens_required(request)
         validate_reasoning_for_kimi_code(
             model=request.model, reasoning=request.reasoning
         )
-        return []
+        return warnings
+
+    def request_defaults(self, model: str) -> ProviderRequestDefaults:
+        defaults = super().request_defaults(model)
+        return defaults.model_copy(
+            update={
+                "max_tokens": 16384,
+                "max_tokens_required": True,
+            }
+        )
 
     def fetch_models(self):
         return fetch_kimi_models(
             self._provider,
+            capabilities_fn=reasoning_capabilities_for_kimi_code,
+        )
+
+    def fallback_models(self):
+        return build_static_catalog_entries(
+            provider=self._provider,
+            models=_KIMI_CODING_MODELS,
+            docs_url="https://platform.moonshot.ai/docs/guide/agent/coding",
+            supports_vision=True,
             capabilities_fn=reasoning_capabilities_for_kimi_code,
         )

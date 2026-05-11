@@ -14,6 +14,7 @@ from dr_llm.llm import (
     LlmResponse,
     Message,
     ProviderConfig,
+    ProviderRequestDefaults,
     TokenUsage,
     parse_llm_request,
 )
@@ -104,6 +105,15 @@ class FakeOrchestrator:
             default_reasoning=None,
         )
 
+    def request_defaults(self, model: str) -> ProviderRequestDefaults:
+        return ProviderRequestDefaults(
+            provider=self.name,
+            model=model,
+            mode=self.mode,
+            effort=EffortSpec.NA,
+            reasoning=None,
+        )
+
     def reasoning_for_thinking_level(
         self,
         *,
@@ -127,6 +137,11 @@ class FakeOrchestrator:
         if self._fetch_models_fn is not None:
             return self._fetch_models_fn()
         return [], {"source": "fake"}
+
+    def fallback_models(
+        self,
+    ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
+        return self.fetch_models()
 
     def close(self) -> None:
         self.close_calls += 1
