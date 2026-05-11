@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
-from dr_llm.llm import ProviderName
+from dr_llm.llm import OpenRouterEffortLevel, ProviderName
 from dr_llm.llm.providers.impls.anthropic.controls import (
     _validate_reasoning_for_anthropic,
 )
@@ -99,7 +99,7 @@ def test_openrouter_serializes_reasoning_payloads() -> None:
         OpenRouterReasoning(enabled=False),
     ).extra_body == {"reasoning": {"enabled": False}}
     assert OpenRouterRequestControls.from_reasoning(
-        OpenRouterReasoning(effort="low"),
+        OpenRouterReasoning(effort=OpenRouterEffortLevel.LOW),
     ).extra_body == {"reasoning": {"effort": "low"}}
 
 

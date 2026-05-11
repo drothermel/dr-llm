@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm import OpenRouterEffortLevel
 from dr_llm.llm.providers.impls.openrouter.families import (
     OPENROUTER_FAMILIES,
     OpenRouterControlRequestStyle,
@@ -28,24 +29,27 @@ def test_openrouter_policy_applies_verified_overrides() -> None:
         policies["openai/gpt-oss-20b"].request_style
         == OpenRouterControlRequestStyle.EFFORT
     )
-    assert policies["openai/gpt-oss-20b"].default_effort == "low"
+    assert (
+        policies["openai/gpt-oss-20b"].default_effort
+        == OpenRouterEffortLevel.LOW
+    )
     assert (
         policies["openai/gpt-5-nano"].request_style
         == OpenRouterControlRequestStyle.EFFORT
     )
     assert policies["openai/gpt-5-nano"].allowed_efforts == (
-        "low",
-        "medium",
-        "high",
+        OpenRouterEffortLevel.LOW,
+        OpenRouterEffortLevel.MEDIUM,
+        OpenRouterEffortLevel.HIGH,
     )
     assert (
         policies["openai/gpt-5.4-nano"].request_style
         == OpenRouterControlRequestStyle.EFFORT
     )
     assert policies["openai/gpt-5.4-nano"].allowed_efforts == (
-        "low",
-        "medium",
-        "high",
+        OpenRouterEffortLevel.LOW,
+        OpenRouterEffortLevel.MEDIUM,
+        OpenRouterEffortLevel.HIGH,
     )
     assert (
         policies["deepseek/deepseek-chat"].request_style

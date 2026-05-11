@@ -7,6 +7,7 @@ from dr_llm.llm.config import (
 from dr_llm.llm.names import (
     ControlMode,
     EffortSpec,
+    OpenRouterEffortLevel,
     ProviderName,
     ThinkingLevel,
 )
@@ -135,6 +136,7 @@ __all__ = [
     "OpenAILegacyConfig",
     "OpenAIReasoning",
     "OpenRouterEffortConfig",
+    "OpenRouterEffortLevel",
     "OpenRouterNoControlConfig",
     "OpenRouterReasoning",
     "OpenRouterToggleConfig",

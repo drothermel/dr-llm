@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from dr_llm.llm.names import ControlMode, EffortSpec, ThinkingLevel
+from dr_llm.llm.names import (
+    ControlMode,
+    EffortSpec,
+    OpenRouterEffortLevel,
+    ThinkingLevel,
+)
 from dr_llm.llm.providers.impls.anthropic.families import AnthropicFamilies
 from dr_llm.llm.providers.impls.claude_code.families import ClaudeCodeFamilies
 from dr_llm.llm.providers.impls.codex.families import CodexFamilies
@@ -109,7 +114,11 @@ def test_openrouter_families_use_exact_policy_lookup() -> None:
                 model="provider/model",
                 request_style=OpenRouterControlRequestStyle.EFFORT,
                 supports_disable=False,
-                allowed_efforts=("low", "medium", "high"),
+                allowed_efforts=(
+                    OpenRouterEffortLevel.LOW,
+                    OpenRouterEffortLevel.MEDIUM,
+                    OpenRouterEffortLevel.HIGH,
+                ),
             )
         }
     )

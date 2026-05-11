@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_validator,
+)
 
 from dr_llm.llm.config import LlmConfig, SamplingControls
 from dr_llm.llm.names import OpenRouterEffortLevel, ProviderName
@@ -65,14 +71,17 @@ class OpenRouterNoControlConfig(_OpenRouterBaseConfig):
 
 
 class OpenRouterToggleConfig(_OpenRouterBaseConfig):
-    enabled: bool | None = None
+    reasoning_enabled: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("reasoning_enabled", "enabled"),
+    )
 
     def _expected_control_style(self) -> OpenRouterControlRequestStyle:
         return OpenRouterControlRequestStyle.ENABLED_FLAG
 
     @model_validator(mode="after")
-    def _validate_enabled(self) -> OpenRouterToggleConfig:
-        if self.enabled is not False:
+    def _validate_reasoning_enabled(self) -> OpenRouterToggleConfig:
+        if self.reasoning_enabled is not False:
             return self
         policy = OPENROUTER_FAMILIES.policy_for_model(self.model)
         if policy is not None and policy.supports_disable:
@@ -83,9 +92,9 @@ class OpenRouterToggleConfig(_OpenRouterBaseConfig):
         )
 
     def _reasoning(self) -> OpenRouterReasoning | None:
-        if self.enabled is None:
+        if self.reasoning_enabled is None:
             return None
-        return OpenRouterReasoning(enabled=self.enabled)
+        return OpenRouterReasoning(enabled=self.reasoning_enabled)
 
 
 class OpenRouterEffortConfig(_OpenRouterBaseConfig):

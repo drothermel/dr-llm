@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
+    OpenRouterEffortLevel,
     ProviderName,
     ControlMode,
     ThinkingLevel,
@@ -260,7 +261,7 @@ def _validate_openrouter_shape(
     *,
     model: str,
     enabled: bool | None,
-    effort: str | None,
+    effort: OpenRouterEffortLevel | None,
     families: OpenRouterFamilies,
 ) -> None:
     policy = families.policy_for_model(model)

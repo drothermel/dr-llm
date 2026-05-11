@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
 
 
 class ProviderName(StrEnum):
@@ -36,6 +35,12 @@ class EffortSpec(StrEnum):
     MAX = "max"
 
 
+class OpenRouterEffortLevel(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class ControlMode(StrEnum):
     UNSUPPORTED = "unsupported"
     OPENAI_EFFORT = "openai_effort"
@@ -57,6 +62,3 @@ class ReasoningWarningCode(StrEnum):
     UNSUPPORTED_FOR_PROVIDER = "unsupported_for_provider"
     MAPPED_WITH_HEURISTIC = "mapped_with_heuristic"
     PARTIALLY_SUPPORTED = "partially_supported"
-
-
-OpenRouterEffortLevel = Literal["low", "medium", "high"]

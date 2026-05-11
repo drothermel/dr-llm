@@ -13,6 +13,7 @@ from dr_llm.llm import (
     LlmRequest,
     Message,
     OpenAIReasoning,
+    OpenRouterEffortLevel,
     OpenRouterReasoning,
     ProviderName,
     SamplingControls,
@@ -90,7 +91,9 @@ def test_forwards_reasoning_and_parses_cost() -> None:
             {
                 "provider": ProviderName.OPENROUTER,
                 "model": "openai/gpt-oss-20b",
-                "reasoning": OpenRouterReasoning(effort="high"),
+                "reasoning": OpenRouterReasoning(
+                    effort=OpenRouterEffortLevel.HIGH
+                ),
             }
         )
         result = adapter.generate(request)

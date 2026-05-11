@@ -11,6 +11,7 @@ from dr_llm.llm import (
     GlmReasoning,
     GoogleReasoning,
     OpenAIReasoning,
+    OpenRouterEffortLevel,
     OpenRouterReasoning,
     ProviderName,
     ThinkingLevel,
@@ -184,13 +185,19 @@ def test_openrouter_controls_follow_curated_policy(
     ).default_reasoning == OpenRouterReasoning(enabled=True)
     assert orchestrator.controls(
         "openai/gpt-oss-20b"
-    ).default_reasoning == OpenRouterReasoning(effort="low")
+    ).default_reasoning == OpenRouterReasoning(
+        effort=OpenRouterEffortLevel.LOW
+    )
     assert orchestrator.controls(
         "openai/gpt-5-nano"
-    ).default_reasoning == OpenRouterReasoning(effort="low")
+    ).default_reasoning == OpenRouterReasoning(
+        effort=OpenRouterEffortLevel.LOW
+    )
     assert orchestrator.controls(
         "openai/gpt-5.4-nano"
-    ).default_reasoning == OpenRouterReasoning(effort="low")
+    ).default_reasoning == OpenRouterReasoning(
+        effort=OpenRouterEffortLevel.LOW
+    )
 
 
 def test_reasoning_controls_model_collects_all_defaults(

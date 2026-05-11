@@ -38,6 +38,7 @@ from dr_llm.llm import (
     OpenAIGptOssConfig,
     OpenAILegacyConfig,
     OpenRouterEffortConfig,
+    OpenRouterEffortLevel,
     OpenRouterNoControlConfig,
     OpenRouterToggleConfig,
     ProviderName,
@@ -299,16 +300,16 @@ def test_glm_authoring_configs_to_llm_config(
         (
             OpenRouterToggleConfig(
                 model="deepseek/deepseek-chat-v3.1",
-                enabled=False,
+                reasoning_enabled=False,
             ),
             OpenRouterReasoning(enabled=False),
         ),
         (
             OpenRouterEffortConfig(
                 model="openai/gpt-oss-120b",
-                effort="medium",
+                effort=OpenRouterEffortLevel.MEDIUM,
             ),
-            OpenRouterReasoning(effort="medium"),
+            OpenRouterReasoning(effort=OpenRouterEffortLevel.MEDIUM),
         ),
     ],
 )
@@ -481,7 +482,7 @@ def test_claude_code_authoring_configs_use_anthropic_family_capabilities() -> (
         (
             lambda: OpenRouterToggleConfig(
                 model="deepseek/deepseek-r1",
-                enabled=False,
+                reasoning_enabled=False,
             ),
             "reasoning cannot be disabled",
         ),
