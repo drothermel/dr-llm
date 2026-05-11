@@ -12,16 +12,16 @@ from dr_llm.llm.catalog.fetchers.common import (
     require_api_key,
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.core.controls import ProviderControls
 from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
 
-CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
+ControlsFn = Callable[[str], ProviderControls]
 
 
 def fetch_anthropic_models(
     provider: AnthropicProvider,
     *,
-    capabilities_fn: CapabilitiesFn,
+    controls_fn: ControlsFn,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     parsed = urlsplit(provider.config.base_url)
     path = parsed.path.rstrip("/")
@@ -49,15 +49,19 @@ def fetch_anthropic_models(
         model_id = str(item.get("id") or "").strip()
         if not model_id:
             return None
+        controls = controls_fn(model_id)
         return ModelCatalogEntry(
             provider=provider.name,
             model=model_id,
             display_name=str(item.get("display_name") or model_id),
             context_window=as_int(item.get("context_window")),
             max_output_tokens=as_int(item.get("max_output_tokens")),
-            reasoning_capabilities=capabilities_fn(model_id),
+            supports_reasoning=controls.supports_reasoning,
             supports_vision=None,
-            metadata=item,
+            metadata={
+                **item,
+                "dr_llm_controls": controls.catalog_metadata,
+            },
             fetched_at=now,
             source_quality="live",
         )

@@ -21,7 +21,7 @@ from dr_llm.llm import (
 from dr_llm.llm.providers.impls.glm.provider import GlmProvider
 from dr_llm.llm.providers.impls.openai.provider import OpenAIProvider
 from dr_llm.llm.providers.impls.openrouter.provider import OpenRouterProvider
-from dr_llm.llm.providers.impls.openai.families import (
+from dr_llm.llm.providers.impls.openai.controls import (
     OPENAI_THINKING_SUPPORTED_MODELS,
 )
 from dr_llm.llm.providers.transports.openai_compat.config import (

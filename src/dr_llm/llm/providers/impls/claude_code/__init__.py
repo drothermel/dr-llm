@@ -5,13 +5,9 @@ from dr_llm.llm.providers.impls.claude_code.config import (
     ClaudeCodeEffortConfig,
     ClaudeCodeLegacyConfig,
 )
-from dr_llm.llm.providers.impls.claude_code.families import (
-    ClaudeCodeModelFamily,
-)
 
 __all__ = [
     "ClaudeCodeAdaptiveConfig",
     "ClaudeCodeEffortConfig",
     "ClaudeCodeLegacyConfig",
-    "ClaudeCodeModelFamily",
 ]

@@ -8,7 +8,6 @@ from dr_llm.llm.providers.impls.openai.config import (
     OpenAIGpt54Config,
     OpenAILegacyConfig,
 )
-from dr_llm.llm.providers.impls.openai.families import OpenAIModelFamily
 
 __all__ = [
     "OpenAIGpt5Config",
@@ -17,5 +16,4 @@ __all__ = [
     "OpenAIGpt53Config",
     "OpenAIGpt54Config",
     "OpenAILegacyConfig",
-    "OpenAIModelFamily",
 ]

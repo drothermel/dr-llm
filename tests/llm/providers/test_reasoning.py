@@ -122,7 +122,7 @@ def test_anthropic_off_omits_thinking() -> None:
     assert result.thinking == {}
 
 
-def test_kimi_code_serializes_supported_reasoning_controls() -> None:
+def test_kimi_code_serializes_supported_reasoning_settings() -> None:
     assert (
         KimiCodeReasoningConfig.from_base(
             AnthropicReasoning(thinking_level=ThinkingLevel.NA)

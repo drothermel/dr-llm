@@ -12,7 +12,7 @@ from dr_llm.llm.providers.core.authoring import (
     require_model_family,
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.codex.families import (
+from dr_llm.llm.providers.impls.codex.controls import (
     CODEX_THINKING_SUPPORTED_MODELS,
     CodexModelFamily,
 )

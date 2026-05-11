@@ -1,20 +1,17 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
+from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
     ReasoningMode,
     ThinkingLevel,
-)
-from dr_llm.llm.providers.concepts.capabilities import (
-    ReasoningCapabilities,
-    ReasoningCapabilityRule,
-    resolve_capability_rules,
 )
 from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
 from dr_llm.llm.providers.concepts.reasoning import (
@@ -28,31 +25,33 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.impls.anthropic.controls import (
     validate_anthropic_budget_for_provider,
 )
-from dr_llm.llm.providers.impls.kimi_code.families import (
-    KimiCodeModelFamily,
+from dr_llm.llm.providers.core.request_defaults import (
+    ProviderRequestDefaults,
 )
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.response import CallMode
 
 
-def reasoning_capabilities_for_kimi_code(
-    model: str,
-) -> ReasoningCapabilities | None:
-    capability_rules = (
-        ReasoningCapabilityRule(
-            family=KimiCodeModelFamily.KIMI_FOR_CODING,
-            capabilities=ReasoningCapabilities(
-                mode=ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET,
-                min_budget_tokens=1024,
-                max_budget_tokens=128000,
-            ),
-        ),
-    )
-    return resolve_capability_rules(capability_rules, model)
+class KimiCodeModelFamily(StrEnum):
+    KIMI_FOR_CODING = "kimi-for-coding"
+
+    def in_family(self, model: str) -> bool:
+        return model == self
+
+
+KIMI_CODE_SUPPORTED_MODELS = (KimiCodeModelFamily.KIMI_FOR_CODING,)
+
+
+def kimi_code_reasoning_mode(model: str) -> ReasoningMode:
+    if KimiCodeModelFamily.KIMI_FOR_CODING.in_family(model):
+        return ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET
+    return ReasoningMode.UNSUPPORTED
 
 
 def supported_effort_levels_for_kimi_code(
     model: str,
 ) -> tuple[EffortSpec, ...]:
-    if reasoning_capabilities_for_kimi_code(model) is None:
+    if kimi_code_reasoning_mode(model) == ReasoningMode.UNSUPPORTED:
         return ()
     return FULL_EFFORT
 
@@ -90,13 +89,208 @@ def validate_reasoning_for_kimi_code(
             provider=ProviderName.KIMI_CODE,
             model=model,
             budget_tokens=reasoning.budget_tokens,
-            capabilities=reasoning_capabilities_for_kimi_code(model),
+            min_budget_tokens=1024,
+            max_budget_tokens=128000,
         )
         return
     if reasoning.budget_tokens is not None:
         raise ValueError(
             "kimi-code budget_tokens are only valid when "
             "thinking_level is 'budget'"
+        )
+
+
+class KimiCodeControls(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider: ProviderName = ProviderName.KIMI_CODE
+    model: str
+    mode: CallMode
+
+    @property
+    def reasoning_mode(self) -> ReasoningMode:
+        return kimi_code_reasoning_mode(self.model)
+
+    @property
+    def supports_reasoning(self) -> bool:
+        return self.reasoning_mode != ReasoningMode.UNSUPPORTED
+
+    @property
+    def min_budget_tokens(self) -> int | None:
+        if self.supports_reasoning:
+            return 1024
+        return None
+
+    @property
+    def max_budget_tokens(self) -> int | None:
+        if self.supports_reasoning:
+            return 128000
+        return None
+
+    @property
+    def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
+        if self.reasoning_mode == ReasoningMode.UNSUPPORTED:
+            return (ThinkingLevel.NA,)
+        if self.reasoning_mode == ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET:
+            return (
+                ThinkingLevel.OFF,
+                ThinkingLevel.ADAPTIVE,
+                ThinkingLevel.BUDGET,
+            )
+        raise ValueError(
+            f"unexpected reasoning mode for provider={self.provider!r} "
+            f"model={self.model!r}: {self.reasoning_mode!r}"
+        )
+
+    @property
+    def default_thinking_level(self) -> ThinkingLevel:
+        if ThinkingLevel.OFF in self.supported_thinking_levels:
+            return ThinkingLevel.OFF
+        return ThinkingLevel.NA
+
+    @property
+    def supported_effort_levels(self) -> tuple[EffortSpec, ...]:
+        return supported_effort_levels_for_kimi_code(self.model)
+
+    @property
+    def default_effort(self) -> EffortSpec:
+        if self.supported_effort_levels:
+            return self.supported_effort_levels[0]
+        return EffortSpec.NA
+
+    @property
+    def default_reasoning(self) -> ReasoningSpec | None:
+        return self.reasoning_for_thinking_level(
+            thinking_level=self.default_thinking_level,
+            budget_tokens=self.min_budget_tokens,
+        )
+
+    @property
+    def catalog_metadata(self) -> dict[str, Any]:
+        return {
+            "reasoning_mode": self.reasoning_mode,
+            "min_budget_tokens": self.min_budget_tokens,
+            "max_budget_tokens": self.max_budget_tokens,
+            "supported_thinking_levels": self.supported_thinking_levels,
+            "default_thinking_level": self.default_thinking_level,
+            "supported_effort_levels": self.supported_effort_levels,
+            "default_effort": self.default_effort,
+        }
+
+    def request_defaults(self) -> ProviderRequestDefaults:
+        return ProviderRequestDefaults(
+            provider=self.provider,
+            model=self.model,
+            mode=self.mode,
+            max_tokens=16384,
+            max_tokens_required=True,
+            effort=self.default_effort,
+            reasoning=self.default_reasoning,
+        )
+
+    def resolve_reasoning(
+        self,
+        *,
+        reasoning: ReasoningSpec | None,
+        thinking_level: ThinkingLevel | None,
+        budget_tokens: int | None,
+    ) -> ReasoningSpec | None:
+        if reasoning is not None:
+            return reasoning
+        if thinking_level is not None:
+            return self.reasoning_for_thinking_level(
+                thinking_level=thinking_level,
+                budget_tokens=budget_tokens,
+            )
+        return self.default_reasoning
+
+    def resolve_effort(self, effort: EffortSpec | None) -> EffortSpec:
+        if effort is None:
+            return self.default_effort
+        if effort == EffortSpec.NA and self.default_effort != EffortSpec.NA:
+            return self.default_effort
+        return effort
+
+    def resolve_sampling(
+        self, sampling: SamplingControls | None
+    ) -> SamplingControls | None:
+        if sampling is not None and not sampling.is_empty():
+            raise ValueError(
+                f"sampling is not supported for provider={self.provider!r}"
+            )
+        return None
+
+    def reasoning_for_thinking_level(
+        self,
+        *,
+        thinking_level: ThinkingLevel,
+        budget_tokens: int | None = None,
+    ) -> ReasoningSpec | None:
+        if thinking_level == ThinkingLevel.NA:
+            return None
+        if thinking_level == ThinkingLevel.BUDGET:
+            return AnthropicReasoning(
+                thinking_level=thinking_level,
+                budget_tokens=_require_budget_tokens(
+                    provider=self.provider,
+                    budget_tokens=budget_tokens,
+                ),
+            )
+        return AnthropicReasoning(thinking_level=thinking_level)
+
+    def validate_request(self, request: LlmRequest) -> list:
+        self._validate_max_tokens_required(request)
+        _validate_effort(
+            provider=self.provider,
+            model=self.model,
+            effort=request.effort,
+            supported_effort_levels=self.supported_effort_levels,
+        )
+        validate_reasoning_for_kimi_code(
+            model=request.model, reasoning=request.reasoning
+        )
+        if request.has_sampling_controls:
+            raise ValueError(
+                f"sampling is not supported for provider={self.provider!r}"
+            )
+        return []
+
+    def _validate_max_tokens_required(self, request: LlmRequest) -> None:
+        if request.max_tokens is None:
+            raise ValueError(
+                f"max_tokens is required for provider={self.provider!r}"
+            )
+
+
+def _require_budget_tokens(*, provider: str, budget_tokens: int | None) -> int:
+    if budget_tokens is None:
+        raise ValueError(f"{provider} budget thinking requires budget_tokens")
+    return budget_tokens
+
+
+def _validate_effort(
+    *,
+    provider: str,
+    model: str,
+    effort: EffortSpec,
+    supported_effort_levels: tuple[EffortSpec, ...],
+) -> None:
+    if not supported_effort_levels:
+        if effort != EffortSpec.NA:
+            raise ValueError(
+                f"effort is not supported for provider={provider!r} "
+                f"model={model!r}"
+            )
+        return
+    if effort == EffortSpec.NA:
+        raise ValueError(
+            f"effort is required for provider={provider!r} model={model!r}"
+        )
+    if effort not in supported_effort_levels:
+        allowed = ", ".join(str(level) for level in supported_effort_levels)
+        raise ValueError(
+            f"effort={effort!r} is not supported for provider={provider!r} "
+            f"model={model!r}; allowed levels: {allowed}"
         )
 
 

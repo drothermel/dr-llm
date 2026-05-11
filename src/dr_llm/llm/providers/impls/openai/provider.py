@@ -6,9 +6,9 @@ import httpx
 
 from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.names import ApiKeyNames
-from dr_llm.llm.providers.impls.openai.controls import OpenAIReasoningConfig
-from dr_llm.llm.providers.impls.openai.families import (
+from dr_llm.llm.providers.impls.openai.controls import (
     OPENAI_THINKING_SUPPORTED_MODELS,
+    OpenAIReasoningConfig,
 )
 from dr_llm.llm.providers.transports.api_provider import ApiProvider
 from dr_llm.llm.providers.transports.openai_compat.config import (

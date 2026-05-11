@@ -11,17 +11,16 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogPricing
 from dr_llm.llm.coercion import as_float, as_int
-from dr_llm.llm.names import ReasoningMode
-from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.core.controls import ProviderControls
 from dr_llm.llm.providers.transports.api_provider import ApiProvider
 
-CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
+ControlsFn = Callable[[str], ProviderControls]
 
 
 def fetch_openai_compat_models(
     provider: ApiProvider,
     *,
-    capabilities_fn: CapabilitiesFn,
+    controls_fn: ControlsFn,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     base = provider.config.base_url.rstrip("/")
     endpoint = f"{base}/models"
@@ -39,7 +38,7 @@ def fetch_openai_compat_models(
             item=item,
             now=now,
             provider_name=provider.name,
-            capabilities_fn=capabilities_fn,
+            controls_fn=controls_fn,
         )
 
     return fetch_models_with_template(
@@ -55,16 +54,16 @@ def _process_openai_model_item(
     item: dict[str, Any],
     now: datetime,
     provider_name: str,
-    capabilities_fn: CapabilitiesFn,
+    controls_fn: ControlsFn,
 ) -> ModelCatalogEntry | None:
     model_id = str(item.get("id") or item.get("name") or "").strip()
     if not model_id:
         return None
     pricing = _parse_pricing(item.get("pricing"))
-    reasoning_capabilities = capabilities_fn(model_id)
-    supports_reasoning, reasoning_capabilities = _resolve_reasoning_support(
+    controls = controls_fn(model_id)
+    supports_reasoning = _resolve_reasoning_support(
         supported_params=item.get("supported_parameters"),
-        reasoning_capabilities=reasoning_capabilities,
+        controls=controls,
     )
     return ModelCatalogEntry(
         provider=provider_name,
@@ -73,10 +72,12 @@ def _process_openai_model_item(
         context_window=as_int(item.get("context_length")),
         max_output_tokens=as_int(item.get("max_output_tokens")),
         supports_reasoning=supports_reasoning,
-        reasoning_capabilities=reasoning_capabilities,
         supports_vision=_detect_supports_vision(item),
         pricing=pricing,
-        metadata=item,
+        metadata={
+            **item,
+            "dr_llm_controls": controls.catalog_metadata,
+        },
         fetched_at=now,
         source_quality="live",
     )
@@ -85,19 +86,15 @@ def _process_openai_model_item(
 def _resolve_reasoning_support(
     *,
     supported_params: Any,
-    reasoning_capabilities: ReasoningCapabilities | None,
-) -> tuple[bool | None, ReasoningCapabilities | None]:
+    controls: ProviderControls,
+) -> bool | None:
     if not isinstance(supported_params, list):
-        return None, reasoning_capabilities
+        return controls.supports_reasoning
     normalized = {str(param) for param in supported_params}
     supports_reasoning = (
         "reasoning" in normalized or "reasoning.effort" in normalized
     )
-    if supports_reasoning and reasoning_capabilities is None:
-        reasoning_capabilities = ReasoningCapabilities(
-            mode=ReasoningMode.OPENAI_EFFORT
-        )
-    return supports_reasoning, reasoning_capabilities
+    return supports_reasoning or controls.supports_reasoning
 
 
 def _parse_pricing(value: Any) -> ModelCatalogPricing | None:

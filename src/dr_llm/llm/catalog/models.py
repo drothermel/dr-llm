@@ -3,24 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-from dr_llm.llm.providers.concepts.capabilities import (
-    ReasoningCapabilities,
-)
-
-
-def _derive_supports_reasoning_from_capabilities(
-    capabilities: Any,
-) -> bool | None:
-    if capabilities is None:
-        return None
-    if isinstance(capabilities, ReasoningCapabilities):
-        return capabilities.supports_reasoning
-    if isinstance(capabilities, dict):
-        mode = capabilities.get("mode", "unsupported")
-        return mode != "unsupported"
-    return None
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelCatalogPricing(BaseModel):
@@ -51,25 +34,12 @@ class ModelCatalogEntry(BaseModel):
     context_window: int | None = None
     max_output_tokens: int | None = None
     supports_reasoning: bool | None = None
-    reasoning_capabilities: ReasoningCapabilities | None = None
     supports_vision: bool | None = None
     pricing: ModelCatalogPricing | None = None
     rate_limits: ModelCatalogRateLimit | None = None
     source_quality: Literal["live", "static"] = "live"
     metadata: dict[str, Any] = Field(default_factory=dict)
     fetched_at: datetime | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _populate_supports_reasoning(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-        derived = _derive_supports_reasoning_from_capabilities(
-            data.get("reasoning_capabilities")
-        )
-        if derived is not None:
-            data["supports_reasoning"] = derived
-        return data
 
 
 class ModelCatalogQuery(BaseModel):

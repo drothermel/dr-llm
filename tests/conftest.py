@@ -21,17 +21,13 @@ from dr_llm.llm import (
     ProviderName,
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
-from dr_llm.llm.names import ReasoningMode, ThinkingLevel
+from dr_llm.llm.names import ThinkingLevel
 from dr_llm.llm.providers.core.base import ProviderTransport
-from dr_llm.llm.providers.concepts.capabilities import (
-    ModelCapabilities,
-    ReasoningCapabilities,
-)
 from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.core.reasoning_controls import ReasoningControls
+from dr_llm.llm.providers.core.controls import ProviderControls
 
 os.environ.setdefault(
     "DR_LLM_TEST_DATABASE_URL",
@@ -57,6 +53,91 @@ class FakeProvider(ProviderTransport):
 
     def close(self) -> None:
         self.close_calls += 1
+
+
+class FakeControls:
+    def __init__(self, *, provider: str, model: str, mode: CallMode) -> None:
+        self.provider = provider
+        self.model = model
+        self.mode = mode
+
+    @property
+    def supports_reasoning(self) -> bool:
+        return False
+
+    @property
+    def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
+        return (ThinkingLevel.NA,)
+
+    @property
+    def default_thinking_level(self) -> ThinkingLevel:
+        return ThinkingLevel.NA
+
+    @property
+    def supported_effort_levels(self) -> tuple[EffortSpec, ...]:
+        return ()
+
+    @property
+    def default_effort(self) -> EffortSpec:
+        return EffortSpec.NA
+
+    @property
+    def default_reasoning(self) -> ReasoningSpec | None:
+        return None
+
+    @property
+    def catalog_metadata(self) -> dict[str, Any]:
+        return {
+            "reasoning_mode": "unsupported",
+            "supported_thinking_levels": self.supported_thinking_levels,
+            "default_thinking_level": self.default_thinking_level,
+            "supported_effort_levels": self.supported_effort_levels,
+            "default_effort": self.default_effort,
+        }
+
+    def request_defaults(self) -> ProviderRequestDefaults:
+        return ProviderRequestDefaults(
+            provider=self.provider,
+            model=self.model,
+            mode=self.mode,
+            effort=self.default_effort,
+            reasoning=self.default_reasoning,
+        )
+
+    def resolve_reasoning(
+        self,
+        *,
+        reasoning: ReasoningSpec | None,
+        thinking_level: ThinkingLevel | None,
+        budget_tokens: int | None,
+    ) -> ReasoningSpec | None:
+        del thinking_level, budget_tokens
+        return reasoning
+
+    def resolve_effort(self, effort: EffortSpec | None) -> EffortSpec:
+        if effort is None:
+            return self.default_effort
+        return effort
+
+    def resolve_sampling(
+        self, sampling: SamplingControls | None
+    ) -> SamplingControls | None:
+        if sampling is not None and not sampling.is_empty():
+            return sampling
+        return None
+
+    def reasoning_for_thinking_level(
+        self,
+        *,
+        thinking_level: ThinkingLevel,
+        budget_tokens: int | None = None,
+    ) -> ReasoningSpec | None:
+        del thinking_level, budget_tokens
+        return None
+
+    def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
+        del request
+        return []
 
 
 class FakeOrchestrator:
@@ -89,21 +170,11 @@ class FakeOrchestrator:
     def is_available(self) -> bool:
         return self.availability_status().available
 
-    def model_capabilities(self, model: str) -> ModelCapabilities:
-        del model
-        return ModelCapabilities(
-            reasoning=ReasoningCapabilities(mode=ReasoningMode.UNSUPPORTED),
-        )
-
-    def reasoning_controls(self, model: str) -> ReasoningControls:
-        return ReasoningControls(
+    def controls(self, model: str) -> ProviderControls:
+        return FakeControls(
             provider=self.name,
             model=model,
-            supported_thinking_levels=(ThinkingLevel.NA,),
-            default_thinking_level=ThinkingLevel.NA,
-            supported_effort_levels=(),
-            default_effort=EffortSpec.NA,
-            default_reasoning=None,
+            mode=self.mode,
         )
 
     def request_defaults(self, model: str) -> ProviderRequestDefaults:
@@ -188,16 +259,6 @@ class FakeOrchestrator:
                 f"config provider {config.provider!r} does not match "
                 f"orchestrator provider {self.name!r}"
             )
-
-    def reasoning_for_thinking_level(
-        self,
-        *,
-        model: str,
-        thinking_level: ThinkingLevel,
-        budget_tokens: int | None = None,
-    ) -> ReasoningSpec | None:
-        del model, thinking_level, budget_tokens
-        return None
 
     def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
         del request

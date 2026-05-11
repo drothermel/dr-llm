@@ -26,7 +26,6 @@ from dr_llm.llm.providers.impls.openrouter.orchestrator import (
     OpenRouterOrchestrator,
 )
 from dr_llm.llm.providers.impls.openrouter.provider import OpenRouterProvider
-from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 
 
 class _GoogleSubclassProvider(GoogleProvider):
@@ -46,10 +45,10 @@ def test_google_orchestrator_fetches_with_wrapped_provider(
     def fake_fetch_google_models(
         received_provider: GoogleProvider,
         *,
-        capabilities_fn,
+        controls_fn,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         assert received_provider is provider
-        assert capabilities_fn("gemini-test") is None
+        assert controls_fn("gemini-test").supports_reasoning is False
         return expected
 
     monkeypatch.setattr(
@@ -76,12 +75,12 @@ def test_kimi_orchestrator_fetches_with_wrapped_provider(
     def fake_fetch_kimi_models(
         received_provider: KimiCodeProvider,
         *,
-        capabilities_fn,
+        controls_fn,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         assert received_provider is provider
         assert received_provider.config.api_key == "kimi-secret"
         assert received_provider.name == ProviderName.KIMI_CODE
-        assert capabilities_fn("kimi-for-coding") is not None
+        assert controls_fn("kimi-for-coding").supports_reasoning is True
         return [], {"source": "kimi"}
 
     monkeypatch.setattr(
@@ -108,10 +107,10 @@ def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
     def fake_fetch_openai_compat_models(
         received_provider: OpenAIProvider,
         *,
-        capabilities_fn,
+        controls_fn,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
         assert received_provider is provider
-        assert isinstance(capabilities_fn("gpt-5-mini"), ReasoningCapabilities)
+        assert controls_fn("gpt-5-mini").supports_reasoning is True
         return [], {"source": "openai_compat"}
 
     monkeypatch.setattr(
@@ -172,3 +171,4 @@ def test_openrouter_orchestrator_applies_policy_to_live_catalog(
     ]
     assert filtered[0].supports_reasoning is True
     assert filtered[1].supports_reasoning is False
+    assert "dr_llm_controls" in filtered[0].metadata

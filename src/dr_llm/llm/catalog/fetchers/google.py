@@ -12,16 +12,16 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.coercion import as_int
-from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.core.controls import ProviderControls
 from dr_llm.llm.providers.impls.google.provider import GoogleProvider
 
-CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
+ControlsFn = Callable[[str], ProviderControls]
 
 
 def fetch_google_models(
     provider: GoogleProvider,
     *,
-    capabilities_fn: CapabilitiesFn,
+    controls_fn: ControlsFn,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     key = require_api_key(
         api_key=provider.config.api_key,
@@ -37,6 +37,7 @@ def fetch_google_models(
         if not name_raw:
             return None
         model_name = name_raw.split("/")[-1]
+        controls = controls_fn(model_name)
         supports_reasoning = (
             as_bool(item.get("thinking")) if "thinking" in item else None
         )
@@ -53,10 +54,16 @@ def fetch_google_models(
             display_name=str(item.get("displayName") or model_name),
             context_window=as_int(item.get("inputTokenLimit")),
             max_output_tokens=as_int(item.get("outputTokenLimit")),
-            supports_reasoning=supports_reasoning,
-            reasoning_capabilities=capabilities_fn(model_name),
+            supports_reasoning=(
+                supports_reasoning
+                if supports_reasoning is not None
+                else controls.supports_reasoning
+            ),
             supports_vision=supports_vision,
-            metadata=item,
+            metadata={
+                **item,
+                "dr_llm_controls": controls.catalog_metadata,
+            },
             fetched_at=now,
             source_quality="live",
         )

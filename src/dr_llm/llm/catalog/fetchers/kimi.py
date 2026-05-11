@@ -12,19 +12,19 @@ from dr_llm.llm.catalog.fetchers.common import (
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.names import ApiKeyNames
-from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.core.controls import ProviderControls
 from dr_llm.llm.providers.impls.kimi_code.provider import (
     KimiCodeProvider,
     KimiCodeUrls,
 )
 
-CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
+ControlsFn = Callable[[str], ProviderControls]
 
 
 def fetch_kimi_models(
     provider: KimiCodeProvider,
     *,
-    capabilities_fn: CapabilitiesFn,
+    controls_fn: ControlsFn,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
     provider_name = provider.name
     key = require_api_key(
@@ -39,16 +39,23 @@ def fetch_kimi_models(
         model_id = str(item.get("id") or "").strip()
         if not model_id:
             return None
+        controls = controls_fn(model_id)
         return ModelCatalogEntry(
             provider=provider_name,
             model=model_id,
             display_name=str(item.get("display_name") or model_id),
             context_window=as_int(item.get("context_length")),
             max_output_tokens=as_int(item.get("max_output_tokens")),
-            supports_reasoning=as_bool(item.get("supports_reasoning")),
-            reasoning_capabilities=capabilities_fn(model_id),
+            supports_reasoning=(
+                as_bool(item.get("supports_reasoning"))
+                if item.get("supports_reasoning") is not None
+                else controls.supports_reasoning
+            ),
             supports_vision=True,
-            metadata=item,
+            metadata={
+                **item,
+                "dr_llm_controls": controls.catalog_metadata,
+            },
             fetched_at=now,
             source_quality="live",
         )

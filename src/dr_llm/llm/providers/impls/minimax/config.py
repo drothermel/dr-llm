@@ -9,9 +9,9 @@ from dr_llm.llm.names import EffortSpec, ProviderName
 from dr_llm.llm.providers.core.authoring import build_provider_config
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 from dr_llm.llm.providers.impls.minimax.controls import (
+    MiniMaxModelFamily,
     supported_effort_levels_for_minimax,
 )
-from dr_llm.llm.providers.impls.minimax.families import MiniMaxModelFamily
 
 type _MiniMaxEffort = Literal[
     EffortSpec.LOW,

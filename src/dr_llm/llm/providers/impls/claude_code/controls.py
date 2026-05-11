@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-from pydantic import Field
+from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
+from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import EffortSpec, ReasoningMode
 from dr_llm.llm.names import ProviderName, ThinkingLevel
+from dr_llm.llm.providers.concepts.model_family import (
+    model_matches_any_family,
+)
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     BaseProviderReasoningConfig,
@@ -16,29 +23,27 @@ from dr_llm.llm.providers.impls.anthropic.controls import (
     anthropic_supports_adaptive_thinking,
     supported_effort_levels_for_anthropic,
 )
-from dr_llm.llm.providers.concepts.capabilities import (
-    ReasoningCapabilities,
-    ReasoningCapabilityRule,
-    resolve_capability_rules,
+from dr_llm.llm.providers.core.request_defaults import (
+    ProviderRequestDefaults,
 )
-from dr_llm.llm.providers.impls.claude_code.families import (
-    CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES,
-)
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.response import CallMode
 
 
-def reasoning_capabilities_for_claude_code(
-    model: str,
-) -> ReasoningCapabilities | None:
-    capability_rules = tuple(
-        ReasoningCapabilityRule(
-            family=family,
-            capabilities=ReasoningCapabilities(
-                mode=ReasoningMode.CLAUDE_CLI_EFFORT
-            ),
-        )
-        for family in CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES
-    )
-    return resolve_capability_rules(capability_rules, model)
+class ClaudeCodeModelFamily(StrEnum):
+    CLAUDE = "claude-"
+
+    def in_family(self, model: str) -> bool:
+        return model.startswith(self)
+
+
+CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES = (ClaudeCodeModelFamily.CLAUDE,)
+
+
+def claude_code_reasoning_mode(model: str) -> ReasoningMode:
+    if model_matches_any_family(model, CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES):
+        return ReasoningMode.CLAUDE_CLI_EFFORT
+    return ReasoningMode.UNSUPPORTED
 
 
 def supported_effort_levels_for_claude_code(
@@ -81,6 +86,157 @@ def validate_reasoning_for_claude_code(
     if reasoning.thinking_level != ThinkingLevel.NA:
         msg = f"{ProviderName.CLAUDE_CODE} model {model!r} does not support explicit anthropic thinking; use thinking_level='na'"
         raise ValueError(msg)
+
+
+class ClaudeCodeControls(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider: ProviderName = ProviderName.CLAUDE_CODE
+    model: str
+    mode: CallMode
+
+    @property
+    def reasoning_mode(self) -> ReasoningMode:
+        return claude_code_reasoning_mode(self.model)
+
+    @property
+    def supports_reasoning(self) -> bool:
+        return self.reasoning_mode != ReasoningMode.UNSUPPORTED
+
+    @property
+    def supported_thinking_levels(self) -> tuple[ThinkingLevel, ...]:
+        if anthropic_supports_adaptive_thinking(self.model):
+            return (ThinkingLevel.ADAPTIVE,)
+        return (ThinkingLevel.NA,)
+
+    @property
+    def default_thinking_level(self) -> ThinkingLevel:
+        return self.supported_thinking_levels[0]
+
+    @property
+    def supported_effort_levels(self) -> tuple[EffortSpec, ...]:
+        return supported_effort_levels_for_claude_code(self.model)
+
+    @property
+    def default_effort(self) -> EffortSpec:
+        if self.supported_effort_levels:
+            return self.supported_effort_levels[0]
+        return EffortSpec.NA
+
+    @property
+    def default_reasoning(self) -> ReasoningSpec | None:
+        return self.reasoning_for_thinking_level(
+            thinking_level=self.default_thinking_level
+        )
+
+    @property
+    def catalog_metadata(self) -> dict[str, Any]:
+        return {
+            "reasoning_mode": self.reasoning_mode,
+            "supported_thinking_levels": self.supported_thinking_levels,
+            "default_thinking_level": self.default_thinking_level,
+            "supported_effort_levels": self.supported_effort_levels,
+            "default_effort": self.default_effort,
+        }
+
+    def request_defaults(self) -> ProviderRequestDefaults:
+        return ProviderRequestDefaults(
+            provider=self.provider,
+            model=self.model,
+            mode=self.mode,
+            effort=self.default_effort,
+            reasoning=self.default_reasoning,
+        )
+
+    def resolve_reasoning(
+        self,
+        *,
+        reasoning: ReasoningSpec | None,
+        thinking_level: ThinkingLevel | None,
+        budget_tokens: int | None,
+    ) -> ReasoningSpec | None:
+        del budget_tokens
+        if reasoning is not None:
+            return reasoning
+        if thinking_level is not None:
+            return self.reasoning_for_thinking_level(
+                thinking_level=thinking_level
+            )
+        return self.default_reasoning
+
+    def resolve_effort(self, effort: EffortSpec | None) -> EffortSpec:
+        if effort is None:
+            return self.default_effort
+        if effort == EffortSpec.NA and self.default_effort != EffortSpec.NA:
+            return self.default_effort
+        return effort
+
+    def resolve_sampling(
+        self, sampling: SamplingControls | None
+    ) -> SamplingControls | None:
+        if sampling is not None and not sampling.is_empty():
+            raise ValueError(
+                f"sampling is not supported for provider={self.provider!r}"
+            )
+        return None
+
+    def reasoning_for_thinking_level(
+        self,
+        *,
+        thinking_level: ThinkingLevel,
+        budget_tokens: int | None = None,
+    ) -> ReasoningSpec | None:
+        del budget_tokens
+        if thinking_level == ThinkingLevel.ADAPTIVE:
+            return AnthropicReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
+        if thinking_level == ThinkingLevel.NA:
+            return None
+        raise ValueError(
+            f"unsupported {self.provider} thinking level for "
+            f"model={self.model!r}: {thinking_level!r}"
+        )
+
+    def validate_request(self, request: LlmRequest) -> list:
+        _validate_effort(
+            provider=self.provider,
+            model=self.model,
+            effort=request.effort,
+            supported_effort_levels=self.supported_effort_levels,
+        )
+        validate_reasoning_for_claude_code(
+            model=request.model, reasoning=request.reasoning
+        )
+        if request.has_sampling_controls:
+            raise ValueError(
+                f"sampling is not supported for provider={self.provider!r}"
+            )
+        return []
+
+
+def _validate_effort(
+    *,
+    provider: str,
+    model: str,
+    effort: EffortSpec,
+    supported_effort_levels: tuple[EffortSpec, ...],
+) -> None:
+    if not supported_effort_levels:
+        if effort != EffortSpec.NA:
+            raise ValueError(
+                f"effort is not supported for provider={provider!r} "
+                f"model={model!r}"
+            )
+        return
+    if effort == EffortSpec.NA:
+        raise ValueError(
+            f"effort is required for provider={provider!r} model={model!r}"
+        )
+    if effort not in supported_effort_levels:
+        allowed = ", ".join(str(level) for level in supported_effort_levels)
+        raise ValueError(
+            f"effort={effort!r} is not supported for provider={provider!r} "
+            f"model={model!r}; allowed levels: {allowed}"
+        )
 
 
 class ClaudeHeadlessReasoningConfig(BaseProviderReasoningConfig):

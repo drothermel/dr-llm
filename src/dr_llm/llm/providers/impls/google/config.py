@@ -16,8 +16,10 @@ from dr_llm.llm.providers.core.authoring import (
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 from dr_llm.llm.providers.impls.google.controls import (
-    reasoning_capabilities_for_google,
+    GoogleControls,
+    google_reasoning_mode,
 )
+from dr_llm.llm.response import CallMode
 
 type _GoogleBudgetThinkingLevel = Literal[
     ThinkingLevel.OFF,
@@ -102,11 +104,10 @@ class GoogleBudgetConfig(_GoogleBaseConfig):
         ):
             raise ValueError("budget_tokens requires thinking_level='budget'")
         if self.budget_tokens is not None:
-            capabilities = reasoning_capabilities_for_google(self.model)
+            controls = GoogleControls(model=self.model, mode=CallMode.api)
             if (
-                capabilities is None
-                or capabilities.min_budget_tokens is None
-                or capabilities.max_budget_tokens is None
+                controls.min_budget_tokens is None
+                or controls.max_budget_tokens is None
             ):
                 raise ValueError(
                     f"{type(self).__name__} budget thinking is not supported "
@@ -116,8 +117,8 @@ class GoogleBudgetConfig(_GoogleBaseConfig):
                 provider=self.provider,
                 model=self.model,
                 budget_tokens=self.budget_tokens,
-                min_tokens=capabilities.min_budget_tokens,
-                max_tokens=capabilities.max_budget_tokens,
+                min_tokens=controls.min_budget_tokens,
+                max_tokens=controls.max_budget_tokens,
             )
         return self
 
@@ -146,15 +147,15 @@ class GoogleLevelConfig(_GoogleBaseConfig):
             )
         if self.thinking_level is None:
             return self
-        capabilities = reasoning_capabilities_for_google(self.model)
-        if capabilities is None:
+        controls = GoogleControls(model=self.model, mode=CallMode.api)
+        if not controls.google_thinking_levels:
             raise ValueError(
                 f"{type(self).__name__} thinking is not supported for "
                 f"model={self.model!r}"
             )
         allowed_levels = {
             google_literal_to_thinking_level(level)
-            for level in capabilities.google_thinking_levels
+            for level in controls.google_thinking_levels
         }
         if self.thinking_level not in allowed_levels:
             allowed = ", ".join(sorted(str(level) for level in allowed_levels))
@@ -175,7 +176,4 @@ class GoogleLevelConfig(_GoogleBaseConfig):
 
 
 def _google_reasoning_mode(model: str) -> ReasoningMode:
-    capabilities = reasoning_capabilities_for_google(model)
-    if capabilities is None:
-        return ReasoningMode.UNSUPPORTED
-    return capabilities.mode
+    return google_reasoning_mode(model)

@@ -57,10 +57,8 @@ def budget_tokens_for_level(
 ) -> int | None:
     if thinking_level != ThinkingLevel.BUDGET:
         return None
-    return (
-        registry.get(provider)
-        .model_capabilities(model)
-        .reasoning.min_budget_tokens
+    return getattr(
+        registry.get(provider).controls(model), "min_budget_tokens", None
     )
 
 
@@ -146,10 +144,9 @@ def make_request(
     orchestrator = registry.get(provider)
     defaults = orchestrator.request_defaults(model)
     max_tokens = defaults.max_tokens
-    reasoning = reasoning_override or registry.get(
-        provider
+    reasoning = reasoning_override or registry.get(provider).controls(
+        model
     ).reasoning_for_thinking_level(
-        model=model,
         thinking_level=thinking_level,
         budget_tokens=budget_tokens_for_level(
             registry, provider, model, thinking_level
@@ -235,7 +232,7 @@ def run_model_sweep(
     print("\n== models ==")
     for provider in providers:
         for model in DEMO_THINKING_SWEEP_MODELS[provider]:
-            controls = registry.get(provider).reasoning_controls(model)
+            controls = registry.get(provider).controls(model)
             run_attempt(
                 registry=registry,
                 provider=provider,
@@ -261,7 +258,7 @@ def run_thinking_sweep(
         if provider == ProviderName.OPENROUTER:
             continue
         for model in DEMO_THINKING_SWEEP_MODELS[provider]:
-            controls = registry.get(provider).reasoning_controls(model)
+            controls = registry.get(provider).controls(model)
             for thinking_level in controls.supported_thinking_levels:
                 run_attempt(
                     registry=registry,
@@ -285,7 +282,7 @@ def run_effort_sweep(
         if provider == ProviderName.OPENROUTER:
             continue
         for model in DEMO_THINKING_SWEEP_MODELS[provider]:
-            controls = registry.get(provider).reasoning_controls(model)
+            controls = registry.get(provider).controls(model)
             for effort in controls.supported_effort_levels:
                 run_attempt(
                     registry=registry,

@@ -10,7 +10,7 @@ from dr_llm.llm.providers.concepts.reasoning import GlmReasoning
 from dr_llm.llm.providers.core.authoring import build_provider_config
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 from dr_llm.llm.providers.impls.glm.controls import (
-    reasoning_capabilities_for_glm,
+    glm_reasoning_mode,
 )
 
 type _GlmThinkingLevel = Literal[
@@ -77,7 +77,4 @@ class GlmThinkingConfig(_GlmBaseConfig):
 
 
 def _glm_reasoning_mode(model: str) -> ReasoningMode:
-    capabilities = reasoning_capabilities_for_glm(model)
-    if capabilities is None:
-        return ReasoningMode.UNSUPPORTED
-    return capabilities.mode
+    return glm_reasoning_mode(model)

@@ -29,6 +29,24 @@ def test_openrouter_policy_applies_verified_overrides() -> None:
         == OpenRouterReasoningRequestStyle.EFFORT
     )
     assert (
+        policies["openai/gpt-5-nano"].request_style
+        == OpenRouterReasoningRequestStyle.EFFORT
+    )
+    assert policies["openai/gpt-5-nano"].allowed_efforts == (
+        "low",
+        "medium",
+        "high",
+    )
+    assert (
+        policies["openai/gpt-5.4-nano"].request_style
+        == OpenRouterReasoningRequestStyle.EFFORT
+    )
+    assert policies["openai/gpt-5.4-nano"].allowed_efforts == (
+        "low",
+        "medium",
+        "high",
+    )
+    assert (
         policies["deepseek/deepseek-chat"].request_style
         == OpenRouterReasoningRequestStyle.NONE
     )

@@ -6,8 +6,9 @@ from dr_llm.llm.catalog.fetchers.static import (
 )
 from dr_llm.llm.providers.core.base import ProviderTransport
 from dr_llm.llm.providers.core.config import ProviderConfig
+from dr_llm.llm.providers.impls.openai.controls import OpenAIControls
 from dr_llm.llm.request import LlmRequest
-from dr_llm.llm.response import LlmResponse
+from dr_llm.llm.response import CallMode, LlmResponse
 
 
 class StaticCatalogTestProvider(ProviderTransport):
@@ -28,7 +29,9 @@ def test_build_static_catalog_entries_derives_display_name() -> None:
         models=["claude-sonnet-4-6"],
         docs_url="https://example.com/models",
         supports_vision=True,
-        capabilities_fn=lambda model: None,
+        controls_fn=lambda model: OpenAIControls(
+            model=model, mode=CallMode.api
+        ),
     )
 
     assert raw_payload == {

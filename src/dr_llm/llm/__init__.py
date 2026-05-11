@@ -9,10 +9,6 @@ from dr_llm.llm.names import (
     ProviderName,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.concepts.capabilities import (
-    ModelCapabilities,
-    ReasoningCapabilities,
-)
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     CodexReasoning,
@@ -30,10 +26,8 @@ from dr_llm.llm.providers.core.config import (
     ProviderConfig,
 )
 from dr_llm.llm.providers.core.authoring import LlmAuthoringConfig
+from dr_llm.llm.providers.core.controls import ProviderControls
 from dr_llm.llm.providers.core.protocol import ProviderOrchestrator
-from dr_llm.llm.providers.core.reasoning_controls import (
-    ReasoningControls,
-)
 from dr_llm.llm.providers.core.registry import (
     ProviderRegistry,
 )
@@ -46,13 +40,11 @@ from dr_llm.llm.providers.impls.anthropic import (
     AnthropicEffortAndBudgetConfig,
     AnthropicEffortConfig,
     AnthropicLegacyConfig,
-    AnthropicModelFamily,
 )
 from dr_llm.llm.providers.impls.claude_code import (
     ClaudeCodeAdaptiveConfig,
     ClaudeCodeEffortConfig,
     ClaudeCodeLegacyConfig,
-    ClaudeCodeModelFamily,
 )
 from dr_llm.llm.providers.impls.codex import (
     CodexGpt5CodexConfig,
@@ -61,26 +53,21 @@ from dr_llm.llm.providers.impls.codex import (
     CodexGpt52Config,
     CodexGpt54Config,
     CodexLegacyConfig,
-    CodexModelFamily,
 )
 from dr_llm.llm.providers.impls.glm import (
     GlmLegacyConfig,
-    GlmModelFamily,
     GlmThinkingConfig,
 )
 from dr_llm.llm.providers.impls.google import (
     GoogleBudgetConfig,
     GoogleLegacyConfig,
     GoogleLevelConfig,
-    GoogleModelFamily,
 )
 from dr_llm.llm.providers.impls.kimi_code import (
     KimiCodeConfig,
-    KimiCodeModelFamily,
 )
 from dr_llm.llm.providers.impls.minimax import (
     MiniMaxConfig,
-    MiniMaxModelFamily,
 )
 from dr_llm.llm.providers.impls.openai import (
     OpenAIGpt5Config,
@@ -89,7 +76,6 @@ from dr_llm.llm.providers.impls.openai import (
     OpenAIGpt53Config,
     OpenAIGpt54Config,
     OpenAILegacyConfig,
-    OpenAIModelFamily,
 )
 from dr_llm.llm.providers.impls.openrouter import (
     OpenRouterEffortConfig,
@@ -109,49 +95,40 @@ __all__ = [
     "AnthropicEffortAndBudgetConfig",
     "AnthropicEffortConfig",
     "AnthropicLegacyConfig",
-    "AnthropicModelFamily",
     "AnthropicReasoning",
     "CallMode",
     "ClaudeCodeAdaptiveConfig",
     "ClaudeCodeEffortConfig",
     "ClaudeCodeLegacyConfig",
-    "ClaudeCodeModelFamily",
     "CodexGpt5CodexConfig",
     "CodexGpt5Config",
     "CodexGpt51Config",
     "CodexGpt52Config",
     "CodexGpt54Config",
     "CodexLegacyConfig",
-    "CodexModelFamily",
     "CodexReasoning",
     "CostInfo",
     "EffortSpec",
     "GlmLegacyConfig",
-    "GlmModelFamily",
     "GlmReasoning",
     "GlmThinkingConfig",
     "GoogleBudgetConfig",
     "GoogleLegacyConfig",
     "GoogleLevelConfig",
-    "GoogleModelFamily",
     "GoogleReasoning",
     "KimiCodeConfig",
-    "KimiCodeModelFamily",
     "LlmAuthoringConfig",
     "LlmConfig",
     "LlmRequest",
     "LlmResponse",
     "Message",
     "MiniMaxConfig",
-    "MiniMaxModelFamily",
-    "ModelCapabilities",
     "OpenAIGpt5Config",
     "OpenAIGpt51Config",
     "OpenAIGpt52Config",
     "OpenAIGpt53Config",
     "OpenAIGpt54Config",
     "OpenAILegacyConfig",
-    "OpenAIModelFamily",
     "OpenAIReasoning",
     "OpenRouterEffortConfig",
     "OpenRouterNoReasoningConfig",
@@ -159,13 +136,12 @@ __all__ = [
     "OpenRouterToggleConfig",
     "ProviderAvailabilityStatus",
     "ProviderConfig",
+    "ProviderControls",
     "ProviderName",
     "ProviderOrchestrator",
     "ProviderRegistry",
     "ProviderRequestDefaults",
     "ReasoningBudget",
-    "ReasoningCapabilities",
-    "ReasoningControls",
     "ReasoningSpec",
     "ReasoningWarning",
     "SamplingControls",

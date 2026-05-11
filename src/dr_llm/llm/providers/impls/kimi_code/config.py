@@ -12,12 +12,11 @@ from dr_llm.llm.providers.core.authoring import (
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 from dr_llm.llm.providers.impls.kimi_code.controls import (
-    reasoning_capabilities_for_kimi_code,
+    KimiCodeControls,
     supported_effort_levels_for_kimi_code,
 )
-from dr_llm.llm.providers.impls.kimi_code.families import (
-    KimiCodeModelFamily,
-)
+from dr_llm.llm.providers.impls.kimi_code.controls import KimiCodeModelFamily
+from dr_llm.llm.response import CallMode
 
 type _KimiCodeThinkingLevel = Literal[
     ThinkingLevel.OFF,
@@ -70,11 +69,10 @@ class KimiCodeConfig(BaseModel):
         ):
             raise ValueError("budget_tokens requires thinking_level='budget'")
         if self.budget_tokens is not None:
-            capabilities = reasoning_capabilities_for_kimi_code(self.model)
+            controls = KimiCodeControls(model=self.model, mode=CallMode.api)
             if (
-                capabilities is None
-                or capabilities.min_budget_tokens is None
-                or capabilities.max_budget_tokens is None
+                controls.min_budget_tokens is None
+                or controls.max_budget_tokens is None
             ):
                 raise ValueError(
                     f"KimiCodeConfig budget thinking is not supported for "
@@ -84,8 +82,8 @@ class KimiCodeConfig(BaseModel):
                 provider=self.provider,
                 model=self.model,
                 budget_tokens=self.budget_tokens,
-                min_tokens=capabilities.min_budget_tokens,
-                max_tokens=capabilities.max_budget_tokens,
+                min_tokens=controls.min_budget_tokens,
+                max_tokens=controls.max_budget_tokens,
             )
         return self
 

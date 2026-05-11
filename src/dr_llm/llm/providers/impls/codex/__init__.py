@@ -8,7 +8,6 @@ from dr_llm.llm.providers.impls.codex.config import (
     CodexGpt54Config,
     CodexLegacyConfig,
 )
-from dr_llm.llm.providers.impls.codex.families import CodexModelFamily
 
 __all__ = [
     "CodexGpt5CodexConfig",
@@ -17,5 +16,4 @@ __all__ = [
     "CodexGpt52Config",
     "CodexGpt54Config",
     "CodexLegacyConfig",
-    "CodexModelFamily",
 ]

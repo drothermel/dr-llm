@@ -14,7 +14,7 @@ from dr_llm.llm.providers.core.authoring import (
     require_model_family,
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.openai.families import (
+from dr_llm.llm.providers.impls.openai.controls import (
     OPENAI_GPT51_FAMILIES,
     OPENAI_GPT52_FAMILIES,
     OPENAI_GPT53_FAMILIES,
