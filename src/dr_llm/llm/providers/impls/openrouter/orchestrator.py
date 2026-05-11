@@ -24,7 +24,10 @@ from dr_llm.llm.providers.impls.openrouter.policy import (
     openrouter_model_policy,
     reasoning_capabilities_for_openrouter,
 )
-from dr_llm.llm.providers.impls.openrouter.provider import OpenRouterProvider
+from dr_llm.llm.providers.impls.openrouter.provider import (
+    OpenRouterProvider,
+    OpenRouterUrls,
+)
 from dr_llm.llm.providers.transports.openai_compat.provider import (
     OpenAICompatProvider,
 )
@@ -62,7 +65,7 @@ class OpenRouterOrchestrator(BaseOpenAICompatOrchestrator):
         entries, raw_payload = build_static_catalog_entries(
             provider=self._provider,
             models=models,
-            docs_url="https://openrouter.ai/models",
+            docs_url=OpenRouterUrls.MODELS_PAGE,
             supports_vision=None,
             capabilities_fn=self.reasoning_capabilities,
         )

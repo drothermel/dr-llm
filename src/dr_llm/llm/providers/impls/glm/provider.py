@@ -3,6 +3,7 @@ from __future__ import annotations
 import httpx
 
 from dr_llm.llm.names import ProviderName
+from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.transports.openai_compat.config import (
     OpenAICompatConfig,
 )
@@ -23,7 +24,7 @@ class GlmProvider(OpenAICompatProvider):
             or OpenAICompatConfig(
                 name=ProviderName.GLM,
                 base_url="https://api.z.ai/api/coding/paas/v4",
-                api_key_env="ZAI_API_KEY",
+                api_key_env=ApiKeyNames.GLM,
             ),
             client=client,
         )

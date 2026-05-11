@@ -3,6 +3,7 @@ from __future__ import annotations
 import httpx
 
 from dr_llm.llm.names import ProviderName
+from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
 )
@@ -15,7 +16,7 @@ from dr_llm.llm.request import LlmRequest
 
 KIMI_CODE_PROVIDER_NAME = ProviderName.KIMI_CODE
 KIMI_CODE_BASE_URL = "https://api.kimi.com/coding/v1/messages"
-KIMI_CODE_API_KEY_ENV = "KIMI_API_KEY"
+KIMI_CODE_API_KEY_ENV = ApiKeyNames.KIMI
 
 
 class KimiCodeProvider(AnthropicProvider):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import httpx
 
 from dr_llm.llm.names import ProviderName
+from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.transports.api_config import APIProviderConfig
 from dr_llm.llm.providers.transports.api_provider import ApiProvider
 from dr_llm.llm.providers.impls.google.request import GoogleRequest
@@ -21,7 +22,7 @@ class GoogleProvider(ApiProvider):
             or APIProviderConfig(
                 name=ProviderName.GOOGLE,
                 base_url="https://generativelanguage.googleapis.com/v1beta",
-                api_key_env="GOOGLE_API_KEY",
+                api_key_env=ApiKeyNames.GOOGLE,
             ),
             client=client,
         )

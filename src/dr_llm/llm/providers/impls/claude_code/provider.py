@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.llm.names import EffortSpec, ProviderName
+from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.transports.headless_base import (
     BaseHeadlessProvider,
     HEADLESS_DEFAULT_EMPTY_PROMPT,
@@ -44,7 +45,7 @@ CLAUDE_DEFAULT_COMMAND = [
 CLAUDE_CANONICAL_MODEL_PREFIX = "claude-"
 ANTHROPIC_BASE_URL_ENV = "ANTHROPIC_BASE_URL"
 ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN"
-ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
+ANTHROPIC_API_KEY_ENV = ApiKeyNames.ANTHROPIC
 
 
 class ClaudeHeadlessUsage(BaseModel):

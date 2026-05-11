@@ -11,6 +11,7 @@ from dr_llm.llm.catalog.fetchers.common import (
     require_api_key,
 )
 from dr_llm.llm.catalog.models import ModelCatalogEntry
+from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 from dr_llm.llm.providers.impls.kimi_code.provider import KimiCodeProvider
 
@@ -27,7 +28,7 @@ def fetch_kimi_models(
     provider_name = provider.name
     key = require_api_key(
         api_key=provider.config.api_key,
-        env_var="KIMI_API_KEY",
+        env_var=ApiKeyNames.KIMI,
         label="Kimi",
     )
 

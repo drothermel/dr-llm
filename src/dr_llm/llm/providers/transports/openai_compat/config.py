@@ -1,10 +1,11 @@
 from pydantic import field_validator
 
+from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.transports.api_config import APIProviderConfig
 
 
 class OpenAICompatConfig(APIProviderConfig):
-    api_key_env: str = "OPENAI_API_KEY"
+    api_key_env: str = ApiKeyNames.OPENAI
     chat_path: str = "/chat/completions"
     max_completion_token_model_prefixes: tuple[str, ...] = ()
 

@@ -40,6 +40,7 @@ from dr_llm.llm.providers.core.registry import (
 from dr_llm.llm.providers.core.request_defaults import ProviderRequestDefaults
 from dr_llm.llm.providers.core.usage import CostInfo, TokenUsage
 from dr_llm.llm.providers.default_registry import build_default_registry
+from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.impls.anthropic import (
     AnthropicBudgetConfig,
     AnthropicEffortAndBudgetConfig,
@@ -103,6 +104,7 @@ from dr_llm.llm.request import (
 from dr_llm.llm.response import CallMode, LlmResponse
 
 __all__ = [
+    "ApiKeyNames",
     "AnthropicBudgetConfig",
     "AnthropicEffortAndBudgetConfig",
     "AnthropicEffortConfig",
