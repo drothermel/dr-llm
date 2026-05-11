@@ -6,6 +6,7 @@ import pytest
 from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
 from dr_llm.llm.providers.impls.anthropic.reasoning import (
     AnthropicReasoningConfig,
+    validate_reasoning_for_anthropic,
 )
 from dr_llm.llm.providers.impls.kimi_code.reasoning import (
     KimiCodeReasoningConfig,
@@ -168,13 +169,28 @@ def test_kimi_code_validation_rejects_unsupported_anthropic_levels() -> None:
 def test_kimi_code_validation_rejects_budget_tokens_without_budget_level() -> (
     None
 ):
-    with pytest.raises(ValueError, match="budget_tokens.*thinking_level"):
+    with pytest.raises(ValueError, match=r"budget_tokens.*thinking_level"):
         validate_reasoning_for_kimi_code(
             model="kimi-for-coding",
             reasoning=AnthropicReasoning(
                 thinking_level=ThinkingLevel.ADAPTIVE,
                 budget_tokens=1024,
             ),
+        )
+
+
+def test_anthropic_validation_rejects_budget_tokens_without_budget_level() -> (
+    None
+):
+    reasoning = AnthropicReasoning.model_construct(
+        thinking_level=ThinkingLevel.ADAPTIVE,
+        budget_tokens=1024,
+    )
+
+    with pytest.raises(ValueError, match=r"budget_tokens.*thinking_level"):
+        validate_reasoning_for_anthropic(
+            model="claude-sonnet-4-6",
+            reasoning=reasoning,
         )
 
 

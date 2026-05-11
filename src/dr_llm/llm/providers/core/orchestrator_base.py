@@ -383,7 +383,7 @@ class BaseProviderOrchestrator(ABC):
             )
 
     def _validate_max_tokens_required(self, request: LlmRequest) -> None:
-        max_tokens = getattr(request, "max_tokens", None)
+        max_tokens = request.max_tokens
         if max_tokens is None:
             raise ValueError(
                 f"max_tokens is required for provider={self.name!r}"

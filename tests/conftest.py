@@ -233,8 +233,6 @@ def make_request(**overrides: Any) -> LlmRequest:
     if "mode" not in overrides and defaults["provider"] in {
         ProviderName.CODEX,
         ProviderName.CLAUDE_CODE,
-        str(ProviderName.CODEX),
-        str(ProviderName.CLAUDE_CODE),
     }:
         defaults["mode"] = CallMode.headless
     return parse_llm_request(defaults)

@@ -90,6 +90,13 @@ def _validate_anthropic_reasoning_shape(
     capabilities: ReasoningCapabilities | None,
 ) -> None:
     thinking_level = reasoning.thinking_level
+    if (
+        thinking_level != ThinkingLevel.BUDGET
+        and reasoning.budget_tokens is not None
+    ):
+        raise ValueError(
+            "anthropic budget_tokens are only allowed with thinking_level='budget'"
+        )
     if thinking_level == ThinkingLevel.NA:
         _validate_anthropic_na(model=model)
         return

@@ -39,7 +39,7 @@ class _ClaudeCodeBaseConfig(BaseModel):
             return self
         raise ValueError(
             f"{type(self).__name__} only supports provider={self.provider!r} "
-            f"model family={ClaudeCodeModelFamily.CLAUDE.value!r}; "
+            f"model family={str(ClaudeCodeModelFamily.CLAUDE)!r}; "
             f"got model={self.model!r}"
         )
 
@@ -105,9 +105,9 @@ class ClaudeCodeEffortConfig(_ClaudeCodeBaseConfig):
             )
         if self.effort is None or self.effort in allowed:
             return self
-        allowed_values = ", ".join(level.value for level in allowed)
+        allowed_values = ", ".join(str(level) for level in allowed)
         raise ValueError(
-            f"ClaudeCodeEffortConfig effort={self.effort.value!r} is not "
+            f"ClaudeCodeEffortConfig effort={str(self.effort)!r} is not "
             f"supported for provider={self.provider!r} model={self.model!r}; "
             f"allowed levels: {allowed_values}"
         )

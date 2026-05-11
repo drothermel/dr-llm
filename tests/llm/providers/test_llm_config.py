@@ -365,33 +365,43 @@ def test_codex_authoring_configs_to_llm_config(
 
 
 @pytest.mark.parametrize(
-    "config",
+    ("config", "expected_provider"),
     [
-        ClaudeCodeLegacyConfig(model="claude-3-5-sonnet-latest"),
-        ClaudeCodeAdaptiveConfig(model="claude-sonnet-4-6"),
-        ClaudeCodeEffortConfig(
-            model="claude-opus-4-5-20251101",
-            effort=EffortSpec.HIGH,
+        (
+            ClaudeCodeLegacyConfig(model="claude-3-5-sonnet-latest"),
+            ProviderName.CLAUDE_CODE,
         ),
-        KimiCodeConfig(
-            model="kimi-for-coding",
-            thinking_level=ThinkingLevel.BUDGET,
-            budget_tokens=1024,
+        (
+            ClaudeCodeAdaptiveConfig(model="claude-sonnet-4-6"),
+            ProviderName.CLAUDE_CODE,
         ),
-        MiniMaxConfig(model="MiniMax-M2.7", effort=EffortSpec.MEDIUM),
+        (
+            ClaudeCodeEffortConfig(
+                model="claude-opus-4-5-20251101",
+                effort=EffortSpec.HIGH,
+            ),
+            ProviderName.CLAUDE_CODE,
+        ),
+        (
+            KimiCodeConfig(
+                model="kimi-for-coding",
+                thinking_level=ThinkingLevel.BUDGET,
+                budget_tokens=1024,
+            ),
+            ProviderName.KIMI_CODE,
+        ),
+        (
+            MiniMaxConfig(model="MiniMax-M2.7", effort=EffortSpec.MEDIUM),
+            ProviderName.MINIMAX,
+        ),
     ],
 )
 def test_headless_and_narrow_authoring_configs_to_llm_config(
-    config: SupportsToLlmConfig,
+    config: SupportsToLlmConfig, expected_provider: ProviderName
 ) -> None:
     llm_config = config.to_llm_config()
 
-    assert llm_config.provider in {
-        ProviderName.CLAUDE_CODE,
-        ProviderName.CODEX,
-        ProviderName.KIMI_CODE,
-        ProviderName.MINIMAX,
-    }
+    assert llm_config.provider == expected_provider
 
 
 def test_anthropic_authoring_config_uses_family_capabilities_for_snapshots() -> (

@@ -286,6 +286,6 @@ def test_codex_rejects_reasoning_before_subprocess(
         reasoning=ReasoningBudget(tokens=1024),
     )
     orchestrator = CodexOrchestrator(CodexProvider())
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="reasoning budget is not supported"):
         orchestrator.generate(request)
     assert "command" not in captured
