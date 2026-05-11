@@ -143,7 +143,7 @@ def provider_extra_args(provider: str, model: str) -> list[str]:
         )
     effort = default_effort(provider=provider, model=model)
     if effort != EffortSpec.NA:
-        args.extend(["--effort", effort.value])
+        args.extend(["--effort", effort])
     return args
 
 
