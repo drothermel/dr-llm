@@ -37,10 +37,15 @@ class AnthropicRequestControls(BaseModel):
             return cls()
         match reasoning:
             case ReasoningBudget(tokens=tokens):
+                budget_tokens = require_budget_tokens(
+                    tokens,
+                    label=ProviderName.ANTHROPIC,
+                    min_value=1,
+                )
                 return cls(
                     thinking={
                         "type": AnthropicThinkingType.ENABLED,
-                        "budget_tokens": tokens,
+                        "budget_tokens": budget_tokens,
                     }
                 )
             case AnthropicReasoning(

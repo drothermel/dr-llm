@@ -16,6 +16,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
     CodexReasoning,
     ReasoningBudget,
     ReasoningSpec,
+    ReasoningWarning,
     dispatch_reasoning_validation,
     is_control_unsupported,
     validate_budget_range,
@@ -175,7 +176,7 @@ class CodexControls(BaseModel):
             return None
         return CodexReasoning(thinking_level=thinking_level)
 
-    def validate_request(self, request: LlmRequest) -> list:
+    def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
         validate_effort(
             provider=self.provider,
             model=self.model,

@@ -249,11 +249,8 @@ def test_openai_gpt_oss_serializes_reasoning_effort() -> None:
             "reasoning": OpenAIReasoning(thinking_level=ThinkingLevel.LOW),
         }
     )
-    provider = OpenAIProvider(config=openai_config)
-    try:
+    with OpenAIProvider(config=openai_config) as provider:
         provider_request = provider._build_request(request)
-    finally:
-        provider.close()
     payload = provider_request.json_payload()
 
     assert payload["reasoning_effort"] == "low"

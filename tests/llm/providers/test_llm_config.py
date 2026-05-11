@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 import pytest
 from pydantic import ValidationError
@@ -463,11 +463,9 @@ def test_claude_code_authoring_configs_use_anthropic_family_capabilities() -> (
             "custom sampling requires thinking_level='off'",
         ),
         (
-            lambda: OpenAIGptOssConfig.model_validate(
-                {
-                    "model": "gpt-oss-20b",
-                    "thinking_level": ThinkingLevel.OFF,
-                }
+            lambda: OpenAIGptOssConfig(
+                model="gpt-oss-20b",
+                thinking_level=cast(Any, ThinkingLevel.OFF),
             ),
             "Input should be",
         ),

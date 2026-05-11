@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 import json
 import os
 import subprocess
@@ -204,7 +205,7 @@ def sanitize_io_for_logs(
     return sanitized
 
 
-class BaseHeadlessProvider(ProviderTransport):
+class BaseHeadlessProvider(ProviderTransport, ABC):
     _config: HeadlessProviderConfig
 
     def __init__(self, *, config: HeadlessProviderConfig) -> None:
@@ -239,8 +240,10 @@ class BaseHeadlessProvider(ProviderTransport):
         del request, payload
         return {**os.environ, **self._config.env_overrides}
 
-    def request_controls(self, request: LlmRequest) -> HeadlessRequestControls:
-        raise NotImplementedError("subclasses must implement request_controls")
+    @abstractmethod
+    def request_controls(
+        self, request: LlmRequest
+    ) -> HeadlessRequestControls: ...
 
     def parse_stdout(
         self,

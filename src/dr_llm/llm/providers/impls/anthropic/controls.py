@@ -271,6 +271,11 @@ class AnthropicControls(BaseModel):
         return AnthropicReasoning(thinking_level=thinking_level)
 
     def validate_request(self, request: LlmRequest) -> list:
+        if request.model != self.model:
+            raise ValueError(
+                f"request model {request.model!r} does not match "
+                f"controls model {self.model!r}"
+            )
         validate_effort(
             provider=self.provider,
             model=self.model,
@@ -279,7 +284,7 @@ class AnthropicControls(BaseModel):
         )
         _validate_max_tokens_required(request)
         _validate_reasoning_for_anthropic(
-            model=request.model,
+            model=self.model,
             reasoning=request.reasoning,
             families=self.families,
         )

@@ -192,7 +192,7 @@ class ClaudeCodeProvider(BaseHeadlessProvider):
         command.extend(["--model", request.model])
         if request.effort != EffortSpec.NA:
             command.extend(["--effort", request.effort])
-        elif request_controls.cli_args:
+        if request_controls.cli_args:
             command.extend(request_controls.cli_args)
         return command
 

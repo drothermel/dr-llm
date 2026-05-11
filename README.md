@@ -72,12 +72,14 @@ provider/model choices, setup, cleanup, and progress output.
 | `scripts/demo-pool-providers.py` | Query every available provider and store one result per provider/model in a typed pool. | Docker plus at least one API key or supported CLI tool. |
 | `scripts/demo-pool-fill.py` | Seed an `(llm_config, prompt)` grid, fill it with workers, and inspect stored responses. | OpenAI/Google API keys, plus Docker or `--dsn` for Postgres. |
 | `scripts/demo_thinking_and_effort.py` | Live-check provider-specific reasoning and effort validation. | API keys or CLI tools for the providers under test. |
+| `nbs/hit_providers.py` | Manually send prompts through curated provider configs and save response history. | API keys for the selected providers; writes optional logs under `logs/`. |
 
 ```bash
 uv run python scripts/demo-providers.py
 uv run python scripts/demo-pool-providers.py --help
 uv run python scripts/demo-pool-fill.py --help
 uv run python scripts/demo_thinking_and_effort.py --provider openai
+uv run marimo run nbs/hit_providers.py
 ```
 
 ## Available Providers
@@ -107,6 +109,10 @@ Some provider orchestrators use static fallback catalogs when a provider has no
 `/models` endpoint or live discovery is unavailable. The CLI notes when a list
 may be out of date and links to docs.
 
+Catalog entries expose a `control_mode` field plus provider-owned
+`metadata["dr_llm_controls"]` details instead of a flattened
+`supports_reasoning` flag.
+
 ## Python API
 
 The Python API exposes the same provider and pool primitives used by the demo
@@ -135,6 +141,11 @@ API providers, omitted sampling controls default to `temperature=1.0` and
 Use `build_default_registry().get(provider).request_defaults(model)` when
 inspecting generic provider requests. It returns the orchestrator-owned defaults
 for effort, reasoning, token limits, and supported sampling controls.
+
+Use `build_default_registry().get(provider).controls(model)` when you need the
+full provider control object, including `control_mode`,
+`supported_thinking_levels`, `supported_effort_levels`, budget bounds where
+available, and provider-specific request validation.
 
 ### Calling a provider
 
@@ -195,8 +206,8 @@ dr-llm providers [--json]
 
 # Model catalog (file-based, no DB needed)
 dr-llm models sync [--provider NAME] [--verbose]
-dr-llm models list [--provider NAME] [--supports-reasoning] [--model-contains TEXT] [--json]
-dr-llm models sync-list [--provider NAME] [--supports-reasoning] [--model-contains TEXT] [--json]
+dr-llm models list [--provider NAME] [--control-mode MODE] [--model-contains TEXT] [--json]
+dr-llm models sync-list [--provider NAME] [--control-mode MODE] [--model-contains TEXT] [--json]
 dr-llm models show --provider NAME --model NAME
 
 # Query

@@ -100,7 +100,7 @@ def _build_thinking_payload(
             )
         }
     if thinking_level in _GOOGLE_LITERAL_LEVELS:
-        return {GoogleThinkingPayloadKey.THINKING_LEVEL: str(thinking_level)}
+        return {GoogleThinkingPayloadKey.THINKING_LEVEL: thinking_level}
     raise ProviderSemanticError(
         f"Unsupported google thinking_level={thinking_level!r}"
     )

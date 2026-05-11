@@ -164,7 +164,7 @@ class GlmControls(BaseModel):
     def validate_request(self, request: LlmRequest) -> list:
         validate_effort(
             provider=self.provider,
-            model=self.model,
+            model=request.model,
             effort=request.effort,
             supported_effort_levels=self.supported_effort_levels,
         )

@@ -18,6 +18,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
     OpenRouterReasoning,
     ReasoningBudget,
     ReasoningSpec,
+    ReasoningWarning,
     is_control_unsupported,
     validate_discrete_thinking_level,
 )
@@ -235,14 +236,24 @@ class OpenRouterControls(BaseModel):
         thinking_level: ThinkingLevel,
         budget_tokens: int | None = None,
     ) -> ReasoningSpec | None:
+        """Used by resolve_reasoning; only ThinkingLevel.NA is accepted.
+
+        OpenRouter models use effort-based OpenRouterReasoning or
+        OpenAIReasoning, so pass reasoning directly instead of a non-NA
+        thinking_level.
+        """
         del budget_tokens
         if thinking_level == ThinkingLevel.NA:
             return None
         raise ValueError(
-            f"openrouter does not support thinking_level={thinking_level!r}"
+            "OpenRouterControls.reasoning_for_thinking_level was called by "
+            "resolve_reasoning with non-NA "
+            f"thinking_level={thinking_level!r}; OpenRouter uses "
+            "effort-based reasoning, so pass OpenRouterReasoning or "
+            "OpenAIReasoning directly"
         )
 
-    def validate_request(self, request: LlmRequest) -> list:
+    def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
         validate_effort(
             provider=self.provider,
             model=self.model,

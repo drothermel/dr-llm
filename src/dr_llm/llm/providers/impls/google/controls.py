@@ -16,6 +16,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
     GoogleReasoning,
     ReasoningBudget,
     ReasoningSpec,
+    ReasoningWarning,
     dispatch_reasoning_validation,
     google_literal_to_thinking_level,
     is_control_unsupported,
@@ -85,7 +86,7 @@ def _validate_google_reasoning_shape(
     *,
     thinking_level: ThinkingLevel,
     budget_tokens: int | None,
-    controls: "GoogleControls",
+    controls: GoogleControls,
 ) -> None:
     if is_control_unsupported(controls.control_mode):
         if thinking_level == ThinkingLevel.NA:
@@ -119,7 +120,7 @@ def _validate_google_budget_mode(
     *,
     thinking_level: ThinkingLevel,
     budget_tokens: int | None,
-    controls: "GoogleControls",
+    controls: GoogleControls,
 ) -> None:
     if thinking_level == ThinkingLevel.OFF:
         return
@@ -152,7 +153,7 @@ def _validate_google_budget_mode(
 def _validate_google_level_mode(
     *,
     thinking_level: ThinkingLevel,
-    controls: "GoogleControls",
+    controls: GoogleControls,
 ) -> None:
     allowed_levels = {
         google_literal_to_thinking_level(level)
@@ -293,7 +294,7 @@ class GoogleControls(BaseModel):
             )
         return GoogleReasoning(thinking_level=thinking_level)
 
-    def validate_request(self, request: LlmRequest) -> list:
+    def validate_request(self, request: LlmRequest) -> list[ReasoningWarning]:
         validate_effort(
             provider=self.provider,
             model=self.model,

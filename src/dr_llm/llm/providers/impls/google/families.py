@@ -35,7 +35,7 @@ class GoogleModelFamily(StrEnum):
     GEMMA_4 = "gemma-4"
 
     def in_family(self, model: str) -> bool:
-        return model.startswith(self)
+        return model == self.value or model.startswith(f"{self.value}-")
 
 
 class GoogleBudgetFamilySpec(BaseModel):
