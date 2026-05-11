@@ -41,9 +41,7 @@ _CONFIG = OpenAICompatConfig(
     base_url="https://openrouter.ai/api/v1",
     api_key="x",
 )
-_OPENAI_MAX_COMPLETION_TOKEN_MODEL_PREFIXES = tuple(
-    str(family) for family in OPENAI_THINKING_SUPPORTED_MODELS
-)
+_OPENAI_MAX_COMPLETION_TOKEN_MODEL_FAMILIES = OPENAI_THINKING_SUPPORTED_MODELS
 
 _REASONING_RESPONSE_JSON: dict[str, Any] = {
     "choices": [
@@ -211,8 +209,8 @@ def test_openai_gpt5_swaps_max_tokens_for_max_completion_tokens() -> None:
         name=ProviderName.OPENAI,
         base_url="https://api.openai.com/v1",
         api_key="x",
-        max_completion_token_model_prefixes=(
-            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_PREFIXES
+        max_completion_token_model_families=(
+            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_FAMILIES
         ),
     )
     request = _make_api_request(
@@ -236,8 +234,8 @@ def test_openai_legacy_model_keeps_max_tokens() -> None:
         name=ProviderName.OPENAI,
         base_url="https://api.openai.com/v1",
         api_key="x",
-        max_completion_token_model_prefixes=(
-            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_PREFIXES
+        max_completion_token_model_families=(
+            _OPENAI_MAX_COMPLETION_TOKEN_MODEL_FAMILIES
         ),
     )
     request = _make_api_request(
@@ -344,7 +342,7 @@ def test_request_rejects_extra_body_key_collisions() -> None:
         extra_body={"model": "other-model"},
         base_url="https://openrouter.ai/api/v1",
         chat_path="/chat/completions",
-        max_completion_token_model_prefixes=(),
+        max_completion_token_model_families=(),
         api_key_env="OPENROUTER_API_KEY",
         api_key="x",
         idempotency_key="fixed-key",

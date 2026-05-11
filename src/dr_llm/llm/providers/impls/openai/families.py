@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from dr_llm.llm.providers.concepts.model_family import is_snapshot_of_family
+
 
 class OpenAIModelFamily(StrEnum):
     GPT5 = "gpt-5"
@@ -24,6 +26,18 @@ class OpenAIModelFamily(StrEnum):
     GPT54 = "gpt-5.4"
     GPT54_MINI = "gpt-5.4-mini"
     GPT54_NANO = "gpt-5.4-nano"
+
+    def in_family(self, model: str) -> bool:
+        normalized = _normalize_openai_model(model)
+        return normalized == self or is_snapshot_of_family(
+            model=normalized, family=str(self)
+        )
+
+
+def _normalize_openai_model(model: str) -> str:
+    if model.startswith("openai/"):
+        return model[len("openai/") :]
+    return model
 
 
 OPENAI_GPT5_FAMILIES = (

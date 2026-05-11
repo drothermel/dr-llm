@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.names import EffortSpec, ProviderName, ThinkingLevel
 from dr_llm.llm.providers.core.authoring import build_provider_config
+from dr_llm.llm.providers.concepts.model_family import (
+    model_matches_any_family,
+)
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 from dr_llm.llm.providers.impls.anthropic.capabilities import (
     anthropic_supports_adaptive_thinking,
@@ -117,9 +120,8 @@ class ClaudeCodeEffortConfig(_ClaudeCodeBaseConfig):
 
 
 def _is_claude_code_model(model: str) -> bool:
-    return any(
-        model.startswith(family)
-        for family in CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES
+    return model_matches_any_family(
+        model, CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES
     )
 
 

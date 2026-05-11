@@ -16,7 +16,7 @@ from dr_llm.llm.providers.impls.claude_code.families import (
 CLAUDE_HEADLESS_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     *(
         ReasoningCapabilityRule(
-            model_prefix=family,
+            family=family,
             capabilities=ReasoningCapabilities(
                 mode=ReasoningMode.CLAUDE_CLI_EFFORT
             ),

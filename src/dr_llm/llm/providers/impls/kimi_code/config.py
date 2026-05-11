@@ -44,7 +44,7 @@ class KimiCodeConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_controls(self) -> KimiCodeConfig:
-        if self.model != KimiCodeModelFamily.KIMI_FOR_CODING:
+        if not KimiCodeModelFamily.KIMI_FOR_CODING.in_family(self.model):
             raise ValueError(
                 f"KimiCodeConfig only supports provider={self.provider!r} "
                 f"model={KimiCodeModelFamily.KIMI_FOR_CODING!r}; "

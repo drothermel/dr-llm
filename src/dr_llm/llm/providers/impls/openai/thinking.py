@@ -7,7 +7,9 @@ from dr_llm.llm.providers.concepts.reasoning import (
     OpenAIReasoning,
     ReasoningSpec,
 )
-from dr_llm.llm.providers.concepts.thinking_utils import matches_family
+from dr_llm.llm.providers.concepts.model_family import (
+    model_matches_any_family,
+)
 from dr_llm.llm.providers.impls.openai.families import (
     OPENAI_GPT5_SAMPLING_SUPPORTED_MODELS,
     OPENAI_MINIMAL_THINKING_SUPPORTED_MODELS,
@@ -29,46 +31,29 @@ OPENAI_TEMP_TOPP_REASONING_REQUIRED_MSG = (
 )
 
 
-def normalize_openai_reasoning_model(model: str) -> str:
-    if model.startswith("openai/"):
-        return model[len("openai/") :]
-    return model
-
-
 def openai_supports_configurable_thinking(model: str) -> bool:
-    normalized = normalize_openai_reasoning_model(model)
-    return matches_family(
-        normalized=normalized,
-        families=OPENAI_THINKING_SUPPORTED_MODELS,
-    )
+    return model_matches_any_family(model, OPENAI_THINKING_SUPPORTED_MODELS)
 
 
 def openai_supports_minimal_thinking(model: str) -> bool:
-    normalized = normalize_openai_reasoning_model(model)
-    return matches_family(
-        normalized=normalized,
-        families=OPENAI_MINIMAL_THINKING_SUPPORTED_MODELS,
+    return model_matches_any_family(
+        model, OPENAI_MINIMAL_THINKING_SUPPORTED_MODELS
     )
 
 
 def openai_supports_off_thinking(model: str) -> bool:
-    normalized = normalize_openai_reasoning_model(model)
-    return matches_family(
-        normalized=normalized,
-        families=OPENAI_OFF_THINKING_SUPPORTED_MODELS,
+    return model_matches_any_family(
+        model, OPENAI_OFF_THINKING_SUPPORTED_MODELS
     )
 
 
 def openai_is_gpt5_family(model: str) -> bool:
-    normalized = normalize_openai_reasoning_model(model)
-    return normalized == "gpt-5" or normalized.startswith(("gpt-5-", "gpt-5."))
+    return model_matches_any_family(model, OPENAI_THINKING_SUPPORTED_MODELS)
 
 
 def openai_supports_sampling_with_reasoning_off(model: str) -> bool:
-    normalized = normalize_openai_reasoning_model(model)
-    return matches_family(
-        normalized=normalized,
-        families=OPENAI_GPT5_SAMPLING_SUPPORTED_MODELS,
+    return model_matches_any_family(
+        model, OPENAI_GPT5_SAMPLING_SUPPORTED_MODELS
     )
 
 

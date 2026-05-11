@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict
 
 from dr_llm.llm.names import EffortSpec, ReasoningMode
+from dr_llm.llm.providers.concepts.model_family import ModelFamily
 
 GoogleThinkingLevel = Literal["minimal", "low", "medium", "high"]
 
@@ -24,35 +25,22 @@ class ReasoningCapabilities(BaseModel):
 
 
 class ReasoningCapabilityRule(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    exact_model: str | None = None
-    model_prefix: str | None = None
+    family: ModelFamily
     capabilities: ReasoningCapabilities
-
-    @model_validator(mode="after")
-    def _validate_shape(self) -> ReasoningCapabilityRule:
-        if (self.exact_model is None) == (self.model_prefix is None):
-            raise ValueError(
-                "reasoning capability rules must define exactly one of exact_model or model_prefix"
-            )
-        return self
 
 
 def resolve_capability_rules(
     rules: tuple[ReasoningCapabilityRule, ...], model: str
 ) -> ReasoningCapabilities | None:
-    for rule in rules:
-        if rule.exact_model is not None and model == rule.exact_model:
-            return rule.capabilities
-    prefix_rules = sorted(
-        (rule for rule in rules if rule.model_prefix is not None),
-        key=lambda rule: len(rule.model_prefix or ""),
+    sorted_rules = sorted(
+        rules,
+        key=lambda rule: len(str(rule.family)),
         reverse=True,
     )
-    for rule in prefix_rules:
-        prefix = rule.model_prefix or ""
-        if model.startswith(prefix):
+    for rule in sorted_rules:
+        if rule.family.in_family(model):
             return rule.capabilities
     return None
 

@@ -12,6 +12,9 @@ class GoogleModelFamily(StrEnum):
     GEMINI_3 = "gemini-3"
     GEMMA_4 = "gemma-4"
 
+    def in_family(self, model: str) -> bool:
+        return model.startswith(self)
+
 
 GOOGLE_25_FLASH_LITE_FAMILIES = (
     GoogleModelFamily.GEMINI_25_FLASH_LITE_PREVIEW,

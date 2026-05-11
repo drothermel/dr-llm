@@ -11,23 +11,20 @@ from dr_llm.llm.providers.impls.minimax.families import (
     MINIMAX_SUPPORTED_MODEL_FAMILIES,
 )
 
-MINIMAX_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
-    *(
+
+def reasoning_capabilities_for_minimax(
+    model: str,
+) -> ReasoningCapabilities | None:
+    capability_rules = tuple(
         ReasoningCapabilityRule(
-            model_prefix=family,
+            family=family,
             capabilities=ReasoningCapabilities(
                 mode=ReasoningMode.MINIMAX_EFFORT
             ),
         )
         for family in MINIMAX_SUPPORTED_MODEL_FAMILIES
-    ),
-)
-
-
-def reasoning_capabilities_for_minimax(
-    model: str,
-) -> ReasoningCapabilities | None:
-    return resolve_capability_rules(MINIMAX_CAPABILITY_RULES, model)
+    )
+    return resolve_capability_rules(capability_rules, model)
 
 
 def supported_effort_levels_for_minimax(model: str) -> tuple[EffortSpec, ...]:

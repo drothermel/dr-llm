@@ -44,32 +44,28 @@ _GEMMA_4_CAPS = ReasoningCapabilities(
 GOOGLE_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     *(
         ReasoningCapabilityRule(
-            model_prefix=family, capabilities=_GOOGLE_25_FLASH_LITE_CAPS
+            family=family, capabilities=_GOOGLE_25_FLASH_LITE_CAPS
         )
         for family in GOOGLE_25_FLASH_LITE_FAMILIES
     ),
     *(
         ReasoningCapabilityRule(
-            model_prefix=family, capabilities=_GOOGLE_25_FLASH_CAPS
+            family=family, capabilities=_GOOGLE_25_FLASH_CAPS
         )
         for family in GOOGLE_25_FLASH_FAMILIES
     ),
     *(
         ReasoningCapabilityRule(
-            model_prefix=family, capabilities=_GOOGLE_25_PRO_CAPS
+            family=family, capabilities=_GOOGLE_25_PRO_CAPS
         )
         for family in GOOGLE_25_PRO_FAMILIES
     ),
     *(
-        ReasoningCapabilityRule(
-            model_prefix=family, capabilities=_GOOGLE_3_CAPS
-        )
+        ReasoningCapabilityRule(family=family, capabilities=_GOOGLE_3_CAPS)
         for family in GOOGLE_3_FAMILIES
     ),
     *(
-        ReasoningCapabilityRule(
-            model_prefix=family, capabilities=_GEMMA_4_CAPS
-        )
+        ReasoningCapabilityRule(family=family, capabilities=_GEMMA_4_CAPS)
         for family in GEMMA_4_FAMILIES
     ),
 )

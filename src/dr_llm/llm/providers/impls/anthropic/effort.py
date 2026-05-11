@@ -15,6 +15,6 @@ def supported_effort_levels_for_anthropic(
     if not anthropic_supports_effort(model):
         return ()
     levels = [EffortSpec.LOW, EffortSpec.MEDIUM, EffortSpec.HIGH]
-    if model.startswith(AnthropicModelFamily.CLAUDE_OPUS_46):
+    if AnthropicModelFamily.CLAUDE_OPUS_46.in_family(model):
         levels.append(EffortSpec.MAX)
     return tuple(levels)

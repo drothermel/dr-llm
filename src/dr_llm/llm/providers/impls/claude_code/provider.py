@@ -21,6 +21,9 @@ from dr_llm.llm.providers.transports.headless_base import (
 from dr_llm.llm.providers.impls.claude_code.reasoning import (
     ClaudeHeadlessReasoningConfig,
 )
+from dr_llm.llm.providers.impls.claude_code.families import (
+    ClaudeCodeModelFamily,
+)
 from dr_llm.llm.providers.transports.headless_config import (
     ClaudeCodeProviderConfig,
 )
@@ -43,7 +46,6 @@ CLAUDE_DEFAULT_COMMAND = [
     "--setting-sources",
     "user",
 ]
-CLAUDE_CANONICAL_MODEL_PREFIX = "claude-"
 ANTHROPIC_BASE_URL_ENV = "ANTHROPIC_BASE_URL"
 ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN"
 
@@ -181,7 +183,7 @@ class ClaudeCodeProvider(BaseHeadlessProvider):
         del payload
         if (
             self.name == ProviderName.CLAUDE_CODE
-            and not request.model.startswith(CLAUDE_CANONICAL_MODEL_PREFIX)
+            and not ClaudeCodeModelFamily.CLAUDE.in_family(request.model)
         ):
             raise HeadlessExecutionError(
                 f"{ProviderName.CLAUDE_CODE} requires canonical model ids like 'claude-sonnet-4-6'"

@@ -33,20 +33,20 @@ _ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(
 
 ANTHROPIC_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
-        model_prefix=AnthropicModelFamily.CLAUDE_OPUS_46,
+        family=AnthropicModelFamily.CLAUDE_OPUS_46,
         capabilities=_ANTHROPIC_OPUS_46_CAPS,
     ),
     ReasoningCapabilityRule(
-        model_prefix=AnthropicModelFamily.CLAUDE_SONNET_46,
+        family=AnthropicModelFamily.CLAUDE_SONNET_46,
         capabilities=_ANTHROPIC_SONNET_46_CAPS,
     ),
     ReasoningCapabilityRule(
-        model_prefix=AnthropicModelFamily.CLAUDE_OPUS_45,
+        family=AnthropicModelFamily.CLAUDE_OPUS_45,
         capabilities=_ANTHROPIC_OPUS_45_CAPS,
     ),
     *(
         ReasoningCapabilityRule(
-            model_prefix=family, capabilities=_ANTHROPIC_BUDGET_CAPS
+            family=family, capabilities=_ANTHROPIC_BUDGET_CAPS
         )
         for family in ANTHROPIC_BUDGET_CAPABILITY_FAMILIES
     ),

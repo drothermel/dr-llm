@@ -35,8 +35,8 @@ class OpenAIProvider(OpenAICompatProvider):
                 name=ProviderName.OPENAI,
                 base_url=OpenAIUrls.API_BASE,
                 api_key_env=ApiKeyNames.OPENAI,
-                max_completion_token_model_prefixes=tuple(
-                    str(family) for family in OPENAI_THINKING_SUPPORTED_MODELS
+                max_completion_token_model_families=(
+                    OPENAI_THINKING_SUPPORTED_MODELS
                 ),
             ),
             client=client,

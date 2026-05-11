@@ -9,6 +9,9 @@ class GlmModelFamily(StrEnum):
     GLM46 = "glm-4.6"
     GLM45 = "glm-4.5"
 
+    def in_family(self, model: str) -> bool:
+        return model.startswith(self)
+
 
 GLM_THINKING_SUPPORTED_FAMILIES = (
     GlmModelFamily.GLM5,

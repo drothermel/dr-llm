@@ -13,7 +13,7 @@ from dr_llm.llm.providers.impls.kimi_code.families import (
 
 KIMI_CODE_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
-        exact_model=KimiCodeModelFamily.KIMI_FOR_CODING,
+        family=KimiCodeModelFamily.KIMI_FOR_CODING,
         capabilities=ReasoningCapabilities(
             mode=ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET,
             min_budget_tokens=1024,

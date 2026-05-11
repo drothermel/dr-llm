@@ -32,7 +32,7 @@ class MiniMaxConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_controls(self) -> MiniMaxConfig:
-        if not self.model.startswith(MiniMaxModelFamily.MINIMAX):
+        if not MiniMaxModelFamily.MINIMAX.in_family(self.model):
             raise ValueError(
                 f"MiniMaxConfig only supports provider={self.provider!r} "
                 f"model family={MiniMaxModelFamily.MINIMAX.value!r}; "

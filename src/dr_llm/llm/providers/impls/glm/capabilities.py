@@ -13,7 +13,7 @@ from dr_llm.llm.providers.impls.glm.families import (
 GLM_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     *(
         ReasoningCapabilityRule(
-            model_prefix=family,
+            family=family,
             capabilities=ReasoningCapabilities(mode=ReasoningMode.GLM),
         )
         for family in GLM_THINKING_SUPPORTED_FAMILIES

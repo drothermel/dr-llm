@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from dr_llm.llm.providers.concepts.model_family import is_snapshot_of_family
+
 
 class CodexModelFamily(StrEnum):
     GPT5 = "gpt-5"
@@ -16,6 +18,11 @@ class CodexModelFamily(StrEnum):
     GPT53_CODEX = "gpt-5.3-codex"
     GPT53_CODEX_SPARK = "gpt-5.3-codex-spark"
     GPT54_MINI = "gpt-5.4-mini"
+
+    def in_family(self, model: str) -> bool:
+        return model == self or is_snapshot_of_family(
+            model=model, family=str(self)
+        )
 
 
 CODEX_THINKING_SUPPORTED_MODELS = (

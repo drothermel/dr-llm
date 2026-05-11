@@ -23,6 +23,9 @@ class AnthropicModelFamily(StrEnum):
     CLAUDE_37_SONNET = "claude-3-7-sonnet"
     CLAUDE_37_SONNET_20250219 = "claude-3-7-sonnet-20250219"
 
+    def in_family(self, model: str) -> bool:
+        return model.startswith(self)
+
 
 ANTHROPIC_BUDGET_CAPABILITY_FAMILIES = (
     AnthropicModelFamily.CLAUDE_OPUS_41,
