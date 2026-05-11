@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
@@ -15,20 +13,15 @@ from dr_llm.llm.names import (
 )
 from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
-    BaseProviderControlMapping,
     OpenAIReasoning,
     OpenRouterReasoning,
     ReasoningBudget,
     ReasoningSpec,
     is_control_unsupported,
-    unsupported_reasoning_kind_message,
     validate_discrete_thinking_level,
 )
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
-)
-from dr_llm.llm.providers.impls.openai.controls import (
-    OpenAIReasoningEffort,
 )
 from dr_llm.llm.providers.impls.openrouter.families import (
     OPENROUTER_FAMILIES,
@@ -41,12 +34,6 @@ from dr_llm.llm.response import CallMode
 
 if TYPE_CHECKING:
     from dr_llm.llm.catalog.models import ModelCatalogEntry
-
-
-class OpenRouterReasoningKey(StrEnum):
-    REASONING = "reasoning"
-    ENABLED = "enabled"
-    EFFORT = "effort"
 
 
 OPENROUTER_DEFAULT_SAMPLING = SamplingControls(temperature=1.0, top_p=0.95)
@@ -309,50 +296,4 @@ def _validate_openrouter_shape(
         allowed = ", ".join(policy.allowed_efforts)
         raise ValueError(
             f"{ProviderName.OPENROUTER} effort={effort!r} is not supported for model={model!r}; allowed levels: {allowed}"
-        )
-
-
-class OpenRouterControlMapping(BaseProviderControlMapping):
-    reasoning_effort: OpenAIReasoningEffort | None = None
-    extra_body: dict[str, Any] = Field(default_factory=dict)
-
-    @classmethod
-    def from_base(
-        cls,
-        config: ReasoningSpec | None,
-    ) -> OpenRouterControlMapping:
-        if config is None:
-            return cls()
-        match config:
-            case OpenAIReasoning(thinking_level=ThinkingLevel.NA):
-                return cls()
-            case OpenAIReasoning(thinking_level=ThinkingLevel.OFF):
-                return cls(reasoning_effort=OpenAIReasoningEffort.NONE)
-            case OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL):
-                return cls(reasoning_effort=OpenAIReasoningEffort.MINIMAL)
-            case OpenAIReasoning(thinking_level=ThinkingLevel.LOW):
-                return cls(reasoning_effort=OpenAIReasoningEffort.LOW)
-            case OpenAIReasoning(thinking_level=ThinkingLevel.MEDIUM):
-                return cls(reasoning_effort=OpenAIReasoningEffort.MEDIUM)
-            case OpenAIReasoning(thinking_level=ThinkingLevel.HIGH):
-                return cls(reasoning_effort=OpenAIReasoningEffort.HIGH)
-            case OpenRouterReasoning(enabled=enabled, effort=effort):
-                reasoning_payload: dict[str, Any]
-                if enabled is not None:
-                    reasoning_payload = {
-                        OpenRouterReasoningKey.ENABLED: enabled
-                    }
-                elif effort is not None:
-                    reasoning_payload = {OpenRouterReasoningKey.EFFORT: effort}
-                else:
-                    raise ProviderSemanticError(
-                        "OpenRouter reasoning serializer received invalid config"
-                    )
-                return cls(
-                    extra_body={
-                        OpenRouterReasoningKey.REASONING: reasoning_payload
-                    }
-                )
-        raise ProviderSemanticError(
-            unsupported_reasoning_kind_message(ProviderName.OPENROUTER, config)
         )

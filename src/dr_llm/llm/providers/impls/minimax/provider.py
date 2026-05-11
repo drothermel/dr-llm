@@ -11,7 +11,9 @@ from dr_llm.llm.providers.impls.anthropic.provider_config import (
 )
 from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
 from dr_llm.llm.providers.impls.anthropic.request import AnthropicRequest
-from dr_llm.llm.providers.impls.minimax.controls import MiniMaxControlMapping
+from dr_llm.llm.providers.impls.minimax.request_controls import (
+    MiniMaxRequestControls,
+)
 from dr_llm.llm.request import LlmRequest
 
 
@@ -40,6 +42,8 @@ class MiniMaxProvider(AnthropicProvider):
         return AnthropicRequest.from_llm_request(
             request,
             self._config,
-            control_mapping=MiniMaxControlMapping.from_base(request.reasoning),
+            request_controls=MiniMaxRequestControls.from_reasoning(
+                request.reasoning
+            ),
             require_max_tokens=False,
         )

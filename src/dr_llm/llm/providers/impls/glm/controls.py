@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
@@ -15,12 +13,10 @@ from dr_llm.llm.names import (
 )
 from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
-    BaseProviderControlMapping,
     GlmReasoning,
     ReasoningBudget,
     ReasoningSpec,
     is_control_unsupported,
-    unsupported_reasoning_kind_message,
     validate_allowed_thinking_levels,
 )
 from dr_llm.llm.providers.core.request_defaults import (
@@ -32,11 +28,6 @@ from dr_llm.llm.providers.impls.glm.families import (
 )
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
-
-
-class GlmThinkingType(StrEnum):
-    DISABLED = "disabled"
-    ENABLED = "enabled"
 
 
 GLM_DEFAULT_SAMPLING = SamplingControls(temperature=1.0, top_p=0.95)
@@ -183,27 +174,3 @@ class GlmControls(BaseModel):
             families=self.families,
         )
         return []
-
-
-class GlmControlMapping(BaseProviderControlMapping):
-    extra_body: dict[str, Any] = Field(default_factory=dict)
-
-    @classmethod
-    def from_base(
-        cls,
-        config: ReasoningSpec | None,
-    ) -> GlmControlMapping:
-        if config is None:
-            return cls()
-        match config:
-            case GlmReasoning(thinking_level=ThinkingLevel.OFF):
-                return cls(
-                    extra_body={"thinking": {"type": GlmThinkingType.DISABLED}}
-                )
-            case GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE):
-                return cls(
-                    extra_body={"thinking": {"type": GlmThinkingType.ENABLED}}
-                )
-        raise ProviderSemanticError(
-            unsupported_reasoning_kind_message(ProviderName.GLM, config)
-        )

@@ -6,8 +6,8 @@ import httpx
 
 from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.names import ApiKeyNames
-from dr_llm.llm.providers.impls.openai.controls import (
-    OpenAIControlMapping,
+from dr_llm.llm.providers.impls.openai.request_controls import (
+    OpenAIRequestControls,
 )
 from dr_llm.llm.providers.impls.openai.families import (
     OPENAI_FAMILIES,
@@ -57,12 +57,14 @@ class OpenAIProvider(ApiProvider):
         return self._config
 
     def _build_request(self, request: LlmRequest) -> OpenAICompatRequest:
-        controls = OpenAIControlMapping.from_base(request.reasoning)
+        request_controls = OpenAIRequestControls.from_reasoning(
+            request.reasoning
+        )
         return OpenAICompatRequest.from_llm_request(
             request,
             self._config,
-            reasoning_effort=controls.reasoning_effort,
-            warnings=controls.warnings,
+            reasoning_effort=request_controls.reasoning_effort,
+            warnings=request_controls.warnings,
         )
 
     def _parse_response(

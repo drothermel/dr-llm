@@ -341,12 +341,6 @@ def require_budget_tokens(
     return budget_tokens
 
 
-class BaseProviderControlMapping(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    warnings: list[ReasoningWarning] = Field(default_factory=list)
-
-
 def unsupported_reasoning_kind_message(
     prefix: str, config: ReasoningSpec
 ) -> str:

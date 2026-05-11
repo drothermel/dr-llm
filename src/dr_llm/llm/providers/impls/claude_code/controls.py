@@ -4,17 +4,14 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import HeadlessExecutionError
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import EffortSpec, ControlMode
 from dr_llm.llm.names import ProviderName, ThinkingLevel
 from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
-    BaseProviderControlMapping,
     ReasoningBudget,
     ReasoningSpec,
-    unsupported_reasoning_kind_message,
 )
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
@@ -187,29 +184,3 @@ class ClaudeCodeControls(BaseModel):
                 f"sampling is not supported for provider={self.provider!r}"
             )
         return []
-
-
-class ClaudeHeadlessControlMapping(BaseProviderControlMapping):
-    cli_args: list[str] = Field(default_factory=list)
-
-    @classmethod
-    def from_base(
-        cls,
-        config: ReasoningSpec | None,
-    ) -> ClaudeHeadlessControlMapping:
-        if config is None:
-            return cls()
-        match config:
-            case AnthropicReasoning(
-                thinking_level=ThinkingLevel.NA, display=None
-            ):
-                return cls()
-            case AnthropicReasoning(
-                thinking_level=ThinkingLevel.ADAPTIVE,
-                budget_tokens=None,
-                display=None,
-            ):
-                return cls()
-        raise HeadlessExecutionError(
-            unsupported_reasoning_kind_message("claude headless", config)
-        )

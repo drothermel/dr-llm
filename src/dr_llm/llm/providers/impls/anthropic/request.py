@@ -9,15 +9,15 @@ from dr_llm.llm.names import EffortSpec
 from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
 )
-from dr_llm.llm.providers.impls.anthropic.controls import (
-    AnthropicControlMapping,
+from dr_llm.llm.providers.impls.anthropic.request_controls import (
+    AnthropicRequestControls,
 )
 from dr_llm.llm.providers.transports.api_config import resolve_api_key
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
 from dr_llm.llm.request import LlmRequest, Message
 
 
-class AnthropicControlPayload(Protocol):
+class AnthropicRequestControlPayload(Protocol):
     thinking: dict[str, Any]
     warnings: list[ReasoningWarning]
 
@@ -57,14 +57,14 @@ class AnthropicRequest(BaseModel):
         request: LlmRequest,
         config: AnthropicProviderConfig,
         *,
-        control_mapping: AnthropicControlPayload | None = None,
+        request_controls: AnthropicRequestControlPayload | None = None,
         require_max_tokens: bool = True,
     ) -> AnthropicRequest:
         if require_max_tokens and request.max_tokens is None:
             raise cls._missing_max_tokens_error(request.provider)
-        resolved_control_mapping = (
-            control_mapping
-            or AnthropicControlMapping.from_base(request.reasoning)
+        resolved_request_controls = (
+            request_controls
+            or AnthropicRequestControls.from_reasoning(request.reasoning)
         )
         output_config = (
             {"effort": request.effort}
@@ -84,12 +84,12 @@ class AnthropicRequest(BaseModel):
             system=system or None,
             temperature=request.sampling_temperature,
             top_p=request.sampling_top_p,
-            thinking=resolved_control_mapping.thinking or None,
+            thinking=resolved_request_controls.thinking or None,
             output_config=output_config,
             base_url=config.base_url,
             api_key=resolve_api_key(config, label="Anthropic"),
             anthropic_version=config.anthropic_version,
-            warnings=resolved_control_mapping.warnings,
+            warnings=resolved_request_controls.warnings,
         )
 
     @staticmethod

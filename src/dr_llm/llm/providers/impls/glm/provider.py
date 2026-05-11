@@ -6,7 +6,9 @@ import httpx
 
 from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.names import ApiKeyNames
-from dr_llm.llm.providers.impls.glm.controls import GlmControlMapping
+from dr_llm.llm.providers.impls.glm.request_controls import (
+    GlmRequestControls,
+)
 from dr_llm.llm.providers.transports.api_provider import ApiProvider
 from dr_llm.llm.providers.transports.openai_compat.config import (
     OpenAICompatConfig,
@@ -49,12 +51,12 @@ class GlmProvider(ApiProvider):
         return self._config
 
     def _build_request(self, request: LlmRequest) -> OpenAICompatRequest:
-        controls = GlmControlMapping.from_base(request.reasoning)
+        request_controls = GlmRequestControls.from_reasoning(request.reasoning)
         return OpenAICompatRequest.from_llm_request(
             request,
             self._config,
-            extra_body=controls.extra_body,
-            warnings=controls.warnings,
+            extra_body=request_controls.extra_body,
+            warnings=request_controls.warnings,
         )
 
     def _parse_response(

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
@@ -15,12 +13,10 @@ from dr_llm.llm.names import (
 )
 from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
-    BaseProviderControlMapping,
     OpenAIReasoning,
     ReasoningBudget,
     ReasoningSpec,
     dispatch_reasoning_validation,
-    unsupported_reasoning_kind_message,
     validate_discrete_thinking_level,
 )
 from dr_llm.llm.providers.core.request_defaults import (
@@ -32,14 +28,6 @@ from dr_llm.llm.providers.impls.openai.families import (
 )
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
-
-
-class OpenAIReasoningEffort(StrEnum):
-    NONE = "none"
-    MINIMAL = "minimal"
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
 
 
 OPENAI_TEMP_TOPP_UNSUPPORTED_MSG = (
@@ -221,6 +209,7 @@ class OpenAIControls(BaseModel):
             reasoning=request.reasoning,
             families=self.families,
         )
+
         _validate_openai_sampling_controls(
             model=request.model,
             reasoning=request.reasoning,
@@ -228,31 +217,3 @@ class OpenAIControls(BaseModel):
             families=self.families,
         )
         return []
-
-
-class OpenAIControlMapping(BaseProviderControlMapping):
-    reasoning_effort: OpenAIReasoningEffort | None = None
-
-    @classmethod
-    def from_base(
-        cls,
-        config: ReasoningSpec | None,
-    ) -> OpenAIControlMapping:
-        if config is None:
-            return cls()
-        match config:
-            case OpenAIReasoning(thinking_level=ThinkingLevel.NA):
-                return cls()
-            case OpenAIReasoning(thinking_level=ThinkingLevel.OFF):
-                return cls(reasoning_effort=OpenAIReasoningEffort.NONE)
-            case OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL):
-                return cls(reasoning_effort=OpenAIReasoningEffort.MINIMAL)
-            case OpenAIReasoning(thinking_level=ThinkingLevel.LOW):
-                return cls(reasoning_effort=OpenAIReasoningEffort.LOW)
-            case OpenAIReasoning(thinking_level=ThinkingLevel.MEDIUM):
-                return cls(reasoning_effort=OpenAIReasoningEffort.MEDIUM)
-            case OpenAIReasoning(thinking_level=ThinkingLevel.HIGH):
-                return cls(reasoning_effort=OpenAIReasoningEffort.HIGH)
-        raise ProviderSemanticError(
-            unsupported_reasoning_kind_message(ProviderName.OPENAI, config)
-        )

@@ -6,8 +6,8 @@ from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
     AnthropicUrls,
 )
-from dr_llm.llm.providers.impls.anthropic.controls import (
-    AnthropicControlMapping,
+from dr_llm.llm.providers.impls.anthropic.request_controls import (
+    AnthropicRequestControls,
 )
 from dr_llm.llm.providers.impls.anthropic.request import AnthropicRequest
 from dr_llm.llm.providers.impls.anthropic.response import AnthropicResponse
@@ -37,7 +37,7 @@ class AnthropicProvider(ApiProvider):
         return AnthropicRequest.from_llm_request(
             request,
             self._config,
-            control_mapping=AnthropicControlMapping.from_base(
+            request_controls=AnthropicRequestControls.from_reasoning(
                 request.reasoning
             ),
         )

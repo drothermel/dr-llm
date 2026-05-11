@@ -4,7 +4,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
@@ -15,10 +14,8 @@ from dr_llm.llm.names import (
 from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
-    BaseProviderControlMapping,
     ReasoningBudget,
     ReasoningSpec,
-    unsupported_reasoning_kind_message,
 )
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
@@ -172,30 +169,3 @@ class MiniMaxControls(BaseModel):
             model=request.model, reasoning=request.reasoning
         )
         return []
-
-
-class MiniMaxControlMapping(BaseProviderControlMapping):
-    thinking: dict[str, Any] = Field(default_factory=dict)
-
-    @classmethod
-    def from_base(
-        cls,
-        config: ReasoningSpec | None,
-    ) -> MiniMaxControlMapping:
-        if config is None:
-            raise ProviderSemanticError(
-                f"{ProviderName.MINIMAX} requires explicit AnthropicReasoning(thinking_level='na')"
-            )
-        match config:
-            case AnthropicReasoning(
-                thinking_level=ThinkingLevel.NA,
-                budget_tokens=None,
-                display=None,
-            ):
-                return cls()
-            case _:
-                raise ProviderSemanticError(
-                    unsupported_reasoning_kind_message(
-                        ProviderName.MINIMAX, config
-                    )
-                )

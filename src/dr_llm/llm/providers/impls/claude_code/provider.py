@@ -13,13 +13,13 @@ from dr_llm.llm.providers.names import ApiKeyNames
 from dr_llm.llm.providers.transports.headless_base import (
     BaseHeadlessProvider,
     HEADLESS_DEFAULT_EMPTY_PROMPT,
-    HeadlessControlResult,
     HeadlessRequestPayload,
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
-from dr_llm.llm.providers.impls.claude_code.controls import (
-    ClaudeHeadlessControlMapping,
+from dr_llm.llm.providers.core.request_controls import HeadlessRequestControls
+from dr_llm.llm.providers.impls.claude_code.request_controls import (
+    ClaudeCodeRequestControls,
 )
 from dr_llm.llm.providers.impls.claude_code.families import (
     ClaudeCodeModelFamily,
@@ -178,7 +178,7 @@ class ClaudeCodeProvider(BaseHeadlessProvider):
         self,
         request: LlmRequest,
         payload: HeadlessRequestPayload,
-        control_mapping: HeadlessControlResult,
+        request_controls: HeadlessRequestControls,
     ) -> list[str]:
         del payload
         if (
@@ -192,12 +192,12 @@ class ClaudeCodeProvider(BaseHeadlessProvider):
         command.extend(["--model", request.model])
         if request.effort != EffortSpec.NA:
             command.extend(["--effort", request.effort])
-        elif control_mapping.cli_args:
-            command.extend(control_mapping.cli_args)
+        elif request_controls.cli_args:
+            command.extend(request_controls.cli_args)
         return command
 
-    def control_mapping(self, request: LlmRequest) -> HeadlessControlResult:
-        return ClaudeHeadlessControlMapping.from_base(request.reasoning)
+    def request_controls(self, request: LlmRequest) -> HeadlessRequestControls:
+        return ClaudeCodeRequestControls.from_reasoning(request.reasoning)
 
     def stdin_for_request(
         self,

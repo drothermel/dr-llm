@@ -15,13 +15,13 @@ from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.transports.headless_base import (
     BaseHeadlessProvider,
     HEADLESS_DEFAULT_EMPTY_PROMPT,
-    HeadlessControlResult,
     HeadlessRequestPayload,
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
-from dr_llm.llm.providers.impls.codex.controls import (
-    CodexHeadlessControlMapping,
+from dr_llm.llm.providers.core.request_controls import HeadlessRequestControls
+from dr_llm.llm.providers.impls.codex.request_controls import (
+    CodexRequestControls,
 )
 from dr_llm.llm.providers.transports.headless_config import CodexProviderConfig
 from dr_llm.llm.request import LlmRequest
@@ -250,13 +250,13 @@ class CodexProvider(BaseHeadlessProvider):
         self,
         request: LlmRequest,
         payload: HeadlessRequestPayload,
-        control_mapping: HeadlessControlResult,
+        request_controls: HeadlessRequestControls,
     ) -> list[str]:
         del payload
         command = [*self._config.command]
         command.extend(["-m", request.model])
-        if control_mapping.cli_args:
-            command.extend(control_mapping.cli_args)
+        if request_controls.cli_args:
+            command.extend(request_controls.cli_args)
         instructions_path = self._ensure_neutral_instructions_file()
         command.extend(
             [
@@ -267,8 +267,8 @@ class CodexProvider(BaseHeadlessProvider):
         )
         return command
 
-    def control_mapping(self, request: LlmRequest) -> HeadlessControlResult:
-        return CodexHeadlessControlMapping.from_base(request.reasoning)
+    def request_controls(self, request: LlmRequest) -> HeadlessRequestControls:
+        return CodexRequestControls.from_reasoning(request.reasoning)
 
     def stdin_for_request(
         self,

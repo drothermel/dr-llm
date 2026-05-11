@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
@@ -16,11 +14,8 @@ from dr_llm.llm.names import (
 from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
-    BaseProviderControlMapping,
     ReasoningBudget,
     ReasoningSpec,
-    require_budget_tokens,
-    unsupported_reasoning_kind_message,
     validate_budget_range,
 )
 from dr_llm.llm.providers.core.request_defaults import (
@@ -32,12 +27,6 @@ from dr_llm.llm.providers.impls.kimi_code.families import (
 )
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
-
-
-class KimiCodeThinkingType(StrEnum):
-    DISABLED = "disabled"
-    ADAPTIVE = "adaptive"
-    ENABLED = "enabled"
 
 
 KIMI_CODE_DEFAULT_MAX_TOKENS = 16384
@@ -265,54 +254,3 @@ def _require_budget_tokens(*, provider: str, budget_tokens: int | None) -> int:
     if budget_tokens is None:
         raise ValueError(f"{provider} budget thinking requires budget_tokens")
     return budget_tokens
-
-
-class KimiCodeControlMapping(BaseProviderControlMapping):
-    thinking: dict[str, Any] = Field(default_factory=dict)
-
-    @classmethod
-    def from_base(
-        cls,
-        config: ReasoningSpec | None,
-    ) -> KimiCodeControlMapping:
-        if config is None:
-            return cls()
-        match config:
-            case AnthropicReasoning(
-                thinking_level=ThinkingLevel.NA,
-                budget_tokens=None,
-                display=None,
-            ):
-                return cls()
-            case AnthropicReasoning(
-                thinking_level=ThinkingLevel.OFF,
-                budget_tokens=None,
-                display=None,
-            ):
-                return cls(thinking={"type": KimiCodeThinkingType.DISABLED})
-            case AnthropicReasoning(
-                thinking_level=ThinkingLevel.ADAPTIVE,
-                budget_tokens=None,
-                display=None,
-            ):
-                return cls(thinking={"type": KimiCodeThinkingType.ADAPTIVE})
-            case AnthropicReasoning(
-                thinking_level=ThinkingLevel.BUDGET,
-                budget_tokens=budget_tokens,
-                display=None,
-            ):
-                tokens = require_budget_tokens(
-                    budget_tokens, label=ProviderName.KIMI_CODE, min_value=1
-                )
-                return cls(
-                    thinking={
-                        "type": KimiCodeThinkingType.ENABLED,
-                        "budget_tokens": tokens,
-                    }
-                )
-            case _:
-                raise ProviderSemanticError(
-                    unsupported_reasoning_kind_message(
-                        ProviderName.KIMI_CODE, config
-                    )
-                )

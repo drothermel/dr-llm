@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import HeadlessExecutionError
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
@@ -15,13 +13,11 @@ from dr_llm.llm.names import (
 )
 from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
-    BaseProviderControlMapping,
     CodexReasoning,
     ReasoningBudget,
     ReasoningSpec,
     dispatch_reasoning_validation,
     is_control_unsupported,
-    unsupported_reasoning_kind_message,
     validate_budget_range,
     validate_discrete_thinking_level,
 )
@@ -34,19 +30,6 @@ from dr_llm.llm.providers.impls.codex.families import (
 )
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
-
-
-class CodexCliConfigKey(StrEnum):
-    MODEL_REASONING_EFFORT = "model_reasoning_effort"
-
-
-class CodexReasoningEffort(StrEnum):
-    NONE = "none"
-    MINIMAL = "minimal"
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    XHIGH = "xhigh"
 
 
 def _validate_reasoning_for_codex(
@@ -94,48 +77,6 @@ def _validate_reasoning_for_codex(
         validate_native=_validate_native,
         validate_top_budget=_validate_top_budget,
     )
-
-
-class CodexHeadlessControlMapping(BaseProviderControlMapping):
-    cli_args: list[str] = Field(default_factory=list)
-
-    @classmethod
-    def from_base(
-        cls,
-        config: ReasoningSpec | None,
-    ) -> CodexHeadlessControlMapping:
-        if config is None:
-            return cls()
-        match config:
-            case CodexReasoning(thinking_level=ThinkingLevel.NA):
-                return cls()
-            case CodexReasoning(thinking_level=ThinkingLevel.OFF):
-                return cls(
-                    cli_args=[
-                        "-c",
-                        _codex_reasoning_effort_config(
-                            CodexReasoningEffort.NONE
-                        ),
-                    ]
-                )
-            case CodexReasoning(
-                thinking_level=ThinkingLevel.MINIMAL
-                | ThinkingLevel.LOW
-                | ThinkingLevel.MEDIUM
-                | ThinkingLevel.HIGH
-                | ThinkingLevel.XHIGH
-            ):
-                return cls(
-                    cli_args=[
-                        "-c",
-                        _codex_reasoning_effort_config(
-                            CodexReasoningEffort(config.thinking_level)
-                        ),
-                    ]
-                )
-        raise HeadlessExecutionError(
-            unsupported_reasoning_kind_message("codex headless", config)
-        )
 
 
 class CodexControls(BaseModel):
@@ -251,7 +192,3 @@ class CodexControls(BaseModel):
                 f"sampling is not supported for provider={self.provider!r}"
             )
         return []
-
-
-def _codex_reasoning_effort_config(effort: CodexReasoningEffort) -> str:
-    return f'{CodexCliConfigKey.MODEL_REASONING_EFFORT}="{effort}"'

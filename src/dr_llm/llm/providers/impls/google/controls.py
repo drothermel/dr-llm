@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from enum import IntEnum, StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
@@ -15,15 +13,12 @@ from dr_llm.llm.names import (
 )
 from dr_llm.llm.providers.concepts.effort import validate_effort
 from dr_llm.llm.providers.concepts.reasoning import (
-    BaseProviderControlMapping,
     GoogleReasoning,
     ReasoningBudget,
     ReasoningSpec,
     dispatch_reasoning_validation,
     google_literal_to_thinking_level,
     is_control_unsupported,
-    require_budget_tokens,
-    unsupported_reasoning_kind_message,
     validate_allowed_thinking_levels,
     validate_budget_range,
 )
@@ -37,17 +32,6 @@ from dr_llm.llm.providers.impls.google.families import (
 )
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
-
-
-class GoogleThinkingPayloadKey(StrEnum):
-    THINKING_BUDGET = "thinkingBudget"
-    THINKING_LEVEL = "thinkingLevel"
-    INCLUDE_THOUGHTS = "includeThoughts"
-
-
-class GoogleThinkingBudget(IntEnum):
-    OFF = 0
-    ADAPTIVE = -1
 
 
 GOOGLE_DEFAULT_SAMPLING = SamplingControls(temperature=1.0, top_p=0.95)
@@ -328,78 +312,3 @@ def _require_budget_tokens(*, provider: str, budget_tokens: int | None) -> int:
     if budget_tokens is None:
         raise ValueError(f"{provider} budget thinking requires budget_tokens")
     return budget_tokens
-
-
-class GoogleControlMapping(BaseProviderControlMapping):
-    payload: dict[str, Any] = Field(default_factory=dict)
-
-    @classmethod
-    def from_base(
-        cls,
-        config: ReasoningSpec | None,
-    ) -> GoogleControlMapping:
-        if config is None:
-            return cls()
-        match config:
-            case ReasoningBudget(tokens=tokens):
-                return cls(
-                    payload={GoogleThinkingPayloadKey.THINKING_BUDGET: tokens}
-                )
-            case GoogleReasoning(
-                thinking_level=thinking_level,
-                budget_tokens=budget_tokens,
-                include_thoughts=include_thoughts,
-            ):
-                if thinking_level == ThinkingLevel.NA:
-                    return cls()
-                payload = _build_thinking_payload(
-                    thinking_level=thinking_level,
-                    budget_tokens=budget_tokens,
-                )
-                if include_thoughts is not None:
-                    payload[GoogleThinkingPayloadKey.INCLUDE_THOUGHTS] = (
-                        include_thoughts
-                    )
-                return cls(payload=payload)
-            case _:
-                raise ProviderSemanticError(
-                    unsupported_reasoning_kind_message(
-                        ProviderName.GOOGLE, config
-                    )
-                )
-
-
-_GOOGLE_LITERAL_LEVELS = {
-    ThinkingLevel.MINIMAL,
-    ThinkingLevel.LOW,
-    ThinkingLevel.MEDIUM,
-    ThinkingLevel.HIGH,
-}
-
-
-def _build_thinking_payload(
-    *,
-    thinking_level: ThinkingLevel,
-    budget_tokens: int | None,
-) -> dict[str, Any]:
-    if thinking_level == ThinkingLevel.OFF:
-        return {
-            GoogleThinkingPayloadKey.THINKING_BUDGET: GoogleThinkingBudget.OFF
-        }
-    if thinking_level == ThinkingLevel.ADAPTIVE:
-        return {
-            GoogleThinkingPayloadKey.THINKING_BUDGET: (
-                GoogleThinkingBudget.ADAPTIVE
-            )
-        }
-    if thinking_level == ThinkingLevel.BUDGET:
-        return {
-            GoogleThinkingPayloadKey.THINKING_BUDGET: require_budget_tokens(
-                budget_tokens, label=ProviderName.GOOGLE, min_value=0
-            )
-        }
-    if thinking_level in _GOOGLE_LITERAL_LEVELS:
-        return {GoogleThinkingPayloadKey.THINKING_LEVEL: str(thinking_level)}
-    raise ProviderSemanticError(
-        f"{ProviderName.GOOGLE} reasoning config did not contain a serializable setting"
-    )

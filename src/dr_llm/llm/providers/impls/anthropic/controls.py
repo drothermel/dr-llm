@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
@@ -18,13 +16,9 @@ from dr_llm.llm.providers.concepts.effort import (
 )
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
-    BaseProviderControlMapping,
-    ReasoningBudget,
     ReasoningSpec,
     dispatch_reasoning_validation,
     is_control_unsupported,
-    require_budget_tokens,
-    unsupported_reasoning_kind_message,
     validate_budget_range,
 )
 from dr_llm.llm.providers.core.request_defaults import (
@@ -36,11 +30,6 @@ from dr_llm.llm.providers.impls.anthropic.families import (
 )
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode
-
-
-class AnthropicThinkingType(StrEnum):
-    ENABLED = "enabled"
-    ADAPTIVE = "adaptive"
 
 
 ANTHROPIC_DEFAULT_MAX_TOKENS = 4096
@@ -87,9 +76,7 @@ def _validate_reasoning_for_anthropic(
     families: AnthropicFamilies | None = None,
 ) -> None:
     families = families or ANTHROPIC_FAMILIES
-    controls = AnthropicControls(
-        model=model, mode=CallMode.api, families=families
-    )
+    controls = AnthropicControls(model=model, mode=CallMode.api, families=families)
     dispatch_reasoning_validation(
         provider=ProviderName.ANTHROPIC,
         model=model,
@@ -116,10 +103,7 @@ def _validate_anthropic_reasoning_shape(
     controls: "AnthropicControls",
 ) -> None:
     thinking_level = reasoning.thinking_level
-    if (
-        thinking_level != ThinkingLevel.BUDGET
-        and reasoning.budget_tokens is not None
-    ):
+    if thinking_level != ThinkingLevel.BUDGET and reasoning.budget_tokens is not None:
         raise ValueError(
             "anthropic budget_tokens are only allowed with thinking_level='budget'"
         )
@@ -151,15 +135,24 @@ def _validate_anthropic_reasoning_shape(
     )
 
 
+def _validate_max_tokens_required(request: LlmRequest) -> None:
+    if request.max_tokens is None:
+        raise ValueError("anthropic requests require max_tokens")
+
+
+def _require_budget_tokens(budget_tokens: int | None) -> int:
+    if budget_tokens is None:
+        raise ValueError("anthropic budget thinking requires budget_tokens")
+    return budget_tokens
+
+
 class AnthropicControls(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     provider: ProviderName = ProviderName.ANTHROPIC
     model: str
     mode: CallMode
-    families: AnthropicFamilies = Field(
-        default_factory=AnthropicFamilies, exclude=True
-    )
+    families: AnthropicFamilies = Field(default_factory=AnthropicFamilies, exclude=True)
 
     @property
     def control_mode(self) -> ControlMode:
@@ -264,83 +257,21 @@ class AnthropicControls(BaseModel):
         if thinking_level == ThinkingLevel.BUDGET:
             return AnthropicReasoning(
                 thinking_level=thinking_level,
-                budget_tokens=_require_budget_tokens(
-                    provider=self.provider,
-                    budget_tokens=budget_tokens,
-                ),
+                budget_tokens=_require_budget_tokens(budget_tokens=budget_tokens),
             )
         return AnthropicReasoning(thinking_level=thinking_level)
 
     def validate_request(self, request: LlmRequest) -> list:
-        self._validate_max_tokens_required(request)
         validate_effort(
             provider=self.provider,
             model=self.model,
             effort=request.effort,
             supported_effort_levels=self.supported_effort_levels,
         )
+        _validate_max_tokens_required(request)
         _validate_reasoning_for_anthropic(
             model=request.model,
             reasoning=request.reasoning,
             families=self.families,
         )
         return []
-
-    def _validate_max_tokens_required(self, request: LlmRequest) -> None:
-        if request.max_tokens is None:
-            raise ValueError(
-                f"max_tokens is required for provider={self.provider!r}"
-            )
-
-
-def _require_budget_tokens(*, provider: str, budget_tokens: int | None) -> int:
-    if budget_tokens is None:
-        raise ValueError(f"{provider} budget thinking requires budget_tokens")
-    return budget_tokens
-
-
-class AnthropicControlMapping(BaseProviderControlMapping):
-    thinking: dict[str, Any] = Field(default_factory=dict)
-
-    @classmethod
-    def from_base(
-        cls,
-        config: ReasoningSpec | None,
-    ) -> AnthropicControlMapping:
-        if config is None:
-            return cls()
-        match config:
-            case ReasoningBudget(tokens=tokens):
-                return cls(
-                    thinking={
-                        "type": AnthropicThinkingType.ENABLED,
-                        "budget_tokens": tokens,
-                    }
-                )
-            case AnthropicReasoning(
-                thinking_level=thinking_level,
-                budget_tokens=budget_tokens,
-                display=display,
-            ):
-                thinking: dict[str, Any] = {}
-                if thinking_level == ThinkingLevel.BUDGET:
-                    tokens = require_budget_tokens(
-                        budget_tokens,
-                        label=ProviderName.ANTHROPIC,
-                        min_value=1,
-                    )
-                    thinking = {
-                        "type": AnthropicThinkingType.ENABLED,
-                        "budget_tokens": tokens,
-                    }
-                elif thinking_level == ThinkingLevel.ADAPTIVE:
-                    thinking = {"type": AnthropicThinkingType.ADAPTIVE}
-                if display is not None:
-                    thinking["display"] = display
-                return cls(thinking=thinking)
-            case _:
-                raise ProviderSemanticError(
-                    unsupported_reasoning_kind_message(
-                        ProviderName.ANTHROPIC, config
-                    )
-                )
