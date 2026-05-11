@@ -21,24 +21,24 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.headless.claude.capabilities import (
+from dr_llm.llm.providers.claude_code.capabilities import (
     reasoning_capabilities_for_claude_code,
     supported_effort_levels_for_claude_code,
 )
-from dr_llm.llm.providers.headless.claude.provider import (
-    ClaudeHeadlessProvider,
+from dr_llm.llm.providers.claude_code.provider import (
+    ClaudeCodeProvider,
 )
-from dr_llm.llm.providers.headless.claude.reasoning import (
+from dr_llm.llm.providers.claude_code.reasoning import (
     validate_reasoning_for_claude_code,
 )
 from dr_llm.llm.providers.orchestrator_base import BaseProviderOrchestrator
 from dr_llm.llm.request import LlmRequest
 
 
-class ClaudeHeadlessOrchestrator(BaseProviderOrchestrator):
-    _provider: ClaudeHeadlessProvider
+class ClaudeCodeOrchestrator(BaseProviderOrchestrator):
+    _provider: ClaudeCodeProvider
 
-    def __init__(self, provider: ClaudeHeadlessProvider) -> None:
+    def __init__(self, provider: ClaudeCodeProvider) -> None:
         super().__init__(provider)
 
     @property

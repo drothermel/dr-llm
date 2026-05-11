@@ -11,11 +11,11 @@ from dr_llm.llm.providers.google.orchestrator import GoogleOrchestrator
 from dr_llm.llm.providers.google.provider import GoogleProvider
 from dr_llm.llm.providers.kimi_code.orchestrator import KimiCodeOrchestrator
 from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
-from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
-from dr_llm.llm.providers.openai_compat.openai_orchestrator import (
+from dr_llm.llm.providers.openai_compat_config import OpenAICompatConfig
+from dr_llm.llm.providers.openai.orchestrator import (
     OpenAIOrchestrator,
 )
-from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
+from dr_llm.llm.providers.openai_compat_provider import OpenAICompatProvider
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 
 
@@ -105,7 +105,7 @@ def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
         return [], {"source": "openai_compat"}
 
     monkeypatch.setattr(
-        "dr_llm.llm.providers.openai_compat.orchestrator_base.fetch_openai_compat_models",
+        "dr_llm.llm.providers.openai_compat_orchestrator.fetch_openai_compat_models",
         fake_fetch_openai_compat_models,
     )
 

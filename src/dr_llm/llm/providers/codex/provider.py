@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.llm.names import ProviderName
-from dr_llm.llm.providers.headless.base import (
+from dr_llm.llm.providers.headless_base import (
     BaseHeadlessProvider,
     HEADLESS_DEFAULT_EMPTY_PROMPT,
     HeadlessReasoningResult,
@@ -19,10 +19,10 @@ from dr_llm.llm.providers.headless.base import (
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
-from dr_llm.llm.providers.headless.codex.reasoning import (
+from dr_llm.llm.providers.codex.reasoning import (
     CodexHeadlessReasoningConfig,
 )
-from dr_llm.llm.providers.headless.config import CodexHeadlessProviderConfig
+from dr_llm.llm.providers.headless_config import CodexProviderConfig
 from dr_llm.llm.request import HeadlessLlmRequest
 
 
@@ -211,10 +211,10 @@ class CodexHeadlessResponse(BaseModel):
         }
 
 
-class CodexHeadlessProvider(BaseHeadlessProvider):
+class CodexProvider(BaseHeadlessProvider):
     def __init__(self, command: list[str] | None = None) -> None:
         super().__init__(
-            config=CodexHeadlessProviderConfig(
+            config=CodexProviderConfig(
                 name=ProviderName.CODEX,
                 command=command or CODEX_DEFAULT_COMMAND,
             ),

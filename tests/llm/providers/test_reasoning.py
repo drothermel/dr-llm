@@ -14,13 +14,13 @@ from dr_llm.llm.providers.minimax.reasoning import (
     validate_reasoning_for_minimax,
 )
 from dr_llm.llm.providers.google.reasoning import GoogleReasoningConfig
-from dr_llm.llm.providers.headless.claude.reasoning import (
+from dr_llm.llm.providers.claude_code.reasoning import (
     ClaudeHeadlessReasoningConfig,
 )
-from dr_llm.llm.providers.headless.codex.reasoning import (
+from dr_llm.llm.providers.codex.reasoning import (
     CodexHeadlessReasoningConfig,
 )
-from dr_llm.llm.providers.openai_compat.reasoning import (
+from dr_llm.llm.providers.openai_compat_reasoning import (
     OpenAICompatReasoningConfig,
 )
 from dr_llm.llm.names import ThinkingLevel

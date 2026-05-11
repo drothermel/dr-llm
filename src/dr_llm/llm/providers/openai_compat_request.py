@@ -9,10 +9,10 @@ from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.api_config import resolve_api_key
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
-from dr_llm.llm.providers.openai_compat.reasoning import (
+from dr_llm.llm.providers.openai_compat_reasoning import (
     OpenAICompatReasoningConfig,
 )
-from dr_llm.llm.providers.openai_compat.thinking import (
+from dr_llm.llm.providers.openai.thinking import (
     openai_uses_max_completion_tokens,
 )
 from dr_llm.llm.request import (
@@ -23,7 +23,7 @@ from dr_llm.llm.request import (
 )
 
 if TYPE_CHECKING:
-    from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
+    from dr_llm.llm.providers.openai_compat_config import OpenAICompatConfig
 
 
 class OpenAICompatRequest(BaseModel):

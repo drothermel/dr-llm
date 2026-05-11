@@ -11,8 +11,8 @@ from dr_llm.llm.providers.anthropic.config import AnthropicConfig
 from dr_llm.llm.providers.google.provider import GoogleProvider
 from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
 from dr_llm.llm.providers.minimax.provider import MiniMaxProvider
-from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
-from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
+from dr_llm.llm.providers.openai_compat_provider import OpenAICompatProvider
+from dr_llm.llm.providers.openai_compat_config import OpenAICompatConfig
 from dr_llm.llm.providers.config import (
     ProviderAvailabilityStatus,
     ProviderConfig,

@@ -19,10 +19,10 @@ from dr_llm.llm import (
     OpenRouterReasoning,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
-from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
-from dr_llm.llm.providers.openai_compat.request import OpenAICompatRequest
-from dr_llm.llm.providers.openai_compat.response import OpenAICompatResponse
+from dr_llm.llm.providers.openai_compat_provider import OpenAICompatProvider
+from dr_llm.llm.providers.openai_compat_config import OpenAICompatConfig
+from dr_llm.llm.providers.openai_compat_request import OpenAICompatRequest
+from dr_llm.llm.providers.openai_compat_response import OpenAICompatResponse
 from tests.conftest import make_request
 from tests.llm.providers.conftest import make_http_client
 

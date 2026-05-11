@@ -18,24 +18,24 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.headless.codex.capabilities import (
+from dr_llm.llm.providers.codex.capabilities import (
     codex_supports_configurable_thinking,
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
     reasoning_capabilities_for_codex,
 )
-from dr_llm.llm.providers.headless.codex.provider import CodexHeadlessProvider
-from dr_llm.llm.providers.headless.codex.reasoning import (
+from dr_llm.llm.providers.codex.provider import CodexProvider
+from dr_llm.llm.providers.codex.reasoning import (
     validate_reasoning_for_codex,
 )
 from dr_llm.llm.providers.orchestrator_base import BaseProviderOrchestrator
 from dr_llm.llm.request import LlmRequest
 
 
-class CodexHeadlessOrchestrator(BaseProviderOrchestrator):
-    _provider: CodexHeadlessProvider
+class CodexOrchestrator(BaseProviderOrchestrator):
+    _provider: CodexProvider
 
-    def __init__(self, provider: CodexHeadlessProvider) -> None:
+    def __init__(self, provider: CodexProvider) -> None:
         super().__init__(provider)
 
     @property

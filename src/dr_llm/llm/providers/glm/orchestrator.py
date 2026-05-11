@@ -10,15 +10,13 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.openai_compat.glm_capabilities import (
+from dr_llm.llm.providers.glm.capabilities import (
     reasoning_capabilities_for_glm,
 )
-from dr_llm.llm.providers.openai_compat.orchestrator_base import (
+from dr_llm.llm.providers.openai_compat_orchestrator import (
     BaseOpenAICompatOrchestrator,
 )
-from dr_llm.llm.providers.openai_compat.reasoning import (
-    validate_reasoning_for_glm,
-)
+from dr_llm.llm.providers.glm.reasoning import validate_reasoning_for_glm
 from dr_llm.llm.request import LlmRequest
 
 

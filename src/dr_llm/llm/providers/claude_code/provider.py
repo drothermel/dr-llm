@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.llm.names import EffortSpec, ProviderName
-from dr_llm.llm.providers.headless.base import (
+from dr_llm.llm.providers.headless_base import (
     BaseHeadlessProvider,
     HEADLESS_DEFAULT_EMPTY_PROMPT,
     HeadlessReasoningResult,
@@ -16,10 +16,10 @@ from dr_llm.llm.providers.headless.base import (
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
-from dr_llm.llm.providers.headless.claude.reasoning import (
+from dr_llm.llm.providers.claude_code.reasoning import (
     ClaudeHeadlessReasoningConfig,
 )
-from dr_llm.llm.providers.headless.config import ClaudeHeadlessProviderConfig
+from dr_llm.llm.providers.headless_config import ClaudeCodeProviderConfig
 from dr_llm.llm.request import HeadlessLlmRequest
 
 
@@ -131,8 +131,8 @@ class ClaudeHeadlessResponse(BaseModel):
         )
 
 
-class ClaudeHeadlessProvider(BaseHeadlessProvider):
-    _config: ClaudeHeadlessProviderConfig
+class ClaudeCodeProvider(BaseHeadlessProvider):
+    _config: ClaudeCodeProviderConfig
 
     def __init__(
         self,
@@ -143,7 +143,7 @@ class ClaudeHeadlessProvider(BaseHeadlessProvider):
         api_key_env: str | None = None,
     ) -> None:
         super().__init__(
-            config=ClaudeHeadlessProviderConfig(
+            config=ClaudeCodeProviderConfig(
                 name=name,
                 command=command or CLAUDE_DEFAULT_COMMAND,
                 env_overrides=env_overrides or {},

@@ -10,7 +10,7 @@ from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilities,
     build_model_capabilities,
 )
-from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
+from dr_llm.llm.providers.openai_compat_provider import OpenAICompatProvider
 from dr_llm.llm.providers.orchestrator_base import (
     BaseProviderOrchestrator,
     CatalogResult,

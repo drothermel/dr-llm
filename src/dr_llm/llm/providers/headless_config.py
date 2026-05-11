@@ -28,7 +28,7 @@ class HeadlessProviderConfig(ProviderConfig):
         return self
 
 
-class ClaudeHeadlessProviderConfig(HeadlessProviderConfig):
+class ClaudeCodeProviderConfig(HeadlessProviderConfig):
     api_key_env: str | None = None
     timeout_seconds: float = 600.0
 
@@ -43,5 +43,5 @@ class ClaudeHeadlessProviderConfig(HeadlessProviderConfig):
         return self
 
 
-class CodexHeadlessProviderConfig(HeadlessProviderConfig):
+class CodexProviderConfig(HeadlessProviderConfig):
     timeout_seconds: float = 600.0

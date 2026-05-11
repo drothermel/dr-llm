@@ -7,33 +7,33 @@ from dr_llm.llm.providers.anthropic.orchestrator import AnthropicOrchestrator
 from dr_llm.llm.providers.anthropic.provider import AnthropicProvider
 from dr_llm.llm.providers.api_config import APIProviderConfig
 from dr_llm.llm.providers.config import ProviderAvailabilityStatus
+from dr_llm.llm.providers.claude_code.orchestrator import (
+    ClaudeCodeOrchestrator,
+)
+from dr_llm.llm.providers.claude_code.provider import (
+    ClaudeCodeProvider,
+)
+from dr_llm.llm.providers.codex.orchestrator import (
+    CodexOrchestrator,
+)
+from dr_llm.llm.providers.codex.provider import CodexProvider
+from dr_llm.llm.providers.glm.orchestrator import (
+    GlmOrchestrator,
+)
 from dr_llm.llm.providers.google.orchestrator import GoogleOrchestrator
 from dr_llm.llm.providers.google.provider import GoogleProvider
-from dr_llm.llm.providers.headless.claude.orchestrator import (
-    ClaudeHeadlessOrchestrator,
-)
-from dr_llm.llm.providers.headless.claude.provider import (
-    ClaudeHeadlessProvider,
-)
-from dr_llm.llm.providers.headless.codex.orchestrator import (
-    CodexHeadlessOrchestrator,
-)
-from dr_llm.llm.providers.headless.codex.provider import CodexHeadlessProvider
 from dr_llm.llm.providers.kimi_code.orchestrator import KimiCodeOrchestrator
 from dr_llm.llm.providers.kimi_code.provider import KimiCodeProvider
 from dr_llm.llm.providers.minimax.orchestrator import MiniMaxOrchestrator
 from dr_llm.llm.providers.minimax.provider import MiniMaxProvider
-from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
-from dr_llm.llm.providers.openai_compat.glm_orchestrator import (
-    GlmOrchestrator,
-)
-from dr_llm.llm.providers.openai_compat.openai_orchestrator import (
+from dr_llm.llm.providers.openai.orchestrator import (
     OpenAIOrchestrator,
 )
-from dr_llm.llm.providers.openai_compat.openrouter_orchestrator import (
+from dr_llm.llm.providers.openai_compat_config import OpenAICompatConfig
+from dr_llm.llm.providers.openai_compat_provider import OpenAICompatProvider
+from dr_llm.llm.providers.openrouter.orchestrator import (
     OpenRouterOrchestrator,
 )
-from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
 from dr_llm.llm.providers.protocol import ProviderOrchestrator
 
 
@@ -152,11 +152,11 @@ def build_default_registry() -> ProviderRegistry:
     )
     registry.register(GoogleOrchestrator(google))
 
-    codex = CodexHeadlessProvider()
-    registry.register(CodexHeadlessOrchestrator(codex))
+    codex = CodexProvider()
+    registry.register(CodexOrchestrator(codex))
 
-    claude_headless = ClaudeHeadlessProvider()
-    registry.register(ClaudeHeadlessOrchestrator(claude_headless))
+    claude_code = ClaudeCodeProvider()
+    registry.register(ClaudeCodeOrchestrator(claude_code))
 
     kimi_code = KimiCodeProvider()
     registry.register(KimiCodeOrchestrator(kimi_code))

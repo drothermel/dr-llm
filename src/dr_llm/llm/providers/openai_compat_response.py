@@ -9,7 +9,7 @@ from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.request import LlmRequest
 from dr_llm.llm.response import CallMode, LlmResponse
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
-from dr_llm.llm.providers.openai_compat.request import OpenAICompatRequest
+from dr_llm.llm.providers.openai_compat_request import OpenAICompatRequest
 from dr_llm.llm.providers.response_validation import (
     parse_http_response_body,
     validate_http_response,

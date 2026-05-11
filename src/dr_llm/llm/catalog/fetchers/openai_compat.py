@@ -12,7 +12,7 @@ from dr_llm.llm.catalog.fetchers.common import (
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogPricing
 from dr_llm.llm.coercion import as_float, as_int
 from dr_llm.llm.names import ReasoningMode
-from dr_llm.llm.providers.openai_compat.provider import OpenAICompatProvider
+from dr_llm.llm.providers.openai_compat_provider import OpenAICompatProvider
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 
 CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]

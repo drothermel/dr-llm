@@ -3,9 +3,9 @@ from __future__ import annotations
 import httpx
 
 from dr_llm.llm.providers.api_provider import ApiProvider
-from dr_llm.llm.providers.openai_compat.config import OpenAICompatConfig
-from dr_llm.llm.providers.openai_compat.request import OpenAICompatRequest
-from dr_llm.llm.providers.openai_compat.response import OpenAICompatResponse
+from dr_llm.llm.providers.openai_compat_config import OpenAICompatConfig
+from dr_llm.llm.providers.openai_compat_request import OpenAICompatRequest
+from dr_llm.llm.providers.openai_compat_response import OpenAICompatResponse
 from dr_llm.llm.request import ApiBackedLlmRequest
 
 

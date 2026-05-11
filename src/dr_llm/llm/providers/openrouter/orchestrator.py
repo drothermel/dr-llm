@@ -10,10 +10,10 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.openai_compat.orchestrator_base import (
+from dr_llm.llm.providers.openai_compat_orchestrator import (
     BaseOpenAICompatOrchestrator,
 )
-from dr_llm.llm.providers.openai_compat.reasoning import (
+from dr_llm.llm.providers.openrouter.reasoning import (
     validate_reasoning_for_openrouter,
 )
 from dr_llm.llm.providers.openrouter.policy import (

@@ -4,7 +4,7 @@ from pydantic import Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.llm.names import ProviderName, ThinkingLevel
-from dr_llm.llm.providers.headless.codex.capabilities import (
+from dr_llm.llm.providers.codex.capabilities import (
     codex_supports_configurable_thinking,
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
