@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from typing import Literal
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
-from dr_llm.llm.names import EffortSpec, ReasoningMode
+from dr_llm.llm.names import EffortSpec, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.model_family import ModelFamily
 
-GoogleThinkingLevel = Literal["minimal", "low", "medium", "high"]
+
+class GoogleThinkingLevel(StrEnum):
+    MINIMAL = ThinkingLevel.MINIMAL
+    LOW = ThinkingLevel.LOW
+    MEDIUM = ThinkingLevel.MEDIUM
+    HIGH = ThinkingLevel.HIGH
 
 
 class ReasoningCapabilities(BaseModel):
