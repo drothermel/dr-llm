@@ -13,6 +13,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
 )
 from dr_llm.llm.providers.impls.glm.controls import (
     reasoning_capabilities_for_glm,
+    validate_reasoning_for_glm,
 )
 from dr_llm.llm.providers.impls.glm.families import (
     GlmStaticCatalogModel,
@@ -22,7 +23,6 @@ from dr_llm.llm.providers.impls.openai_compat_base import (
 )
 from dr_llm.llm.providers.core.orchestrator_base import CatalogResult
 from dr_llm.llm.providers.impls.glm.provider import GlmProvider, GlmUrls
-from dr_llm.llm.providers.impls.glm.controls import validate_reasoning_for_glm
 from dr_llm.llm.request import LlmRequest
 
 
@@ -46,10 +46,18 @@ class GlmOrchestrator(BaseOpenAICompatOrchestrator):
         )
         return warnings
 
-    def _supported_thinking_levels(
-        self, *, model: str, capabilities: ModelCapabilities
+    def supported_thinking_levels(
+        self,
+        model: str,
+        *,
+        capabilities: ModelCapabilities | None = None,
     ) -> tuple[ThinkingLevel, ...]:
-        reasoning = capabilities.reasoning
+        resolved_capabilities = (
+            self.model_capabilities(model)
+            if capabilities is None
+            else capabilities
+        )
+        reasoning = resolved_capabilities.reasoning
         if reasoning.mode == ReasoningMode.UNSUPPORTED:
             return (ThinkingLevel.NA,)
         if reasoning.mode == ReasoningMode.GLM:

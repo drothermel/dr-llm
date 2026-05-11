@@ -20,6 +20,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.impls.claude_code.controls import (
     reasoning_capabilities_for_claude_code,
     supported_effort_levels_for_claude_code,
+    validate_reasoning_for_claude_code,
 )
 from dr_llm.llm.providers.impls.claude_code.families import (
     ClaudeCodeStaticCatalogModel,
@@ -27,9 +28,6 @@ from dr_llm.llm.providers.impls.claude_code.families import (
 from dr_llm.llm.providers.impls.claude_code.provider import (
     ClaudeCodeUrls,
     ClaudeCodeProvider,
-)
-from dr_llm.llm.providers.impls.claude_code.controls import (
-    validate_reasoning_for_claude_code,
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
@@ -74,8 +72,11 @@ class ClaudeCodeOrchestrator(BaseProviderOrchestrator):
     def fallback_models(self):
         return self.fetch_models()
 
-    def _supported_thinking_levels(
-        self, *, model: str, capabilities: ModelCapabilities
+    def supported_thinking_levels(
+        self,
+        model: str,
+        *,
+        capabilities: ModelCapabilities | None = None,
     ) -> tuple[ThinkingLevel, ...]:
         del capabilities
         if anthropic_supports_adaptive_thinking(model):

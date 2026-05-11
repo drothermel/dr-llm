@@ -16,6 +16,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
 )
 from dr_llm.llm.providers.impls.google.controls import (
     reasoning_capabilities_for_google,
+    validate_reasoning_for_google,
 )
 from dr_llm.llm.providers.impls.google.families import (
     GoogleStaticCatalogModel,
@@ -23,9 +24,6 @@ from dr_llm.llm.providers.impls.google.families import (
 from dr_llm.llm.providers.impls.google.provider import (
     GoogleProvider,
     GoogleUrls,
-)
-from dr_llm.llm.providers.impls.google.controls import (
-    validate_reasoning_for_google,
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
@@ -51,10 +49,18 @@ class GoogleOrchestrator(BaseProviderOrchestrator):
             reasoning=reasoning_capabilities_for_google(model)
         )
 
-    def _supported_thinking_levels(
-        self, *, model: str, capabilities: ModelCapabilities
+    def supported_thinking_levels(
+        self,
+        model: str,
+        *,
+        capabilities: ModelCapabilities | None = None,
     ) -> tuple[ThinkingLevel, ...]:
-        reasoning = capabilities.reasoning
+        resolved_capabilities = (
+            self.model_capabilities(model)
+            if capabilities is None
+            else capabilities
+        )
+        reasoning = resolved_capabilities.reasoning
         if reasoning.mode == ReasoningMode.UNSUPPORTED:
             return (ThinkingLevel.NA,)
         if reasoning.mode == ReasoningMode.GOOGLE_BUDGET:

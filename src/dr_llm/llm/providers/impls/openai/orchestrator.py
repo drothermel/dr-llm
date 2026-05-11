@@ -21,18 +21,16 @@ from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
 from dr_llm.llm.providers.impls.openai.controls import (
-    validate_reasoning_for_openai,
-)
-from dr_llm.llm.providers.impls.openai.provider import (
-    OpenAIProvider,
-    OpenAIUrls,
-)
-from dr_llm.llm.providers.impls.openai.controls import (
     openai_supports_configurable_thinking,
     openai_supports_minimal_thinking,
     openai_supports_off_thinking,
     reasoning_capabilities_for_openai,
+    validate_reasoning_for_openai,
     validate_openai_sampling_controls,
+)
+from dr_llm.llm.providers.impls.openai.provider import (
+    OpenAIProvider,
+    OpenAIUrls,
 )
 from dr_llm.llm.request import LlmRequest
 
@@ -79,8 +77,11 @@ class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
             capabilities_fn=self.reasoning_capabilities,
         )
 
-    def _supported_thinking_levels(
-        self, *, model: str, capabilities: ModelCapabilities
+    def supported_thinking_levels(
+        self,
+        model: str,
+        *,
+        capabilities: ModelCapabilities | None = None,
     ) -> tuple[ThinkingLevel, ...]:
         del capabilities
         if not openai_supports_configurable_thinking(model):

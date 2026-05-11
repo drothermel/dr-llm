@@ -15,14 +15,12 @@ from dr_llm.llm.providers.impls.openai_compat_base import (
     BaseOpenAICompatOrchestrator,
 )
 from dr_llm.llm.providers.impls.openrouter.controls import (
-    validate_reasoning_for_openrouter,
-)
-from dr_llm.llm.providers.impls.openrouter.controls import (
     OpenRouterReasoningRequestStyle,
     apply_openrouter_model_policies,
     openrouter_allowed_models,
     openrouter_model_policy,
     reasoning_capabilities_for_openrouter,
+    validate_reasoning_for_openrouter,
 )
 from dr_llm.llm.providers.impls.openrouter.provider import (
     OpenRouterProvider,
@@ -65,8 +63,11 @@ class OpenRouterOrchestrator(BaseOpenAICompatOrchestrator):
         )
         return apply_openrouter_model_policies(entries), raw_payload
 
-    def _supported_thinking_levels(
-        self, *, model: str, capabilities: ModelCapabilities
+    def supported_thinking_levels(
+        self,
+        model: str,
+        *,
+        capabilities: ModelCapabilities | None = None,
     ) -> tuple[ThinkingLevel, ...]:
         del model, capabilities
         return (ThinkingLevel.NA,)

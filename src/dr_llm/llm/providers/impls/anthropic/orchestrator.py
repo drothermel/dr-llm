@@ -11,9 +11,8 @@ from dr_llm.llm.names import (
 from dr_llm.llm.providers.impls.anthropic.controls import (
     anthropic_supports_adaptive_thinking,
     reasoning_capabilities_for_anthropic,
-)
-from dr_llm.llm.providers.impls.anthropic.controls import (
     supported_effort_levels_for_anthropic,
+    validate_reasoning_for_anthropic,
 )
 from dr_llm.llm.providers.impls.anthropic.families import (
     AnthropicStaticCatalogModel,
@@ -21,9 +20,6 @@ from dr_llm.llm.providers.impls.anthropic.families import (
 from dr_llm.llm.providers.impls.anthropic.provider import (
     AnthropicProvider,
     AnthropicUrls,
-)
-from dr_llm.llm.providers.impls.anthropic.controls import (
-    validate_reasoning_for_anthropic,
 )
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -61,10 +57,18 @@ class AnthropicOrchestrator(BaseProviderOrchestrator):
             ),
         )
 
-    def _supported_thinking_levels(
-        self, *, model: str, capabilities: ModelCapabilities
+    def supported_thinking_levels(
+        self,
+        model: str,
+        *,
+        capabilities: ModelCapabilities | None = None,
     ) -> tuple[ThinkingLevel, ...]:
-        reasoning = capabilities.reasoning
+        resolved_capabilities = (
+            self.model_capabilities(model)
+            if capabilities is None
+            else capabilities
+        )
+        reasoning = resolved_capabilities.reasoning
         if reasoning.mode == ReasoningMode.UNSUPPORTED:
             return (ThinkingLevel.NA,)
         if reasoning.mode == ReasoningMode.ANTHROPIC_BUDGET:

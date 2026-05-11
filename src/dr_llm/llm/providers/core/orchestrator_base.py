@@ -50,8 +50,8 @@ class BaseProviderOrchestrator(ABC):
 
     def reasoning_controls(self, model: str) -> ReasoningControls:
         capabilities = self.model_capabilities(model)
-        supported_levels = self._supported_thinking_levels(
-            model=model, capabilities=capabilities
+        supported_levels = self.supported_thinking_levels(
+            model, capabilities=capabilities
         )
         default_level = self.default_thinking_level(model, supported_levels)
         return ReasoningControls(
@@ -268,16 +268,12 @@ class BaseProviderOrchestrator(ABC):
             update={"warnings": [*response.warnings, *warnings]}
         )
 
-    def supported_thinking_levels(
-        self, model: str
-    ) -> tuple[ThinkingLevel, ...]:
-        return self._supported_thinking_levels(
-            model=model, capabilities=self.model_capabilities(model)
-        )
-
     @abstractmethod
-    def _supported_thinking_levels(
-        self, *, model: str, capabilities: ModelCapabilities
+    def supported_thinking_levels(
+        self,
+        model: str,
+        *,
+        capabilities: ModelCapabilities | None = None,
     ) -> tuple[ThinkingLevel, ...]: ...
 
     def default_thinking_level(

@@ -15,6 +15,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.impls.kimi_code.controls import (
     reasoning_capabilities_for_kimi_code,
     supported_effort_levels_for_kimi_code,
+    validate_reasoning_for_kimi_code,
 )
 from dr_llm.llm.providers.impls.kimi_code.families import (
     KimiCodeStaticCatalogModel,
@@ -22,9 +23,6 @@ from dr_llm.llm.providers.impls.kimi_code.families import (
 from dr_llm.llm.providers.impls.kimi_code.provider import (
     KimiCodeProvider,
     KimiCodeUrls,
-)
-from dr_llm.llm.providers.impls.kimi_code.controls import (
-    validate_reasoning_for_kimi_code,
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
@@ -53,10 +51,18 @@ class KimiCodeOrchestrator(BaseProviderOrchestrator):
             ),
         )
 
-    def _supported_thinking_levels(
-        self, *, model: str, capabilities: ModelCapabilities
+    def supported_thinking_levels(
+        self,
+        model: str,
+        *,
+        capabilities: ModelCapabilities | None = None,
     ) -> tuple[ThinkingLevel, ...]:
-        reasoning = capabilities.reasoning
+        resolved_capabilities = (
+            self.model_capabilities(model)
+            if capabilities is None
+            else capabilities
+        )
+        reasoning = resolved_capabilities.reasoning
         if reasoning.mode == ReasoningMode.UNSUPPORTED:
             return (ThinkingLevel.NA,)
         if reasoning.mode == ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET:

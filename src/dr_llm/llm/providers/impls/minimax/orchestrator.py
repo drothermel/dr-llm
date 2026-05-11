@@ -15,6 +15,7 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.impls.minimax.controls import (
     reasoning_capabilities_for_minimax,
     supported_effort_levels_for_minimax,
+    validate_reasoning_for_minimax,
 )
 from dr_llm.llm.providers.impls.minimax.families import (
     MiniMaxStaticCatalogModel,
@@ -22,9 +23,6 @@ from dr_llm.llm.providers.impls.minimax.families import (
 from dr_llm.llm.providers.impls.minimax.provider import (
     MiniMaxProvider,
     MiniMaxUrls,
-)
-from dr_llm.llm.providers.impls.minimax.controls import (
-    validate_reasoning_for_minimax,
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
@@ -51,10 +49,18 @@ class MiniMaxOrchestrator(BaseProviderOrchestrator):
             supported_effort_levels=supported_effort_levels_for_minimax(model),
         )
 
-    def _supported_thinking_levels(
-        self, *, model: str, capabilities: ModelCapabilities
+    def supported_thinking_levels(
+        self,
+        model: str,
+        *,
+        capabilities: ModelCapabilities | None = None,
     ) -> tuple[ThinkingLevel, ...]:
-        reasoning = capabilities.reasoning
+        resolved_capabilities = (
+            self.model_capabilities(model)
+            if capabilities is None
+            else capabilities
+        )
+        reasoning = resolved_capabilities.reasoning
         if reasoning.mode in {
             ReasoningMode.UNSUPPORTED,
             ReasoningMode.MINIMAX_EFFORT,

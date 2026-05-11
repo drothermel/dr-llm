@@ -19,6 +19,7 @@ from dr_llm.llm.providers.impls.codex.controls import (
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
     reasoning_capabilities_for_codex,
+    validate_reasoning_for_codex,
 )
 from dr_llm.llm.providers.impls.codex.families import (
     CodexStaticCatalogModel,
@@ -26,9 +27,6 @@ from dr_llm.llm.providers.impls.codex.families import (
 from dr_llm.llm.providers.impls.codex.provider import (
     CodexProvider,
     CodexUrls,
-)
-from dr_llm.llm.providers.impls.codex.controls import (
-    validate_reasoning_for_codex,
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
@@ -70,8 +68,11 @@ class CodexOrchestrator(BaseProviderOrchestrator):
     def fallback_models(self):
         return self.fetch_models()
 
-    def _supported_thinking_levels(
-        self, *, model: str, capabilities: ModelCapabilities
+    def supported_thinking_levels(
+        self,
+        model: str,
+        *,
+        capabilities: ModelCapabilities | None = None,
     ) -> tuple[ThinkingLevel, ...]:
         del capabilities
         if not codex_supports_configurable_thinking(model):
