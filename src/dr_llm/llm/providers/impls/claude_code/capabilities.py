@@ -13,8 +13,11 @@ from dr_llm.llm.providers.impls.claude_code.families import (
     CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES,
 )
 
-CLAUDE_HEADLESS_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
-    *(
+
+def reasoning_capabilities_for_claude_code(
+    model: str,
+) -> ReasoningCapabilities | None:
+    capability_rules = tuple(
         ReasoningCapabilityRule(
             family=family,
             capabilities=ReasoningCapabilities(
@@ -22,14 +25,8 @@ CLAUDE_HEADLESS_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
             ),
         )
         for family in CLAUDE_CODE_SUPPORTED_MODEL_FAMILIES
-    ),
-)
-
-
-def reasoning_capabilities_for_claude_code(
-    model: str,
-) -> ReasoningCapabilities | None:
-    return resolve_capability_rules(CLAUDE_HEADLESS_CAPABILITY_RULES, model)
+    )
+    return resolve_capability_rules(capability_rules, model)
 
 
 def supported_effort_levels_for_claude_code(

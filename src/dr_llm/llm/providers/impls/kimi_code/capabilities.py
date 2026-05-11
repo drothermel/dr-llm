@@ -11,22 +11,21 @@ from dr_llm.llm.providers.impls.kimi_code.families import (
     KimiCodeModelFamily,
 )
 
-KIMI_CODE_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
-    ReasoningCapabilityRule(
-        family=KimiCodeModelFamily.KIMI_FOR_CODING,
-        capabilities=ReasoningCapabilities(
-            mode=ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET,
-            min_budget_tokens=1024,
-            max_budget_tokens=128000,
-        ),
-    ),
-)
-
 
 def reasoning_capabilities_for_kimi_code(
     model: str,
 ) -> ReasoningCapabilities | None:
-    return resolve_capability_rules(KIMI_CODE_CAPABILITY_RULES, model)
+    capability_rules = (
+        ReasoningCapabilityRule(
+            family=KimiCodeModelFamily.KIMI_FOR_CODING,
+            capabilities=ReasoningCapabilities(
+                mode=ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET,
+                min_budget_tokens=1024,
+                max_budget_tokens=128000,
+            ),
+        ),
+    )
+    return resolve_capability_rules(capability_rules, model)
 
 
 def supported_effort_levels_for_kimi_code(
