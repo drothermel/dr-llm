@@ -16,9 +16,6 @@ from dr_llm.llm.providers.impls.kimi_code.reasoning import (
 )
 from dr_llm.llm.request import LlmRequest
 
-KIMI_CODE_PROVIDER_NAME = ProviderName.KIMI_CODE
-KIMI_CODE_API_KEY_ENV = ApiKeyNames.KIMI
-
 
 class KimiCodeUrls(StrEnum):
     MESSAGES_API = "https://api.kimi.com/coding/v1/messages"
@@ -35,9 +32,9 @@ class KimiCodeProvider(AnthropicProvider):
         super().__init__(
             config=config
             or AnthropicProviderConfig(
-                name=KIMI_CODE_PROVIDER_NAME,
+                name=ProviderName.KIMI_CODE,
                 base_url=KimiCodeUrls.MESSAGES_API,
-                api_key_env=KIMI_CODE_API_KEY_ENV,
+                api_key_env=ApiKeyNames.KIMI,
             ),
             client=client,
         )

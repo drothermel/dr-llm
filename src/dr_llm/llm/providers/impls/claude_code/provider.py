@@ -46,7 +46,6 @@ CLAUDE_DEFAULT_COMMAND = [
 CLAUDE_CANONICAL_MODEL_PREFIX = "claude-"
 ANTHROPIC_BASE_URL_ENV = "ANTHROPIC_BASE_URL"
 ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN"
-ANTHROPIC_API_KEY_ENV = ApiKeyNames.ANTHROPIC
 
 
 class ClaudeCodeUrls(StrEnum):
@@ -170,7 +169,7 @@ class ClaudeCodeProvider(BaseHeadlessProvider):
             key_value = os.getenv(self._config.api_key_env)
             if key_value:
                 env[ANTHROPIC_AUTH_TOKEN_ENV] = key_value
-                env[ANTHROPIC_API_KEY_ENV] = key_value
+                env[ApiKeyNames.ANTHROPIC] = key_value
         return env
 
     def command_for_request(

@@ -14,9 +14,6 @@ from dr_llm.llm.providers.impls.anthropic.request import AnthropicRequest
 from dr_llm.llm.providers.impls.minimax.reasoning import MiniMaxReasoningConfig
 from dr_llm.llm.request import LlmRequest
 
-MINIMAX_PROVIDER_NAME = ProviderName.MINIMAX
-MINIMAX_API_KEY_ENV = ApiKeyNames.MINIMAX
-
 
 class MiniMaxUrls(StrEnum):
     MESSAGES_API = "https://api.minimax.io/anthropic/v1/messages"
@@ -32,9 +29,9 @@ class MiniMaxProvider(AnthropicProvider):
         super().__init__(
             config=config
             or AnthropicProviderConfig(
-                name=MINIMAX_PROVIDER_NAME,
+                name=ProviderName.MINIMAX,
                 base_url=MiniMaxUrls.MESSAGES_API,
-                api_key_env=MINIMAX_API_KEY_ENV,
+                api_key_env=ApiKeyNames.MINIMAX,
             ),
             client=client,
         )

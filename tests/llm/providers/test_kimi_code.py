@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from dr_llm.llm import AnthropicReasoning, EffortSpec, ThinkingLevel
+from dr_llm.llm import (
+    AnthropicReasoning,
+    EffortSpec,
+    ProviderName,
+    ThinkingLevel,
+)
 from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
 )
 from dr_llm.llm.providers.impls.kimi_code.provider import (
-    KIMI_CODE_PROVIDER_NAME,
     KimiCodeProvider,
     KimiCodeUrls,
 )
@@ -23,7 +27,7 @@ _MOCK_RESPONSE: dict[str, Any] = {
 
 def _kimi_test_config() -> AnthropicProviderConfig:
     return AnthropicProviderConfig(
-        name=KIMI_CODE_PROVIDER_NAME,
+        name=ProviderName.KIMI_CODE,
         base_url=KimiCodeUrls.MESSAGES_API,
         api_key="test-key",
     )
@@ -34,7 +38,7 @@ def test_kimi_code_serializes_effort_and_adaptive_thinking() -> None:
     adapter = KimiCodeProvider(config=_kimi_test_config(), client=client)
 
     request = make_request(
-        provider=KIMI_CODE_PROVIDER_NAME,
+        provider=ProviderName.KIMI_CODE,
         model="kimi-for-coding",
         max_tokens=256,
         effort=EffortSpec.HIGH,
@@ -56,7 +60,7 @@ def test_kimi_code_serializes_budget_thinking() -> None:
         config=_kimi_test_config(), client=budget_client
     )
     budget_request = make_request(
-        provider=KIMI_CODE_PROVIDER_NAME,
+        provider=ProviderName.KIMI_CODE,
         model="kimi-for-coding",
         max_tokens=2048,
         effort=EffortSpec.MAX,
@@ -79,7 +83,7 @@ def test_kimi_code_serializes_disabled_thinking() -> None:
         config=_kimi_test_config(), client=off_client
     )
     off_request = make_request(
-        provider=KIMI_CODE_PROVIDER_NAME,
+        provider=ProviderName.KIMI_CODE,
         model="kimi-for-coding",
         max_tokens=256,
         effort=EffortSpec.LOW,
