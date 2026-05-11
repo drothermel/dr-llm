@@ -8,7 +8,7 @@ from dr_llm.llm.providers.transports.api_config import (
     APIProviderConfig,
     resolve_api_key,
 )
-from dr_llm.llm.providers.impls.google.reasoning import GoogleReasoningConfig
+from dr_llm.llm.providers.impls.google.controls import GoogleReasoningConfig
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
 from dr_llm.llm.request import LlmRequest, Message
 

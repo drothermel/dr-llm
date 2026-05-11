@@ -16,12 +16,12 @@ from dr_llm.llm.providers.core.authoring import (
     validate_budget_range,
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.anthropic.capabilities import (
+from dr_llm.llm.providers.impls.anthropic.controls import (
     ANTHROPIC_BUDGET_MAX_TOKENS,
     ANTHROPIC_BUDGET_MIN_TOKENS,
     anthropic_reasoning_mode,
 )
-from dr_llm.llm.providers.impls.anthropic.effort import (
+from dr_llm.llm.providers.impls.anthropic.controls import (
     supported_effort_levels_for_anthropic,
 )
 

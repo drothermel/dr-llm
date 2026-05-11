@@ -11,7 +11,7 @@ from dr_llm.llm.providers.impls.anthropic.provider_config import (
 )
 from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
 from dr_llm.llm.providers.impls.anthropic.request import AnthropicRequest
-from dr_llm.llm.providers.impls.kimi_code.reasoning import (
+from dr_llm.llm.providers.impls.kimi_code.controls import (
     KimiCodeReasoningConfig,
 )
 from dr_llm.llm.request import LlmRequest

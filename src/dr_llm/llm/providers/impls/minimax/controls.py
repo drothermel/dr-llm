@@ -5,7 +5,18 @@ from typing import Any
 from pydantic import Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.llm.names import ProviderName, ThinkingLevel
+from dr_llm.llm.names import (
+    EffortSpec,
+    ProviderName,
+    ReasoningMode,
+    ThinkingLevel,
+)
+from dr_llm.llm.providers.concepts.capabilities import (
+    ReasoningCapabilities,
+    ReasoningCapabilityRule,
+    resolve_capability_rules,
+)
+from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
     BaseProviderReasoningConfig,
@@ -13,6 +24,30 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     unsupported_reasoning_kind_message,
 )
+from dr_llm.llm.providers.impls.minimax.families import (
+    MINIMAX_SUPPORTED_MODEL_FAMILIES,
+)
+
+
+def reasoning_capabilities_for_minimax(
+    model: str,
+) -> ReasoningCapabilities | None:
+    capability_rules = tuple(
+        ReasoningCapabilityRule(
+            family=family,
+            capabilities=ReasoningCapabilities(
+                mode=ReasoningMode.MINIMAX_EFFORT
+            ),
+        )
+        for family in MINIMAX_SUPPORTED_MODEL_FAMILIES
+    )
+    return resolve_capability_rules(capability_rules, model)
+
+
+def supported_effort_levels_for_minimax(model: str) -> tuple[EffortSpec, ...]:
+    if reasoning_capabilities_for_minimax(model) is None:
+        return ()
+    return FULL_EFFORT
 
 
 def validate_reasoning_for_minimax(

@@ -10,4 +10,12 @@ class KimiCodeModelFamily(StrEnum):
         return model == self
 
 
+class KimiCodeStaticCatalogModel(StrEnum):
+    KIMI_FOR_CODING = "kimi-for-coding"
+
+    @classmethod
+    def values(cls) -> list[str]:
+        return [model.value for model in cls]
+
+
 KIMI_CODE_SUPPORTED_MODELS = (KimiCodeModelFamily.KIMI_FOR_CODING,)

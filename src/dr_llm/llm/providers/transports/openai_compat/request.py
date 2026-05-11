@@ -11,9 +11,6 @@ from dr_llm.llm.providers.concepts.model_family import (
 )
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
 from dr_llm.llm.providers.transports.api_config import resolve_api_key
-from dr_llm.llm.providers.transports.openai_compat.reasoning import (
-    OpenAICompatReasoningConfig,
-)
 from dr_llm.llm.request import LlmRequest, Message
 
 if TYPE_CHECKING:
@@ -52,14 +49,11 @@ class OpenAICompatRequest(BaseModel):
         cls,
         request: LlmRequest,
         config: OpenAICompatConfig,
+        *,
+        reasoning_effort: str | None = None,
+        extra_body: dict[str, Any] | None = None,
+        warnings: list[ReasoningWarning] | None = None,
     ) -> OpenAICompatRequest:
-        reasoning_mapping = OpenAICompatReasoningConfig.from_base(
-            request.reasoning,
-            provider=request.provider,
-            model=request.model,
-        )
-        reasoning_effort = reasoning_mapping.reasoning_effort
-        extra_body = reasoning_mapping.extra_body
         return cls(
             provider=request.provider,
             model=request.model,
@@ -68,7 +62,7 @@ class OpenAICompatRequest(BaseModel):
             top_p=request.sampling_top_p,
             max_tokens=request.max_tokens,
             reasoning_effort=reasoning_effort,
-            extra_body=extra_body,
+            extra_body=extra_body or {},
             base_url=config.base_url,
             chat_path=config.chat_path,
             max_completion_token_model_families=(
@@ -77,7 +71,7 @@ class OpenAICompatRequest(BaseModel):
             api_key_env=config.api_key_env,
             api_key=resolve_api_key(config, label=request.provider),
             idempotency_key=cls._resolve_idempotency_key(request=request),
-            warnings=reasoning_mapping.warnings,
+            warnings=warnings or [],
         )
 
     @staticmethod

@@ -5,7 +5,7 @@ from dr_llm.llm.names import (
     ProviderName,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.impls.anthropic.capabilities import (
+from dr_llm.llm.providers.impls.anthropic.controls import (
     anthropic_supports_adaptive_thinking,
 )
 from dr_llm.llm.providers.concepts.capabilities import (
@@ -17,27 +17,24 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.impls.claude_code.capabilities import (
+from dr_llm.llm.providers.impls.claude_code.controls import (
     reasoning_capabilities_for_claude_code,
     supported_effort_levels_for_claude_code,
+)
+from dr_llm.llm.providers.impls.claude_code.families import (
+    ClaudeCodeStaticCatalogModel,
 )
 from dr_llm.llm.providers.impls.claude_code.provider import (
     ClaudeCodeUrls,
     ClaudeCodeProvider,
 )
-from dr_llm.llm.providers.impls.claude_code.reasoning import (
+from dr_llm.llm.providers.impls.claude_code.controls import (
     validate_reasoning_for_claude_code,
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
 )
 from dr_llm.llm.request import LlmRequest
-
-_CLAUDE_CODE_MODELS = [
-    ("claude-opus-4-6", "Claude Opus 4.6"),
-    ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
-    ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
-]
 
 
 class ClaudeCodeOrchestrator(BaseProviderOrchestrator):
@@ -68,7 +65,7 @@ class ClaudeCodeOrchestrator(BaseProviderOrchestrator):
     def fetch_models(self):
         return build_static_catalog_entries(
             provider=self._provider,
-            models=_CLAUDE_CODE_MODELS,
+            models=ClaudeCodeStaticCatalogModel.values(),
             docs_url=ClaudeCodeUrls.MODELS_DOCS,
             supports_vision=True,
             capabilities_fn=reasoning_capabilities_for_claude_code,

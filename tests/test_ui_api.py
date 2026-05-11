@@ -9,11 +9,9 @@ from dr_llm.llm.catalog.models import ModelCatalogEntry
 from dr_llm.llm.providers.impls.openrouter.orchestrator import (
     OpenRouterOrchestrator,
 )
+from dr_llm.llm.providers.impls.openrouter.provider import OpenRouterProvider
 from dr_llm.llm.providers.transports.openai_compat.config import (
     OpenAICompatConfig,
-)
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
 )
 from tests.conftest import FakeOrchestrator
 from ui.api import main as ui_api
@@ -97,7 +95,7 @@ def test_openrouter_static_models_come_from_orchestrator_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     orchestrator = OpenRouterOrchestrator(
-        OpenAICompatProvider(
+        OpenRouterProvider(
             config=OpenAICompatConfig(
                 name=ProviderName.OPENROUTER,
                 base_url="https://openrouter.ai/api/v1",

@@ -9,7 +9,7 @@ from dr_llm.llm.names import OpenRouterEffortLevel, ProviderName
 from dr_llm.llm.providers.concepts.reasoning import OpenRouterReasoning
 from dr_llm.llm.providers.core.authoring import build_provider_config
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.openrouter.policy import (
+from dr_llm.llm.providers.impls.openrouter.controls import (
     OpenRouterReasoningRequestStyle,
     openrouter_model_policy,
 )

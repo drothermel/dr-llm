@@ -8,18 +8,21 @@ from dr_llm.llm.names import (
     ReasoningMode,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.impls.anthropic.capabilities import (
+from dr_llm.llm.providers.impls.anthropic.controls import (
     anthropic_supports_adaptive_thinking,
     reasoning_capabilities_for_anthropic,
 )
-from dr_llm.llm.providers.impls.anthropic.effort import (
+from dr_llm.llm.providers.impls.anthropic.controls import (
     supported_effort_levels_for_anthropic,
+)
+from dr_llm.llm.providers.impls.anthropic.families import (
+    AnthropicStaticCatalogModel,
 )
 from dr_llm.llm.providers.impls.anthropic.provider import (
     AnthropicProvider,
     AnthropicUrls,
 )
-from dr_llm.llm.providers.impls.anthropic.reasoning import (
+from dr_llm.llm.providers.impls.anthropic.controls import (
     validate_reasoning_for_anthropic,
 )
 from dr_llm.llm.providers.concepts.capabilities import (
@@ -38,12 +41,6 @@ from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
 from dr_llm.llm.request import LlmRequest
-
-_ANTHROPIC_COMMON_MODELS = [
-    ("claude-opus-4-6", "Claude Opus 4.6"),
-    ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
-    ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
-]
 
 
 class AnthropicOrchestrator(BaseProviderOrchestrator):
@@ -129,7 +126,7 @@ class AnthropicOrchestrator(BaseProviderOrchestrator):
     def fallback_models(self):
         return build_static_catalog_entries(
             provider=self._provider,
-            models=_ANTHROPIC_COMMON_MODELS,
+            models=AnthropicStaticCatalogModel.values(),
             docs_url=AnthropicUrls.MODELS_DOCS,
             supports_vision=True,
             capabilities_fn=reasoning_capabilities_for_anthropic,

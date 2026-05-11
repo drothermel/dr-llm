@@ -27,6 +27,16 @@ class AnthropicModelFamily(StrEnum):
         return model.startswith(self)
 
 
+class AnthropicStaticCatalogModel(StrEnum):
+    CLAUDE_OPUS_46 = "claude-opus-4-6"
+    CLAUDE_SONNET_46 = "claude-sonnet-4-6"
+    CLAUDE_HAIKU_45_20251001 = "claude-haiku-4-5-20251001"
+
+    @classmethod
+    def values(cls) -> list[str]:
+        return [model.value for model in cls]
+
+
 ANTHROPIC_BUDGET_CAPABILITY_FAMILIES = (
     AnthropicModelFamily.CLAUDE_OPUS_41,
     AnthropicModelFamily.CLAUDE_OPUS_4,

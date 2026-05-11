@@ -6,7 +6,7 @@ from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
     AnthropicUrls,
 )
-from dr_llm.llm.providers.impls.anthropic.reasoning import (
+from dr_llm.llm.providers.impls.anthropic.controls import (
     AnthropicReasoningConfig,
 )
 from dr_llm.llm.providers.impls.anthropic.request import AnthropicRequest

@@ -11,46 +11,34 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
+from dr_llm.llm.providers.impls.openai.families import (
+    OpenAIStaticCatalogModel,
+)
 from dr_llm.llm.providers.impls.openai_compat_base import (
     BaseOpenAICompatOrchestrator,
 )
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
-from dr_llm.llm.providers.impls.openai.reasoning import (
+from dr_llm.llm.providers.impls.openai.controls import (
     validate_reasoning_for_openai,
 )
 from dr_llm.llm.providers.impls.openai.provider import (
     OpenAIProvider,
     OpenAIUrls,
 )
-from dr_llm.llm.providers.impls.openai.thinking import (
+from dr_llm.llm.providers.impls.openai.controls import (
     openai_supports_configurable_thinking,
     openai_supports_minimal_thinking,
     openai_supports_off_thinking,
     reasoning_capabilities_for_openai,
     validate_openai_sampling_controls,
 )
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
-)
 from dr_llm.llm.request import LlmRequest
-
-_OPENAI_COMMON_MODELS = [
-    ("gpt-5.4", "GPT-5.4"),
-    ("gpt-5.4-mini", "GPT-5.4 Mini"),
-    ("gpt-5.3", "GPT-5.3"),
-    ("gpt-5.2", "GPT-5.2"),
-    ("gpt-5.1", "GPT-5.1"),
-    ("gpt-5", "GPT-5"),
-    ("o3", "o3"),
-    ("o3-mini", "o3-mini"),
-    ("o4-mini", "o4-mini"),
-]
 
 
 class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
-    def __init__(self, provider: OpenAICompatProvider | None = None) -> None:
+    def __init__(self, provider: OpenAIProvider | None = None) -> None:
         super().__init__(provider or OpenAIProvider())
 
     @property
@@ -85,7 +73,7 @@ class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
     def fallback_models(self):
         return build_static_catalog_entries(
             provider=self._provider,
-            models=_OPENAI_COMMON_MODELS,
+            models=OpenAIStaticCatalogModel.values(),
             docs_url=OpenAIUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=self.reasoning_capabilities,

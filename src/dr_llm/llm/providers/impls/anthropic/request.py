@@ -9,7 +9,7 @@ from dr_llm.llm.names import EffortSpec
 from dr_llm.llm.providers.impls.anthropic.provider_config import (
     AnthropicProviderConfig,
 )
-from dr_llm.llm.providers.impls.anthropic.reasoning import (
+from dr_llm.llm.providers.impls.anthropic.controls import (
     AnthropicReasoningConfig,
 )
 from dr_llm.llm.providers.transports.api_config import resolve_api_key

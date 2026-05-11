@@ -14,38 +14,26 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.impls.codex.capabilities import (
+from dr_llm.llm.providers.impls.codex.controls import (
     codex_supports_configurable_thinking,
     codex_supports_minimal_thinking,
     codex_supports_off_thinking,
     reasoning_capabilities_for_codex,
 )
+from dr_llm.llm.providers.impls.codex.families import (
+    CodexStaticCatalogModel,
+)
 from dr_llm.llm.providers.impls.codex.provider import (
     CodexProvider,
     CodexUrls,
 )
-from dr_llm.llm.providers.impls.codex.reasoning import (
+from dr_llm.llm.providers.impls.codex.controls import (
     validate_reasoning_for_codex,
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
     BaseProviderOrchestrator,
 )
 from dr_llm.llm.request import LlmRequest
-
-_CODEX_MODELS = [
-    ("gpt-5.4", "GPT-5.4"),
-    ("gpt-5.4-mini", "GPT-5.4 Mini"),
-    ("gpt-5.3-codex", "GPT-5.3 Codex"),
-    ("gpt-5.3-codex-spark", "GPT-5.3 Codex Spark (Pro only)"),
-    ("gpt-5.2-codex", "GPT-5.2 Codex"),
-    ("gpt-5.2", "GPT-5.2"),
-    ("gpt-5.1-codex-max", "GPT-5.1 Codex Max"),
-    ("gpt-5.1-codex", "GPT-5.1 Codex"),
-    ("gpt-5.1", "GPT-5.1"),
-    ("gpt-5-codex", "GPT-5 Codex"),
-    ("gpt-5.1-codex-mini", "GPT-5.1 Codex Mini"),
-    ("gpt-5", "GPT-5"),
-]
 
 
 class CodexOrchestrator(BaseProviderOrchestrator):
@@ -73,7 +61,7 @@ class CodexOrchestrator(BaseProviderOrchestrator):
     def fetch_models(self):
         return build_static_catalog_entries(
             provider=self._provider,
-            models=_CODEX_MODELS,
+            models=CodexStaticCatalogModel.values(),
             docs_url=CodexUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=reasoning_capabilities_for_codex,

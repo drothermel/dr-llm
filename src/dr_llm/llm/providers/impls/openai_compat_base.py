@@ -18,15 +18,13 @@ from dr_llm.llm.providers.core.orchestrator_base import (
 from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
-)
+from dr_llm.llm.providers.transports.api_provider import ApiProvider
 
 
 class BaseOpenAICompatOrchestrator(BaseProviderOrchestrator):
-    _provider: OpenAICompatProvider
+    _provider: ApiProvider
 
-    def __init__(self, provider: OpenAICompatProvider) -> None:
+    def __init__(self, provider: ApiProvider) -> None:
         super().__init__(provider)
 
     def model_capabilities(self, model: str) -> ModelCapabilities:

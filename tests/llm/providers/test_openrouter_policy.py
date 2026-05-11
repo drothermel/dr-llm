@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dr_llm.llm.providers.impls.openrouter.policy import (
+from dr_llm.llm.providers.impls.openrouter.controls import (
     OpenRouterReasoningRequestStyle,
     _policies,
 )

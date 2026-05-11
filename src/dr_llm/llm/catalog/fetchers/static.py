@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -9,10 +9,14 @@ from dr_llm.llm.providers.core.base import ProviderTransport
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 
 
+def display_str(model_id: str) -> str:
+    return model_id.replace("-", " ").title()
+
+
 def build_static_catalog_entries(
     *,
     provider: ProviderTransport,
-    models: list[tuple[str, str]],
+    models: Sequence[str],
     docs_url: str,
     supports_vision: bool | None,
     capabilities_fn: Callable[[str], ReasoningCapabilities | None],
@@ -23,13 +27,13 @@ def build_static_catalog_entries(
         ModelCatalogEntry(
             provider=provider.name,
             model=model_id,
-            display_name=display_name,
+            display_name=display_str(model_id),
             reasoning_capabilities=capabilities_fn(model_id),
             supports_vision=supports_vision,
             source_quality="static",
             fetched_at=now,
             metadata=source_meta,
         )
-        for model_id, display_name in models
+        for model_id in models
     ]
     return entries, source_meta

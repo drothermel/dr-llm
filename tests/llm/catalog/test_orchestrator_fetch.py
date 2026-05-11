@@ -21,12 +21,11 @@ from dr_llm.llm.providers.transports.openai_compat.config import (
 from dr_llm.llm.providers.impls.openai.orchestrator import (
     OpenAIOrchestrator,
 )
+from dr_llm.llm.providers.impls.openai.provider import OpenAIProvider
 from dr_llm.llm.providers.impls.openrouter.orchestrator import (
     OpenRouterOrchestrator,
 )
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
-)
+from dr_llm.llm.providers.impls.openrouter.provider import OpenRouterProvider
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 
 
@@ -96,7 +95,7 @@ def test_kimi_orchestrator_fetches_with_wrapped_provider(
 def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    provider = OpenAICompatProvider(
+    provider = OpenAIProvider(
         config=OpenAICompatConfig(
             name=ProviderName.OPENAI,
             base_url="https://api.openai.com/v1",
@@ -107,7 +106,7 @@ def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
     orchestrator = OpenAIOrchestrator(provider)
 
     def fake_fetch_openai_compat_models(
-        received_provider: OpenAICompatProvider,
+        received_provider: OpenAIProvider,
         *,
         capabilities_fn,
     ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:
@@ -126,7 +125,7 @@ def test_openai_compat_orchestrator_fetches_with_wrapped_provider(
 def test_openrouter_orchestrator_applies_policy_to_live_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    provider = OpenAICompatProvider(
+    provider = OpenRouterProvider(
         config=OpenAICompatConfig(
             name=ProviderName.OPENROUTER,
             base_url="https://openrouter.ai/api/v1",

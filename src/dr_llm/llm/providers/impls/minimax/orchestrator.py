@@ -12,15 +12,18 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.impls.minimax.capabilities import (
+from dr_llm.llm.providers.impls.minimax.controls import (
     reasoning_capabilities_for_minimax,
     supported_effort_levels_for_minimax,
+)
+from dr_llm.llm.providers.impls.minimax.families import (
+    MiniMaxStaticCatalogModel,
 )
 from dr_llm.llm.providers.impls.minimax.provider import (
     MiniMaxProvider,
     MiniMaxUrls,
 )
-from dr_llm.llm.providers.impls.minimax.reasoning import (
+from dr_llm.llm.providers.impls.minimax.controls import (
     validate_reasoning_for_minimax,
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
@@ -30,13 +33,6 @@ from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
 from dr_llm.llm.request import LlmRequest
-
-_MINIMAX_TEXT_MODELS = [
-    ("MiniMax-M2.7", "MiniMax M2.7"),
-    ("MiniMax-M2.5", "MiniMax M2.5"),
-    ("MiniMax-M2.1", "MiniMax M2.1 (legacy)"),
-    ("MiniMax-M2", "MiniMax M2 (legacy)"),
-]
 
 
 class MiniMaxOrchestrator(BaseProviderOrchestrator):
@@ -102,7 +98,7 @@ class MiniMaxOrchestrator(BaseProviderOrchestrator):
     def fetch_models(self):
         return build_static_catalog_entries(
             provider=self._provider,
-            models=_MINIMAX_TEXT_MODELS,
+            models=MiniMaxStaticCatalogModel.values(),
             docs_url=MiniMaxUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=reasoning_capabilities_for_minimax,

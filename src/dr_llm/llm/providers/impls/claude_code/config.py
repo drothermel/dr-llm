@@ -11,10 +11,10 @@ from dr_llm.llm.providers.concepts.model_family import (
     model_matches_any_family,
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.anthropic.capabilities import (
+from dr_llm.llm.providers.impls.anthropic.controls import (
     anthropic_supports_adaptive_thinking,
 )
-from dr_llm.llm.providers.impls.claude_code.capabilities import (
+from dr_llm.llm.providers.impls.claude_code.controls import (
     supported_effort_levels_for_claude_code,
 )
 from dr_llm.llm.providers.impls.claude_code.families import (

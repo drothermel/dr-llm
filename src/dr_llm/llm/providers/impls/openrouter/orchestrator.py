@@ -14,10 +14,10 @@ from dr_llm.llm.providers.concepts.reasoning import (
 from dr_llm.llm.providers.impls.openai_compat_base import (
     BaseOpenAICompatOrchestrator,
 )
-from dr_llm.llm.providers.impls.openrouter.reasoning import (
+from dr_llm.llm.providers.impls.openrouter.controls import (
     validate_reasoning_for_openrouter,
 )
-from dr_llm.llm.providers.impls.openrouter.policy import (
+from dr_llm.llm.providers.impls.openrouter.controls import (
     OpenRouterReasoningRequestStyle,
     apply_openrouter_model_policies,
     openrouter_allowed_models,
@@ -28,14 +28,11 @@ from dr_llm.llm.providers.impls.openrouter.provider import (
     OpenRouterProvider,
     OpenRouterUrls,
 )
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
-)
 from dr_llm.llm.request import LlmRequest
 
 
 class OpenRouterOrchestrator(BaseOpenAICompatOrchestrator):
-    def __init__(self, provider: OpenAICompatProvider | None = None) -> None:
+    def __init__(self, provider: OpenRouterProvider | None = None) -> None:
         super().__init__(provider or OpenRouterProvider())
 
     @property
@@ -59,12 +56,9 @@ class OpenRouterOrchestrator(BaseOpenAICompatOrchestrator):
         return apply_openrouter_model_policies(entries), raw_payload
 
     def fallback_models(self):
-        models = [
-            (model_id, model_id) for model_id in openrouter_allowed_models()
-        ]
         entries, raw_payload = build_static_catalog_entries(
             provider=self._provider,
-            models=models,
+            models=openrouter_allowed_models(),
             docs_url=OpenRouterUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=self.reasoning_capabilities,

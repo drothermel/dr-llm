@@ -12,16 +12,14 @@ from dr_llm.llm.catalog.fetchers.common import (
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogPricing
 from dr_llm.llm.coercion import as_float, as_int
 from dr_llm.llm.names import ReasoningMode
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
-)
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
+from dr_llm.llm.providers.transports.api_provider import ApiProvider
 
 CapabilitiesFn = Callable[[str], ReasoningCapabilities | None]
 
 
 def fetch_openai_compat_models(
-    provider: OpenAICompatProvider,
+    provider: ApiProvider,
     *,
     capabilities_fn: CapabilitiesFn,
 ) -> tuple[list[ModelCatalogEntry], dict[str, Any]]:

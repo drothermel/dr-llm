@@ -11,29 +11,23 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.impls.glm.capabilities import (
+from dr_llm.llm.providers.impls.glm.controls import (
     reasoning_capabilities_for_glm,
+)
+from dr_llm.llm.providers.impls.glm.families import (
+    GlmStaticCatalogModel,
 )
 from dr_llm.llm.providers.impls.openai_compat_base import (
     BaseOpenAICompatOrchestrator,
 )
 from dr_llm.llm.providers.core.orchestrator_base import CatalogResult
 from dr_llm.llm.providers.impls.glm.provider import GlmProvider, GlmUrls
-from dr_llm.llm.providers.impls.glm.reasoning import validate_reasoning_for_glm
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
-)
+from dr_llm.llm.providers.impls.glm.controls import validate_reasoning_for_glm
 from dr_llm.llm.request import LlmRequest
-
-_GLM_COMMON_MODELS = [
-    ("glm-4.5", "GLM 4.5"),
-    ("glm-4-air", "GLM 4 Air"),
-    ("glm-4-flash", "GLM 4 Flash"),
-]
 
 
 class GlmOrchestrator(BaseOpenAICompatOrchestrator):
-    def __init__(self, provider: OpenAICompatProvider | None = None) -> None:
+    def __init__(self, provider: GlmProvider | None = None) -> None:
         super().__init__(provider or GlmProvider())
 
     @property
@@ -80,7 +74,7 @@ class GlmOrchestrator(BaseOpenAICompatOrchestrator):
     def fallback_models(self) -> CatalogResult:
         return build_static_catalog_entries(
             provider=self._provider,
-            models=_GLM_COMMON_MODELS,
+            models=GlmStaticCatalogModel.values(),
             docs_url=GlmUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=self.reasoning_capabilities,

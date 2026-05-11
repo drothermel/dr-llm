@@ -14,14 +14,17 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningWarning,
     google_literal_to_thinking_level,
 )
-from dr_llm.llm.providers.impls.google.capabilities import (
+from dr_llm.llm.providers.impls.google.controls import (
     reasoning_capabilities_for_google,
+)
+from dr_llm.llm.providers.impls.google.families import (
+    GoogleStaticCatalogModel,
 )
 from dr_llm.llm.providers.impls.google.provider import (
     GoogleProvider,
     GoogleUrls,
 )
-from dr_llm.llm.providers.impls.google.reasoning import (
+from dr_llm.llm.providers.impls.google.controls import (
     validate_reasoning_for_google,
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
@@ -31,13 +34,6 @@ from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
 from dr_llm.llm.request import LlmRequest
-
-_GOOGLE_COMMON_MODELS = [
-    ("gemini-2.5-pro-preview-05-06", "Gemini 2.5 Pro"),
-    ("gemini-2.5-flash-preview-04-17", "Gemini 2.5 Flash"),
-    ("gemini-2.0-flash", "Gemini 2.0 Flash"),
-    ("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite"),
-]
 
 
 class GoogleOrchestrator(BaseProviderOrchestrator):
@@ -119,7 +115,7 @@ class GoogleOrchestrator(BaseProviderOrchestrator):
     def fallback_models(self):
         return build_static_catalog_entries(
             provider=self._provider,
-            models=_GOOGLE_COMMON_MODELS,
+            models=GoogleStaticCatalogModel.values(),
             docs_url=GoogleUrls.MODELS_DOCS,
             supports_vision=None,
             capabilities_fn=reasoning_capabilities_for_google,

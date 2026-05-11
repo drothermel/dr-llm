@@ -1,33 +1,35 @@
 from __future__ import annotations
 
-from dr_llm.llm import ProviderName
 import pytest
 
 from dr_llm.errors import HeadlessExecutionError, ProviderSemanticError
-from dr_llm.llm.providers.impls.anthropic.reasoning import (
+from dr_llm.llm import ProviderName
+from dr_llm.llm.providers.impls.anthropic.controls import (
     AnthropicReasoningConfig,
     validate_reasoning_for_anthropic,
 )
-from dr_llm.llm.providers.impls.kimi_code.reasoning import (
+from dr_llm.llm.providers.impls.kimi_code.controls import (
     KimiCodeReasoningConfig,
 )
-from dr_llm.llm.providers.impls.kimi_code.reasoning import (
+from dr_llm.llm.providers.impls.kimi_code.controls import (
     validate_reasoning_for_kimi_code,
 )
-from dr_llm.llm.providers.impls.minimax.reasoning import MiniMaxReasoningConfig
-from dr_llm.llm.providers.impls.minimax.reasoning import (
+from dr_llm.llm.providers.impls.minimax.controls import MiniMaxReasoningConfig
+from dr_llm.llm.providers.impls.minimax.controls import (
     validate_reasoning_for_minimax,
 )
-from dr_llm.llm.providers.impls.google.reasoning import GoogleReasoningConfig
-from dr_llm.llm.providers.impls.claude_code.reasoning import (
+from dr_llm.llm.providers.impls.google.controls import GoogleReasoningConfig
+from dr_llm.llm.providers.impls.claude_code.controls import (
     ClaudeHeadlessReasoningConfig,
     validate_reasoning_for_claude_code,
 )
-from dr_llm.llm.providers.impls.codex.reasoning import (
+from dr_llm.llm.providers.impls.codex.controls import (
     CodexHeadlessReasoningConfig,
 )
-from dr_llm.llm.providers.transports.openai_compat.reasoning import (
-    OpenAICompatReasoningConfig,
+from dr_llm.llm.providers.impls.glm.controls import GlmReasoningConfig
+from dr_llm.llm.providers.impls.openai.controls import OpenAIReasoningConfig
+from dr_llm.llm.providers.impls.openrouter.controls import (
+    OpenRouterReasoningConfig,
 )
 from dr_llm.llm.names import ThinkingLevel
 from dr_llm.llm.providers.concepts.reasoning import (
@@ -41,57 +43,53 @@ from dr_llm.llm.providers.concepts.reasoning import (
 )
 
 
-def test_openai_compat_rejects_anthropic_reasoning_shape() -> None:
+def test_openai_rejects_anthropic_reasoning_shape() -> None:
     with pytest.raises(ProviderSemanticError):
-        OpenAICompatReasoningConfig.from_base(
+        OpenAIReasoningConfig.from_base(
             AnthropicReasoning(thinking_level=ThinkingLevel.OFF)
         )
 
 
-def test_openai_compat_rejects_provider_specific_shape() -> None:
+def test_openai_rejects_provider_specific_shape() -> None:
     with pytest.raises(ProviderSemanticError):
-        OpenAICompatReasoningConfig.from_base(
+        OpenAIReasoningConfig.from_base(
             GoogleReasoning(thinking_level=ThinkingLevel.LOW)
         )
 
 
-def test_openai_compat_serializes_thinking_levels() -> None:
+def test_provider_controls_serialize_openai_compat_payloads() -> None:
     assert (
-        OpenAICompatReasoningConfig.from_base(
+        OpenAIReasoningConfig.from_base(
             OpenAIReasoning(thinking_level=ThinkingLevel.NA)
         ).reasoning_effort
         is None
     )
     assert (
-        OpenAICompatReasoningConfig.from_base(
+        OpenAIReasoningConfig.from_base(
             OpenAIReasoning(thinking_level=ThinkingLevel.OFF)
         ).reasoning_effort
         == "none"
     )
     assert (
-        OpenAICompatReasoningConfig.from_base(
+        OpenAIReasoningConfig.from_base(
             OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL)
         ).reasoning_effort
         == "minimal"
     )
-    assert OpenAICompatReasoningConfig.from_base(
+    assert GlmReasoningConfig.from_base(
         GlmReasoning(thinking_level=ThinkingLevel.OFF)
     ).extra_body == {"thinking": {"type": "disabled"}}
-    assert OpenAICompatReasoningConfig.from_base(
+    assert GlmReasoningConfig.from_base(
         GlmReasoning(thinking_level=ThinkingLevel.ADAPTIVE)
     ).extra_body == {"thinking": {"type": "enabled"}}
 
 
 def test_openrouter_serializes_reasoning_payloads() -> None:
-    assert OpenAICompatReasoningConfig.from_base(
+    assert OpenRouterReasoningConfig.from_base(
         OpenRouterReasoning(enabled=False),
-        provider=ProviderName.OPENROUTER,
-        model="deepseek/deepseek-chat-v3.1",
     ).extra_body == {"reasoning": {"enabled": False}}
-    assert OpenAICompatReasoningConfig.from_base(
+    assert OpenRouterReasoningConfig.from_base(
         OpenRouterReasoning(effort="low"),
-        provider=ProviderName.OPENROUTER,
-        model="openai/gpt-oss-20b",
     ).extra_body == {"reasoning": {"effort": "low"}}
 
 

@@ -18,7 +18,7 @@ from dr_llm.llm.providers.transports.headless_base import (
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
-from dr_llm.llm.providers.impls.claude_code.reasoning import (
+from dr_llm.llm.providers.impls.claude_code.controls import (
     ClaudeHeadlessReasoningConfig,
 )
 from dr_llm.llm.providers.impls.claude_code.families import (

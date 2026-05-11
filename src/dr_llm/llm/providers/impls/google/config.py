@@ -15,7 +15,7 @@ from dr_llm.llm.providers.core.authoring import (
     validate_budget_range,
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.google.capabilities import (
+from dr_llm.llm.providers.impls.google.controls import (
     reasoning_capabilities_for_google,
 )
 

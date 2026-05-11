@@ -13,9 +13,7 @@ from dr_llm.llm.providers.impls.anthropic.provider_config import (
 from dr_llm.llm.providers.impls.google.provider import GoogleProvider
 from dr_llm.llm.providers.impls.kimi_code.provider import KimiCodeProvider
 from dr_llm.llm.providers.impls.minimax.provider import MiniMaxProvider
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
-)
+from dr_llm.llm.providers.impls.openai.provider import OpenAIProvider
 from dr_llm.llm.providers.transports.openai_compat.config import (
     OpenAICompatConfig,
 )
@@ -102,7 +100,7 @@ def test_available_names_accepts_precomputed_statuses() -> None:
 @pytest.mark.parametrize(
     "adapter_factory",
     [
-        lambda: OpenAICompatProvider(
+        lambda: OpenAIProvider(
             config=OpenAICompatConfig(
                 name=ProviderName.OPENAI,
                 base_url="https://api.example.com/v1",

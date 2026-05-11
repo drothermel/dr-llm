@@ -20,7 +20,7 @@ from dr_llm.llm.providers.transports.headless_base import (
     ParsedHeadlessOutput,
     messages_to_prompt,
 )
-from dr_llm.llm.providers.impls.codex.reasoning import (
+from dr_llm.llm.providers.impls.codex.controls import (
     CodexHeadlessReasoningConfig,
 )
 from dr_llm.llm.providers.transports.headless_config import CodexProviderConfig

@@ -9,7 +9,7 @@ from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.reasoning import GlmReasoning
 from dr_llm.llm.providers.core.authoring import build_provider_config
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.glm.capabilities import (
+from dr_llm.llm.providers.impls.glm.controls import (
     reasoning_capabilities_for_glm,
 )
 

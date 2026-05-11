@@ -11,7 +11,7 @@ from dr_llm.llm.providers.core.authoring import (
     validate_budget_range,
 )
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.kimi_code.capabilities import (
+from dr_llm.llm.providers.impls.kimi_code.controls import (
     reasoning_capabilities_for_kimi_code,
     supported_effort_levels_for_kimi_code,
 )

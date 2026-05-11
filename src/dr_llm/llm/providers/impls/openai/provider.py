@@ -6,15 +6,21 @@ import httpx
 
 from dr_llm.llm.names import ProviderName
 from dr_llm.llm.providers.names import ApiKeyNames
+from dr_llm.llm.providers.impls.openai.controls import OpenAIReasoningConfig
 from dr_llm.llm.providers.impls.openai.families import (
     OPENAI_THINKING_SUPPORTED_MODELS,
 )
+from dr_llm.llm.providers.transports.api_provider import ApiProvider
 from dr_llm.llm.providers.transports.openai_compat.config import (
     OpenAICompatConfig,
 )
-from dr_llm.llm.providers.transports.openai_compat.provider import (
-    OpenAICompatProvider,
+from dr_llm.llm.providers.transports.openai_compat.request import (
+    OpenAICompatRequest,
 )
+from dr_llm.llm.providers.transports.openai_compat.response import (
+    OpenAICompatResponse,
+)
+from dr_llm.llm.request import LlmRequest
 
 
 class OpenAIUrls(StrEnum):
@@ -22,7 +28,9 @@ class OpenAIUrls(StrEnum):
     MODELS_DOCS = "https://platform.openai.com/docs/models"
 
 
-class OpenAIProvider(OpenAICompatProvider):
+class OpenAIProvider(ApiProvider):
+    _config: OpenAICompatConfig
+
     def __init__(
         self,
         *,
@@ -41,3 +49,21 @@ class OpenAIProvider(OpenAICompatProvider):
             ),
             client=client,
         )
+
+    @property
+    def config(self) -> OpenAICompatConfig:
+        return self._config
+
+    def _build_request(self, request: LlmRequest) -> OpenAICompatRequest:
+        controls = OpenAIReasoningConfig.from_base(request.reasoning)
+        return OpenAICompatRequest.from_llm_request(
+            request,
+            self._config,
+            reasoning_effort=controls.reasoning_effort,
+            warnings=controls.warnings,
+        )
+
+    def _parse_response(
+        self, response: httpx.Response
+    ) -> OpenAICompatResponse:
+        return OpenAICompatResponse.from_http_response(response)

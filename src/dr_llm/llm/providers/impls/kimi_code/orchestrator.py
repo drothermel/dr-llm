@@ -12,15 +12,18 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
     ReasoningWarning,
 )
-from dr_llm.llm.providers.impls.kimi_code.capabilities import (
+from dr_llm.llm.providers.impls.kimi_code.controls import (
     reasoning_capabilities_for_kimi_code,
     supported_effort_levels_for_kimi_code,
+)
+from dr_llm.llm.providers.impls.kimi_code.families import (
+    KimiCodeStaticCatalogModel,
 )
 from dr_llm.llm.providers.impls.kimi_code.provider import (
     KimiCodeProvider,
     KimiCodeUrls,
 )
-from dr_llm.llm.providers.impls.kimi_code.reasoning import (
+from dr_llm.llm.providers.impls.kimi_code.controls import (
     validate_reasoning_for_kimi_code,
 )
 from dr_llm.llm.providers.core.orchestrator_base import (
@@ -30,10 +33,6 @@ from dr_llm.llm.providers.core.request_defaults import (
     ProviderRequestDefaults,
 )
 from dr_llm.llm.request import LlmRequest
-
-_KIMI_CODING_MODELS = [
-    ("kimi-for-coding", "Kimi For Coding"),
-]
 
 
 class KimiCodeOrchestrator(BaseProviderOrchestrator):
@@ -114,7 +113,7 @@ class KimiCodeOrchestrator(BaseProviderOrchestrator):
     def fallback_models(self):
         return build_static_catalog_entries(
             provider=self._provider,
-            models=_KIMI_CODING_MODELS,
+            models=KimiCodeStaticCatalogModel.values(),
             docs_url=KimiCodeUrls.MODELS_DOCS,
             supports_vision=True,
             capabilities_fn=reasoning_capabilities_for_kimi_code,

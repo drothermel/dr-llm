@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from dr_llm.llm.providers.impls.anthropic.effort import (
+from dr_llm.llm.providers.impls.anthropic.controls import (
     supported_effort_levels_for_anthropic,
 )
 from dr_llm.llm.names import EffortSpec
