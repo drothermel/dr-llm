@@ -9,6 +9,7 @@ from dr_llm.llm.names import (
     ThinkingLevel,
 )
 from dr_llm.llm.providers.impls.anthropic.capabilities import (
+    anthropic_supports_adaptive_thinking,
     reasoning_capabilities_for_anthropic,
 )
 from dr_llm.llm.providers.impls.anthropic.effort import (
@@ -17,9 +18,6 @@ from dr_llm.llm.providers.impls.anthropic.effort import (
 from dr_llm.llm.providers.impls.anthropic.provider import AnthropicProvider
 from dr_llm.llm.providers.impls.anthropic.reasoning import (
     validate_reasoning_for_anthropic,
-)
-from dr_llm.llm.providers.impls.anthropic.thinking import (
-    ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
 )
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -138,6 +136,6 @@ class AnthropicOrchestrator(BaseProviderOrchestrator):
     def _supported_effort_thinking_levels(
         self, model: str
     ) -> tuple[ThinkingLevel, ...]:
-        if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
+        if anthropic_supports_adaptive_thinking(model):
             return (ThinkingLevel.OFF, ThinkingLevel.ADAPTIVE)
         return (ThinkingLevel.OFF,)

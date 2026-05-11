@@ -59,14 +59,6 @@ def openai_supports_off_thinking(model: str) -> bool:
     )
 
 
-def openai_uses_max_completion_tokens(model: str) -> bool:
-    """OpenAI gpt-5 family models reject ``max_tokens`` and require
-    ``max_completion_tokens`` instead. The set of affected models matches
-    the configurable-thinking family.
-    """
-    return openai_supports_configurable_thinking(model)
-
-
 def openai_is_gpt5_family(model: str) -> bool:
     normalized = normalize_openai_reasoning_model(model)
     return normalized == "gpt-5" or normalized.startswith(("gpt-5-", "gpt-5."))

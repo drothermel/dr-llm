@@ -60,20 +60,3 @@ class ReasoningWarningCode(StrEnum):
 
 
 OpenRouterEffortLevel = Literal["low", "medium", "high"]
-
-
-type SamplingApiProviderName = Literal[
-    ProviderName.OPENROUTER,
-    ProviderName.GLM,
-    ProviderName.GOOGLE,
-    ProviderName.ANTHROPIC,
-    ProviderName.MINIMAX,
-]
-type OpenAIProviderName = Literal[ProviderName.OPENAI]
-type KimiCodeProviderName = Literal[ProviderName.KIMI_CODE]
-type ApiBackedProviderName = (
-    OpenAIProviderName | SamplingApiProviderName | KimiCodeProviderName
-)
-type HeadlessProviderName = Literal[
-    ProviderName.CODEX, ProviderName.CLAUDE_CODE
-]

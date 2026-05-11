@@ -1,7 +1,7 @@
 # Provider Config Types
 
-This document describes the target authoring-config layout for the LLM provider
-refactor.
+This document describes the authoring-config layout for the LLM provider
+refactor after the hard cutover.
 
 The key design split is:
 
@@ -54,6 +54,7 @@ Each authoring config should:
 - Encode only options valid for that provider/model family.
 - Validate model-family constraints at construction/conversion time.
 - Expose `to_llm_config(registry: ProviderRegistry | None = None) -> LlmConfig`.
+- Satisfy the public `LlmAuthoringConfig` protocol.
 - Avoid compatibility with old `OpenAILlmConfig`, `ApiLlmConfig`,
   `KimiCodeLlmConfig`, and `HeadlessLlmConfig`.
 
@@ -132,10 +133,9 @@ Suggested constraints:
 | `AnthropicEffortConfig` | Claude 4.6 effort families | `effort=low/medium/high`, plus `max` for Opus 4.6 |
 | `AnthropicEffortAndBudgetConfig` | Opus 4.5 family | effort plus budget thinking |
 
-Before implementing these classes, consolidate Anthropic's model-family data into
-one provider-local capability table. The old shape split adaptive thinking,
-budget thinking, and effort support across separate helpers, which is the
-confusion this refactor should remove.
+Anthropic capability resolution is the source of truth for adaptive thinking,
+budget thinking, and effort support. Defaults, authoring configs, and request
+validation should all use those provider-local predicates.
 
 ## Google
 

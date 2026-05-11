@@ -7,11 +7,9 @@ from pydantic import Field
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.names import ProviderName, ThinkingLevel
 from dr_llm.llm.providers.impls.anthropic.capabilities import (
+    anthropic_supports_adaptive_thinking,
+    anthropic_supports_budget_thinking,
     reasoning_capabilities_for_anthropic,
-)
-from dr_llm.llm.providers.impls.anthropic.thinking import (
-    ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
-    ANTHROPIC_BUDGET_THINKING_SUPPORTED,
 )
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 from dr_llm.llm.providers.concepts.reasoning import (
@@ -39,8 +37,13 @@ def validate_anthropic_budget_for_provider(
             f"{provider} budget thinking requires budget_tokens when "
             "thinking_level is 'budget'"
         )
+    unsupported_anthropic_model = (
+        provider == ProviderName.ANTHROPIC
+        and not anthropic_supports_budget_thinking(model)
+    )
     if (
-        capabilities is None
+        unsupported_anthropic_model
+        or capabilities is None
         or capabilities.min_budget_tokens is None
         or capabilities.max_budget_tokens is None
     ):
@@ -109,9 +112,8 @@ def _validate_anthropic_reasoning_shape(
 
 
 def _validate_anthropic_na(*, model: str) -> None:
-    if model in (
-        set(ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED)
-        | set(ANTHROPIC_BUDGET_THINKING_SUPPORTED)
+    if not is_reasoning_unsupported(
+        reasoning_capabilities_for_anthropic(model)
     ):
         raise ValueError(
             f"thinking_level='na' is not supported for provider='{ProviderName.ANTHROPIC}' model={model!r}"
@@ -119,7 +121,7 @@ def _validate_anthropic_na(*, model: str) -> None:
 
 
 def _validate_anthropic_adaptive(*, model: str) -> None:
-    if model not in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
+    if not anthropic_supports_adaptive_thinking(model):
         raise ValueError(
             f"anthropic adaptive thinking is not supported for model={model!r}"
         )

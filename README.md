@@ -122,14 +122,25 @@ for effort, reasoning, token limits, and supported sampling controls.
 ### Calling a provider
 
 ```python
-from dr_llm.llm import Message, build_default_registry
+from dr_llm.llm import (
+    Message,
+    OpenAIGpt52Config,
+    SamplingControls,
+    ThinkingLevel,
+    build_default_registry,
+)
 
 registry = build_default_registry()
 orchestrator = registry.get("openai")
+config = OpenAIGpt52Config(
+    model="gpt-5.2-mini",
+    thinking_level=ThinkingLevel.OFF,
+    sampling=SamplingControls(temperature=0.7, top_p=0.95),
+).to_llm_config(registry)
 
 response = orchestrator.generate(
-    orchestrator.build_request(
-        model="gpt-4.1",
+    orchestrator.build_request_from_config(
+        config=config,
         messages=[Message(role="user", content="hello")],
     )
 )

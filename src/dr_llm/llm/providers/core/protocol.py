@@ -64,6 +64,8 @@ class ProviderOrchestrator(Protocol):
         metadata: dict[str, Any] | None = None,
     ) -> LlmRequest: ...
 
+    def validate_config(self, config: LlmConfig) -> None: ...
+
     def reasoning_for_thinking_level(
         self,
         *,

@@ -5,13 +5,8 @@ from dr_llm.llm.config import (
     parse_llm_config,
 )
 from dr_llm.llm.names import (
-    ApiBackedProviderName,
     EffortSpec,
-    HeadlessProviderName,
-    KimiCodeProviderName,
-    OpenAIProviderName,
     ProviderName,
-    SamplingApiProviderName,
     ThinkingLevel,
 )
 from dr_llm.llm.providers.concepts.capabilities import (
@@ -25,7 +20,6 @@ from dr_llm.llm.providers.concepts.reasoning import (
     GoogleReasoning,
     OpenAIReasoning,
     OpenRouterReasoning,
-    ReasoningBudget,
     ReasoningSpec,
     ReasoningWarning,
     parse_reasoning_spec,
@@ -34,6 +28,7 @@ from dr_llm.llm.providers.core.config import (
     ProviderAvailabilityStatus,
     ProviderConfig,
 )
+from dr_llm.llm.providers.core.authoring import LlmAuthoringConfig
 from dr_llm.llm.providers.core.protocol import ProviderOrchestrator
 from dr_llm.llm.providers.core.reasoning_controls import (
     ReasoningControls,
@@ -113,7 +108,6 @@ __all__ = [
     "AnthropicLegacyConfig",
     "AnthropicModelFamily",
     "AnthropicReasoning",
-    "ApiBackedProviderName",
     "CallMode",
     "ClaudeCodeAdaptiveConfig",
     "ClaudeCodeEffortConfig",
@@ -138,10 +132,9 @@ __all__ = [
     "GoogleLevelConfig",
     "GoogleModelFamily",
     "GoogleReasoning",
-    "HeadlessProviderName",
     "KimiCodeConfig",
     "KimiCodeModelFamily",
-    "KimiCodeProviderName",
+    "LlmAuthoringConfig",
     "LlmConfig",
     "LlmRequest",
     "LlmResponse",
@@ -156,7 +149,6 @@ __all__ = [
     "OpenAIGpt54Config",
     "OpenAILegacyConfig",
     "OpenAIModelFamily",
-    "OpenAIProviderName",
     "OpenAIReasoning",
     "OpenRouterEffortConfig",
     "OpenRouterNoReasoningConfig",
@@ -168,12 +160,10 @@ __all__ = [
     "ProviderOrchestrator",
     "ProviderRegistry",
     "ProviderRequestDefaults",
-    "ReasoningBudget",
     "ReasoningCapabilities",
     "ReasoningControls",
     "ReasoningSpec",
     "ReasoningWarning",
-    "SamplingApiProviderName",
     "SamplingControls",
     "ThinkingLevel",
     "TokenUsage",

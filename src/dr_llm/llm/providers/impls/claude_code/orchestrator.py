@@ -5,8 +5,8 @@ from dr_llm.llm.names import (
     ProviderName,
     ThinkingLevel,
 )
-from dr_llm.llm.providers.impls.anthropic.thinking import (
-    ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
+from dr_llm.llm.providers.impls.anthropic.capabilities import (
+    anthropic_supports_adaptive_thinking,
 )
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -81,7 +81,7 @@ class ClaudeCodeOrchestrator(BaseProviderOrchestrator):
         self, *, model: str, capabilities: ModelCapabilities
     ) -> tuple[ThinkingLevel, ...]:
         del capabilities
-        if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
+        if anthropic_supports_adaptive_thinking(model):
             return (ThinkingLevel.ADAPTIVE,)
         return (ThinkingLevel.NA,)
 

@@ -182,6 +182,13 @@ class FakeOrchestrator:
             }
         )
 
+    def validate_config(self, config: LlmConfig) -> None:
+        if config.provider != self.name:
+            raise ValueError(
+                f"config provider {config.provider!r} does not match "
+                f"orchestrator provider {self.name!r}"
+            )
+
     def reasoning_for_thinking_level(
         self,
         *,

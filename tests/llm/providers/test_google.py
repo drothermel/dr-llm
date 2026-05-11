@@ -13,9 +13,9 @@ from dr_llm.llm import (
     LlmRequest,
     Message,
     ProviderName,
-    ReasoningBudget,
     ThinkingLevel,
 )
+from dr_llm.llm.providers.concepts.reasoning import ReasoningBudget
 from dr_llm.llm.providers.transports.api_config import APIProviderConfig
 from dr_llm.llm.providers.impls.google.provider import GoogleProvider
 from dr_llm.llm.providers.impls.google.request import GoogleRequest

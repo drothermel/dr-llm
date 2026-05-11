@@ -11,9 +11,9 @@ from dr_llm.llm import (
     AnthropicReasoning,
     CodexReasoning,
     EffortSpec,
-    ReasoningBudget,
     ThinkingLevel,
 )
+from dr_llm.llm.providers.concepts.reasoning import ReasoningBudget
 from dr_llm.llm.providers.impls.claude_code.provider import (
     ClaudeCodeProvider,
 )

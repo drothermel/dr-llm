@@ -64,3 +64,21 @@ def anthropic_reasoning_mode(model: str) -> ReasoningMode:
     if capabilities is None:
         return ReasoningMode.UNSUPPORTED
     return capabilities.mode
+
+
+def anthropic_supports_adaptive_thinking(model: str) -> bool:
+    return anthropic_reasoning_mode(model) == ReasoningMode.ANTHROPIC_EFFORT
+
+
+def anthropic_supports_budget_thinking(model: str) -> bool:
+    return anthropic_reasoning_mode(model) in {
+        ReasoningMode.ANTHROPIC_BUDGET,
+        ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET,
+    }
+
+
+def anthropic_supports_effort(model: str) -> bool:
+    return anthropic_reasoning_mode(model) in {
+        ReasoningMode.ANTHROPIC_EFFORT,
+        ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET,
+    }

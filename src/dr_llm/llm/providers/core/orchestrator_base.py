@@ -150,14 +150,9 @@ class BaseProviderOrchestrator(ABC):
                 )
             payload["max_tokens"] = resolved_max_tokens
 
-        if sampling is not None and not defaults.sampling_supported:
-            raise ValueError(
-                f"sampling is not supported for provider={self.name!r}"
-            )
-        if defaults.sampling_supported:
-            payload["sampling"] = (
-                defaults.sampling if sampling is None else sampling
-            )
+        resolved_sampling = self._resolve_sampling(defaults, sampling)
+        if resolved_sampling is not None:
+            payload["sampling"] = resolved_sampling
 
         config = LlmConfig(**payload)
         self.validate_config(config)
@@ -192,6 +187,16 @@ class BaseProviderOrchestrator(ABC):
                 f"config mode {config.mode!r} does not match "
                 f"orchestrator mode {self.mode!r}"
             )
+        self.validate_request(self._config_validation_request(config))
+
+    def _config_validation_request(self, config: LlmConfig) -> LlmRequest:
+        return parse_llm_request(
+            {
+                **config.model_dump(mode="python"),
+                "messages": [],
+                "metadata": {},
+            }
+        )
 
     def _resolve_reasoning(
         self,
@@ -218,6 +223,25 @@ class BaseProviderOrchestrator(ABC):
         if effort == EffortSpec.NA and defaults.effort != EffortSpec.NA:
             return defaults.effort
         return effort
+
+    def _resolve_sampling(
+        self,
+        defaults: ProviderRequestDefaults,
+        sampling: SamplingControls | None,
+    ) -> SamplingControls | None:
+        if sampling is not None:
+            if sampling.is_empty():
+                return None
+            if not defaults.sampling_supported:
+                raise ValueError(
+                    f"sampling is not supported for provider={self.name!r}"
+                )
+            return sampling
+        if not defaults.sampling_supported or defaults.sampling is None:
+            return None
+        if defaults.sampling.is_empty():
+            return None
+        return defaults.sampling
 
     @abstractmethod
     def model_capabilities(self, model: str) -> ModelCapabilities: ...

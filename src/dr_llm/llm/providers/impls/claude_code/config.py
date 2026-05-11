@@ -6,11 +6,10 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from dr_llm.llm.config import LlmConfig
 from dr_llm.llm.names import EffortSpec, ProviderName, ThinkingLevel
-from dr_llm.llm.providers.concepts.thinking_utils import matches_family
 from dr_llm.llm.providers.core.authoring import build_provider_config
 from dr_llm.llm.providers.core.registry import ProviderRegistry
-from dr_llm.llm.providers.impls.anthropic.families import (
-    ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
+from dr_llm.llm.providers.impls.anthropic.capabilities import (
+    anthropic_supports_adaptive_thinking,
 )
 from dr_llm.llm.providers.impls.claude_code.capabilities import (
     supported_effort_levels_for_claude_code,
@@ -125,6 +124,4 @@ def _is_claude_code_model(model: str) -> bool:
 
 
 def _is_adaptive_model(model: str) -> bool:
-    return matches_family(
-        normalized=model, families=ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED
-    )
+    return anthropic_supports_adaptive_thinking(model)

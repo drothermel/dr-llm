@@ -394,6 +394,40 @@ def test_headless_and_narrow_authoring_configs_to_llm_config(
     }
 
 
+def test_anthropic_authoring_config_uses_family_capabilities_for_snapshots() -> (
+    None
+):
+    config = AnthropicEffortAndBudgetConfig(
+        model="claude-opus-4-5-20261201",
+        effort=EffortSpec.HIGH,
+        thinking_level=ThinkingLevel.BUDGET,
+        budget_tokens=2048,
+    ).to_llm_config()
+
+    assert config.effort == EffortSpec.HIGH
+    assert config.reasoning == AnthropicReasoning(
+        thinking_level=ThinkingLevel.BUDGET,
+        budget_tokens=2048,
+    )
+
+
+def test_claude_code_authoring_configs_use_anthropic_family_capabilities() -> (
+    None
+):
+    adaptive_config = ClaudeCodeAdaptiveConfig(
+        model="claude-sonnet-4-6-20261201"
+    ).to_llm_config()
+    effort_config = ClaudeCodeEffortConfig(
+        model="claude-opus-4-5-20261201",
+        effort=EffortSpec.HIGH,
+    ).to_llm_config()
+
+    assert adaptive_config.reasoning == AnthropicReasoning(
+        thinking_level=ThinkingLevel.ADAPTIVE
+    )
+    assert effort_config.effort == EffortSpec.HIGH
+
+
 @pytest.mark.parametrize(
     "config_factory",
     [
@@ -434,6 +468,28 @@ def test_provider_reasoning_shape_can_parse_before_validation() -> None:
     assert config.reasoning == AnthropicReasoning(
         thinking_level=ThinkingLevel.OFF
     )
+
+
+def test_build_config_rejects_provider_specific_reasoning_mismatch() -> None:
+    registry = build_default_registry()
+    try:
+        with pytest.raises(ValueError, match="openai reasoning"):
+            registry.get(ProviderName.OPENAI).build_config(
+                model="gpt-5-mini",
+                reasoning=GoogleReasoning(thinking_level=ThinkingLevel.OFF),
+            )
+    finally:
+        registry.close()
+
+
+def test_openai_config_does_not_store_empty_sampling_default() -> None:
+    config = OpenAIGpt5Config(
+        model="gpt-5-mini",
+        thinking_level=ThinkingLevel.MINIMAL,
+    ).to_llm_config()
+
+    assert config.sampling is None
+    assert "sampling" not in config.model_dump(mode="json", exclude_none=True)
 
 
 def test_build_request_from_config_rejects_provider_mismatch() -> None:

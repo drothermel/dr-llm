@@ -41,7 +41,7 @@ def test_request_defaults_expose_openai_sampling_and_reasoning_policy(
         thinking_level=ThinkingLevel.MINIMAL
     )
     assert defaults.sampling_supported
-    assert defaults.sampling == SamplingControls()
+    assert defaults.sampling is None
 
 
 def test_request_defaults_expose_google_sampling_defaults(
@@ -151,3 +151,15 @@ def test_build_request_rejects_unsupported_sampling_control(
             messages=[],
             sampling=SamplingControls(temperature=0.2),
         )
+
+
+def test_build_request_treats_empty_sampling_control_as_unset(
+    registry: ProviderRegistry,
+) -> None:
+    request = registry.get(ProviderName.KIMI_CODE).build_request(
+        model="kimi-for-coding",
+        messages=[],
+        sampling=SamplingControls(),
+    )
+
+    assert request.sampling is None

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from dr_llm.llm.config import LlmConfig, SamplingControls
 from dr_llm.llm.names import EffortSpec, ThinkingLevel
@@ -11,6 +11,12 @@ from dr_llm.llm.providers.concepts.thinking_utils import matches_family
 if TYPE_CHECKING:
     from dr_llm.llm.names import ProviderName
     from dr_llm.llm.providers.core.registry import ProviderRegistry
+
+
+class LlmAuthoringConfig(Protocol):
+    def to_llm_config(
+        self, registry: ProviderRegistry | None = None
+    ) -> LlmConfig: ...
 
 
 def model_matches_any_family(model: str, families: Sequence[str]) -> bool:

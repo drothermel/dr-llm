@@ -4,8 +4,8 @@ from pydantic import Field
 
 from dr_llm.errors import HeadlessExecutionError
 from dr_llm.llm.names import ProviderName, ThinkingLevel
-from dr_llm.llm.providers.impls.anthropic.thinking import (
-    ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED,
+from dr_llm.llm.providers.impls.anthropic.capabilities import (
+    anthropic_supports_adaptive_thinking,
 )
 from dr_llm.llm.providers.concepts.reasoning import (
     AnthropicReasoning,
@@ -20,7 +20,7 @@ def validate_reasoning_for_claude_code(
     *, model: str, reasoning: ReasoningSpec | None
 ) -> None:
     if reasoning is None:
-        if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
+        if anthropic_supports_adaptive_thinking(model):
             raise ValueError(
                 f"reasoning is required for provider='{ProviderName.CLAUDE_CODE}' model={model!r}"
             )
@@ -37,7 +37,7 @@ def validate_reasoning_for_claude_code(
         raise ValueError(
             f"{ProviderName.CLAUDE_CODE} does not support anthropic display controls"
         )
-    if model in ANTHROPIC_ADAPTIVE_THINKING_SUPPORTED:
+    if anthropic_supports_adaptive_thinking(model):
         if reasoning.thinking_level != ThinkingLevel.ADAPTIVE:
             raise ValueError(
                 f"{ProviderName.CLAUDE_CODE} model {model!r} only supports anthropic thinking_level='adaptive'"
