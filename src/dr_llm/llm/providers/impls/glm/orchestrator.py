@@ -18,7 +18,11 @@ from dr_llm.llm.providers.impls.openai_compat_base import (
     BaseOpenAICompatOrchestrator,
 )
 from dr_llm.llm.providers.core.orchestrator_base import CatalogResult
+from dr_llm.llm.providers.impls.glm.provider import GlmProvider
 from dr_llm.llm.providers.impls.glm.reasoning import validate_reasoning_for_glm
+from dr_llm.llm.providers.transports.openai_compat.provider import (
+    OpenAICompatProvider,
+)
 from dr_llm.llm.request import LlmRequest
 
 _GLM_COMMON_MODELS = [
@@ -30,6 +34,9 @@ _GLM_DOCS_URL = "https://docs.z.ai/guides/llm/glm-4.5"
 
 
 class GlmOrchestrator(BaseOpenAICompatOrchestrator):
+    def __init__(self, provider: OpenAICompatProvider | None = None) -> None:
+        super().__init__(provider or GlmProvider())
+
     @property
     def name(self) -> ProviderName:
         return ProviderName.GLM

@@ -47,8 +47,8 @@ _ANTHROPIC_DOCS_URL = "https://docs.anthropic.com/en/docs/about-claude/models"
 class AnthropicOrchestrator(BaseProviderOrchestrator):
     _provider: AnthropicProvider
 
-    def __init__(self, provider: AnthropicProvider) -> None:
-        super().__init__(provider)
+    def __init__(self, provider: AnthropicProvider | None = None) -> None:
+        super().__init__(provider or AnthropicProvider())
 
     @property
     def name(self) -> ProviderName:

@@ -24,10 +24,17 @@ from dr_llm.llm.providers.impls.openrouter.policy import (
     openrouter_model_policy,
     reasoning_capabilities_for_openrouter,
 )
+from dr_llm.llm.providers.impls.openrouter.provider import OpenRouterProvider
+from dr_llm.llm.providers.transports.openai_compat.provider import (
+    OpenAICompatProvider,
+)
 from dr_llm.llm.request import LlmRequest
 
 
 class OpenRouterOrchestrator(BaseOpenAICompatOrchestrator):
+    def __init__(self, provider: OpenAICompatProvider | None = None) -> None:
+        super().__init__(provider or OpenRouterProvider())
+
     @property
     def name(self) -> ProviderName:
         return ProviderName.OPENROUTER

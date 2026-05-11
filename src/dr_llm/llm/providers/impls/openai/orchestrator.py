@@ -20,12 +20,16 @@ from dr_llm.llm.providers.core.request_defaults import (
 from dr_llm.llm.providers.impls.openai.reasoning import (
     validate_reasoning_for_openai,
 )
+from dr_llm.llm.providers.impls.openai.provider import OpenAIProvider
 from dr_llm.llm.providers.impls.openai.thinking import (
     openai_supports_configurable_thinking,
     openai_supports_minimal_thinking,
     openai_supports_off_thinking,
     reasoning_capabilities_for_openai,
     validate_openai_sampling_controls,
+)
+from dr_llm.llm.providers.transports.openai_compat.provider import (
+    OpenAICompatProvider,
 )
 from dr_llm.llm.request import LlmRequest
 
@@ -44,6 +48,9 @@ _OPENAI_DOCS_URL = "https://platform.openai.com/docs/models"
 
 
 class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
+    def __init__(self, provider: OpenAICompatProvider | None = None) -> None:
+        super().__init__(provider or OpenAIProvider())
+
     @property
     def name(self) -> ProviderName:
         return ProviderName.OPENAI

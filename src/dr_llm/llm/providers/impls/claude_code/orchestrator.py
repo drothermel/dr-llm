@@ -43,8 +43,8 @@ _CLAUDE_CODE_MODELS = [
 class ClaudeCodeOrchestrator(BaseProviderOrchestrator):
     _provider: ClaudeCodeProvider
 
-    def __init__(self, provider: ClaudeCodeProvider) -> None:
-        super().__init__(provider)
+    def __init__(self, provider: ClaudeCodeProvider | None = None) -> None:
+        super().__init__(provider or ClaudeCodeProvider())
 
     @property
     def name(self) -> ProviderName:

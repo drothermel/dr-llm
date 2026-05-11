@@ -49,8 +49,8 @@ _CODEX_MODELS = [
 class CodexOrchestrator(BaseProviderOrchestrator):
     _provider: CodexProvider
 
-    def __init__(self, provider: CodexProvider) -> None:
-        super().__init__(provider)
+    def __init__(self, provider: CodexProvider | None = None) -> None:
+        super().__init__(provider or CodexProvider())
 
     @property
     def name(self) -> ProviderName:

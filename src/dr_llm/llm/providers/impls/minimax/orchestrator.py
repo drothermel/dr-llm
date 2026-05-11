@@ -40,8 +40,8 @@ _MINIMAX_TEXT_MODELS = [
 class MiniMaxOrchestrator(BaseProviderOrchestrator):
     _provider: MiniMaxProvider
 
-    def __init__(self, provider: MiniMaxProvider) -> None:
-        super().__init__(provider)
+    def __init__(self, provider: MiniMaxProvider | None = None) -> None:
+        super().__init__(provider or MiniMaxProvider())
 
     @property
     def name(self) -> ProviderName:

@@ -37,8 +37,8 @@ _KIMI_CODE_DOCS_URL = "https://platform.moonshot.ai/docs/guide/agent/coding"
 class KimiCodeOrchestrator(BaseProviderOrchestrator):
     _provider: KimiCodeProvider
 
-    def __init__(self, provider: KimiCodeProvider) -> None:
-        super().__init__(provider)
+    def __init__(self, provider: KimiCodeProvider | None = None) -> None:
+        super().__init__(provider or KimiCodeProvider())
 
     @property
     def name(self) -> ProviderName:

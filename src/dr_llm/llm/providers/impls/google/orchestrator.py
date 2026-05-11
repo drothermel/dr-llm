@@ -41,8 +41,8 @@ _GOOGLE_DOCS_URL = "https://ai.google.dev/gemini-api/docs/models"
 class GoogleOrchestrator(BaseProviderOrchestrator):
     _provider: GoogleProvider
 
-    def __init__(self, provider: GoogleProvider) -> None:
-        super().__init__(provider)
+    def __init__(self, provider: GoogleProvider | None = None) -> None:
+        super().__init__(provider or GoogleProvider())
 
     @property
     def name(self) -> ProviderName:
