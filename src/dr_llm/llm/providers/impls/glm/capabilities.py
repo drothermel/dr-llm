@@ -6,21 +6,18 @@ from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilityRule,
     resolve_capability_rules,
 )
+from dr_llm.llm.providers.impls.glm.families import (
+    GLM_THINKING_SUPPORTED_FAMILIES,
+)
 
 _GLM_THINKING_CAPS = ReasoningCapabilities(mode=ReasoningMode.GLM)
 
 GLM_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
-    ReasoningCapabilityRule(
-        model_prefix="glm-5", capabilities=_GLM_THINKING_CAPS
-    ),
-    ReasoningCapabilityRule(
-        model_prefix="glm-4.7", capabilities=_GLM_THINKING_CAPS
-    ),
-    ReasoningCapabilityRule(
-        model_prefix="glm-4.6", capabilities=_GLM_THINKING_CAPS
-    ),
-    ReasoningCapabilityRule(
-        model_prefix="glm-4.5", capabilities=_GLM_THINKING_CAPS
+    *(
+        ReasoningCapabilityRule(
+            model_prefix=family, capabilities=_GLM_THINKING_CAPS
+        )
+        for family in GLM_THINKING_SUPPORTED_FAMILIES
     ),
 )
 

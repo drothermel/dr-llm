@@ -1,21 +1,16 @@
 from __future__ import annotations
 
 from dr_llm.llm.names import EffortSpec
-
-ANTHROPIC_EFFORT_SUPPORTED_MODELS = [
-    "claude-sonnet-4-6",
-    "claude-opus-4-6",
-    "claude-opus-4-5-20251101",
-]
-
-_ANTHROPIC_EFFORT_SUPPORTED_SET = frozenset(ANTHROPIC_EFFORT_SUPPORTED_MODELS)
+from dr_llm.llm.providers.concepts.thinking_utils import matches_family
+from dr_llm.llm.providers.impls.anthropic.families import (
+    ANTHROPIC_EFFORT_SUPPORTED_MODELS,
+    AnthropicModelFamily,
+)
 
 
 def _supports_anthropic_effort(model: str) -> bool:
-    return (
-        model.startswith("claude-opus-4-6")
-        or model.startswith("claude-sonnet-4-6")
-        or model in _ANTHROPIC_EFFORT_SUPPORTED_SET
+    return matches_family(
+        normalized=model, families=ANTHROPIC_EFFORT_SUPPORTED_MODELS
     )
 
 
@@ -25,6 +20,6 @@ def supported_effort_levels_for_anthropic(
     if not _supports_anthropic_effort(model):
         return ()
     levels = [EffortSpec.LOW, EffortSpec.MEDIUM, EffortSpec.HIGH]
-    if model.startswith("claude-opus-4-6"):
+    if model.startswith(AnthropicModelFamily.CLAUDE_OPUS_46):
         levels.append(EffortSpec.MAX)
     return tuple(levels)

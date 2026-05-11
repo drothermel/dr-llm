@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.anthropic import fetch_anthropic_models
 from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
+from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import (
     ProviderName,
     ReasoningMode,
@@ -114,10 +115,8 @@ class AnthropicOrchestrator(BaseProviderOrchestrator):
             update={
                 "max_tokens": 4096,
                 "max_tokens_required": True,
-                "supports_temperature": True,
-                "temperature": 1.0,
-                "supports_top_p": True,
-                "top_p": 0.95,
+                "sampling_supported": True,
+                "sampling": SamplingControls(temperature=1.0, top_p=0.95),
             }
         )
 

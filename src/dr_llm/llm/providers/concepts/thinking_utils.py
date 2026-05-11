@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 
-def matches_family(*, normalized: str, families: list[str]) -> bool:
+
+def matches_family(*, normalized: str, families: Sequence[str]) -> bool:
     return any(
         normalized == family
         or is_snapshot_of_family(normalized=normalized, family=family)

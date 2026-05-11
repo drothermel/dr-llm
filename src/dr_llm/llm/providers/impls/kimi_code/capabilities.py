@@ -7,6 +7,9 @@ from dr_llm.llm.providers.concepts.capabilities import (
     resolve_capability_rules,
 )
 from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
+from dr_llm.llm.providers.impls.kimi_code.families import (
+    KimiCodeModelFamily,
+)
 
 _KIMI_CODE_CAPS = ReasoningCapabilities(
     mode=ReasoningMode.KIMI_CODE_EFFORT_AND_BUDGET,
@@ -16,7 +19,8 @@ _KIMI_CODE_CAPS = ReasoningCapabilities(
 
 KIMI_CODE_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
-        exact_model="kimi-for-coding", capabilities=_KIMI_CODE_CAPS
+        exact_model=KimiCodeModelFamily.KIMI_FOR_CODING,
+        capabilities=_KIMI_CODE_CAPS,
     ),
 )
 

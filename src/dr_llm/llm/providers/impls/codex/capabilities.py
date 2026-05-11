@@ -3,37 +3,15 @@ from __future__ import annotations
 from dr_llm.llm.names import ReasoningMode
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 from dr_llm.llm.providers.concepts.thinking_utils import matches_family
+from dr_llm.llm.providers.impls.codex.families import (
+    CODEX_MINIMAL_THINKING_SUPPORTED_MODELS,
+    CODEX_OFF_THINKING_SUPPORTED_MODELS,
+    CODEX_THINKING_SUPPORTED_MODELS,
+)
 
 _CODEX_CLI_EFFORT_CAPS = ReasoningCapabilities(
     mode=ReasoningMode.CODEX_CLI_EFFORT
 )
-
-CODEX_THINKING_SUPPORTED_MODELS = [
-    "gpt-5",
-    "gpt-5.1",
-    "gpt-5.2",
-    "gpt-5.4",
-    "gpt-5-codex",
-    "gpt-5.1-codex",
-    "gpt-5.1-codex-mini",
-    "gpt-5.1-codex-max",
-    "gpt-5.2-codex",
-    "gpt-5.3-codex",
-    "gpt-5.3-codex-spark",
-    "gpt-5.4-mini",
-]
-
-CODEX_MINIMAL_THINKING_SUPPORTED_MODELS = [
-    "gpt-5",
-]
-
-CODEX_OFF_THINKING_SUPPORTED_MODELS = [
-    "gpt-5.1",
-    "gpt-5.2",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-]
-
 
 def codex_supports_configurable_thinking(model: str) -> bool:
     return matches_family(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from dr_llm.llm.catalog.models import ModelCatalogEntry
+from dr_llm.llm.config import LlmConfig, SamplingControls
 from dr_llm.llm.names import EffortSpec, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import ModelCapabilities
 from dr_llm.llm.providers.concepts.reasoning import (
@@ -35,10 +36,31 @@ class ProviderOrchestrator(Protocol):
         model: str,
         messages: list[Message],
         max_tokens: int | None = None,
-        effort: EffortSpec = EffortSpec.NA,
+        effort: EffortSpec | None = None,
         reasoning: ReasoningSpec | None = None,
-        temperature: float | None = None,
-        top_p: float | None = None,
+        thinking_level: ThinkingLevel | None = None,
+        budget_tokens: int | None = None,
+        sampling: SamplingControls | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> LlmRequest: ...
+
+    def build_config(
+        self,
+        *,
+        model: str,
+        max_tokens: int | None = None,
+        effort: EffortSpec | None = None,
+        reasoning: ReasoningSpec | None = None,
+        thinking_level: ThinkingLevel | None = None,
+        budget_tokens: int | None = None,
+        sampling: SamplingControls | None = None,
+    ) -> LlmConfig: ...
+
+    def build_request_from_config(
+        self,
+        *,
+        config: LlmConfig,
+        messages: list[Message],
         metadata: dict[str, Any] | None = None,
     ) -> LlmRequest: ...
 

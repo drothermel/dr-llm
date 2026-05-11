@@ -6,13 +6,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.errors import ProviderSemanticError
 from dr_llm.llm.names import EffortSpec
-from dr_llm.llm.providers.impls.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.impls.anthropic.provider_config import (
+    AnthropicProviderConfig,
+)
 from dr_llm.llm.providers.impls.anthropic.reasoning import (
     AnthropicReasoningConfig,
 )
 from dr_llm.llm.providers.transports.api_config import resolve_api_key
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
-from dr_llm.llm.request import ApiBackedLlmRequest, Message
+from dr_llm.llm.request import LlmRequest, Message
 
 
 class AnthropicReasoningPayload(Protocol):
@@ -52,8 +54,8 @@ class AnthropicRequest(BaseModel):
     @classmethod
     def from_llm_request(
         cls,
-        request: ApiBackedLlmRequest,
-        config: AnthropicConfig,
+        request: LlmRequest,
+        config: AnthropicProviderConfig,
         *,
         reasoning_mapping: AnthropicReasoningPayload | None = None,
         require_max_tokens: bool = True,
@@ -80,8 +82,12 @@ class AnthropicRequest(BaseModel):
             messages=cls._to_anthropic_messages(request.messages),
             max_tokens=request.max_tokens,
             system=system or None,
-            temperature=getattr(request, "temperature", None),
-            top_p=getattr(request, "top_p", None),
+            temperature=request.sampling.temperature
+            if request.sampling is not None
+            else None,
+            top_p=request.sampling.top_p
+            if request.sampling is not None
+            else None,
             thinking=resolved_reasoning_mapping.thinking or None,
             output_config=output_config,
             base_url=config.base_url,

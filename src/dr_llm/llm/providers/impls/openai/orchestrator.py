@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
+from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import ProviderName, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -61,8 +62,7 @@ class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
         validate_openai_sampling_controls(
             model=request.model,
             reasoning=request.reasoning,
-            temperature=getattr(request, "temperature", None),
-            top_p=getattr(request, "top_p", None),
+            sampling=request.sampling,
         )
         return warnings
 
@@ -70,8 +70,7 @@ class OpenAIOrchestrator(BaseOpenAICompatOrchestrator):
         defaults = super().request_defaults(model)
         return defaults.model_copy(
             update={
-                "temperature": None,
-                "top_p": None,
+                "sampling": SamplingControls(),
             }
         )
 

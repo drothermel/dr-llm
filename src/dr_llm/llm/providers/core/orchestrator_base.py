@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from dr_llm.llm.catalog.models import ModelCatalogEntry
+from dr_llm.llm.config import LlmConfig, SamplingControls
 from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
@@ -83,22 +84,58 @@ class BaseProviderOrchestrator(ABC):
         model: str,
         messages: list[Message],
         max_tokens: int | None = None,
-        effort: EffortSpec = EffortSpec.NA,
+        effort: EffortSpec | None = None,
         reasoning: ReasoningSpec | None = None,
-        temperature: float | None = None,
-        top_p: float | None = None,
+        thinking_level: ThinkingLevel | None = None,
+        budget_tokens: int | None = None,
+        sampling: SamplingControls | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> LlmRequest:
+        config = self.build_config(
+            model=model,
+            max_tokens=max_tokens,
+            effort=effort,
+            reasoning=reasoning,
+            thinking_level=thinking_level,
+            budget_tokens=budget_tokens,
+            sampling=sampling,
+        )
+        return self.build_request_from_config(
+            config=config, messages=messages, metadata=metadata
+        )
+
+    def build_config(
+        self,
+        *,
+        model: str,
+        max_tokens: int | None = None,
+        effort: EffortSpec | None = None,
+        reasoning: ReasoningSpec | None = None,
+        thinking_level: ThinkingLevel | None = None,
+        budget_tokens: int | None = None,
+        sampling: SamplingControls | None = None,
+    ) -> LlmConfig:
+        if reasoning is not None and thinking_level is not None:
+            raise ValueError(
+                "reasoning and thinking_level are mutually exclusive"
+            )
         defaults = self.request_defaults(model)
+        resolved_reasoning = self._resolve_reasoning(
+            model=model,
+            defaults=defaults,
+            reasoning=reasoning,
+            thinking_level=thinking_level,
+            budget_tokens=budget_tokens,
+        )
+        resolved_effort = (
+            defaults.effort if effort is None else self._resolve_effort(defaults, effort)
+        )
         payload: dict[str, Any] = {
             "provider": defaults.provider,
             "model": defaults.model,
-            "messages": messages,
-            "effort": self._resolve_effort(defaults, effort),
-            "reasoning": defaults.reasoning
-            if reasoning is None
-            else reasoning,
-            "metadata": metadata or {},
+            "mode": defaults.mode,
+            "effort": resolved_effort,
+            "reasoning": resolved_reasoning,
         }
 
         resolved_max_tokens = (
@@ -111,27 +148,67 @@ class BaseProviderOrchestrator(ABC):
                 )
             payload["max_tokens"] = resolved_max_tokens
 
-        if temperature is not None and not defaults.supports_temperature:
+        if sampling is not None and not defaults.sampling_supported:
             raise ValueError(
-                f"temperature is not supported for provider={self.name!r}"
+                f"sampling is not supported for provider={self.name!r}"
             )
-        resolved_temperature = (
-            defaults.temperature if temperature is None else temperature
+        if defaults.sampling_supported:
+            payload["sampling"] = (
+                defaults.sampling if sampling is None else sampling
+            )
+
+        config = LlmConfig(**payload)
+        self.validate_config(config)
+        return config
+
+    def build_request_from_config(
+        self,
+        *,
+        config: LlmConfig,
+        messages: list[Message],
+        metadata: dict[str, Any] | None = None,
+    ) -> LlmRequest:
+        self.validate_config(config)
+        request = parse_llm_request(
+            {
+                **config.model_dump(mode="python"),
+                "messages": messages,
+                "metadata": metadata or {},
+            }
         )
-        if defaults.supports_temperature:
-            payload["temperature"] = resolved_temperature
-
-        if top_p is not None and not defaults.supports_top_p:
-            raise ValueError(
-                f"top_p is not supported for provider={self.name!r}"
-            )
-        resolved_top_p = defaults.top_p if top_p is None else top_p
-        if defaults.supports_top_p:
-            payload["top_p"] = resolved_top_p
-
-        request = parse_llm_request(payload)
         self.validate_request(request)
         return request
+
+    def validate_config(self, config: LlmConfig) -> None:
+        if config.provider != self.name:
+            raise ValueError(
+                f"config provider {config.provider!r} does not match "
+                f"orchestrator provider {self.name!r}"
+            )
+        if config.mode != self.mode:
+            raise ValueError(
+                f"config mode {config.mode!r} does not match "
+                f"orchestrator mode {self.mode!r}"
+            )
+
+    def _resolve_reasoning(
+        self,
+        *,
+        model: str,
+        defaults: ProviderRequestDefaults,
+        reasoning: ReasoningSpec | None,
+        thinking_level: ThinkingLevel | None,
+        budget_tokens: int | None,
+    ) -> ReasoningSpec | None:
+        if reasoning is not None:
+            return reasoning
+        if thinking_level is not None:
+            return self.reasoning_for_thinking_level(
+                model=model,
+                thinking_level=thinking_level,
+                budget_tokens=budget_tokens,
+            )
+        return defaults.reasoning
 
     def _resolve_effort(
         self, defaults: ProviderRequestDefaults, effort: EffortSpec

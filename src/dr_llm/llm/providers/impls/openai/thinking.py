@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import ReasoningCapabilities
 from dr_llm.llm.providers.concepts.reasoning import (
@@ -7,64 +8,12 @@ from dr_llm.llm.providers.concepts.reasoning import (
     ReasoningSpec,
 )
 from dr_llm.llm.providers.concepts.thinking_utils import matches_family
-
-OPENAI_THINKING_SUPPORTED_MODELS = [
-    "gpt-5",
-    "gpt-5-mini",
-    "gpt-5-nano",
-    "gpt-5.1",
-    "gpt-5.1-mini",
-    "gpt-5.1-nano",
-    "gpt-5.1-codex",
-    "gpt-5.1-codex-mini",
-    "gpt-5.1-codex-max",
-    "gpt-5.2",
-    "gpt-5.2-mini",
-    "gpt-5.2-nano",
-    "gpt-5.2-codex",
-    "gpt-5.3",
-    "gpt-5.3-mini",
-    "gpt-5.3-nano",
-    "gpt-5.3-codex",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-    "gpt-5.4-nano",
-]
-
-OPENAI_MINIMAL_THINKING_SUPPORTED_MODELS = [
-    "gpt-5",
-    "gpt-5-mini",
-    "gpt-5-nano",
-]
-
-OPENAI_OFF_THINKING_SUPPORTED_MODELS = [
-    "gpt-5.1",
-    "gpt-5.1-mini",
-    "gpt-5.1-nano",
-    "gpt-5.1-codex",
-    "gpt-5.1-codex-mini",
-    "gpt-5.1-codex-max",
-    "gpt-5.2",
-    "gpt-5.2-mini",
-    "gpt-5.2-nano",
-    "gpt-5.2-codex",
-    "gpt-5.3",
-    "gpt-5.3-mini",
-    "gpt-5.3-nano",
-    "gpt-5.3-codex",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-    "gpt-5.4-nano",
-]
-
-OPENAI_GPT5_SAMPLING_SUPPORTED_MODELS = [
-    "gpt-5.2",
-    "gpt-5.2-mini",
-    "gpt-5.2-nano",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-    "gpt-5.4-nano",
-]
+from dr_llm.llm.providers.impls.openai.families import (
+    OPENAI_GPT5_SAMPLING_SUPPORTED_MODELS,
+    OPENAI_MINIMAL_THINKING_SUPPORTED_MODELS,
+    OPENAI_OFF_THINKING_SUPPORTED_MODELS,
+    OPENAI_THINKING_SUPPORTED_MODELS,
+)
 
 OPENAI_TEMP_TOPP_UNSUPPORTED_MSG = (
     "OpenAI custom temperature/top_p controls are only supported for "
@@ -135,10 +84,9 @@ def validate_openai_sampling_controls(
     *,
     model: str,
     reasoning: ReasoningSpec | None,
-    temperature: float | None,
-    top_p: float | None,
+    sampling: SamplingControls | None,
 ) -> None:
-    if temperature is None and top_p is None:
+    if sampling is None or sampling.is_empty():
         return
     if not openai_is_gpt5_family(model):
         return

@@ -6,6 +6,13 @@ from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilityRule,
     resolve_capability_rules,
 )
+from dr_llm.llm.providers.impls.google.families import (
+    GEMMA_4_FAMILIES,
+    GOOGLE_25_FLASH_FAMILIES,
+    GOOGLE_25_FLASH_LITE_FAMILIES,
+    GOOGLE_25_PRO_FAMILIES,
+    GOOGLE_3_FAMILIES,
+)
 
 _GOOGLE_25_FLASH_CAPS = ReasoningCapabilities(
     mode=ReasoningMode.GOOGLE_BUDGET,
@@ -35,31 +42,35 @@ _GEMMA_4_CAPS = ReasoningCapabilities(
 )
 
 GOOGLE_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
-    ReasoningCapabilityRule(
-        model_prefix="gemini-2.5-flash-lite-preview",
-        capabilities=_GOOGLE_25_FLASH_LITE_CAPS,
+    *(
+        ReasoningCapabilityRule(
+            model_prefix=family, capabilities=_GOOGLE_25_FLASH_LITE_CAPS
+        )
+        for family in GOOGLE_25_FLASH_LITE_FAMILIES
     ),
-    ReasoningCapabilityRule(
-        model_prefix="gemini-2.5-flash-lite",
-        capabilities=_GOOGLE_25_FLASH_LITE_CAPS,
+    *(
+        ReasoningCapabilityRule(
+            model_prefix=family, capabilities=_GOOGLE_25_FLASH_CAPS
+        )
+        for family in GOOGLE_25_FLASH_FAMILIES
     ),
-    ReasoningCapabilityRule(
-        model_prefix="gemini-2.5-flash-preview",
-        capabilities=_GOOGLE_25_FLASH_CAPS,
+    *(
+        ReasoningCapabilityRule(
+            model_prefix=family, capabilities=_GOOGLE_25_PRO_CAPS
+        )
+        for family in GOOGLE_25_PRO_FAMILIES
     ),
-    ReasoningCapabilityRule(
-        model_prefix="gemini-2.5-flash",
-        capabilities=_GOOGLE_25_FLASH_CAPS,
+    *(
+        ReasoningCapabilityRule(
+            model_prefix=family, capabilities=_GOOGLE_3_CAPS
+        )
+        for family in GOOGLE_3_FAMILIES
     ),
-    ReasoningCapabilityRule(
-        model_prefix="gemini-2.5-pro",
-        capabilities=_GOOGLE_25_PRO_CAPS,
-    ),
-    ReasoningCapabilityRule(
-        model_prefix="gemini-3", capabilities=_GOOGLE_3_CAPS
-    ),
-    ReasoningCapabilityRule(
-        model_prefix="gemma-4", capabilities=_GEMMA_4_CAPS
+    *(
+        ReasoningCapabilityRule(
+            model_prefix=family, capabilities=_GEMMA_4_CAPS
+        )
+        for family in GEMMA_4_FAMILIES
     ),
 )
 

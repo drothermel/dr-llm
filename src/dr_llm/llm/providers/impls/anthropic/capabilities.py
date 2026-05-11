@@ -6,19 +6,26 @@ from dr_llm.llm.providers.concepts.capabilities import (
     ReasoningCapabilityRule,
     resolve_capability_rules,
 )
+from dr_llm.llm.providers.impls.anthropic.families import (
+    ANTHROPIC_BUDGET_CAPABILITY_FAMILIES,
+    AnthropicModelFamily,
+)
+
+ANTHROPIC_BUDGET_MIN_TOKENS = 1024
+ANTHROPIC_BUDGET_MAX_TOKENS = 128000
 
 _ANTHROPIC_BUDGET_CAPS = ReasoningCapabilities(
     mode=ReasoningMode.ANTHROPIC_BUDGET,
-    min_budget_tokens=1024,
-    max_budget_tokens=128000,
+    min_budget_tokens=ANTHROPIC_BUDGET_MIN_TOKENS,
+    max_budget_tokens=ANTHROPIC_BUDGET_MAX_TOKENS,
 )
 _ANTHROPIC_SONNET_46_CAPS = ReasoningCapabilities(
     mode=ReasoningMode.ANTHROPIC_EFFORT
 )
 _ANTHROPIC_OPUS_45_CAPS = ReasoningCapabilities(
     mode=ReasoningMode.ANTHROPIC_EFFORT_AND_BUDGET,
-    min_budget_tokens=1024,
-    max_budget_tokens=128000,
+    min_budget_tokens=ANTHROPIC_BUDGET_MIN_TOKENS,
+    max_budget_tokens=ANTHROPIC_BUDGET_MAX_TOKENS,
 )
 _ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(
     mode=ReasoningMode.ANTHROPIC_EFFORT
@@ -26,32 +33,22 @@ _ANTHROPIC_OPUS_46_CAPS = ReasoningCapabilities(
 
 ANTHROPIC_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
     ReasoningCapabilityRule(
-        model_prefix="claude-opus-4-6", capabilities=_ANTHROPIC_OPUS_46_CAPS
+        model_prefix=AnthropicModelFamily.CLAUDE_OPUS_46,
+        capabilities=_ANTHROPIC_OPUS_46_CAPS,
     ),
     ReasoningCapabilityRule(
-        model_prefix="claude-sonnet-4-6",
+        model_prefix=AnthropicModelFamily.CLAUDE_SONNET_46,
         capabilities=_ANTHROPIC_SONNET_46_CAPS,
     ),
     ReasoningCapabilityRule(
-        model_prefix="claude-opus-4-5", capabilities=_ANTHROPIC_OPUS_45_CAPS
+        model_prefix=AnthropicModelFamily.CLAUDE_OPUS_45,
+        capabilities=_ANTHROPIC_OPUS_45_CAPS,
     ),
-    ReasoningCapabilityRule(
-        model_prefix="claude-opus-4-1", capabilities=_ANTHROPIC_BUDGET_CAPS
-    ),
-    ReasoningCapabilityRule(
-        model_prefix="claude-opus-4-", capabilities=_ANTHROPIC_BUDGET_CAPS
-    ),
-    ReasoningCapabilityRule(
-        model_prefix="claude-sonnet-4-5", capabilities=_ANTHROPIC_BUDGET_CAPS
-    ),
-    ReasoningCapabilityRule(
-        model_prefix="claude-sonnet-4-", capabilities=_ANTHROPIC_BUDGET_CAPS
-    ),
-    ReasoningCapabilityRule(
-        model_prefix="claude-3-7-sonnet", capabilities=_ANTHROPIC_BUDGET_CAPS
-    ),
-    ReasoningCapabilityRule(
-        model_prefix="claude-haiku-4-5", capabilities=_ANTHROPIC_BUDGET_CAPS
+    *(
+        ReasoningCapabilityRule(
+            model_prefix=family, capabilities=_ANTHROPIC_BUDGET_CAPS
+        )
+        for family in ANTHROPIC_BUDGET_CAPABILITY_FAMILIES
     ),
 )
 
@@ -60,3 +57,10 @@ def reasoning_capabilities_for_anthropic(
     model: str,
 ) -> ReasoningCapabilities | None:
     return resolve_capability_rules(ANTHROPIC_CAPABILITY_RULES, model)
+
+
+def anthropic_reasoning_mode(model: str) -> ReasoningMode:
+    capabilities = reasoning_capabilities_for_anthropic(model)
+    if capabilities is None:
+        return ReasoningMode.UNSUPPORTED
+    return capabilities.mode

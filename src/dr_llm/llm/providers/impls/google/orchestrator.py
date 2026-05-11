@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dr_llm.llm.catalog.fetchers.google import fetch_google_models
 from dr_llm.llm.catalog.fetchers.static import build_static_catalog_entries
+from dr_llm.llm.config import SamplingControls
 from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.capabilities import (
     ModelCapabilities,
@@ -102,10 +103,8 @@ class GoogleOrchestrator(BaseProviderOrchestrator):
         defaults = super().request_defaults(model)
         return defaults.model_copy(
             update={
-                "supports_temperature": True,
-                "temperature": 1.0,
-                "supports_top_p": True,
-                "top_p": 0.95,
+                "sampling_supported": True,
+                "sampling": SamplingControls(temperature=1.0, top_p=0.95),
             }
         )
 

@@ -2,31 +2,35 @@ from __future__ import annotations
 
 import httpx
 
-from dr_llm.llm.providers.impls.anthropic.config import AnthropicConfig
+from dr_llm.llm.providers.impls.anthropic.provider_config import (
+    AnthropicProviderConfig,
+)
 from dr_llm.llm.providers.impls.anthropic.reasoning import (
     AnthropicReasoningConfig,
 )
 from dr_llm.llm.providers.impls.anthropic.request import AnthropicRequest
 from dr_llm.llm.providers.impls.anthropic.response import AnthropicResponse
 from dr_llm.llm.providers.transports.api_provider import ApiProvider
-from dr_llm.llm.request import ApiBackedLlmRequest
+from dr_llm.llm.request import LlmRequest
 
 
 class AnthropicProvider(ApiProvider):
-    _config: AnthropicConfig
+    _config: AnthropicProviderConfig
 
     def __init__(
         self,
-        config: AnthropicConfig | None = None,
+        config: AnthropicProviderConfig | None = None,
         client: httpx.Client | None = None,
     ) -> None:
-        super().__init__(config=config or AnthropicConfig(), client=client)
+        super().__init__(
+            config=config or AnthropicProviderConfig(), client=client
+        )
 
     @property
-    def config(self) -> AnthropicConfig:
+    def config(self) -> AnthropicProviderConfig:
         return self._config
 
-    def _build_request(self, request: ApiBackedLlmRequest) -> AnthropicRequest:
+    def _build_request(self, request: LlmRequest) -> AnthropicRequest:
         return AnthropicRequest.from_llm_request(
             request,
             self._config,

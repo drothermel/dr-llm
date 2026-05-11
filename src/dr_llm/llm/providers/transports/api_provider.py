@@ -22,8 +22,8 @@ from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm.providers.transports.api_config import APIProviderConfig
 from dr_llm.llm.providers.core.base import ProviderTransport
 from dr_llm.llm.providers.concepts.reasoning import ReasoningWarning
-from dr_llm.llm.request import ApiBackedLlmRequest, LlmRequest
-from dr_llm.llm.response import LlmResponse
+from dr_llm.llm.request import LlmRequest
+from dr_llm.llm.response import CallMode, LlmResponse
 from dr_llm.logging.sinks import emit_generation_event
 
 
@@ -84,9 +84,9 @@ class ApiProvider(ProviderTransport):
 
     @abstractmethod
     def _build_request(
-        self, request: ApiBackedLlmRequest
+        self, request: LlmRequest
     ) -> ApiProviderRequest:
-        """Translate an ``ApiBackedLlmRequest`` into an ``ApiProviderRequest``."""
+        """Translate an ``LlmRequest`` into an ``ApiProviderRequest``."""
 
     @abstractmethod
     def _parse_response(self, response: httpx.Response) -> ApiProviderResponse:
@@ -110,9 +110,9 @@ class ApiProvider(ProviderTransport):
         )
 
     def generate(self, request: LlmRequest) -> LlmResponse:
-        if not isinstance(request, ApiBackedLlmRequest):
+        if request.mode != CallMode.api:
             raise ProviderSemanticError(
-                f"{self.name} only accepts API-backed request shapes"
+                f"{self.name} only accepts API-backed requests"
             )
         provider_request = self._build_request(request)
         started = time.perf_counter()

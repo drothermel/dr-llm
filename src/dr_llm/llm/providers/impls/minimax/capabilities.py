@@ -7,12 +7,18 @@ from dr_llm.llm.providers.concepts.capabilities import (
     resolve_capability_rules,
 )
 from dr_llm.llm.providers.concepts.effort import FULL_EFFORT
+from dr_llm.llm.providers.impls.minimax.families import (
+    MINIMAX_SUPPORTED_MODEL_FAMILIES,
+)
 
 _MINIMAX_CAPS = ReasoningCapabilities(mode=ReasoningMode.MINIMAX_EFFORT)
 
 MINIMAX_CAPABILITY_RULES: tuple[ReasoningCapabilityRule, ...] = (
-    ReasoningCapabilityRule(
-        model_prefix="MiniMax-", capabilities=_MINIMAX_CAPS
+    *(
+        ReasoningCapabilityRule(
+            model_prefix=family, capabilities=_MINIMAX_CAPS
+        )
+        for family in MINIMAX_SUPPORTED_MODEL_FAMILIES
     ),
 )
 
