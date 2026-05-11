@@ -21,32 +21,35 @@ def validate_reasoning_for_claude_code(
 ) -> None:
     if reasoning is None:
         if anthropic_supports_adaptive_thinking(model):
-            raise ValueError(
-                f"reasoning is required for provider='{ProviderName.CLAUDE_CODE}' model={model!r}"
+            msg = (
+                "reasoning is required for "
+                f"provider='{ProviderName.CLAUDE_CODE}' model={model!r}"
             )
+            raise ValueError(msg)
         return
     if isinstance(reasoning, ReasoningBudget):
-        raise TypeError(
-            f"{ProviderName.CLAUDE_CODE} does not support budget thinking for model={model!r}"
-        )
+        msg = f"{ProviderName.CLAUDE_CODE} does not support budget thinking for model={model!r}"
+        raise TypeError(msg)
     if not isinstance(reasoning, AnthropicReasoning):
-        raise TypeError(
-            f"{ProviderName.CLAUDE_CODE} reasoning is not supported for kind={reasoning.kind!r}"
-        )
+        msg = f"{ProviderName.CLAUDE_CODE} reasoning is not supported for kind={reasoning.kind!r}"
+        raise TypeError(msg)
     if reasoning.display is not None:
-        raise ValueError(
-            f"{ProviderName.CLAUDE_CODE} does not support anthropic display controls"
+        msg = (
+            f"{ProviderName.CLAUDE_CODE} does not support anthropic display "
+            "controls"
         )
+        raise ValueError(msg)
+    if reasoning.budget_tokens is not None:
+        msg = f"{ProviderName.CLAUDE_CODE} does not support budget_tokens"
+        raise ValueError(msg)
     if anthropic_supports_adaptive_thinking(model):
         if reasoning.thinking_level != ThinkingLevel.ADAPTIVE:
-            raise ValueError(
-                f"{ProviderName.CLAUDE_CODE} model {model!r} only supports anthropic thinking_level='adaptive'"
-            )
+            msg = f"{ProviderName.CLAUDE_CODE} model {model!r} only supports anthropic thinking_level='adaptive'"
+            raise ValueError(msg)
         return
     if reasoning.thinking_level != ThinkingLevel.NA:
-        raise ValueError(
-            f"{ProviderName.CLAUDE_CODE} model {model!r} does not support explicit anthropic thinking; use thinking_level='na'"
-        )
+        msg = f"{ProviderName.CLAUDE_CODE} model {model!r} does not support explicit anthropic thinking; use thinking_level='na'"
+        raise ValueError(msg)
 
 
 class ClaudeHeadlessReasoningConfig(BaseProviderReasoningConfig):

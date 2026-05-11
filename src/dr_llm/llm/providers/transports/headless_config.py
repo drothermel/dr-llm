@@ -20,12 +20,13 @@ class HeadlessProviderConfig(ProviderConfig):
 
     @model_validator(mode="after")
     def _compute_headless_exec_requirements(self) -> Self:
-        if self.command:
-            object.__setattr__(
-                self,
-                "required_executables",
-                [*self.required_executables, self.command[0]],
-            )
+        if not self.command:
+            raise ValueError("command must be a non-empty list of strings")
+        object.__setattr__(
+            self,
+            "required_executables",
+            [*self.required_executables, self.command[0]],
+        )
         return self
 
 

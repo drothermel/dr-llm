@@ -39,18 +39,16 @@ _THINKING_SWEEP_GOOGLE_MODELS = [
 def _fallback_model_ids(
     provider: ProviderName, preferred: tuple[str, ...] = ()
 ) -> list[str]:
-    registry = build_default_registry()
-    try:
-        service = ModelCatalogService(registry=registry)
-        entries, _raw = service.fallback_provider_models(provider)
-        model_ids = [entry.model for entry in entries]
-    finally:
-        registry.close()
+    service = ModelCatalogService(registry=_DEMO_PROVIDER_REGISTRY)
+    entries, _raw = service.fallback_provider_models(provider)
+    model_ids = [entry.model for entry in entries]
     if not preferred:
         return model_ids
     selected = [model for model in preferred if model in model_ids]
     return selected or model_ids[:1]
 
+
+_DEMO_PROVIDER_REGISTRY = build_default_registry()
 
 DEMO_THINKING_SWEEP_MODELS: dict[ProviderName, list[str]] = {
     ProviderName.CLAUDE_CODE: _fallback_model_ids(ProviderName.CLAUDE_CODE),

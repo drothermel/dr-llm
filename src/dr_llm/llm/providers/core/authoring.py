@@ -20,7 +20,7 @@ class LlmAuthoringConfig(Protocol):
 
 
 def model_matches_any_family(model: str, families: Sequence[str]) -> bool:
-    return matches_family(normalized=model, families=list(families))
+    return matches_family(normalized=model, families=tuple(families))
 
 
 def require_model_family(
@@ -102,7 +102,9 @@ def build_provider_config(
     from dr_llm.llm.providers.default_registry import build_default_registry
 
     owns_registry = registry is None
-    resolved_registry = registry or build_default_registry()
+    resolved_registry = (
+        registry if registry is not None else build_default_registry()
+    )
     try:
         return resolved_registry.get(provider).build_config(
             model=model,

@@ -391,7 +391,7 @@ def test_response_parses_reasoning_and_cost() -> None:
 
 def test_provider_rejects_headless_request_mode() -> None:
     request = make_request(
-        provider=ProviderName.CODEX,
+        provider=ProviderName.OPENAI,
         model="gpt-5.4",
         mode=CallMode.headless,
         messages=[Message(role="user", content="hi")],

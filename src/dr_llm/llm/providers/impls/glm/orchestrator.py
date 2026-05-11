@@ -17,6 +17,7 @@ from dr_llm.llm.providers.impls.glm.capabilities import (
 from dr_llm.llm.providers.impls.openai_compat_base import (
     BaseOpenAICompatOrchestrator,
 )
+from dr_llm.llm.providers.core.orchestrator_base import CatalogResult
 from dr_llm.llm.providers.impls.glm.reasoning import validate_reasoning_for_glm
 from dr_llm.llm.request import LlmRequest
 
@@ -70,7 +71,7 @@ class GlmOrchestrator(BaseOpenAICompatOrchestrator):
             return None
         return GlmReasoning(thinking_level=thinking_level)
 
-    def fallback_models(self):
+    def fallback_models(self) -> CatalogResult:
         return build_static_catalog_entries(
             provider=self._provider,
             models=_GLM_COMMON_MODELS,

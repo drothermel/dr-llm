@@ -8,7 +8,9 @@ from dr_llm.llm.names import (
     EffortSpec,
     ProviderName,
     ReasoningMode,
+    ThinkingLevel,
 )
+from dr_llm.llm.providers.concepts.reasoning import AnthropicReasoning
 from dr_llm.llm.providers.impls.anthropic.orchestrator import (
     AnthropicOrchestrator,
 )
@@ -118,7 +120,19 @@ class TestValidateRequest:
 
 
 class TestProperties:
-    def test_name_is_anthropic(
+    def test_validate_request_uses_anthropic_reasoning_validator(
         self, orchestrator: AnthropicOrchestrator
     ) -> None:
-        assert orchestrator.name == ProviderName.ANTHROPIC
+        from tests.conftest import make_request
+
+        request = make_request(
+            provider=ProviderName.ANTHROPIC,
+            model="claude-sonnet-4-5-20241022",
+            max_tokens=1024,
+            reasoning=AnthropicReasoning(
+                thinking_level=ThinkingLevel.ADAPTIVE
+            ),
+        )
+
+        with pytest.raises(ValueError, match="adaptive thinking"):
+            orchestrator.validate_request(request)

@@ -57,6 +57,12 @@ def validate_reasoning_for_kimi_code(
             budget_tokens=reasoning.budget_tokens,
             capabilities=reasoning_capabilities_for_kimi_code(model),
         )
+        return
+    if reasoning.budget_tokens is not None:
+        raise ValueError(
+            "kimi-code budget_tokens are only valid when "
+            "thinking_level is 'budget'"
+        )
 
 
 class KimiCodeReasoningConfig(BaseProviderReasoningConfig):

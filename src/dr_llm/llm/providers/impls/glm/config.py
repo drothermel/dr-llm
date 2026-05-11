@@ -38,7 +38,7 @@ class _GlmBaseConfig(BaseModel):
             raise ValueError(
                 f"{type(self).__name__} requires "
                 f"provider={self.provider!r} reasoning mode "
-                f"{expected_mode.value!r}; got {mode.value!r} "
+                f"{expected_mode!r}; got {mode!r} "
                 f"for model={self.model!r}"
             )
         return self

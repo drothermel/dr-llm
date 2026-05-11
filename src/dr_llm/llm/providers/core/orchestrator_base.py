@@ -351,9 +351,9 @@ class BaseProviderOrchestrator(ABC):
                 f"model={request.model!r}"
             )
         if request.effort not in allowed_levels:
-            allowed = ", ".join(level.value for level in allowed_levels)
+            allowed = ", ".join(str(level) for level in allowed_levels)
             raise ValueError(
-                f"effort={request.effort.value!r} is not supported for "
+                f"effort={request.effort!r} is not supported for "
                 f"provider={self.name!r} model={request.model!r}; "
                 f"allowed levels: {allowed}"
             )

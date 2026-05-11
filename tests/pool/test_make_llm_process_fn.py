@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -10,6 +11,7 @@ from dr_llm.llm import (
     CallMode,
     CodexReasoning,
     LlmConfig,
+    LlmRequest,
     LlmResponse,
     Message,
     ProviderName,
@@ -69,13 +71,15 @@ def _make_registry(response: LlmResponse | None = None) -> MagicMock:
     return registry
 
 
-def _build_request_from_config_for_response(resp: LlmResponse):
+def _build_request_from_config_for_response(
+    resp: LlmResponse,
+) -> Callable[..., LlmRequest]:
     def _build_request_from_config(
         *,
         config: LlmConfig,
         messages: list[Message],
         metadata: dict[str, Any] | None = None,
-    ) -> Any:
+    ) -> LlmRequest:
         payload: dict[str, Any] = {
             "provider": resp.provider,
             "model": config.model,

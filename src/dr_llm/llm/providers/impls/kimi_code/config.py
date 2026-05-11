@@ -47,15 +47,15 @@ class KimiCodeConfig(BaseModel):
         if self.model != KimiCodeModelFamily.KIMI_FOR_CODING:
             raise ValueError(
                 f"KimiCodeConfig only supports provider={self.provider!r} "
-                f"model={KimiCodeModelFamily.KIMI_FOR_CODING.value!r}; "
+                f"model={KimiCodeModelFamily.KIMI_FOR_CODING!r}; "
                 f"got model={self.model!r}"
             )
         if self.effort is not None:
             allowed = supported_effort_levels_for_kimi_code(self.model)
             if self.effort not in allowed:
-                allowed_values = ", ".join(level.value for level in allowed)
+                allowed_values = ", ".join(str(level) for level in allowed)
                 raise ValueError(
-                    f"KimiCodeConfig effort={self.effort.value!r} is not "
+                    f"KimiCodeConfig effort={self.effort!r} is not "
                     f"supported for provider={self.provider!r} "
                     f"model={self.model!r}; allowed levels: {allowed_values}"
                 )

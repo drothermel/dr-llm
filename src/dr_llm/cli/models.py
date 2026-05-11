@@ -138,8 +138,9 @@ def models_sync(
                     ]
                 }
             )
-            raise typer.Exit(exit_code)
-        common._render_models_sync_summary(results)
+        else:
+            common._render_models_sync_summary(results)
+        raise typer.Exit(exit_code)
     finally:
         registry.close()
 
@@ -205,7 +206,7 @@ def models_sync_list(
         results = _sync_models(svc=svc, provider=provider)
         if any(not result.success for result in results):
             common._render_models_sync_summary(results)
-            return
+            raise typer.Exit(1)
         _emit_models_list(
             svc=svc,
             registry=registry,

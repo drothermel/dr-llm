@@ -186,6 +186,15 @@ class OpenAIGpt54Config(_OpenAIBaseConfig):
                 f"{type(self).__name__} custom sampling requires "
                 "thinking_level='off'"
             )
+        if not model_matches_any_family(
+            self.model, OPENAI_GPT5_SAMPLING_SUPPORTED_MODELS
+        ):
+            reject_sampling(
+                provider=self.provider,
+                model=self.model,
+                sampling=self.sampling,
+                config_name=type(self).__name__,
+            )
         return self
 
     def _thinking_level(self) -> ThinkingLevel | None:

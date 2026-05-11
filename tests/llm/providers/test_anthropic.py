@@ -35,7 +35,7 @@ def _make_config() -> AnthropicProviderConfig:
     )
 
 
-def _make_api_request(**overrides: Any) -> LlmRequest:
+def _make_api_request(**overrides: object) -> LlmRequest:
     return make_request(**overrides)
 
 

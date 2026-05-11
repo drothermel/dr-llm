@@ -268,7 +268,7 @@ def validate_allowed_thinking_levels(
         )
     if thinking_level in allowed_levels:
         return
-    allowed = ", ".join(level.value for level in sorted(allowed_levels))
+    allowed = ", ".join(str(level) for level in sorted(allowed_levels))
     raise ValueError(
         f"thinking_level {thinking_level!r} is not supported for provider={provider!r} model={model!r}; allowed levels: {allowed}"
     )

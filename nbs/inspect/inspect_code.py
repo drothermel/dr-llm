@@ -504,14 +504,14 @@ def _(inspect):
                         {
                             "provider": str(openai_controls.provider),
                             "model": openai_controls.model,
-                            "default_thinking_level": openai_controls.default_thinking_level.value,
+                            "default_thinking_level": openai_controls.default_thinking_level,
                             "supported_thinking_levels": [
-                                level.value
+                                level
                                 for level in openai_controls.supported_thinking_levels
                             ],
-                            "default_effort": openai_controls.default_effort.value,
+                            "default_effort": openai_controls.default_effort,
                             "supported_effort_levels": [
-                                effort.value
+                                effort
                                 for effort in openai_controls.supported_effort_levels
                             ],
                             "default_reasoning": (

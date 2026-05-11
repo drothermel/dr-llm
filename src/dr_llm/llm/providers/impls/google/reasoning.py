@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import Field
 
 from dr_llm.errors import ProviderSemanticError
-from dr_llm.llm.names import ProviderName, ThinkingLevel
+from dr_llm.llm.names import ProviderName, ReasoningMode, ThinkingLevel
 from dr_llm.llm.providers.concepts.reasoning import (
     BaseProviderReasoningConfig,
     GoogleReasoning,
@@ -39,11 +39,11 @@ def validate_reasoning_for_google(
             raise ValueError(
                 f"Reasoning is not allowed for provider='{ProviderName.GOOGLE}' model={model!r}: reasoning capabilities are unknown"
             )
-        if capabilities.mode == "unsupported":
+        if capabilities.mode == ReasoningMode.UNSUPPORTED:
             raise ValueError(
                 f"Reasoning is not supported for provider='{ProviderName.GOOGLE}' model={model!r}"
             )
-        if capabilities.mode == "google_level":
+        if capabilities.mode == ReasoningMode.GOOGLE_LEVEL:
             raise ValueError(
                 f"Top-level reasoning budget is not supported for provider='{ProviderName.GOOGLE}' model={model!r} with capabilities.mode={capabilities.mode!r}"
             )
@@ -88,7 +88,7 @@ def _validate_google_reasoning_shape(
         raise ValueError(
             f"thinking_level='na' is not supported for provider='{ProviderName.GOOGLE}' model={model!r}"
         )
-    if capabilities.mode == "google_budget":
+    if capabilities.mode == ReasoningMode.GOOGLE_BUDGET:
         _validate_google_budget_mode(
             model=model,
             thinking_level=thinking_level,
@@ -96,7 +96,7 @@ def _validate_google_reasoning_shape(
             capabilities=capabilities,
         )
         return
-    if capabilities.mode == "google_level":
+    if capabilities.mode == ReasoningMode.GOOGLE_LEVEL:
         _validate_google_level_mode(
             model=model,
             thinking_level=thinking_level,

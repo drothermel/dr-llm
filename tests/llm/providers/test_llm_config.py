@@ -429,31 +429,49 @@ def test_claude_code_authoring_configs_use_anthropic_family_capabilities() -> (
 
 
 @pytest.mark.parametrize(
-    "config_factory",
+    ("config_factory", "match_pattern"),
     [
-        lambda: OpenAIGpt5Config(model="gpt-5.2-mini"),
-        lambda: OpenAIGpt52Config(
-            model="gpt-5.2-mini",
-            thinking_level=ThinkingLevel.HIGH,
-            sampling=SamplingControls(temperature=0.7),
+        (
+            lambda: OpenAIGpt5Config(model="gpt-5.2-mini"),
+            "OpenAIGpt5Config only supports",
         ),
-        lambda: GoogleBudgetConfig(
-            model="gemini-2.5-flash-lite",
-            thinking_level=ThinkingLevel.BUDGET,
-            budget_tokens=1,
+        (
+            lambda: OpenAIGpt52Config(
+                model="gpt-5.2-mini",
+                thinking_level=ThinkingLevel.HIGH,
+                sampling=SamplingControls(temperature=0.7),
+            ),
+            "custom sampling requires thinking_level='off'",
         ),
-        lambda: OpenRouterToggleConfig(
-            model="deepseek/deepseek-r1",
-            enabled=False,
+        (
+            lambda: GoogleBudgetConfig(
+                model="gemini-2.5-flash-lite",
+                thinking_level=ThinkingLevel.BUDGET,
+                budget_tokens=1,
+            ),
+            "budget_tokens must be between",
         ),
-        lambda: KimiCodeConfig(model="kimi-k2"),
-        lambda: MiniMaxConfig(model="not-minimax"),
+        (
+            lambda: OpenRouterToggleConfig(
+                model="deepseek/deepseek-r1",
+                enabled=False,
+            ),
+            "reasoning cannot be disabled",
+        ),
+        (
+            lambda: KimiCodeConfig(model="kimi-k2"),
+            "KimiCodeConfig only supports",
+        ),
+        (
+            lambda: MiniMaxConfig(model="not-minimax"),
+            "MiniMaxConfig only supports",
+        ),
     ],
 )
 def test_authoring_configs_reject_invalid_family_or_controls(
-    config_factory,
+    config_factory, match_pattern: str
 ) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=match_pattern):
         config_factory()
 
 

@@ -33,6 +33,8 @@ def validate_reasoning_for_minimax(
         )
     if reasoning.display is not None:
         raise ValueError("minimax does not support anthropic display controls")
+    if reasoning.budget_tokens is not None:
+        raise ValueError("minimax does not support anthropic budget_tokens")
     if reasoning.thinking_level != ThinkingLevel.NA:
         raise ValueError(
             "minimax does not support explicit anthropic thinking; use thinking_level='na'"

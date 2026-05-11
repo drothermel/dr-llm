@@ -20,6 +20,7 @@ from dr_llm.llm.providers.impls.minimax.reasoning import (
 from dr_llm.llm.providers.impls.google.reasoning import GoogleReasoningConfig
 from dr_llm.llm.providers.impls.claude_code.reasoning import (
     ClaudeHeadlessReasoningConfig,
+    validate_reasoning_for_claude_code,
 )
 from dr_llm.llm.providers.impls.codex.reasoning import (
     CodexHeadlessReasoningConfig,
@@ -164,6 +165,19 @@ def test_kimi_code_validation_rejects_unsupported_anthropic_levels() -> None:
             )
 
 
+def test_kimi_code_validation_rejects_budget_tokens_without_budget_level() -> (
+    None
+):
+    with pytest.raises(ValueError, match="budget_tokens.*thinking_level"):
+        validate_reasoning_for_kimi_code(
+            model="kimi-for-coding",
+            reasoning=AnthropicReasoning(
+                thinking_level=ThinkingLevel.ADAPTIVE,
+                budget_tokens=1024,
+            ),
+        )
+
+
 def test_minimax_validation_and_serializer_both_require_explicit_na() -> None:
     with pytest.raises(
         ValueError,
@@ -176,6 +190,17 @@ def test_minimax_validation_and_serializer_both_require_explicit_na() -> None:
         match=f"{ProviderName.MINIMAX} requires explicit AnthropicReasoning\\(thinking_level='na'\\)",
     ):
         MiniMaxReasoningConfig.from_base(None)
+
+
+def test_minimax_validation_rejects_anthropic_budget_tokens() -> None:
+    with pytest.raises(ValueError, match="budget_tokens"):
+        validate_reasoning_for_minimax(
+            model="MiniMax-M2.7",
+            reasoning=AnthropicReasoning(
+                thinking_level=ThinkingLevel.NA,
+                budget_tokens=1024,
+            ),
+        )
 
 
 def test_claude_headless_accepts_adaptive_and_na() -> None:
@@ -191,6 +216,17 @@ def test_claude_headless_accepts_adaptive_and_na() -> None:
         ).cli_args
         == []
     )
+
+
+def test_claude_headless_validation_rejects_budget_tokens() -> None:
+    with pytest.raises(ValueError, match="budget_tokens"):
+        validate_reasoning_for_claude_code(
+            model="claude-sonnet-4-6",
+            reasoning=AnthropicReasoning(
+                thinking_level=ThinkingLevel.ADAPTIVE,
+                budget_tokens=1024,
+            ),
+        )
 
 
 def test_google_serializes_budget_family_controls() -> None:
