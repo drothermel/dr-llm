@@ -251,6 +251,26 @@ nvidia/llama-3.1-nemotron-ultra-253b-v1:
   supports_disable: true
   allowed_efforts: []
   default_enabled: null
+openai/gpt-5-nano:
+  request_style: effort
+  supports_disable: false
+  allowed_efforts:
+  - low
+  - medium
+  - high
+  default_enabled: true
+  verified: true
+  notes: 'Live-tested: accepts reasoning.effort=low; enabled=false is rejected.'
+openai/gpt-5.4-nano:
+  request_style: effort
+  supports_disable: false
+  allowed_efforts:
+  - low
+  - medium
+  - high
+  default_enabled: true
+  verified: true
+  notes: 'Live-tested: accepts reasoning.effort=low.'
 openai/gpt-oss-20b:
   request_style: effort
   supports_disable: false
