@@ -232,10 +232,18 @@ dr-llm project start|stop NAME
 dr-llm pool destroy PROJECT_NAME POOL_NAME --yes-really-delete-everything
 dr-llm pool destroy-testish PROJECT_NAME --yes-really-delete-everything
 dr-llm pool destroy-testish PROJECT_NAME --dry-run
-dr-llm project backup NAME
+dr-llm project backup NAME [--portable]
 dr-llm project restore NAME BACKUP_PATH  # BACKUP_PATH must be .sql.gz
+dr-llm project sync-neon NAME  # uses DR_LLM_NEON_ADMIN_URL
+dr-llm pool list-dsn --dsn "$DR_LLM_DATABASE_URL"
+dr-llm pool inspect-dsn POOL_NAME --dsn "$DR_LLM_DATABASE_URL"
 dr-llm project destroy NAME --yes-really-delete-everything
 ```
+
+For hosted pool snapshots, use local Docker projects as the write-heavy source
+of truth and periodically refresh read-only Neon databases with
+`dr-llm project sync-neon`. See [docs/neon.md](docs/neon.md) for setup,
+validation, rollback, and remote-machine usage.
 
 ### Deleting pools and projects
 

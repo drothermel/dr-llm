@@ -16,6 +16,7 @@ from dr_llm.project.project_service import (
     get_project,
     list_projects,
     restore_project,
+    sync_project_to_neon,
     start_project,
     stop_project,
 )
@@ -140,8 +141,13 @@ def project_backup(
     output_dir: Path | None = typer.Option(
         None, help="Custom backup directory."
     ),
+    portable: bool = typer.Option(
+        False,
+        "--portable",
+        help="Omit local ownership and privilege statements for cloud restores.",
+    ),
 ) -> None:
-    path = backup_project(name, output_dir)
+    path = backup_project(name, output_dir, portable=portable)
     typer.secho(f"Backup saved to {path}", fg=typer.colors.GREEN)
 
 
@@ -155,3 +161,44 @@ def project_restore(
 ) -> None:
     restore_project(name, backup_file)
     typer.secho(f"Restored '{name}' from {backup_file}", fg=typer.colors.GREEN)
+
+
+@project_app.command("sync-neon")
+@handle_cli_errors(ProjectError, FileNotFoundError)
+def project_sync_neon(
+    name: str = typer.Argument(..., help="Local Docker project name"),
+    admin_url: str = typer.Option(
+        ...,
+        "--admin-url",
+        envvar="DR_LLM_NEON_ADMIN_URL",
+        help="Direct Neon/Postgres admin URL used to create and swap databases.",
+    ),
+    target_database: str | None = typer.Option(
+        None,
+        "--target-database",
+        help="Remote database name. Defaults to the local project name.",
+    ),
+    drop_previous: bool = typer.Option(
+        False,
+        "--drop-previous",
+        help="Drop the replaced remote database after a successful swap.",
+    ),
+) -> None:
+    result = sync_project_to_neon(
+        name,
+        admin_url,
+        target_database=target_database,
+        drop_previous=drop_previous,
+    )
+    typer.echo(
+        json.dumps(
+            result.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_computed_fields=True,
+            ),
+            indent=2,
+        )
+    )
+    if not result.success:
+        raise typer.Exit(1)

@@ -37,6 +37,16 @@ class PoolInspection(BaseModel):
     progress: PoolProgress
 
 
+def inspect_pool_dsn(
+    *, dsn: str, pool_name: str, project_name: str = "dsn"
+) -> PoolInspection:
+    return _inspect_pool_for_dsn(
+        dsn=dsn,
+        pool_name=pool_name.strip(),
+        project_name=project_name.strip(),
+    )
+
+
 def inspect_pool(request: PoolInspectionRequest) -> PoolInspection:
     from dr_llm.project.project_service import maybe_get_project
 
@@ -46,6 +56,34 @@ def inspect_pool(request: PoolInspectionRequest) -> PoolInspection:
             f"Project {request.project_name!r} not found"
         )
     return _inspect_pool_for_project(project, request.pool_name)
+
+
+def _inspect_pool_for_dsn(
+    *,
+    dsn: str,
+    pool_name: str,
+    project_name: str,
+) -> PoolInspection:
+    runtime = DbRuntime(DbConfig(dsn=dsn))
+    try:
+        schema = load_schema(runtime, pool_name)
+        if schema is None:
+            raise PoolNotFoundError(
+                f"Pool {pool_name!r} not found in the catalog."
+            )
+        store = PoolStore(schema, runtime)
+        pool_progress = store.progress()
+        created_at = load_catalog_created_at(runtime, pool_name)
+    finally:
+        runtime.close()
+
+    return PoolInspection(
+        project_name=project_name,
+        name=schema.name,
+        pool_schema=schema,
+        created_at=created_at,
+        progress=pool_progress,
+    )
 
 
 def _inspect_pool_for_project(
@@ -58,24 +96,8 @@ def _inspect_pool_for_project(
             f"Project {project.name!r} has no DSN; start it first."
         )
 
-    runtime = DbRuntime(DbConfig(dsn=project.dsn))
-    try:
-        schema = load_schema(runtime, pool_name)
-        if schema is None:
-            raise PoolNotFoundError(
-                f"Pool {pool_name!r} not found in the catalog for "
-                f"project {project.name!r}."
-            )
-        store = PoolStore(schema, runtime)
-        pool_progress = store.progress()
-        created_at = load_catalog_created_at(runtime, pool_name)
-    finally:
-        runtime.close()
-
-    return PoolInspection(
+    return _inspect_pool_for_dsn(
+        dsn=project.dsn,
+        pool_name=pool_name,
         project_name=project.name,
-        name=schema.name,
-        pool_schema=schema,
-        created_at=created_at,
-        progress=pool_progress,
     )

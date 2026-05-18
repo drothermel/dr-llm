@@ -9,10 +9,12 @@ from dr_llm.project.models import (
     ProjectDeletionResult,
     ProjectDeletionStatus,
     ProjectDeletionViolation,
+    ProjectNeonSyncResult,
     ProjectPoolInspection,
     ProjectPoolInspectionReason,
     ProjectPoolInspectionStatus,
     ProjectInspectionSummary,
+    ProjectSyncValidation,
 )
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import (
@@ -29,6 +31,8 @@ from dr_llm.project.project_service import (
     restore_project,
     start_project,
     stop_project,
+    sync_project_to_neon,
+    validate_project_database_copy,
 )
 
 __all__ = [
@@ -42,11 +46,13 @@ __all__ = [
     "ProjectDeletionResult",
     "ProjectDeletionStatus",
     "ProjectDeletionViolation",
+    "ProjectNeonSyncResult",
     "ProjectPoolInspection",
     "ProjectPoolInspectionReason",
     "ProjectPoolInspectionStatus",
     "ProjectInfo",
     "ProjectInspectionSummary",
+    "ProjectSyncValidation",
     "assess_project_creation",
     "assess_project_deletion",
     "backup_project",
@@ -60,4 +66,6 @@ __all__ = [
     "restore_project",
     "start_project",
     "stop_project",
+    "sync_project_to_neon",
+    "validate_project_database_copy",
 ]
