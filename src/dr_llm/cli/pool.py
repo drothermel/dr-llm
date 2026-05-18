@@ -12,10 +12,47 @@ from dr_llm.pool.admin.deletion import (
     delete_pool,
     delete_pools_by_token,
 )
+from dr_llm.pool.admin.discovery import discover_pools
+from dr_llm.pool.admin.inspection import inspect_pool_dsn
 from dr_llm.pool.errors import PoolError
 from dr_llm.project.errors import ProjectError
 
 pool_app = typer.Typer(help="Manage dr-llm pools")
+
+
+@pool_app.command("list-dsn")
+@handle_cli_errors(ProjectError, PoolError, ValidationError)
+def pool_list_dsn(
+    dsn: str = typer.Option(
+        ...,
+        "--dsn",
+        envvar="DR_LLM_DATABASE_URL",
+        help="Postgres DSN to inspect. Defaults to DR_LLM_DATABASE_URL.",
+    ),
+) -> None:
+    """List pools from any dr-llm Postgres database."""
+    typer.echo(json.dumps({"pools": discover_pools(dsn)}, indent=2))
+
+
+@pool_app.command("inspect-dsn")
+@handle_cli_errors(ProjectError, PoolError, ValidationError)
+def pool_inspect_dsn(
+    pool_name: str = typer.Argument(..., help="Pool name"),
+    dsn: str = typer.Option(
+        ...,
+        "--dsn",
+        envvar="DR_LLM_DATABASE_URL",
+        help="Postgres DSN to inspect. Defaults to DR_LLM_DATABASE_URL.",
+    ),
+) -> None:
+    """Inspect a pool from any dr-llm Postgres database."""
+    inspection = inspect_pool_dsn(dsn=dsn, pool_name=pool_name)
+    typer.echo(
+        json.dumps(
+            inspection.model_dump(mode="json", exclude_none=True),
+            indent=2,
+        )
+    )
 
 
 @pool_app.command("destroy")
