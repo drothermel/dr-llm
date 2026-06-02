@@ -3,7 +3,15 @@ from dr_llm.streaming_log.bootstrap import (
     bootstrap_streaming_log,
     inspect_streaming_log,
 )
-from dr_llm.streaming_log.client import StreamingLogClient
+from dr_llm.streaming_log.client import (
+    ContextualEventPublisher,
+    StreamingEventLog,
+    StreamingEventPublisher,
+    StreamingLogConnection,
+    StreamingPayloadReader,
+    StreamingPayloadStore,
+    StreamingWorkQueue,
+)
 from dr_llm.streaming_log.config import StreamingLogConfig
 from dr_llm.streaming_log.events import (
     EventContext,
@@ -22,7 +30,6 @@ from dr_llm.streaming_log.payloads import PayloadRef, PreparedPayload
 from dr_llm.streaming_log.work import QueuedWorkMessage
 from dr_llm.streaming_log.workers import (
     ProviderRegistryStreamingWorkExecutor,
-    StreamingEventPublisher,
     StreamingMessageAcknowledger,
     StreamingRetryPolicy,
     StreamingWorkAttempt,
@@ -48,12 +55,17 @@ __all__ = [
     "ProducerInfo",
     "ProviderRegistryStreamingWorkExecutor",
     "QueuedWorkMessage",
+    "ContextualEventPublisher",
+    "StreamingEventLog",
     "StreamingEventPublisher",
+    "StreamingLogConnection",
     "StreamingMessageAcknowledger",
+    "StreamingPayloadReader",
+    "StreamingPayloadStore",
     "StreamingRetryPolicy",
-    "StreamingLogClient",
     "StreamingLogConfig",
     "StreamingLogEventType",
+    "StreamingWorkQueue",
     "StreamingLogStatus",
     "StreamingWorkAttempt",
     "StreamingWorkExecutor",

@@ -13,7 +13,7 @@ from dr_llm.llm import (
     Message,
     ProviderName,
 )
-from dr_llm.streaming_log.client import StreamingLogClient
+from dr_llm.streaming_log.client import StreamingEventLog
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
@@ -76,7 +76,7 @@ class FakePublisher:
         return event
 
 
-class FakeClient:
+class FakeEventLog:
     def __init__(self) -> None:
         self.publisher: FakePublisher | None = None
 
@@ -150,12 +150,12 @@ def _work(*, max_retries: int = 0) -> QueuedWorkMessage:
 
 def _handler(
     *,
-    client: FakeClient,
+    event_log: FakeEventLog,
     executor: FakeExecutor,
 ) -> StreamingWorkMessageHandler:
     processor = StreamingWorkProcessor(executor=executor)
     return StreamingWorkMessageHandler(
-        client=cast(StreamingLogClient, client),
+        event_log=cast(StreamingEventLog, event_log),
         worker_id="worker-1",
         processor=processor,
     )
@@ -191,18 +191,20 @@ def test_attempt_uses_delivery_metadata_and_work_context() -> None:
 
 def test_success_path_emits_lifecycle_payloads_and_acks() -> None:
     work = _work()
-    client = FakeClient()
+    event_log = FakeEventLog()
     msg = FakeMessage(work, num_delivered=2)
 
     outcome = asyncio.run(
-        _handler(client=client, executor=FakeExecutor()).process_message(msg)
+        _handler(event_log=event_log, executor=FakeExecutor()).process_message(
+            msg
+        )
     )
 
     assert outcome.outcome_type is StreamingWorkOutcomeType.succeeded
     assert msg.acked
     assert not msg.naked
-    assert client.publisher is not None
-    assert _event_types(client.publisher) == [
+    assert event_log.publisher is not None
+    assert _event_types(event_log.publisher) == [
         StreamingLogEventType.attempt_started,
         StreamingLogEventType.provider_request_prepared,
         StreamingLogEventType.provider_response_received,
@@ -210,12 +212,12 @@ def test_success_path_emits_lifecycle_payloads_and_acks() -> None:
         StreamingLogEventType.work_completed,
     ]
     assert _published(
-        client.publisher, StreamingLogEventType.provider_request_prepared
+        event_log.publisher, StreamingLogEventType.provider_request_prepared
     ).payload_roles == ["request_json"]
     assert _published(
-        client.publisher, StreamingLogEventType.provider_response_received
+        event_log.publisher, StreamingLogEventType.provider_response_received
     ).payload_roles == ["response_json"]
-    for event in client.publisher.events:
+    for event in event_log.publisher.events:
         assert event.run_id == "run-1"
         assert event.work_id == "work-1"
         assert event.attempt_id == "work-1-2"
@@ -225,12 +227,12 @@ def test_success_path_emits_lifecycle_payloads_and_acks() -> None:
 
 def test_retryable_failure_emits_retry_event_and_naks() -> None:
     work = _work(max_retries=2)
-    client = FakeClient()
+    event_log = FakeEventLog()
     msg = FakeMessage(work, num_delivered=1)
 
     outcome = asyncio.run(
         _handler(
-            client=client,
+            event_log=event_log,
             executor=FakeExecutor(exc=RuntimeError("provider down")),
         ).process_message(msg)
     )
@@ -239,14 +241,16 @@ def test_retryable_failure_emits_retry_event_and_naks() -> None:
     assert outcome.next_attempt == 2
     assert not msg.acked
     assert msg.naked
-    assert client.publisher is not None
-    assert _event_types(client.publisher) == [
+    assert event_log.publisher is not None
+    assert _event_types(event_log.publisher) == [
         StreamingLogEventType.attempt_started,
         StreamingLogEventType.provider_request_prepared,
         StreamingLogEventType.attempt_failed,
         StreamingLogEventType.work_retry_scheduled,
     ]
-    failed = _published(client.publisher, StreamingLogEventType.attempt_failed)
+    failed = _published(
+        event_log.publisher, StreamingLogEventType.attempt_failed
+    )
     assert failed.payload_roles == ["error_detail"]
     assert failed.event.payload == {
         "error_type": "RuntimeError",
@@ -254,19 +258,19 @@ def test_retryable_failure_emits_retry_event_and_naks() -> None:
         "attempt": 1,
     }
     retry = _published(
-        client.publisher, StreamingLogEventType.work_retry_scheduled
+        event_log.publisher, StreamingLogEventType.work_retry_scheduled
     )
     assert retry.event.payload == {"attempt": 1, "next_attempt": 2}
 
 
 def test_terminal_failure_emits_completion_event_and_acks() -> None:
     work = _work(max_retries=1)
-    client = FakeClient()
+    event_log = FakeEventLog()
     msg = FakeMessage(work, num_delivered=2)
 
     outcome = asyncio.run(
         _handler(
-            client=client,
+            event_log=event_log,
             executor=FakeExecutor(exc=RuntimeError("still down")),
         ).process_message(msg)
     )
@@ -274,15 +278,15 @@ def test_terminal_failure_emits_completion_event_and_acks() -> None:
     assert outcome.outcome_type is StreamingWorkOutcomeType.failed
     assert msg.acked
     assert not msg.naked
-    assert client.publisher is not None
-    assert _event_types(client.publisher) == [
+    assert event_log.publisher is not None
+    assert _event_types(event_log.publisher) == [
         StreamingLogEventType.attempt_started,
         StreamingLogEventType.provider_request_prepared,
         StreamingLogEventType.attempt_failed,
         StreamingLogEventType.work_completed,
     ]
     completed = _published(
-        client.publisher, StreamingLogEventType.work_completed
+        event_log.publisher, StreamingLogEventType.work_completed
     )
     assert completed.event.payload == {
         "status": StreamingWorkOutcomeType.failed,

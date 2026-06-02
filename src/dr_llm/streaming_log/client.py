@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Protocol, Self
 
 import nats
 from nats.aio.client import Client as NatsClient
@@ -29,44 +29,9 @@ from dr_llm.streaming_log.payloads import (
 from dr_llm.streaming_log.work import QueuedWorkMessage
 
 
-class ContextualEventPublisher:
-    def __init__(
-        self, client: StreamingLogClient, context: EventContext
-    ) -> None:
-        self.client = client
-        self.context = context
-
-    async def publish_event_with_payloads(
-        self,
-        event_type: StreamingLogEventType,
-        *,
-        idempotency_key: str,
-        payload: dict[str, Any] | None = None,
-        payloads: list[PreparedPayload] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> EventEnvelope:
-        return await self.client.publish_event_with_payloads(
-            event_type,
-            idempotency_key=idempotency_key,
-            payload=payload,
-            payloads=payloads,
-            context=self.context,
-            metadata=metadata,
-        )
-
-
-class StreamingLogClient:
-    def __init__(
-        self,
-        config: StreamingLogConfig | None = None,
-        *,
-        producer: ProducerInfo | None = None,
-    ) -> None:
+class StreamingLogConnection:
+    def __init__(self, config: StreamingLogConfig | None = None) -> None:
         self.config = config or StreamingLogConfig()
-        self.producer = producer or ProducerInfo(
-            name=self.config.producer_name,
-            version=self.config.producer_version,
-        )
         self._nc: NatsClient | None = None
         self._js: JetStreamContext | LegacyJetStreamContext | None = None
 
@@ -99,11 +64,116 @@ class StreamingLogClient:
     @property
     def js(self) -> JetStreamContext | LegacyJetStreamContext:
         if self._js is None:
-            raise RuntimeError("StreamingLogClient is not connected")
+            raise RuntimeError("StreamingLogConnection is not connected")
         return self._js
 
+
+class StreamingPayloadReader(Protocol):
+    async def read_payload_ref(self, payload_ref: PayloadRef) -> bytes: ...
+
+
+class StreamingPayloadStore:
+    def __init__(self, connection: StreamingLogConnection) -> None:
+        self.connection = connection
+
+    @property
+    def config(self) -> StreamingLogConfig:
+        return self.connection.config
+
+    async def write_payloads(
+        self, payloads: list[PreparedPayload]
+    ) -> list[PayloadRef]:
+        refs: list[PayloadRef] = []
+        for payload in payloads:
+            refs.append(await self.write_payload(payload))
+        return refs
+
+    async def write_payload(self, payload: PreparedPayload) -> PayloadRef:
+        store = await self.connection.js.object_store(
+            self.config.payload_bucket
+        )
+        try:
+            existing = await store.get(payload.object_key)
+        except (NotFoundError, ObjectNotFoundError):
+            await store.put(payload.object_key, payload.data)
+            return payload.ref()
+        if existing.data != payload.data:
+            raise PayloadIntegrityError(
+                f"Object {payload.object_key!r} exists with different bytes"
+            )
+        return payload.ref()
+
+    async def read_payload_ref(self, payload_ref: PayloadRef) -> bytes:
+        store = await self.connection.js.object_store(
+            self.config.payload_bucket
+        )
+        result = await store.get(payload_ref.object_key)
+        if result.data is None:
+            raise PayloadIntegrityError(
+                f"Object {payload_ref.object_key!r} returned no bytes"
+            )
+        return bytes(result.data)
+
+
+class StreamingEventPublisher(Protocol):
+    async def publish_event_with_payloads(
+        self,
+        event_type: StreamingLogEventType,
+        *,
+        idempotency_key: str,
+        payload: dict[str, Any] | None = None,
+        payloads: list[PreparedPayload] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> EventEnvelope: ...
+
+
+class ContextualEventPublisher:
+    def __init__(
+        self, event_log: StreamingEventLog, context: EventContext
+    ) -> None:
+        self.event_log = event_log
+        self.context = context
+
+    async def publish_event_with_payloads(
+        self,
+        event_type: StreamingLogEventType,
+        *,
+        idempotency_key: str,
+        payload: dict[str, Any] | None = None,
+        payloads: list[PreparedPayload] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> EventEnvelope:
+        return await self.event_log.publish_event_with_payloads(
+            event_type,
+            idempotency_key=idempotency_key,
+            payload=payload,
+            payloads=payloads,
+            context=self.context,
+            metadata=metadata,
+        )
+
+
+class StreamingEventLog:
+    def __init__(
+        self,
+        connection: StreamingLogConnection,
+        payload_store: StreamingPayloadStore,
+        *,
+        producer: ProducerInfo | None = None,
+    ) -> None:
+        self.connection = connection
+        self.payload_store = payload_store
+        self.producer = producer or ProducerInfo(
+            name=self.config.producer_name,
+            version=self.config.producer_version,
+        )
+
+    @property
+    def config(self) -> StreamingLogConfig:
+        return self.connection.config
+
     async def publish_event(self, event: EventEnvelope) -> Any:
-        return await self.js.publish(
+        return await self.connection.js.publish(
             self.event_subject(event.event_type),
             event.json_bytes(),
             stream=self.config.events_stream,
@@ -119,7 +189,7 @@ class StreamingLogClient:
         context: EventContext | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> EventEnvelope:
-        payload_refs = await self.write_payloads(payloads or [])
+        payload_refs = await self.payload_store.write_payloads(payloads or [])
         event = build_event(
             event_type,
             producer=self.producer,
@@ -137,73 +207,8 @@ class StreamingLogClient:
     ) -> ContextualEventPublisher:
         return ContextualEventPublisher(self, context)
 
-    async def write_payloads(
-        self, payloads: list[PreparedPayload]
-    ) -> list[PayloadRef]:
-        refs: list[PayloadRef] = []
-        for payload in payloads:
-            refs.append(await self.write_payload(payload))
-        return refs
-
-    async def write_payload(self, payload: PreparedPayload) -> PayloadRef:
-        store = await self.js.object_store(self.config.payload_bucket)
-        try:
-            existing = await store.get(payload.object_key)
-        except (NotFoundError, ObjectNotFoundError):
-            await store.put(payload.object_key, payload.data)
-            return payload.ref()
-        if existing.data != payload.data:
-            raise PayloadIntegrityError(
-                f"Object {payload.object_key!r} exists with different bytes"
-            )
-        return payload.ref()
-
-    async def read_payload_ref(self, payload_ref: PayloadRef) -> bytes:
-        store = await self.js.object_store(self.config.payload_bucket)
-        result = await store.get(payload_ref.object_key)
-        if result.data is None:
-            raise PayloadIntegrityError(
-                f"Object {payload_ref.object_key!r} returned no bytes"
-            )
-        return bytes(result.data)
-
-    async def submit_work(self, work: QueuedWorkMessage) -> EventEnvelope:
-        request_payload = prepare_json_payload(
-            "request_json",
-            work.request.model_dump(
-                mode="json",
-                exclude_none=True,
-                exclude_computed_fields=True,
-            ),
-        )
-        event = await self.publish_event_with_payloads(
-            StreamingLogEventType.work_submitted,
-            idempotency_key=idempotency_key("work_submitted", work.work_id),
-            payload={
-                "work_id": work.work_id,
-                "run_id": work.run_id,
-                "max_retries": work.max_retries,
-                "metadata": work.metadata,
-            },
-            payloads=[request_payload],
-            context=EventContext.from_work(work),
-        )
-        await self.js.publish(
-            self.config.llm_work_subject,
-            work.json_bytes(),
-            stream=self.config.work_stream,
-        )
-        return event
-
-    async def work_subscription(self) -> Any:
-        return await self.js.pull_subscribe(
-            self.config.llm_work_subject,
-            durable=self.config.work_consumer,
-            stream=self.config.work_stream,
-        )
-
     async def event_subscription(self, durable: str | None = None) -> Any:
-        return await self.js.pull_subscribe(
+        return await self.connection.js.pull_subscribe(
             self.event_subject_wildcard(),
             durable=durable or self.config.event_consumer,
             stream=self.config.events_stream,
@@ -222,15 +227,6 @@ class StreamingLogClient:
             yield EventEnvelope.model_validate_json(msg.data)
             await msg.ack()
 
-    async def fetch_work(
-        self, *, batch_size: int | None = None, timeout: float = 1.0
-    ) -> list[Msg]:
-        sub = await self.work_subscription()
-        return await sub.fetch(
-            batch_size or self.config.fetch_batch_size,
-            timeout=timeout,
-        )
-
     def event_subject(self, event_type: StreamingLogEventType) -> str:
         return (
             f"{self._subject_prefix(self.config.events_subject)}{event_type}"
@@ -247,4 +243,70 @@ class StreamingLogClient:
         return wildcard[:-1]
 
 
-__all__ = ["StreamingLogClient"]
+class StreamingWorkQueue:
+    def __init__(
+        self,
+        connection: StreamingLogConnection,
+        event_log: StreamingEventLog,
+    ) -> None:
+        self.connection = connection
+        self.event_log = event_log
+
+    @property
+    def config(self) -> StreamingLogConfig:
+        return self.connection.config
+
+    async def submit_work(self, work: QueuedWorkMessage) -> EventEnvelope:
+        request_payload = prepare_json_payload(
+            "request_json",
+            work.request.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_computed_fields=True,
+            ),
+        )
+        event = await self.event_log.publish_event_with_payloads(
+            StreamingLogEventType.work_submitted,
+            idempotency_key=idempotency_key("work_submitted", work.work_id),
+            payload={
+                "work_id": work.work_id,
+                "run_id": work.run_id,
+                "max_retries": work.max_retries,
+                "metadata": work.metadata,
+            },
+            payloads=[request_payload],
+            context=EventContext.from_work(work),
+        )
+        await self.connection.js.publish(
+            self.config.llm_work_subject,
+            work.json_bytes(),
+            stream=self.config.work_stream,
+        )
+        return event
+
+    async def work_subscription(self) -> Any:
+        return await self.connection.js.pull_subscribe(
+            self.config.llm_work_subject,
+            durable=self.config.work_consumer,
+            stream=self.config.work_stream,
+        )
+
+    async def fetch_work(
+        self, *, batch_size: int | None = None, timeout: float = 1.0
+    ) -> list[Msg]:
+        sub = await self.work_subscription()
+        return await sub.fetch(
+            batch_size or self.config.fetch_batch_size,
+            timeout=timeout,
+        )
+
+
+__all__ = [
+    "ContextualEventPublisher",
+    "StreamingEventLog",
+    "StreamingEventPublisher",
+    "StreamingLogConnection",
+    "StreamingPayloadReader",
+    "StreamingPayloadStore",
+    "StreamingWorkQueue",
+]

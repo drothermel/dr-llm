@@ -38,7 +38,11 @@ from dr_llm.demo import (
     wait_for_nats,
 )
 from dr_llm.pool import DbConfig, DbRuntime, PoolReader
-from dr_llm.streaming_log import StreamingLogClient
+from dr_llm.streaming_log import (
+    StreamingEventLog,
+    StreamingLogConnection,
+    StreamingPayloadStore,
+)
 from dr_llm.streaming_log.bootstrap import bootstrap_streaming_log
 from dr_llm.streaming_log.ingest_pools import ingest_pool
 
@@ -81,9 +85,12 @@ async def _run_import_demo(
         ok(f"Work subjects: {', '.join(status.work_subjects)}")
 
         step("4. Importing pool")
-        async with StreamingLogClient(config) as client:
+        async with StreamingLogConnection(config) as connection:
+            payload_store = StreamingPayloadStore(connection)
+            event_log = StreamingEventLog(connection, payload_store)
+
             result = await ingest_pool(
-                client=client,
+                event_log=event_log,
                 dsn=dsn,
                 pool_name=pool_name,
                 source_id=source_id,
@@ -96,7 +103,7 @@ async def _run_import_demo(
 
             step("5. Replaying and verifying events")
             events = await collect_streaming_log_events(
-                client,
+                event_log,
                 expected_min_events=result.imported_count + 2,
             )
             counts = summarize_events(events)
@@ -105,7 +112,9 @@ async def _run_import_demo(
                 imported_count=result.imported_count,
                 counts=counts,
             )
-            verified_payloads = await verify_payload_refs(client, events)
+            verified_payloads = await verify_payload_refs(
+                payload_store, events
+            )
 
         ok(f"Verified {len(events)} replayed events")
         ok(f"Verified {len(verified_payloads)} payload references")

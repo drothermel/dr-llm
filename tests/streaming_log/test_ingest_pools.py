@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import dr_llm.streaming_log.ingest_pools as ingest_pools_module
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.streaming_log import StreamingLogClient
+from dr_llm.streaming_log import StreamingEventLog
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
@@ -37,7 +37,7 @@ class PublishedEvent(BaseModel):
     payload_roles: list[str] = Field(default_factory=list)
 
 
-class FakeClient:
+class FakeEventLog:
     def __init__(self, fail_on: StreamingLogEventType | None = None) -> None:
         self.fail_on = fail_on
         self.published: list[PublishedEvent] = []
@@ -107,14 +107,14 @@ def _snapshot() -> PoolSnapshot:
     )
 
 
-def _event_types(client: FakeClient) -> list[StreamingLogEventType]:
-    return [event.event_type for event in client.events]
+def _event_types(event_log: FakeEventLog) -> list[StreamingLogEventType]:
+    return [event.event_type for event in event_log.events]
 
 
 def _published(
-    client: FakeClient, event_type: StreamingLogEventType
+    event_log: FakeEventLog, event_type: StreamingLogEventType
 ) -> PublishedEvent:
-    for record in client.published:
+    for record in event_log.published:
         if record.event.event_type == event_type:
             return record
     raise AssertionError(f"missing event {event_type}")
@@ -137,13 +137,13 @@ def test_sample_snapshot_payload_preserves_pool_row_state() -> None:
 
 
 def test_record_pool_import_emits_lifecycle_payloads() -> None:
-    client = FakeClient()
+    event_log = FakeEventLog()
     sample = _sample()
     snapshot = _snapshot()
 
     result = asyncio.run(
         record_pool_import(
-            client=cast(StreamingLogClient, client),
+            event_log=cast(StreamingEventLog, event_log),
             snapshot=snapshot,
             samples=[sample],
         )
@@ -151,13 +151,13 @@ def test_record_pool_import_emits_lifecycle_payloads() -> None:
 
     assert result.pool_name == "pool-1"
     assert result.imported_count == 1
-    assert result.event_ids == [event.event_id for event in client.events]
-    assert _event_types(client) == [
+    assert result.event_ids == [event.event_id for event in event_log.events]
+    assert _event_types(event_log) == [
         StreamingLogEventType.pool_import_started,
         StreamingLogEventType.pool_sample_imported,
         StreamingLogEventType.pool_import_completed,
     ]
-    started = _published(client, StreamingLogEventType.pool_import_started)
+    started = _published(event_log, StreamingLogEventType.pool_import_started)
     assert started.payload_roles == ["pool_schema"]
     assert started.event.idempotency_key == idempotency_key(
         "source-1", "pool-1", "pool_import_started"
@@ -168,7 +168,9 @@ def test_record_pool_import_emits_lifecycle_payloads() -> None:
     }
     assert started.event.source == "source-1"
 
-    imported = _published(client, StreamingLogEventType.pool_sample_imported)
+    imported = _published(
+        event_log, StreamingLogEventType.pool_sample_imported
+    )
     state_hash = stable_hash(_sample_snapshot_payload(sample))
     assert imported.payload_roles == [
         "pool_schema",
@@ -194,7 +196,9 @@ def test_record_pool_import_emits_lifecycle_payloads() -> None:
     assert imported.event.run_id == "run-1"
     assert imported.event.source == "source-1"
 
-    completed = _published(client, StreamingLogEventType.pool_import_completed)
+    completed = _published(
+        event_log, StreamingLogEventType.pool_import_completed
+    )
     assert completed.event.payload == {
         "pool_name": "pool-1",
         "source_id": "source-1",
@@ -204,22 +208,22 @@ def test_record_pool_import_emits_lifecycle_payloads() -> None:
 
 
 def test_record_pool_import_records_source_iteration_failure() -> None:
-    client = FakeClient()
+    event_log = FakeEventLog()
 
     with pytest.raises(RuntimeError, match="source unavailable"):
         asyncio.run(
             record_pool_import(
-                client=cast(StreamingLogClient, client),
+                event_log=cast(StreamingEventLog, event_log),
                 snapshot=_snapshot(),
                 samples=FailingSamples(),
             )
         )
 
-    assert _event_types(client) == [
+    assert _event_types(event_log) == [
         StreamingLogEventType.pool_import_started,
         StreamingLogEventType.pool_import_failed,
     ]
-    failed = _published(client, StreamingLogEventType.pool_import_failed)
+    failed = _published(event_log, StreamingLogEventType.pool_import_failed)
     assert failed.event.payload == {
         "pool_name": "pool-1",
         "source_id": "source-1",
@@ -231,37 +235,39 @@ def test_record_pool_import_records_source_iteration_failure() -> None:
 def test_record_pool_import_preserves_source_error_when_failure_event_fails() -> (
     None
 ):
-    client = FakeClient(fail_on=StreamingLogEventType.pool_import_failed)
+    event_log = FakeEventLog(fail_on=StreamingLogEventType.pool_import_failed)
 
     with pytest.raises(RuntimeError, match="source unavailable"):
         asyncio.run(
             record_pool_import(
-                client=cast(StreamingLogClient, client),
+                event_log=cast(StreamingEventLog, event_log),
                 snapshot=_snapshot(),
                 samples=FailingSamples(),
             )
         )
 
-    assert _event_types(client) == [
+    assert _event_types(event_log) == [
         StreamingLogEventType.pool_import_started,
     ]
 
 
 def test_record_pool_import_does_not_emit_failed_for_publish_failure() -> None:
-    client = FakeClient(fail_on=StreamingLogEventType.pool_sample_imported)
+    event_log = FakeEventLog(
+        fail_on=StreamingLogEventType.pool_sample_imported
+    )
 
     with pytest.raises(
         RuntimeError, match="failed to publish pool_sample_imported"
     ):
         asyncio.run(
             record_pool_import(
-                client=cast(StreamingLogClient, client),
+                event_log=cast(StreamingEventLog, event_log),
                 snapshot=_snapshot(),
                 samples=[_sample()],
             )
         )
 
-    assert _event_types(client) == [
+    assert _event_types(event_log) == [
         StreamingLogEventType.pool_import_started,
     ]
 
@@ -309,7 +315,7 @@ def test_ingest_pool_rejects_non_positive_sample_limit() -> None:
     with pytest.raises(ValueError, match="sample_limit must be at least 1"):
         asyncio.run(
             ingest_pool(
-                client=cast(StreamingLogClient, None),
+                event_log=cast(StreamingEventLog, None),
                 dsn="postgresql://unused",
                 pool_name="unused",
                 sample_limit=0,
@@ -346,7 +352,7 @@ def test_ingest_pools_rejects_non_positive_sample_limit() -> None:
     with pytest.raises(ValueError, match="sample_limit must be at least 1"):
         asyncio.run(
             ingest_pools(
-                client=cast(StreamingLogClient, None),
+                event_log=cast(StreamingEventLog, None),
                 dsn="postgresql://unused",
                 sample_limit=0,
             )

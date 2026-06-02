@@ -9,7 +9,11 @@ from dr_llm.streaming_log.bootstrap import (
     bootstrap_streaming_log,
     inspect_streaming_log,
 )
-from dr_llm.streaming_log.client import StreamingLogClient
+from dr_llm.streaming_log.client import (
+    StreamingEventLog,
+    StreamingLogConnection,
+    StreamingPayloadStore,
+)
 from dr_llm.streaming_log.config import StreamingLogConfig
 from dr_llm.streaming_log.ingest_pools import ingest_pool, ingest_pools
 from dr_llm.streaming_log.workers import (
@@ -113,9 +117,10 @@ async def _ingest_one_pool(
     source_id: str | None,
     sample_limit: int | None,
 ):
-    async with StreamingLogClient(StreamingLogConfig()) as client:
+    async with StreamingLogConnection(StreamingLogConfig()) as connection:
+        event_log = _event_log(connection)
         return await ingest_pool(
-            client=client,
+            event_log=event_log,
             dsn=dsn,
             pool_name=pool_name,
             source_id=source_id,
@@ -126,13 +131,19 @@ async def _ingest_one_pool(
 async def _ingest_all_pools(
     *, dsn: str, source_id: str | None, sample_limit: int | None
 ):
-    async with StreamingLogClient(StreamingLogConfig()) as client:
+    async with StreamingLogConnection(StreamingLogConfig()) as connection:
+        event_log = _event_log(connection)
         return await ingest_pools(
-            client=client,
+            event_log=event_log,
             dsn=dsn,
             source_id=source_id,
             sample_limit=sample_limit,
         )
+
+
+def _event_log(connection: StreamingLogConnection) -> StreamingEventLog:
+    payload_store = StreamingPayloadStore(connection)
+    return StreamingEventLog(connection, payload_store)
 
 
 __all__ = ["streaming_log_app"]

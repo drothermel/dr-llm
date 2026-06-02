@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections import Counter
-from typing import Protocol
 from uuid import uuid4
 
 import nats
@@ -14,7 +13,11 @@ from pydantic import BaseModel, ConfigDict
 
 from dr_llm.demo.requirements import ensure_docker_available
 from dr_llm.project.docker_runner import call_docker
-from dr_llm.streaming_log import EventEnvelope, StreamingLogClient
+from dr_llm.streaming_log import (
+    EventEnvelope,
+    StreamingEventLog,
+    StreamingPayloadReader,
+)
 from dr_llm.streaming_log.config import StreamingLogConfig
 from dr_llm.streaming_log.payloads import PayloadRef
 
@@ -43,10 +46,6 @@ class PayloadVerification(BaseModel):
     role: str
     object_key: str
     size_bytes: int
-
-
-class PayloadRefReader(Protocol):
-    async def read_payload_ref(self, payload_ref: PayloadRef) -> bytes: ...
 
 
 def demo_streaming_log_config(
@@ -127,21 +126,21 @@ async def wait_for_nats(
 
 
 async def collect_streaming_log_events(
-    client: StreamingLogClient,
+    event_log: StreamingEventLog,
     *,
     expected_min_events: int = 1,
     idle_timeout_seconds: float = 0.5,
     max_idle_fetches: int = 2,
 ) -> list[EventEnvelope]:
-    sub = await client.event_subscription(
-        durable=f"{client.config.event_consumer}_demo_{uuid4().hex[:8]}"
+    sub = await event_log.event_subscription(
+        durable=f"{event_log.config.event_consumer}_demo_{uuid4().hex[:8]}"
     )
     events: list[EventEnvelope] = []
     idle_fetches = 0
     while idle_fetches < max_idle_fetches:
         try:
             messages = await sub.fetch(
-                client.config.fetch_batch_size,
+                event_log.config.fetch_batch_size,
                 timeout=idle_timeout_seconds,
             )
         except NatsTimeoutError:
@@ -160,14 +159,14 @@ async def collect_streaming_log_events(
 
 
 async def verify_payload_refs(
-    client: PayloadRefReader,
+    payload_reader: StreamingPayloadReader,
     events: list[EventEnvelope],
 ) -> list[PayloadVerification]:
     verified: list[PayloadVerification] = []
     for event in events:
         for raw_ref in event.payload_refs:
             ref = PayloadRef(**raw_ref)
-            data = await client.read_payload_ref(ref)
+            data = await payload_reader.read_payload_ref(ref)
             digest = hashlib.sha256(data).hexdigest()
             if digest != ref.sha256:
                 raise RuntimeError(

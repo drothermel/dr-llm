@@ -55,7 +55,10 @@ from dr_llm.llm import (
 from dr_llm.streaming_log import (
     EventEnvelope,
     QueuedWorkMessage,
-    StreamingLogClient,
+    StreamingLogConnection,
+    StreamingPayloadStore,
+    StreamingEventLog,
+    StreamingWorkQueue,
     StreamingWorkerConfig,
     run_streaming_worker,
 )
@@ -168,7 +171,11 @@ async def _run_worker_attempt(
         step("3. Bootstrapping streaming-log resources")
         await bootstrap_streaming_log(config)
 
-        async with StreamingLogClient(config) as client:
+        async with StreamingLogConnection(config) as connection:
+            payload_store = StreamingPayloadStore(connection)
+            event_log = StreamingEventLog(connection, payload_store)
+            work_queue = StreamingWorkQueue(connection, event_log)
+
             step("4. Submitting work")
             work = QueuedWorkMessage(
                 request=request,
@@ -180,7 +187,7 @@ async def _run_worker_attempt(
                 },
                 max_retries=max_retries,
             )
-            submitted = await client.submit_work(work)
+            submitted = await work_queue.submit_work(work)
             ok(
                 f"Submitted work_id={work.work_id} "
                 f"event_id={submitted.event_id}"
@@ -188,7 +195,7 @@ async def _run_worker_attempt(
 
             step("5. Running async streaming worker")
             await run_streaming_worker(
-                client=client,
+                work_queue=work_queue,
                 config=StreamingWorkerConfig(
                     worker_id="demo-streaming-worker",
                     max_messages=1,
@@ -198,13 +205,15 @@ async def _run_worker_attempt(
 
             step("6. Replaying and verifying events")
             events = await collect_streaming_log_events(
-                client,
+                event_log,
                 expected_min_events=1,
             )
             counts = summarize_events(events)
-            verified_payloads = await verify_payload_refs(client, events)
+            verified_payloads = await verify_payload_refs(
+                payload_store, events
+            )
             _print_worker_event_summary(events)
-            await _print_failure_details(client, events)
+            await _print_failure_details(payload_store, events)
             _verify_worker_lifecycle(counts)
 
         ok(f"Verified {len(events)} replayed events")
@@ -312,7 +321,7 @@ def _resolve_model(provider: str, *, requested_model: str | None) -> str:
 
 
 async def _print_failure_details(
-    client: StreamingLogClient,
+    payload_store: StreamingPayloadStore,
     events: list[EventEnvelope],
 ) -> list[str]:
     details: list[str] = []
@@ -322,7 +331,7 @@ async def _print_failure_details(
         for raw_ref in event.payload_refs:
             if raw_ref.get("role") != "error_detail":
                 continue
-            data = await client.read_payload_ref(PayloadRef(**raw_ref))
+            data = await payload_store.read_payload_ref(PayloadRef(**raw_ref))
             detail = json.loads(data)
             summary = f"{detail.get('error_type')}: {detail.get('message')}"
             details.append(summary)

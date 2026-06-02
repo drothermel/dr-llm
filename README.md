@@ -28,7 +28,7 @@ Core implementation lives under
 |---|---|
 | `config.py` | NATS URL, stream names, subjects, consumers, and payload bucket settings. |
 | `bootstrap.py` | Creates and inspects JetStream streams, consumers, and object buckets. |
-| `client.py` | Publishes events, submits work, writes payloads, reads payload refs, and replays events. |
+| `client.py` | Explicit streaming-log primitives for NATS connection, payload storage, event publishing/replay, and work queues. |
 | `events.py` | Event envelope, event types, producer metadata, and idempotency helpers. |
 | `work.py` | Queued work messages. |
 | `workers.py` | Public worker primitives plus the async JetStream worker entrypoint. |
@@ -49,20 +49,46 @@ Instead, build an `EventContext` once for the workflow step and publish through
 a context-bound publisher:
 
 ```python
-context = EventContext.from_work_attempt(work, attempt_id=attempt_id)
-publisher = client.with_event_context(context)
+async with StreamingLogConnection(config) as connection:
+    payload_store = StreamingPayloadStore(connection)
+    event_log = StreamingEventLog(connection, payload_store)
 
-await publisher.publish_event_with_payloads(
-    StreamingLogEventType.attempt_started,
-    idempotency_key=idempotency_key("attempt_started", work.work_id, attempt),
-    payload={"worker_id": worker_id, "attempt": attempt},
-)
+    context = EventContext.from_work_attempt(work, attempt_id=attempt_id)
+    publisher = event_log.with_event_context(context)
+
+    await publisher.publish_event_with_payloads(
+        StreamingLogEventType.attempt_started,
+        idempotency_key=idempotency_key(
+            "attempt_started", work.work_id, attempt
+        ),
+        payload={"worker_id": worker_id, "attempt": attempt},
+    )
 ```
 
-Use `client.publish_event_with_payloads(...)` directly for context-free
+Use `event_log.publish_event_with_payloads(...)` directly for context-free
 operational events such as producer startup/shutdown. The event wire shape is
 unchanged: `EventContext` is only the construction primitive for shared
 envelope identity.
+
+## Streaming-Log Primitives
+
+The streaming log intentionally uses explicit clients rather than one broad
+facade:
+
+```python
+async with StreamingLogConnection(config) as connection:
+    payload_store = StreamingPayloadStore(connection)
+    event_log = StreamingEventLog(connection, payload_store)
+    work_queue = StreamingWorkQueue(connection, event_log)
+
+    await work_queue.submit_work(work)
+    stored = await payload_store.read_payload_ref(payload_ref)
+```
+
+`StreamingLogConnection` owns NATS lifecycle and JetStream access.
+`StreamingPayloadStore` owns Object Store payload writes and reads.
+`StreamingEventLog` owns event construction, publishing, subscriptions, and
+replay. `StreamingWorkQueue` owns work submission and work-message fetches.
 
 ## Worker Primitives
 

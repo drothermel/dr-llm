@@ -14,14 +14,20 @@ from dr_llm.llm import (
     ProviderRegistry,
     build_default_registry,
 )
-from dr_llm.streaming_log.client import StreamingLogClient
+from dr_llm.streaming_log.client import (
+    StreamingEventLog,
+    StreamingEventPublisher,
+    StreamingLogConnection,
+    StreamingPayloadStore,
+    StreamingWorkQueue,
+)
 from dr_llm.streaming_log.config import StreamingLogConfig
 from dr_llm.streaming_log.events import (
     EventContext,
     StreamingLogEventType,
     idempotency_key,
 )
-from dr_llm.streaming_log.payloads import PreparedPayload, prepare_json_payload
+from dr_llm.streaming_log.payloads import prepare_json_payload
 from dr_llm.streaming_log.work import QueuedWorkMessage
 
 
@@ -147,18 +153,6 @@ class StreamingWorkExecutor(Protocol):
     async def generate(self, request: LlmRequest) -> LlmResponse: ...
 
 
-class StreamingEventPublisher(Protocol):
-    async def publish_event_with_payloads(
-        self,
-        event_type: StreamingLogEventType,
-        *,
-        idempotency_key: str,
-        payload: dict[str, Any] | None = None,
-        payloads: list[PreparedPayload] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> Any: ...
-
-
 class ProviderRegistryStreamingWorkExecutor:
     def __init__(self, registry: ProviderRegistry) -> None:
         self.registry = registry
@@ -192,11 +186,11 @@ class StreamingWorkLifecycleReporter:
         self.attempt = attempt
 
     @classmethod
-    def from_client(
-        cls, *, client: StreamingLogClient, attempt: StreamingWorkAttempt
+    def from_event_log(
+        cls, *, event_log: StreamingEventLog, attempt: StreamingWorkAttempt
     ) -> Self:
         return cls(
-            publisher=client.with_event_context(attempt.event_context()),
+            publisher=event_log.with_event_context(attempt.event_context()),
             attempt=attempt,
         )
 
@@ -360,12 +354,12 @@ class StreamingWorkMessageHandler:
     def __init__(
         self,
         *,
-        client: StreamingLogClient,
+        event_log: StreamingEventLog,
         worker_id: str,
         processor: StreamingWorkProcessor,
         acknowledger: StreamingMessageAcknowledger | None = None,
     ) -> None:
-        self.client = client
+        self.event_log = event_log
         self.worker_id = worker_id
         self.processor = processor
         self.acknowledger = acknowledger or StreamingMessageAcknowledger()
@@ -374,8 +368,8 @@ class StreamingWorkMessageHandler:
         attempt = StreamingWorkAttempt.from_message(
             msg=msg, worker_id=self.worker_id
         )
-        reporter = StreamingWorkLifecycleReporter.from_client(
-            client=self.client, attempt=attempt
+        reporter = StreamingWorkLifecycleReporter.from_event_log(
+            event_log=self.event_log, attempt=attempt
         )
         outcome = await self.processor.process(
             attempt=attempt, reporter=reporter
@@ -386,83 +380,91 @@ class StreamingWorkMessageHandler:
 
 async def run_streaming_worker(
     *,
-    client: StreamingLogClient | None = None,
+    work_queue: StreamingWorkQueue | None = None,
     config: StreamingWorkerConfig | None = None,
     registry_factory: Callable[[], ProviderRegistry] = build_default_registry,
 ) -> None:
     config = config or StreamingWorkerConfig()
-    client, owns_client = _worker_client(client)
+    work_queue, owned_connection = _worker_queue(work_queue)
+    event_log = work_queue.event_log
     registry: ProviderRegistry | None = None
     try:
-        if owns_client:
-            await client.connect()
+        if owned_connection is not None:
+            await owned_connection.connect()
         registry = registry_factory()
         handler = _message_handler(
-            client=client,
+            event_log=event_log,
             worker_id=config.worker_id,
             registry=registry,
         )
         await _run_worker_session(
-            client=client, config=config, handler=handler
+            work_queue=work_queue,
+            event_log=event_log,
+            config=config,
+            handler=handler,
         )
     finally:
         if registry is not None:
             registry.close()
-        if owns_client:
-            await client.close()
+        if owned_connection is not None:
+            await owned_connection.close()
 
 
-def _worker_client(
-    client: StreamingLogClient | None,
-) -> tuple[StreamingLogClient, bool]:
-    if client is not None:
-        return client, False
-    return StreamingLogClient(StreamingLogConfig()), True
+def _worker_queue(
+    work_queue: StreamingWorkQueue | None,
+) -> tuple[StreamingWorkQueue, StreamingLogConnection | None]:
+    if work_queue is not None:
+        return work_queue, None
+    connection = StreamingLogConnection(StreamingLogConfig())
+    payload_store = StreamingPayloadStore(connection)
+    event_log = StreamingEventLog(connection, payload_store)
+    return StreamingWorkQueue(connection, event_log), connection
 
 
 def _message_handler(
     *,
-    client: StreamingLogClient,
+    event_log: StreamingEventLog,
     worker_id: str,
     registry: ProviderRegistry,
 ) -> StreamingWorkMessageHandler:
     executor = ProviderRegistryStreamingWorkExecutor(registry)
     processor = StreamingWorkProcessor(executor=executor)
     return StreamingWorkMessageHandler(
-        client=client, worker_id=worker_id, processor=processor
+        event_log=event_log, worker_id=worker_id, processor=processor
     )
 
 
 async def _run_worker_session(
     *,
-    client: StreamingLogClient,
+    work_queue: StreamingWorkQueue,
+    event_log: StreamingEventLog,
     config: StreamingWorkerConfig,
     handler: StreamingWorkMessageHandler,
 ) -> None:
     processed = 0
     try:
         await _publish_producer_started(
-            client=client, worker_id=config.worker_id
+            event_log=event_log, worker_id=config.worker_id
         )
-        sub = await client.work_subscription()
+        sub = await work_queue.work_subscription()
         while _should_process_more(config=config, processed=processed):
             processed = await _process_next_batch(
                 sub=sub,
-                client=client,
+                work_queue=work_queue,
                 config=config,
                 handler=handler,
                 processed=processed,
             )
     finally:
         await _publish_producer_stopped(
-            client=client, worker_id=config.worker_id
+            event_log=event_log, worker_id=config.worker_id
         )
 
 
 async def _publish_producer_started(
-    *, client: StreamingLogClient, worker_id: str
+    *, event_log: StreamingEventLog, worker_id: str
 ) -> None:
-    await client.publish_event_with_payloads(
+    await event_log.publish_event_with_payloads(
         StreamingLogEventType.producer_started,
         idempotency_key=idempotency_key("producer_started", worker_id),
         payload={"worker_id": worker_id},
@@ -470,9 +472,9 @@ async def _publish_producer_started(
 
 
 async def _publish_producer_stopped(
-    *, client: StreamingLogClient, worker_id: str
+    *, event_log: StreamingEventLog, worker_id: str
 ) -> None:
-    await client.publish_event_with_payloads(
+    await event_log.publish_event_with_payloads(
         StreamingLogEventType.producer_stopped,
         idempotency_key=idempotency_key("producer_stopped", worker_id),
         payload={"worker_id": worker_id},
@@ -488,12 +490,14 @@ def _should_process_more(
 async def _process_next_batch(
     *,
     sub: Any,
-    client: StreamingLogClient,
+    work_queue: StreamingWorkQueue,
     config: StreamingWorkerConfig,
     handler: StreamingWorkMessageHandler,
     processed: int,
 ) -> int:
-    messages = await _fetch_messages(sub=sub, client=client, config=config)
+    messages = await _fetch_messages(
+        sub=sub, work_queue=work_queue, config=config
+    )
     for msg in messages:
         await handler.process_message(msg)
         processed += 1
@@ -503,11 +507,11 @@ async def _process_next_batch(
 
 
 async def _fetch_messages(
-    *, sub: Any, client: StreamingLogClient, config: StreamingWorkerConfig
+    *, sub: Any, work_queue: StreamingWorkQueue, config: StreamingWorkerConfig
 ) -> list[Any]:
     try:
         return await sub.fetch(
-            client.config.fetch_batch_size,
+            work_queue.config.fetch_batch_size,
             timeout=config.fetch_timeout_seconds,
         )
     except TimeoutError:
@@ -516,7 +520,6 @@ async def _fetch_messages(
 
 __all__ = [
     "ProviderRegistryStreamingWorkExecutor",
-    "StreamingEventPublisher",
     "StreamingMessageAcknowledger",
     "StreamingRetryPolicy",
     "StreamingWorkAttempt",

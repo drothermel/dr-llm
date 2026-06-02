@@ -3,9 +3,17 @@ from __future__ import annotations
 import asyncio
 from typing import Any, cast
 
+import pytest
+
 from dr_llm.llm import CallMode, LlmRequest, Message, ProviderName
-from dr_llm.streaming_log.client import StreamingLogClient
+from dr_llm.streaming_log.client import (
+    StreamingEventLog,
+    StreamingLogConnection,
+    StreamingPayloadStore,
+    StreamingWorkQueue,
+)
 from dr_llm.streaming_log.config import StreamingLogConfig
+from dr_llm.streaming_log.errors import PayloadIntegrityError
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
@@ -16,13 +24,13 @@ from dr_llm.streaming_log.work import QueuedWorkMessage
 
 
 class FakeObjectResult:
-    def __init__(self, data: bytes) -> None:
+    def __init__(self, data: bytes | None) -> None:
         self.data = data
 
 
 class FakeObjectStore:
     def __init__(self) -> None:
-        self.objects: dict[str, bytes] = {}
+        self.objects: dict[str, bytes | None] = {}
 
     async def get(self, name: str):
         from nats.js.errors import ObjectNotFoundError
@@ -60,14 +68,72 @@ def _request() -> LlmRequest:
     )
 
 
-def test_submit_work_publishes_event_before_work_message() -> None:
-    client = StreamingLogClient(StreamingLogConfig())
+def _clients() -> tuple[
+    StreamingPayloadStore, StreamingEventLog, StreamingWorkQueue, FakeJetStream
+]:
+    connection = StreamingLogConnection(StreamingLogConfig())
     fake_js = FakeJetStream()
-    client._js = cast(Any, fake_js)
+    connection._js = cast(Any, fake_js)
+    payload_store = StreamingPayloadStore(connection)
+    event_log = StreamingEventLog(connection, payload_store)
+    work_queue = StreamingWorkQueue(connection, event_log)
+    return payload_store, event_log, work_queue, fake_js
 
+
+def test_payload_store_writes_new_payload_and_returns_ref() -> None:
+    payload_store, _, _, fake_js = _clients()
+    payload = prepare_text_payload("stdout", "hello")
+
+    ref = asyncio.run(payload_store.write_payload(payload))
+
+    assert ref == payload.ref()
+    assert fake_js.store.objects[payload.object_key] == b"hello"
+
+
+def test_payload_store_allows_existing_identical_payload() -> None:
+    payload_store, _, _, fake_js = _clients()
+    payload = prepare_text_payload("stdout", "hello")
+    fake_js.store.objects[payload.object_key] = payload.data
+
+    ref = asyncio.run(payload_store.write_payload(payload))
+
+    assert ref == payload.ref()
+    assert fake_js.store.objects[payload.object_key] == b"hello"
+
+
+def test_payload_store_rejects_existing_different_payload() -> None:
+    payload_store, _, _, fake_js = _clients()
+    payload = prepare_text_payload("stdout", "hello")
+    fake_js.store.objects[payload.object_key] = b"different"
+
+    with pytest.raises(PayloadIntegrityError, match="different bytes"):
+        asyncio.run(payload_store.write_payload(payload))
+
+
+def test_payload_store_reads_payload_ref_bytes() -> None:
+    payload_store, _, _, fake_js = _clients()
+    payload = prepare_text_payload("stdout", "hello")
+    fake_js.store.objects[payload.object_key] = payload.data
+
+    data = asyncio.run(payload_store.read_payload_ref(payload.ref()))
+
+    assert data == b"hello"
+
+
+def test_payload_store_rejects_empty_object_result() -> None:
+    payload_store, _, _, fake_js = _clients()
+    payload = prepare_text_payload("stdout", "hello")
+    fake_js.store.objects[payload.object_key] = None
+
+    with pytest.raises(PayloadIntegrityError, match="returned no bytes"):
+        asyncio.run(payload_store.read_payload_ref(payload.ref()))
+
+
+def test_work_queue_publishes_event_before_work_message() -> None:
+    _, _, work_queue, fake_js = _clients()
     work = QueuedWorkMessage(work_id="work-1", request=_request())
 
-    event = asyncio.run(client.submit_work(work))
+    event = asyncio.run(work_queue.submit_work(work))
 
     assert event.event_type is StreamingLogEventType.work_submitted
     assert fake_js.published[0][0] == "drllm.events.work_submitted"
@@ -77,11 +143,11 @@ def test_submit_work_publishes_event_before_work_message() -> None:
     assert fake_js.store.objects
 
 
-def test_contextual_publisher_applies_context_and_writes_payloads() -> None:
-    client = StreamingLogClient(StreamingLogConfig())
-    fake_js = FakeJetStream()
-    client._js = cast(Any, fake_js)
-    publisher = client.with_event_context(
+def test_event_log_contextual_publisher_applies_context_and_writes_payloads() -> (
+    None
+):
+    _, event_log, _, fake_js = _clients()
+    publisher = event_log.with_event_context(
         EventContext(
             run_id="run-1",
             work_id="work-1",

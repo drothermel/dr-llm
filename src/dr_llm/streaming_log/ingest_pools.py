@@ -9,7 +9,7 @@ from dr_llm.pool.db import DbConfig, DbRuntime
 from dr_llm.pool.db.catalog import list_pool_names
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.reader import PoolReader
-from dr_llm.streaming_log.client import StreamingLogClient
+from dr_llm.streaming_log.client import StreamingEventLog
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
@@ -108,12 +108,12 @@ class PoolImportEventRecorder:
     def __init__(
         self,
         *,
-        client: StreamingLogClient,
+        event_log: StreamingEventLog,
         pool_name: str,
         source_id: str,
         schema_payload: dict[str, Any] | None = None,
     ) -> None:
-        self.client = client
+        self.event_log = event_log
         self.pool_name = pool_name
         self.source_id = source_id
         self.schema_payload = schema_payload
@@ -121,10 +121,10 @@ class PoolImportEventRecorder:
 
     @classmethod
     def from_snapshot(
-        cls, *, client: StreamingLogClient, snapshot: PoolSnapshot
+        cls, *, event_log: StreamingEventLog, snapshot: PoolSnapshot
     ) -> PoolImportEventRecorder:
         return cls(
-            client=client,
+            event_log=event_log,
             pool_name=snapshot.pool_name,
             source_id=snapshot.source_id,
             schema_payload=snapshot.schema_payload,
@@ -135,7 +135,7 @@ class PoolImportEventRecorder:
             raise ValueError(
                 "pool schema payload is required for start events"
             )
-        return await self.client.publish_event_with_payloads(
+        return await self.event_log.publish_event_with_payloads(
             StreamingLogEventType.pool_import_started,
             idempotency_key=idempotency_key(
                 self.source_id, self.pool_name, "pool_import_started"
@@ -159,7 +159,7 @@ class PoolImportEventRecorder:
             )
         sample_payload = _sample_snapshot_payload(sample)
         state_hash = stable_hash(sample_payload)
-        return await self.client.publish_event_with_payloads(
+        return await self.event_log.publish_event_with_payloads(
             StreamingLogEventType.pool_sample_imported,
             idempotency_key=idempotency_key(
                 self.source_id,
@@ -205,7 +205,7 @@ class PoolImportEventRecorder:
         )
 
     async def record_completed(self, imported_count: int) -> EventEnvelope:
-        return await self.client.publish_event_with_payloads(
+        return await self.event_log.publish_event_with_payloads(
             StreamingLogEventType.pool_import_completed,
             idempotency_key=idempotency_key(
                 self.source_id,
@@ -223,7 +223,7 @@ class PoolImportEventRecorder:
         )
 
     async def record_failed(self, exc: Exception) -> EventEnvelope:
-        return await self.client.publish_event_with_payloads(
+        return await self.event_log.publish_event_with_payloads(
             StreamingLogEventType.pool_import_failed,
             idempotency_key=idempotency_key(
                 self.source_id,
@@ -243,7 +243,7 @@ class PoolImportEventRecorder:
 
 async def ingest_pool(
     *,
-    client: StreamingLogClient,
+    event_log: StreamingEventLog,
     dsn: str,
     pool_name: str,
     source_id: str | None = None,
@@ -261,14 +261,14 @@ async def ingest_pool(
         with source:
             source_opened = True
             return await record_pool_import(
-                client=client,
+                event_log=event_log,
                 snapshot=source.snapshot,
                 samples=source.samples(),
             )
     except Exception as exc:  # noqa: BLE001
         if not source_opened:
             recorder = PoolImportEventRecorder(
-                client=client,
+                event_log=event_log,
                 pool_name=pool_name,
                 source_id=source_id or dsn,
             )
@@ -278,12 +278,12 @@ async def ingest_pool(
 
 async def record_pool_import(
     *,
-    client: StreamingLogClient,
+    event_log: StreamingEventLog,
     snapshot: PoolSnapshot,
     samples: Iterable[PoolSample],
 ) -> PoolImportResult:
     recorder = PoolImportEventRecorder.from_snapshot(
-        client=client, snapshot=snapshot
+        event_log=event_log, snapshot=snapshot
     )
     event_ids: list[str] = []
     imported_count = 0
@@ -332,7 +332,7 @@ def _db_runtime(*, dsn: str, application_name: str) -> DbRuntime:
 
 async def ingest_pools(
     *,
-    client: StreamingLogClient,
+    event_log: StreamingEventLog,
     dsn: str,
     source_id: str | None = None,
     sample_limit: int | None = None,
@@ -350,7 +350,7 @@ async def ingest_pools(
     for pool_name in pool_names:
         results.append(
             await ingest_pool(
-                client=client,
+                event_log=event_log,
                 dsn=dsn,
                 pool_name=pool_name,
                 source_id=source_id,
