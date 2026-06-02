@@ -227,13 +227,16 @@ def test_retryable_failure_emits_failure_and_retry_events() -> None:
     ]
     failed = published_call(calls, StreamingLogEventType.attempt_failed)
     assert failed.payload_roles == ["error_detail"]
-    assert failed.payload == {
+    assert failed.payload.model_dump(mode="json") == {
         "error_type": "RuntimeError",
         "message": "provider down",
         "attempt": 1,
     }
     retry = published_call(calls, StreamingLogEventType.work_retry_scheduled)
-    assert retry.payload == {"attempt": 1, "next_attempt": 2}
+    assert retry.payload.model_dump(mode="json") == {
+        "attempt": 1,
+        "next_attempt": 2,
+    }
 
 
 def test_terminal_failure_returns_failed_and_acks() -> None:
@@ -264,8 +267,8 @@ def test_terminal_failure_emits_completion_event() -> None:
         StreamingLogEventType.work_completed,
     ]
     completed = published_call(calls, StreamingLogEventType.work_completed)
-    assert completed.payload == {
-        "status": StreamingWorkOutcomeType.failed,
+    assert completed.payload.model_dump(mode="json", exclude_none=True) == {
+        "status": "failed",
         "error_type": "RuntimeError",
         "message": "still down",
         "attempt": 2,

@@ -13,13 +13,19 @@ from nats.js.client import JetStreamContext as LegacyJetStreamContext
 from nats.js.errors import NotFoundError, ObjectNotFoundError
 
 from dr_llm.streaming_log.config import StreamingLogConfig
-from dr_llm.streaming_log.errors import PayloadIntegrityError
+from dr_llm.streaming_log.errors import (
+    PayloadIntegrityError,
+    PayloadNotFoundError,
+    PayloadReadError,
+    StreamingLogError,
+)
 from dr_llm.streaming_log.event_builders import StreamingEventPublishSpec
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
     ProducerInfo,
     StreamingLogEventType,
+    WorkSubmittedPayload,
     build_event,
     idempotency_key,
 )
@@ -106,10 +112,21 @@ class StreamingPayloadStore:
         return payload.ref()
 
     async def read_payload_ref(self, payload_ref: PayloadRef) -> bytes:
-        store = await self.connection.js.object_store(
-            self.config.payload_bucket
-        )
-        result = await store.get(payload_ref.object_key)
+        try:
+            store = await self.connection.js.object_store(
+                self.config.payload_bucket
+            )
+            result = await store.get(payload_ref.object_key)
+        except (NotFoundError, ObjectNotFoundError) as exc:
+            raise PayloadNotFoundError(
+                f"Object {payload_ref.object_key!r} was not found"
+            ) from exc
+        except StreamingLogError:
+            raise
+        except Exception as exc:
+            raise PayloadReadError(
+                f"Object {payload_ref.object_key!r} could not be read"
+            ) from exc
         if result.data is None:
             raise PayloadIntegrityError(
                 f"Object {payload_ref.object_key!r} returned no bytes"
@@ -259,12 +276,12 @@ class StreamingWorkQueue:
                 idempotency_key=idempotency_key(
                     "work_submitted", work.work_id
                 ),
-                payload={
-                    "work_id": work.work_id,
-                    "run_id": work.run_id,
-                    "max_retries": work.max_retries,
-                    "metadata": work.metadata,
-                },
+                payload=WorkSubmittedPayload(
+                    work_id=work.work_id,
+                    run_id=work.run_id,
+                    max_retries=work.max_retries,
+                    metadata=work.metadata,
+                ),
                 payloads=[request_payload],
                 context=EventContext.from_work(work),
             )

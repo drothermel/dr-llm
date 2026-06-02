@@ -10,7 +10,11 @@ import pytest
 import dr_llm.streaming_log.ingest_pools as ingest_pools_module
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.streaming_log import StreamingEventLog
-from dr_llm.streaming_log.events import StreamingLogEventType, idempotency_key
+from dr_llm.streaming_log.events import (
+    PoolSampleImportedPayload,
+    StreamingLogEventType,
+    idempotency_key,
+)
 from dr_llm.streaming_log.ingest_pools import (
     PoolImportResult,
     PoolSnapshot,
@@ -74,6 +78,7 @@ def test_record_pool_import_returns_result_event_ids() -> None:
     assert result.pool_name == "pool-1"
     assert result.imported_count == 1
     assert result.event_ids == [event.event_id for event in event_log.events]
+    assert "failed" not in PoolImportResult.model_fields
 
 
 def test_record_pool_import_emits_lifecycle_in_order() -> None:
@@ -97,7 +102,7 @@ def test_record_pool_import_start_call_identifies_source() -> None:
     assert started.idempotency_key == idempotency_key(
         "source-1", "pool-1", "pool_import_started"
     )
-    assert started.payload == {
+    assert started.payload.model_dump(mode="json") == {
         "pool_name": "pool-1",
         "source_id": "source-1",
     }
@@ -118,17 +123,19 @@ def test_record_pool_import_sample_call_records_pool_row_identity() -> None:
         "metadata_json",
         "response_json",
     ]
-    assert imported.payload["pool_name"] == "pool-1"
-    assert imported.payload["source_id"] == "source-1"
-    assert imported.payload["sample_id"] == "sample-1"
-    assert imported.payload["sample_idx"] == 3
-    assert imported.payload["run_id"] == "run-1"
-    assert imported.payload["key_values"] == {"dim": "a"}
-    assert imported.payload["finish_reason"] == "stop"
-    assert imported.payload["attempt_count"] == 2
-    assert imported.payload["completion_state"] == "complete"
-    assert imported.payload["reconstructed"] is True
-    assert isinstance(imported.payload["row_state_hash"], str)
+    payload = imported.payload
+    assert isinstance(payload, PoolSampleImportedPayload)
+    assert payload.pool_name == "pool-1"
+    assert payload.source_id == "source-1"
+    assert payload.sample_id == "sample-1"
+    assert payload.sample_idx == 3
+    assert payload.run_id == "run-1"
+    assert payload.key_values == {"dim": "a"}
+    assert payload.finish_reason == "stop"
+    assert payload.attempt_count == 2
+    assert payload.completion_state == "complete"
+    assert payload.reconstructed is True
+    assert isinstance(payload.row_state_hash, str)
     assert imported.metadata == {"reconstructed": True}
     assert imported.context is not None
     assert imported.context.run_id == "run-1"
@@ -142,7 +149,7 @@ def test_record_pool_import_completed_call_records_count() -> None:
         event_log.published, StreamingLogEventType.pool_import_completed
     )
 
-    assert completed.payload == {
+    assert completed.payload.model_dump(mode="json") == {
         "pool_name": "pool-1",
         "source_id": "source-1",
         "imported_count": 1,
@@ -169,7 +176,7 @@ def test_record_pool_import_records_source_iteration_failure() -> None:
     failed = published_call(
         event_log.published, StreamingLogEventType.pool_import_failed
     )
-    assert failed.payload == {
+    assert failed.payload.model_dump(mode="json") == {
         "pool_name": "pool-1",
         "source_id": "source-1",
         "error_type": "RuntimeError",

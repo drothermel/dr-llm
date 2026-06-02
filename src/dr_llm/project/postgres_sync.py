@@ -572,14 +572,13 @@ def _public_table_names(conn: psycopg.Connection[tuple]) -> list[str]:
 def _pool_catalog_count(conn: psycopg.Connection[tuple]) -> int | None:
     with conn.cursor() as cur:
         cur.execute("SELECT to_regclass('public.pool_catalog') IS NOT NULL")
-        exists_row = cur.fetchone()
-        assert exists_row is not None
-        if not exists_row[0]:
+        exists = bool(
+            _required_scalar(cur.fetchone(), "pool_catalog existence query")
+        )
+        if not exists:
             return None
         cur.execute("SELECT count(*) FROM pool_catalog")
-        count_row = cur.fetchone()
-        assert count_row is not None
-        return count_row[0]
+        return _required_int_scalar(cur.fetchone(), "pool_catalog count query")
 
 
 def _table_row_count(conn: psycopg.Connection[tuple], table_name: str) -> int:
@@ -589,6 +588,21 @@ def _table_row_count(conn: psycopg.Connection[tuple], table_name: str) -> int:
                 sql.Identifier(table_name)
             )
         )
-        count_row = cur.fetchone()
-        assert count_row is not None
-        return count_row[0]
+        return _required_int_scalar(
+            cur.fetchone(), f"{table_name} row count query"
+        )
+
+
+def _required_scalar(row: tuple[object, ...] | None, context: str) -> object:
+    if row is None:
+        raise ProjectError(f"Postgres sync {context} returned no rows.")
+    return row[0]
+
+
+def _required_int_scalar(row: tuple[object, ...] | None, context: str) -> int:
+    value = _required_scalar(row, context)
+    if not isinstance(value, int):
+        raise ProjectError(
+            f"Postgres sync {context} returned non-integer value {value!r}."
+        )
+    return value

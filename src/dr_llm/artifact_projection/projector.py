@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,7 +27,24 @@ from dr_llm.streaming_log.client import (
     StreamingPayloadStore,
 )
 from dr_llm.streaming_log.events import EventEnvelope
+from dr_llm.streaming_log.errors import (
+    PayloadIntegrityError,
+    PayloadNotFoundError,
+    PayloadReadError,
+)
 from dr_llm.streaming_log.payloads import PayloadRef
+
+
+class ArtifactProjectionOutcomeType(StrEnum):
+    projected = "projected"
+    skipped = "skipped"
+    error = "error"
+
+
+class ArtifactProjectionOutcome(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    outcome_type: ArtifactProjectionOutcomeType
 
 
 class ArtifactProjectionResult(BaseModel):
@@ -90,9 +108,15 @@ class ArtifactProjector:
                 payload_ref=payload_ref,
                 stream_sequence=stream_sequence,
             )
-            projected_count += int(outcome == "projected")
-            skipped_count += int(outcome == "skipped")
-            error_count += int(outcome == "error")
+            projected_count += int(
+                outcome.outcome_type is ArtifactProjectionOutcomeType.projected
+            )
+            skipped_count += int(
+                outcome.outcome_type is ArtifactProjectionOutcomeType.skipped
+            )
+            error_count += int(
+                outcome.outcome_type is ArtifactProjectionOutcomeType.error
+            )
         self.store.finalize()
         return ArtifactProjectionResult(
             projected_count=projected_count,
@@ -106,13 +130,15 @@ class ArtifactProjector:
         source: PayloadArtifactSource,
         payload_ref: PayloadRef,
         stream_sequence: int,
-    ) -> str:
+    ) -> ArtifactProjectionOutcome:
         artifact_id = artifact_id_for_source_ref(
             projection_version=self.config.projection_version,
             source_ref=source.source_ref,
         )
         if self.store.existing_reference(artifact_id=artifact_id) is not None:
-            return "skipped"
+            return ArtifactProjectionOutcome(
+                outcome_type=ArtifactProjectionOutcomeType.skipped
+            )
         if source.source_ref.compression != "none":
             self._record_source_error(
                 source=source,
@@ -123,17 +149,23 @@ class ArtifactProjector:
                 ),
                 stream_sequence=stream_sequence,
             )
-            return "error"
+            return ArtifactProjectionOutcome(
+                outcome_type=ArtifactProjectionOutcomeType.error
+            )
         data = await self._read_source_payload(
             source=source,
             payload_ref=payload_ref,
             stream_sequence=stream_sequence,
         )
         if data is None:
-            return "error"
+            return ArtifactProjectionOutcome(
+                outcome_type=ArtifactProjectionOutcomeType.error
+            )
         lane = self.role_policy.lane_for(payload_ref)
         self.store.write_artifact(source=source, lane=lane, data=data)
-        return "projected"
+        return ArtifactProjectionOutcome(
+            outcome_type=ArtifactProjectionOutcomeType.projected
+        )
 
     async def _read_source_payload(
         self,
@@ -144,10 +176,26 @@ class ArtifactProjector:
     ) -> bytes | None:
         try:
             data = await self.payload_reader.read_payload_ref(payload_ref)
-        except Exception as exc:  # noqa: BLE001
+        except PayloadNotFoundError as exc:
             self._record_source_error(
                 source=source,
                 error_kind=ProjectionErrorKind.missing_payload,
+                message=str(exc),
+                stream_sequence=stream_sequence,
+            )
+            return None
+        except PayloadIntegrityError as exc:
+            self._record_source_error(
+                source=source,
+                error_kind=ProjectionErrorKind.invalid_payload,
+                message=str(exc),
+                stream_sequence=stream_sequence,
+            )
+            return None
+        except PayloadReadError as exc:
+            self._record_source_error(
+                source=source,
+                error_kind=ProjectionErrorKind.storage_error,
                 message=str(exc),
                 stream_sequence=stream_sequence,
             )
@@ -289,6 +337,8 @@ def stream_sequence_for_message(message: Any) -> int:
 
 __all__ = [
     "ArtifactEventDelivery",
+    "ArtifactProjectionOutcome",
+    "ArtifactProjectionOutcomeType",
     "ArtifactProjectionResult",
     "ArtifactProjector",
     "delivery_from_message",

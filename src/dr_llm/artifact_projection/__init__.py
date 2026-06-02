@@ -21,6 +21,8 @@ from dr_llm.artifact_projection.models import (
 from dr_llm.artifact_projection.policy import ArtifactRolePolicy
 from dr_llm.artifact_projection.projector import (
     ArtifactEventDelivery,
+    ArtifactProjectionOutcome,
+    ArtifactProjectionOutcomeType,
     ArtifactProjectionResult,
     ArtifactProjector,
 )
@@ -38,6 +40,8 @@ __all__ = [
     "ArtifactIndexSummary",
     "ArtifactLane",
     "ArtifactProjectionConfig",
+    "ArtifactProjectionOutcome",
+    "ArtifactProjectionOutcomeType",
     "ArtifactProjectionResult",
     "ArtifactProjector",
     "ArtifactReader",

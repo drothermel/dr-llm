@@ -18,6 +18,9 @@ from dr_llm.streaming_log.event_builders import (
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
+    PoolImportCompletedPayload,
+    PoolImportFailedPayload,
+    PoolImportStartedPayload,
     StreamingLogEventType,
     idempotency_key,
 )
@@ -33,7 +36,6 @@ class PoolImportResult(BaseModel):
     pool_name: str
     imported_count: int = 0
     event_ids: list[str] = Field(default_factory=list)
-    failed: bool = False
 
 
 class PoolSnapshot(BaseModel):
@@ -146,10 +148,10 @@ class PoolImportEventRecorder:
                 idempotency_key=idempotency_key(
                     self.source_id, self.pool_name, "pool_import_started"
                 ),
-                payload={
-                    "pool_name": self.pool_name,
-                    "source_id": self.source_id,
-                },
+                payload=PoolImportStartedPayload(
+                    pool_name=self.pool_name,
+                    source_id=self.source_id,
+                ),
                 payloads=[
                     prepare_json_payload("pool_schema", self.schema_payload)
                 ],
@@ -183,12 +185,12 @@ class PoolImportEventRecorder:
                     "pool_import_completed",
                     imported_count,
                 ),
-                payload={
-                    "pool_name": self.pool_name,
-                    "source_id": self.source_id,
-                    "imported_count": imported_count,
-                    "reconstructed": True,
-                },
+                payload=PoolImportCompletedPayload(
+                    pool_name=self.pool_name,
+                    source_id=self.source_id,
+                    imported_count=imported_count,
+                    reconstructed=True,
+                ),
                 context=self.import_context,
             )
         )
@@ -203,12 +205,12 @@ class PoolImportEventRecorder:
                     "pool_import_failed",
                     type(exc).__name__,
                 ),
-                payload={
-                    "pool_name": self.pool_name,
-                    "source_id": self.source_id,
-                    "error_type": type(exc).__name__,
-                    "message": str(exc),
-                },
+                payload=PoolImportFailedPayload(
+                    pool_name=self.pool_name,
+                    source_id=self.source_id,
+                    error_type=type(exc).__name__,
+                    message=str(exc),
+                ),
                 context=self.import_context,
             )
         )

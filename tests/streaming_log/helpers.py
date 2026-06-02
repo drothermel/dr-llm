@@ -11,6 +11,7 @@ from dr_llm.streaming_log.event_builders import StreamingEventPublishSpec
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
+    EventPayload,
     ProducerInfo,
     StreamingLogEventType,
 )
@@ -21,7 +22,7 @@ class PublishCall(BaseModel):
 
     event_type: StreamingLogEventType
     idempotency_key: str
-    payload: dict[str, Any] = Field(default_factory=dict)
+    payload: EventPayload
     payload_roles: list[str] = Field(default_factory=list)
     context: EventContext | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -160,7 +161,7 @@ def minimal_event(
     event_type: StreamingLogEventType,
     *,
     idempotency_key: str,
-    payload: dict[str, Any] | None = None,
+    payload: EventPayload,
     context: EventContext | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> EventEnvelope:
@@ -169,7 +170,7 @@ def minimal_event(
         event_type=event_type,
         producer=ProducerInfo(name="test"),
         idempotency_key=idempotency_key,
-        payload=payload or {},
+        payload=payload,
         run_id=context.run_id,
         work_id=context.work_id,
         attempt_id=context.attempt_id,

@@ -25,8 +25,10 @@ from dr_llm.artifact_projection.storage import ArtifactReader
 from dr_llm.streaming_log.events import (
     EventEnvelope,
     ProducerInfo,
+    ProviderResponseReceivedPayload,
     StreamingLogEventType,
 )
+from dr_llm.streaming_log.errors import PayloadNotFoundError, PayloadReadError
 from dr_llm.streaming_log.payloads import PayloadRef, prepare_json_payload
 
 
@@ -35,7 +37,15 @@ class FakePayloadReader:
         self.payloads = payloads
 
     async def read_payload_ref(self, payload_ref: PayloadRef) -> bytes:
-        return self.payloads[payload_ref.object_key]
+        try:
+            return self.payloads[payload_ref.object_key]
+        except KeyError as exc:
+            raise PayloadNotFoundError("missing test payload") from exc
+
+
+class FailingPayloadReader:
+    async def read_payload_ref(self, payload_ref: PayloadRef) -> bytes:
+        raise PayloadReadError("test read failure")
 
 
 class FakeMessage:
@@ -151,6 +161,37 @@ def test_projector_records_missing_payload_error_and_acks(
     assert error.source_ref.payload_role == "response_json"
     assert error.event_context.run_id == "run-1"
     assert error.event_context.metadata == {"purpose": "projection-test"}
+    assert error.error_kind is ProjectionErrorKind.missing_payload
+
+
+def test_projector_records_payload_read_error_and_acks(
+    tmp_path: Path,
+) -> None:
+    config = ArtifactProjectionConfig(artifact_root=tmp_path)
+    store = ArtifactStore(config=config)
+    store.initialize()
+    payload = prepare_json_payload("response_json", {"ok": True})
+    event = _event(payload.ref())
+    message = FakeMessage(event)
+    projector = ArtifactProjector(
+        config=config,
+        store=store,
+        payload_reader=FailingPayloadReader(),
+    )
+
+    result = _run(
+        projector.process_delivery(
+            ArtifactEventDelivery(
+                event=event, stream_sequence=8, message=message
+            )
+        )
+    )
+
+    assert result.error_count == 1
+    assert message.acked
+    assert _single_projection_error(config).error_kind is (
+        ProjectionErrorKind.storage_error
+    )
 
 
 def test_projector_records_payload_size_mismatch_error_and_acks(
@@ -237,6 +278,11 @@ def _event(*payload_refs: PayloadRef) -> EventEnvelope:
         event_type=StreamingLogEventType.provider_response_received,
         producer=ProducerInfo(name="test"),
         idempotency_key="idem-1",
+        payload=ProviderResponseReceivedPayload(
+            provider="test",
+            model="test-model",
+            mode="api",
+        ),
         payload_refs=list(payload_refs),
         run_id="run-1",
         source="test-suite",

@@ -11,9 +11,13 @@ from dr_llm.streaming_log.client import (
     StreamingPayloadStore,
     StreamingWorkQueue,
 )
-from dr_llm.streaming_log.errors import PayloadIntegrityError
+from dr_llm.streaming_log.errors import (
+    PayloadIntegrityError,
+    PayloadNotFoundError,
+)
 from dr_llm.streaming_log.event_builders import StreamingEventPublishSpec
 from dr_llm.streaming_log.events import (
+    AttemptStartedPayload,
     EventContext,
     EventEnvelope,
     StreamingLogEventType,
@@ -96,6 +100,14 @@ def test_payload_store_rejects_payload_ref_hash_mismatch() -> None:
         asyncio.run(payload_store.read_payload_ref(ref))
 
 
+def test_payload_store_reports_missing_payload_ref() -> None:
+    payload_store, _, _, _ = _clients()
+    payload = prepare_text_payload("stdout", "hello")
+
+    with pytest.raises(PayloadNotFoundError, match="was not found"):
+        asyncio.run(payload_store.read_payload_ref(payload.ref()))
+
+
 def test_payload_store_rejects_payload_ref_size_mismatch() -> None:
     payload_store, _, _, fake_js = _clients()
     payload = prepare_text_payload("stdout", "hello")
@@ -161,7 +173,7 @@ def test_event_log_contextual_publisher_applies_context_and_writes_payloads() ->
             StreamingEventPublishSpec(
                 event_type=StreamingLogEventType.attempt_started,
                 idempotency_key="attempt-started-1",
-                payload={"attempt": 1},
+                payload=AttemptStartedPayload(worker_id="worker-1", attempt=1),
                 payloads=[prepare_text_payload("stdout", "hello")],
             )
         )

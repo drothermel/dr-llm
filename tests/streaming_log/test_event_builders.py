@@ -8,7 +8,13 @@ from dr_llm.streaming_log.event_builders import (
     provider_response_received_event,
     work_completed_succeeded_event,
 )
-from dr_llm.streaming_log.events import EventContext, StreamingLogEventType
+from dr_llm.streaming_log.events import (
+    AttemptSucceededPayload,
+    EventContext,
+    PoolSampleImportedPayload,
+    StreamingLogEventType,
+    WorkCompletedPayload,
+)
 
 
 def _sample() -> PoolSample:
@@ -45,17 +51,19 @@ def test_pool_sample_imported_event_builds_reconstructed_sample_fact() -> None:
     )
 
     assert spec.event_type is StreamingLogEventType.pool_sample_imported
-    assert spec.payload["pool_name"] == "pool-1"
-    assert spec.payload["source_id"] == "source-1"
-    assert spec.payload["sample_id"] == "sample-1"
-    assert spec.payload["sample_idx"] == 3
-    assert spec.payload["run_id"] == "run-1"
-    assert spec.payload["key_values"] == {"dim": "a"}
-    assert spec.payload["finish_reason"] == "stop"
-    assert spec.payload["attempt_count"] == 2
-    assert spec.payload["completion_state"] == "complete"
-    assert spec.payload["reconstructed"] is True
-    assert isinstance(spec.payload["row_state_hash"], str)
+    payload = spec.payload
+    assert isinstance(payload, PoolSampleImportedPayload)
+    assert payload.pool_name == "pool-1"
+    assert payload.source_id == "source-1"
+    assert payload.sample_id == "sample-1"
+    assert payload.sample_idx == 3
+    assert payload.run_id == "run-1"
+    assert payload.key_values == {"dim": "a"}
+    assert payload.finish_reason == "stop"
+    assert payload.attempt_count == 2
+    assert payload.completion_state == "complete"
+    assert payload.reconstructed is True
+    assert isinstance(payload.row_state_hash, str)
     assert [payload.role for payload in spec.payloads] == [
         "pool_schema",
         "request_json",
@@ -91,10 +99,10 @@ def test_provider_response_received_event_builds_response_fact() -> None:
     )
 
     assert spec.event_type is StreamingLogEventType.provider_response_received
-    assert spec.payload == {
+    assert spec.payload.model_dump(mode="json") == {
         "provider": "openai",
         "model": "gpt-test",
-        "mode": CallMode.api,
+        "mode": "api",
         "finish_reason": "stop",
     }
     assert [payload.role for payload in spec.payloads] == ["response_json"]
@@ -107,7 +115,10 @@ def test_success_completion_event_builders_record_attempt_identity() -> None:
     completed = work_completed_succeeded_event(work_id="work-1", attempt=2)
 
     assert succeeded.event_type is StreamingLogEventType.attempt_succeeded
-    assert succeeded.payload == {"attempt": 2}
+    assert isinstance(succeeded.payload, AttemptSucceededPayload)
+    assert succeeded.payload.attempt == 2
     assert completed.event_type is StreamingLogEventType.work_completed
-    assert completed.payload == {"status": "succeeded", "attempt": 2}
+    assert isinstance(completed.payload, WorkCompletedPayload)
+    assert completed.payload.status == "succeeded"
+    assert completed.payload.attempt == 2
     assert succeeded.idempotency_key != completed.idempotency_key

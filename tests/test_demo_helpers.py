@@ -20,6 +20,8 @@ from dr_llm.streaming_log import (
     EventEnvelope,
     ProducerInfo,
     StreamingLogStatus,
+    WorkCompletedPayload,
+    WorkSubmittedPayload,
 )
 from dr_llm.streaming_log.events import StreamingLogEventType
 from dr_llm.streaming_log.payloads import PayloadRef
@@ -519,16 +521,19 @@ def test_summarize_events_counts_event_types() -> None:
             event_type=StreamingLogEventType.work_submitted,
             producer=ProducerInfo(name="test"),
             idempotency_key="one",
+            payload=WorkSubmittedPayload(work_id="work-1", max_retries=0),
         ),
         EventEnvelope(
             event_type=StreamingLogEventType.work_submitted,
             producer=ProducerInfo(name="test"),
             idempotency_key="two",
+            payload=WorkSubmittedPayload(work_id="work-2", max_retries=0),
         ),
         EventEnvelope(
             event_type=StreamingLogEventType.work_completed,
             producer=ProducerInfo(name="test"),
             idempotency_key="three",
+            payload=WorkCompletedPayload(status="succeeded", attempt=1),
         ),
     ]
 
@@ -548,6 +553,7 @@ def test_verify_payload_refs_detects_hash_mismatch() -> None:
         event_type=StreamingLogEventType.work_submitted,
         producer=ProducerInfo(name="test"),
         idempotency_key="one",
+        payload=WorkSubmittedPayload(work_id="work-1", max_retries=0),
         payload_refs=[
             PayloadRef(
                 role="request_json",

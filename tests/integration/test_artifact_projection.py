@@ -21,7 +21,10 @@ from dr_llm.streaming_log.client import (
 )
 from dr_llm.streaming_log.config import StreamingLogConfig
 from dr_llm.streaming_log.event_builders import StreamingEventPublishSpec
-from dr_llm.streaming_log.events import StreamingLogEventType
+from dr_llm.streaming_log.events import (
+    ProviderResponseReceivedPayload,
+    StreamingLogEventType,
+)
 from dr_llm.streaming_log.payloads import prepare_json_payload
 
 pytestmark = pytest.mark.integration
@@ -57,7 +60,11 @@ async def _test_projector_reads_stream_payload_and_writes_artifact(
             StreamingEventPublishSpec(
                 event_type=StreamingLogEventType.provider_response_received,
                 idempotency_key="artifact-integration-1",
-                payload={"provider": "test"},
+                payload=ProviderResponseReceivedPayload(
+                    provider="test",
+                    model="test-model",
+                    mode="api",
+                ),
                 payloads=[payload, payload],
             )
         )

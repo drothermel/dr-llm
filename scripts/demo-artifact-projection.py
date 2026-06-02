@@ -43,6 +43,7 @@ from dr_llm.demo import (
     StreamingLogDemoRuntimeOptions,
 )
 from dr_llm.streaming_log import (
+    ProviderResponseReceivedPayload,
     StreamingEventPublishSpec,
     StreamingLogEventType,
 )
@@ -90,7 +91,11 @@ async def _run_artifact_demo(options: ArtifactProjectionDemoOptions) -> None:
                 StreamingEventPublishSpec(
                     event_type=StreamingLogEventType.provider_response_received,
                     idempotency_key="demo-artifact-projection-1",
-                    payload={"provider": "demo"},
+                    payload=ProviderResponseReceivedPayload(
+                        provider="demo",
+                        model="demo-model",
+                        mode="api",
+                    ),
                     payloads=[payload, payload],
                 )
             )

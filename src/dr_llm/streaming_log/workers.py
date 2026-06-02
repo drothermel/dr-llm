@@ -29,8 +29,14 @@ from dr_llm.streaming_log.event_builders import (
     work_completed_succeeded_event,
 )
 from dr_llm.streaming_log.events import (
+    AttemptFailedPayload,
+    AttemptStartedPayload,
     EventContext,
+    ProducerLifecyclePayload,
+    ProviderRequestPreparedPayload,
     StreamingLogEventType,
+    WorkCompletedPayload,
+    WorkRetryScheduledPayload,
     idempotency_key,
 )
 from dr_llm.streaming_log.payloads import prepare_json_payload
@@ -112,12 +118,12 @@ class StreamingWorkRetryScheduled(BaseModel):
             next_attempt=next_attempt,
         )
 
-    def error_payload(self) -> dict[str, Any]:
-        return {
-            "error_type": self.error_type,
-            "message": self.error_message,
-            "attempt": self.attempt,
-        }
+    def error_payload(self) -> AttemptFailedPayload:
+        return AttemptFailedPayload(
+            error_type=self.error_type,
+            message=self.error_message,
+            attempt=self.attempt,
+        )
 
 
 class StreamingWorkFailed(BaseModel):
@@ -138,12 +144,12 @@ class StreamingWorkFailed(BaseModel):
             error_message=str(exc),
         )
 
-    def error_payload(self) -> dict[str, Any]:
-        return {
-            "error_type": self.error_type,
-            "message": self.error_message,
-            "attempt": self.attempt,
-        }
+    def error_payload(self) -> AttemptFailedPayload:
+        return AttemptFailedPayload(
+            error_type=self.error_type,
+            message=self.error_message,
+            attempt=self.attempt,
+        )
 
 
 type StreamingWorkFailureOutcome = (
@@ -214,10 +220,10 @@ class StreamingWorkLifecycleReporter:
             StreamingEventPublishSpec(
                 event_type=StreamingLogEventType.attempt_started,
                 idempotency_key=self.idempotency_key_for("attempt_started"),
-                payload={
-                    "worker_id": self.attempt.worker_id,
-                    "attempt": self.attempt.attempt,
-                },
+                payload=AttemptStartedPayload(
+                    worker_id=self.attempt.worker_id,
+                    attempt=self.attempt.attempt,
+                ),
             )
         )
 
@@ -234,11 +240,11 @@ class StreamingWorkLifecycleReporter:
                 idempotency_key=self.idempotency_key_for(
                     "provider_request_prepared"
                 ),
-                payload={
-                    "provider": request.provider,
-                    "model": request.model,
-                    "mode": request.mode,
-                },
+                payload=ProviderRequestPreparedPayload(
+                    provider=str(request.provider),
+                    model=request.model,
+                    mode=str(request.mode),
+                ),
                 payloads=[
                     prepare_json_payload("request_json", request_payload)
                 ],
@@ -275,7 +281,11 @@ class StreamingWorkLifecycleReporter:
                 event_type=StreamingLogEventType.attempt_failed,
                 idempotency_key=self.idempotency_key_for("attempt_failed"),
                 payload=error_payload,
-                payloads=[prepare_json_payload("error_detail", error_payload)],
+                payloads=[
+                    prepare_json_payload(
+                        "error_detail", error_payload.model_dump(mode="json")
+                    )
+                ],
             )
         )
         if isinstance(outcome, StreamingWorkRetryScheduled):
@@ -292,24 +302,28 @@ class StreamingWorkLifecycleReporter:
                 idempotency_key=self.idempotency_key_for(
                     "work_retry_scheduled"
                 ),
-                payload={
-                    "attempt": self.attempt.attempt,
-                    "next_attempt": outcome.next_attempt,
-                },
+                payload=WorkRetryScheduledPayload(
+                    attempt=self.attempt.attempt,
+                    next_attempt=outcome.next_attempt,
+                ),
             )
         )
 
-    async def record_work_failed(self, error_payload: dict[str, Any]) -> None:
+    async def record_work_failed(
+        self, error_payload: AttemptFailedPayload
+    ) -> None:
         await self.publisher.publish_event_spec(
             StreamingEventPublishSpec(
                 event_type=StreamingLogEventType.work_completed,
                 idempotency_key=idempotency_key(
                     "work_completed", self.attempt.work.work_id
                 ),
-                payload={
-                    "status": StreamingWorkOutcomeType.failed,
-                    **error_payload,
-                },
+                payload=WorkCompletedPayload(
+                    status=str(StreamingWorkOutcomeType.failed),
+                    attempt=error_payload.attempt,
+                    error_type=error_payload.error_type,
+                    message=error_payload.message,
+                ),
             )
         )
 
@@ -483,7 +497,7 @@ async def _publish_producer_started(
         StreamingEventPublishSpec(
             event_type=StreamingLogEventType.producer_started,
             idempotency_key=idempotency_key("producer_started", worker_id),
-            payload={"worker_id": worker_id},
+            payload=ProducerLifecyclePayload(worker_id=worker_id),
         )
     )
 
@@ -495,7 +509,7 @@ async def _publish_producer_stopped(
         StreamingEventPublishSpec(
             event_type=StreamingLogEventType.producer_stopped,
             idempotency_key=idempotency_key("producer_stopped", worker_id),
-            payload={"worker_id": worker_id},
+            payload=ProducerLifecyclePayload(worker_id=worker_id),
         )
     )
 
