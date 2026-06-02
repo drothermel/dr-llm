@@ -15,7 +15,7 @@ from dr_llm.project.models import (
     DeleteProjectRequest,
     ProjectDeletionResult,
     ProjectDeletionStatus,
-    ProjectNeonSyncResult,
+    ProjectPostgresSyncResult,
     ProjectSyncValidation,
 )
 from dr_llm.project.project_info import ProjectInfo
@@ -232,20 +232,20 @@ def test_project_backup_reports_file_not_found_errors(
     assert result.exit_code == 1
 
 
-def test_project_sync_neon_invokes_service(
+def test_project_sync_postgres_invokes_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     synced: list[tuple[str, str, str | None, bool]] = []
 
-    def fake_sync_project_to_neon(
+    def fake_sync_project_to_postgres(
         name: str,
         admin_url: str,
         *,
         target_database: str | None = None,
         drop_previous: bool = False,
-    ) -> ProjectNeonSyncResult:
+    ) -> ProjectPostgresSyncResult:
         synced.append((name, admin_url, target_database, drop_previous))
-        return ProjectNeonSyncResult(
+        return ProjectPostgresSyncResult(
             project_name=name,
             target_database=target_database or name,
             temporary_database="demo_sync_20260101_000000",
@@ -259,17 +259,19 @@ def test_project_sync_neon_invokes_service(
         )
 
     monkeypatch.setattr(
-        project_cli, "sync_project_to_neon", fake_sync_project_to_neon
+        project_cli,
+        "sync_project_to_postgres",
+        fake_sync_project_to_postgres,
     )
 
     result = runner.invoke(
         app,
         [
             "project",
-            "sync-neon",
+            "sync-postgres",
             "demo",
             "--admin-url",
-            "postgresql://example/neondb",
+            "postgresql://example/postgres",
             "--target-database",
             "demo_remote",
             "--drop-previous",
@@ -278,8 +280,49 @@ def test_project_sync_neon_invokes_service(
 
     assert result.exit_code == 0
     assert synced == [
-        ("demo", "postgresql://example/neondb", "demo_remote", True)
+        ("demo", "postgresql://example/postgres", "demo_remote", True)
     ]
     payload = json.loads(result.stdout)
     assert payload["project_name"] == "demo"
     assert payload["target_database"] == "demo_remote"
+
+
+def test_project_sync_postgres_uses_admin_url_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    synced: list[tuple[str, str]] = []
+
+    def fake_sync_project_to_postgres(
+        name: str,
+        admin_url: str,
+        *,
+        target_database: str | None = None,
+        drop_previous: bool = False,
+    ) -> ProjectPostgresSyncResult:
+        _ = (target_database, drop_previous)
+        synced.append((name, admin_url))
+        return ProjectPostgresSyncResult(
+            project_name=name,
+            target_database=name,
+            temporary_database="demo_sync_20260101_000000",
+            validation=ProjectSyncValidation(
+                source_table_count=2,
+                target_table_count=2,
+                checked_table_count=2,
+            ),
+        )
+
+    monkeypatch.setenv(
+        "DR_LLM_POSTGRES_SYNC_ADMIN_URL",
+        "postgresql://example/postgres",
+    )
+    monkeypatch.setattr(
+        project_cli,
+        "sync_project_to_postgres",
+        fake_sync_project_to_postgres,
+    )
+
+    result = runner.invoke(app, ["project", "sync-postgres", "demo"])
+
+    assert result.exit_code == 0
+    assert synced == [("demo", "postgresql://example/postgres")]

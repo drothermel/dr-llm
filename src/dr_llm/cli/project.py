@@ -16,10 +16,10 @@ from dr_llm.project.project_service import (
     get_project,
     list_projects,
     restore_project,
-    sync_project_to_neon,
     start_project,
     stop_project,
 )
+from dr_llm.project.postgres_sync import sync_project_to_postgres
 
 project_app = typer.Typer(help="Manage isolated dr-llm project databases")
 
@@ -163,15 +163,18 @@ def project_restore(
     typer.secho(f"Restored '{name}' from {backup_file}", fg=typer.colors.GREEN)
 
 
-@project_app.command("sync-neon")
+@project_app.command("sync-postgres")
 @handle_cli_errors(ProjectError, FileNotFoundError)
-def project_sync_neon(
+def project_sync_postgres(
     name: str = typer.Argument(..., help="Local Docker project name"),
     admin_url: str = typer.Option(
         ...,
         "--admin-url",
-        envvar="DR_LLM_NEON_ADMIN_URL",
-        help="Direct Neon/Postgres admin URL used to create and swap databases.",
+        envvar="DR_LLM_POSTGRES_SYNC_ADMIN_URL",
+        help=(
+            "Direct Postgres-compatible admin URL used to create and swap "
+            "databases."
+        ),
     ),
     target_database: str | None = typer.Option(
         None,
@@ -184,7 +187,7 @@ def project_sync_neon(
         help="Drop the replaced remote database after a successful swap.",
     ),
 ) -> None:
-    result = sync_project_to_neon(
+    result = sync_project_to_postgres(
         name,
         admin_url,
         target_database=target_database,

@@ -224,7 +224,7 @@ class ProjectSyncValidation(BaseModel):
         return not self.mismatches
 
 
-class ProjectNeonSyncResult(BaseModel):
+class ProjectPostgresSyncResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     project_name: str

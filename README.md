@@ -119,6 +119,23 @@ many source samples are emitted as `pool_sample_imported` events.
 The demo scripts are the recommended end-to-end verification path because they
 use isolated stream names on every run and clean up temporary NATS containers.
 
+### Sync A Project To Postgres
+
+This command creates a temporary Docker Postgres project, seeds a small typed
+pool in the source database, syncs it into a separate Postgres-compatible target
+database, and reads the synced pool back:
+
+```bash
+uv run python scripts/demo-project-sync-postgres.py
+```
+
+Useful options:
+
+```bash
+uv run python scripts/demo-project-sync-postgres.py --help
+uv run python scripts/demo-project-sync-postgres.py --keep-projects
+```
+
 ### Import An Existing Pool
 
 This command should work with the currently running local `code_comp_t1`
