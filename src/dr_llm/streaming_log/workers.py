@@ -1,27 +1,28 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Callable
+from enum import StrEnum
+from typing import Any, Protocol, Self
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from dr_llm.llm import LlmResponse, ProviderRegistry, build_default_registry
-from dr_llm.streaming_log.client import (
-    ContextualEventPublisher,
-    StreamingLogClient,
+from dr_llm.llm import (
+    LlmRequest,
+    LlmResponse,
+    ProviderRegistry,
+    build_default_registry,
 )
+from dr_llm.streaming_log.client import StreamingLogClient
 from dr_llm.streaming_log.config import StreamingLogConfig
 from dr_llm.streaming_log.events import (
     EventContext,
     StreamingLogEventType,
     idempotency_key,
 )
-from dr_llm.streaming_log.payloads import prepare_json_payload
+from dr_llm.streaming_log.payloads import PreparedPayload, prepare_json_payload
 from dr_llm.streaming_log.work import QueuedWorkMessage
-
-logger = logging.getLogger(__name__)
 
 
 class StreamingWorkerConfig(BaseModel):
@@ -32,6 +33,357 @@ class StreamingWorkerConfig(BaseModel):
     fetch_timeout_seconds: float = Field(default=1.0, gt=0)
 
 
+class StreamingWorkOutcomeType(StrEnum):
+    succeeded = "succeeded"
+    retry_scheduled = "retry_scheduled"
+    failed = "failed"
+
+
+class StreamingWorkAttempt(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    work: QueuedWorkMessage
+    worker_id: str
+    attempt: int = Field(ge=1)
+    attempt_id: str
+
+    @classmethod
+    def from_message(cls, *, msg: Any, worker_id: str) -> Self:
+        work = QueuedWorkMessage.from_payload(msg.data)
+        attempt = int(getattr(msg.metadata, "num_delivered", 1))
+        return cls(
+            work=work,
+            worker_id=worker_id,
+            attempt=attempt,
+            attempt_id=cls.attempt_id_for(work=work, attempt=attempt),
+        )
+
+    @staticmethod
+    def attempt_id_for(*, work: QueuedWorkMessage, attempt: int) -> str:
+        return f"{work.work_id}-{attempt}"
+
+    def event_context(self) -> EventContext:
+        return EventContext.from_work_attempt(
+            self.work, attempt_id=self.attempt_id
+        )
+
+
+class StreamingWorkOutcome(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    outcome_type: StreamingWorkOutcomeType
+    attempt: int = Field(ge=1)
+    response: LlmResponse | None = None
+    error_type: str | None = None
+    error_message: str | None = None
+    next_attempt: int | None = Field(default=None, ge=2)
+
+    @classmethod
+    def succeeded(cls, *, attempt: int, response: LlmResponse) -> Self:
+        return cls(
+            outcome_type=StreamingWorkOutcomeType.succeeded,
+            attempt=attempt,
+            response=response,
+        )
+
+    @classmethod
+    def retry_scheduled(
+        cls, *, attempt: int, exc: Exception, next_attempt: int
+    ) -> Self:
+        return cls(
+            outcome_type=StreamingWorkOutcomeType.retry_scheduled,
+            attempt=attempt,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+            next_attempt=next_attempt,
+        )
+
+    @classmethod
+    def failed(cls, *, attempt: int, exc: Exception) -> Self:
+        return cls(
+            outcome_type=StreamingWorkOutcomeType.failed,
+            attempt=attempt,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+        )
+
+    @model_validator(mode="after")
+    def _validate_outcome_payload(self) -> Self:
+        if self.outcome_type is StreamingWorkOutcomeType.succeeded:
+            if self.response is None:
+                raise ValueError("succeeded outcomes require a response")
+            if self.error_type is not None or self.error_message is not None:
+                raise ValueError("succeeded outcomes cannot include errors")
+            if self.next_attempt is not None:
+                raise ValueError("succeeded outcomes cannot schedule retries")
+            return self
+        if self.response is not None:
+            raise ValueError("failure outcomes cannot include a response")
+        if self.error_type is None or self.error_message is None:
+            raise ValueError("failure outcomes require error details")
+        if (
+            self.outcome_type is StreamingWorkOutcomeType.retry_scheduled
+            and self.next_attempt is None
+        ):
+            raise ValueError("retry outcomes require next_attempt")
+        if (
+            self.outcome_type is StreamingWorkOutcomeType.failed
+            and self.next_attempt is not None
+        ):
+            raise ValueError("failed outcomes cannot schedule retries")
+        return self
+
+    def error_payload(self) -> dict[str, Any]:
+        if self.error_type is None or self.error_message is None:
+            raise ValueError("outcome has no error payload")
+        return {
+            "error_type": self.error_type,
+            "message": self.error_message,
+            "attempt": self.attempt,
+        }
+
+
+class StreamingWorkExecutor(Protocol):
+    async def generate(self, request: LlmRequest) -> LlmResponse: ...
+
+
+class StreamingEventPublisher(Protocol):
+    async def publish_event_with_payloads(
+        self,
+        event_type: StreamingLogEventType,
+        *,
+        idempotency_key: str,
+        payload: dict[str, Any] | None = None,
+        payloads: list[PreparedPayload] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any: ...
+
+
+class ProviderRegistryStreamingWorkExecutor:
+    def __init__(self, registry: ProviderRegistry) -> None:
+        self.registry = registry
+
+    async def generate(self, request: LlmRequest) -> LlmResponse:
+        orchestrator = self.registry.get(str(request.provider))
+        return await asyncio.to_thread(orchestrator.generate, request)
+
+
+class StreamingRetryPolicy:
+    def failure_outcome(
+        self, *, attempt: StreamingWorkAttempt, exc: Exception
+    ) -> StreamingWorkOutcome:
+        if attempt.attempt <= attempt.work.max_retries:
+            return StreamingWorkOutcome.retry_scheduled(
+                attempt=attempt.attempt,
+                exc=exc,
+                next_attempt=attempt.attempt + 1,
+            )
+        return StreamingWorkOutcome.failed(attempt=attempt.attempt, exc=exc)
+
+
+class StreamingWorkLifecycleReporter:
+    def __init__(
+        self,
+        *,
+        publisher: StreamingEventPublisher,
+        attempt: StreamingWorkAttempt,
+    ) -> None:
+        self.publisher = publisher
+        self.attempt = attempt
+
+    @classmethod
+    def from_client(
+        cls, *, client: StreamingLogClient, attempt: StreamingWorkAttempt
+    ) -> Self:
+        return cls(
+            publisher=client.with_event_context(attempt.event_context()),
+            attempt=attempt,
+        )
+
+    async def record_attempt_started(self) -> None:
+        await self.publisher.publish_event_with_payloads(
+            StreamingLogEventType.attempt_started,
+            idempotency_key=self.idempotency_key_for("attempt_started"),
+            payload={
+                "worker_id": self.attempt.worker_id,
+                "attempt": self.attempt.attempt,
+            },
+        )
+
+    async def record_provider_request_prepared(self) -> None:
+        request = self.attempt.work.request
+        request_payload = request.model_dump(
+            mode="json",
+            exclude_none=True,
+            exclude_computed_fields=True,
+        )
+        await self.publisher.publish_event_with_payloads(
+            StreamingLogEventType.provider_request_prepared,
+            idempotency_key=self.idempotency_key_for(
+                "provider_request_prepared"
+            ),
+            payload={
+                "provider": request.provider,
+                "model": request.model,
+                "mode": request.mode,
+            },
+            payloads=[prepare_json_payload("request_json", request_payload)],
+        )
+
+    async def record_success(self, outcome: StreamingWorkOutcome) -> None:
+        response = self._response_for(outcome)
+        response_payload = response.model_dump(
+            mode="json",
+            exclude_none=True,
+            exclude_computed_fields=True,
+        )
+        await self.publisher.publish_event_with_payloads(
+            StreamingLogEventType.provider_response_received,
+            idempotency_key=self.idempotency_key_for(
+                "provider_response_received"
+            ),
+            payload={
+                "provider": response.provider,
+                "model": response.model,
+                "mode": response.mode,
+                "finish_reason": response.finish_reason,
+            },
+            payloads=[prepare_json_payload("response_json", response_payload)],
+        )
+        await self.publisher.publish_event_with_payloads(
+            StreamingLogEventType.attempt_succeeded,
+            idempotency_key=self.idempotency_key_for("attempt_succeeded"),
+            payload={"attempt": self.attempt.attempt},
+        )
+        await self.publisher.publish_event_with_payloads(
+            StreamingLogEventType.work_completed,
+            idempotency_key=idempotency_key(
+                "work_completed", self.attempt.work.work_id
+            ),
+            payload={
+                "status": StreamingWorkOutcomeType.succeeded,
+                "attempt": self.attempt.attempt,
+            },
+        )
+
+    async def record_failure(self, outcome: StreamingWorkOutcome) -> None:
+        error_payload = outcome.error_payload()
+        await self.publisher.publish_event_with_payloads(
+            StreamingLogEventType.attempt_failed,
+            idempotency_key=self.idempotency_key_for("attempt_failed"),
+            payload=error_payload,
+            payloads=[prepare_json_payload("error_detail", error_payload)],
+        )
+        if outcome.outcome_type is StreamingWorkOutcomeType.retry_scheduled:
+            await self.record_retry_scheduled(outcome)
+            return
+        await self.record_work_failed(error_payload)
+
+    async def record_retry_scheduled(
+        self, outcome: StreamingWorkOutcome
+    ) -> None:
+        await self.publisher.publish_event_with_payloads(
+            StreamingLogEventType.work_retry_scheduled,
+            idempotency_key=self.idempotency_key_for("work_retry_scheduled"),
+            payload={
+                "attempt": self.attempt.attempt,
+                "next_attempt": outcome.next_attempt,
+            },
+        )
+
+    async def record_work_failed(self, error_payload: dict[str, Any]) -> None:
+        await self.publisher.publish_event_with_payloads(
+            StreamingLogEventType.work_completed,
+            idempotency_key=idempotency_key(
+                "work_completed", self.attempt.work.work_id
+            ),
+            payload={
+                "status": StreamingWorkOutcomeType.failed,
+                **error_payload,
+            },
+        )
+
+    def idempotency_key_for(self, event_name: str) -> str:
+        return idempotency_key(
+            event_name, self.attempt.work.work_id, self.attempt.attempt
+        )
+
+    @staticmethod
+    def _response_for(outcome: StreamingWorkOutcome) -> LlmResponse:
+        if outcome.response is None:
+            raise ValueError("outcome has no response")
+        return outcome.response
+
+
+class StreamingMessageAcknowledger:
+    async def apply(self, *, msg: Any, outcome: StreamingWorkOutcome) -> None:
+        if outcome.outcome_type is StreamingWorkOutcomeType.retry_scheduled:
+            await msg.nak()
+            return
+        await msg.ack()
+
+
+class StreamingWorkProcessor:
+    def __init__(
+        self,
+        *,
+        executor: StreamingWorkExecutor,
+        retry_policy: StreamingRetryPolicy | None = None,
+    ) -> None:
+        self.executor = executor
+        self.retry_policy = retry_policy or StreamingRetryPolicy()
+
+    async def process(
+        self,
+        *,
+        attempt: StreamingWorkAttempt,
+        reporter: StreamingWorkLifecycleReporter,
+    ) -> StreamingWorkOutcome:
+        await reporter.record_attempt_started()
+        await reporter.record_provider_request_prepared()
+        try:
+            response = await self.executor.generate(attempt.work.request)
+        except Exception as exc:  # noqa: BLE001
+            outcome = self.retry_policy.failure_outcome(
+                attempt=attempt, exc=exc
+            )
+            await reporter.record_failure(outcome)
+            return outcome
+        outcome = StreamingWorkOutcome.succeeded(
+            attempt=attempt.attempt, response=response
+        )
+        await reporter.record_success(outcome)
+        return outcome
+
+
+class StreamingWorkMessageHandler:
+    def __init__(
+        self,
+        *,
+        client: StreamingLogClient,
+        worker_id: str,
+        processor: StreamingWorkProcessor,
+        acknowledger: StreamingMessageAcknowledger | None = None,
+    ) -> None:
+        self.client = client
+        self.worker_id = worker_id
+        self.processor = processor
+        self.acknowledger = acknowledger or StreamingMessageAcknowledger()
+
+    async def process_message(self, msg: Any) -> StreamingWorkOutcome:
+        attempt = StreamingWorkAttempt.from_message(
+            msg=msg, worker_id=self.worker_id
+        )
+        reporter = StreamingWorkLifecycleReporter.from_client(
+            client=self.client, attempt=attempt
+        )
+        outcome = await self.processor.process(
+            attempt=attempt, reporter=reporter
+        )
+        await self.acknowledger.apply(msg=msg, outcome=outcome)
+        return outcome
+
+
 async def run_streaming_worker(
     *,
     client: StreamingLogClient | None = None,
@@ -39,200 +391,141 @@ async def run_streaming_worker(
     registry_factory: Callable[[], ProviderRegistry] = build_default_registry,
 ) -> None:
     config = config or StreamingWorkerConfig()
-    owns_client = client is None
-    if client is None:
-        client = StreamingLogClient(StreamingLogConfig())
-    if owns_client:
-        await client.connect()
-    registry = registry_factory()
-    processed = 0
+    client, owns_client = _worker_client(client)
+    registry: ProviderRegistry | None = None
     try:
-        await client.publish_event_with_payloads(
-            StreamingLogEventType.producer_started,
-            idempotency_key=idempotency_key(
-                "producer_started", config.worker_id
-            ),
-            payload={"worker_id": config.worker_id},
+        if owns_client:
+            await client.connect()
+        registry = registry_factory()
+        handler = _message_handler(
+            client=client,
+            worker_id=config.worker_id,
+            registry=registry,
         )
-        sub = await client.work_subscription()
-        while config.max_messages is None or processed < config.max_messages:
-            try:
-                messages = await sub.fetch(
-                    client.config.fetch_batch_size,
-                    timeout=config.fetch_timeout_seconds,
-                )
-            except TimeoutError:
-                continue
-            for msg in messages:
-                await _process_message(
-                    client=client,
-                    registry=registry,
-                    worker_id=config.worker_id,
-                    msg=msg,
-                )
-                processed += 1
-                if (
-                    config.max_messages is not None
-                    and processed >= config.max_messages
-                ):
-                    break
+        await _run_worker_session(
+            client=client, config=config, handler=handler
+        )
     finally:
-        try:
-            await client.publish_event_with_payloads(
-                StreamingLogEventType.producer_stopped,
-                idempotency_key=idempotency_key(
-                    "producer_stopped", config.worker_id
-                ),
-                payload={"worker_id": config.worker_id},
-            )
-        finally:
+        if registry is not None:
             registry.close()
-            if owns_client:
-                await client.close()
+        if owns_client:
+            await client.close()
 
 
-async def _process_message(
+def _worker_client(
+    client: StreamingLogClient | None,
+) -> tuple[StreamingLogClient, bool]:
+    if client is not None:
+        return client, False
+    return StreamingLogClient(StreamingLogConfig()), True
+
+
+def _message_handler(
     *,
     client: StreamingLogClient,
-    registry: ProviderRegistry,
     worker_id: str,
-    msg,
+    registry: ProviderRegistry,
+) -> StreamingWorkMessageHandler:
+    executor = ProviderRegistryStreamingWorkExecutor(registry)
+    processor = StreamingWorkProcessor(executor=executor)
+    return StreamingWorkMessageHandler(
+        client=client, worker_id=worker_id, processor=processor
+    )
+
+
+async def _run_worker_session(
+    *,
+    client: StreamingLogClient,
+    config: StreamingWorkerConfig,
+    handler: StreamingWorkMessageHandler,
 ) -> None:
-    work = QueuedWorkMessage.from_payload(msg.data)
-    attempt = int(getattr(msg.metadata, "num_delivered", 1))
-    attempt_id = f"{work.work_id}-{attempt}"
-    publisher = client.with_event_context(
-        EventContext.from_work_attempt(work, attempt_id=attempt_id)
-    )
-    await publisher.publish_event_with_payloads(
-        StreamingLogEventType.attempt_started,
-        idempotency_key=idempotency_key(
-            "attempt_started", work.work_id, attempt
-        ),
-        payload={"worker_id": worker_id, "attempt": attempt},
-    )
-    request_payload = work.request.model_dump(
-        mode="json",
-        exclude_none=True,
-        exclude_computed_fields=True,
-    )
-    await publisher.publish_event_with_payloads(
-        StreamingLogEventType.provider_request_prepared,
-        idempotency_key=idempotency_key(
-            "provider_request_prepared", work.work_id, attempt
-        ),
-        payload={
-            "provider": work.request.provider,
-            "model": work.request.model,
-            "mode": work.request.mode,
-        },
-        payloads=[prepare_json_payload("request_json", request_payload)],
-    )
+    processed = 0
     try:
-        response = await _generate_response(registry, work)
-    except Exception as exc:  # noqa: BLE001
-        await _handle_failure(
-            publisher=publisher,
-            work=work,
-            msg=msg,
-            exc=exc,
-            attempt=attempt,
+        await _publish_producer_started(
+            client=client, worker_id=config.worker_id
         )
-        return
-    await _handle_success(
-        publisher=publisher,
-        work=work,
-        msg=msg,
-        response=response,
-        attempt=attempt,
-    )
-
-
-async def _generate_response(
-    registry: ProviderRegistry, work: QueuedWorkMessage
-) -> LlmResponse:
-    orchestrator = registry.get(str(work.request.provider))
-    return await asyncio.to_thread(orchestrator.generate, work.request)
-
-
-async def _handle_success(
-    *,
-    publisher: ContextualEventPublisher,
-    work: QueuedWorkMessage,
-    msg,
-    response: LlmResponse,
-    attempt: int,
-) -> None:
-    response_payload = response.model_dump(
-        mode="json",
-        exclude_none=True,
-        exclude_computed_fields=True,
-    )
-    await publisher.publish_event_with_payloads(
-        StreamingLogEventType.provider_response_received,
-        idempotency_key=idempotency_key(
-            "provider_response_received", work.work_id, attempt
-        ),
-        payload={
-            "provider": response.provider,
-            "model": response.model,
-            "mode": response.mode,
-            "finish_reason": response.finish_reason,
-        },
-        payloads=[prepare_json_payload("response_json", response_payload)],
-    )
-    await publisher.publish_event_with_payloads(
-        StreamingLogEventType.attempt_succeeded,
-        idempotency_key=idempotency_key(
-            "attempt_succeeded", work.work_id, attempt
-        ),
-        payload={"attempt": attempt},
-    )
-    await publisher.publish_event_with_payloads(
-        StreamingLogEventType.work_completed,
-        idempotency_key=idempotency_key("work_completed", work.work_id),
-        payload={"status": "succeeded", "attempt": attempt},
-    )
-    await msg.ack()
-
-
-async def _handle_failure(
-    *,
-    publisher: ContextualEventPublisher,
-    work: QueuedWorkMessage,
-    msg,
-    exc: Exception,
-    attempt: int,
-) -> None:
-    error_payload = {
-        "error_type": type(exc).__name__,
-        "message": str(exc),
-        "attempt": attempt,
-    }
-    await publisher.publish_event_with_payloads(
-        StreamingLogEventType.attempt_failed,
-        idempotency_key=idempotency_key(
-            "attempt_failed", work.work_id, attempt
-        ),
-        payload=error_payload,
-        payloads=[prepare_json_payload("error_detail", error_payload)],
-    )
-    if attempt <= work.max_retries:
-        await publisher.publish_event_with_payloads(
-            StreamingLogEventType.work_retry_scheduled,
-            idempotency_key=idempotency_key(
-                "work_retry_scheduled", work.work_id, attempt
-            ),
-            payload={"attempt": attempt, "next_attempt": attempt + 1},
+        sub = await client.work_subscription()
+        while _should_process_more(config=config, processed=processed):
+            processed = await _process_next_batch(
+                sub=sub,
+                client=client,
+                config=config,
+                handler=handler,
+                processed=processed,
+            )
+    finally:
+        await _publish_producer_stopped(
+            client=client, worker_id=config.worker_id
         )
-        await msg.nak()
-        return
-    await publisher.publish_event_with_payloads(
-        StreamingLogEventType.work_completed,
-        idempotency_key=idempotency_key("work_completed", work.work_id),
-        payload={"status": "failed", **error_payload},
+
+
+async def _publish_producer_started(
+    *, client: StreamingLogClient, worker_id: str
+) -> None:
+    await client.publish_event_with_payloads(
+        StreamingLogEventType.producer_started,
+        idempotency_key=idempotency_key("producer_started", worker_id),
+        payload={"worker_id": worker_id},
     )
-    await msg.ack()
 
 
-__all__ = ["StreamingWorkerConfig", "run_streaming_worker"]
+async def _publish_producer_stopped(
+    *, client: StreamingLogClient, worker_id: str
+) -> None:
+    await client.publish_event_with_payloads(
+        StreamingLogEventType.producer_stopped,
+        idempotency_key=idempotency_key("producer_stopped", worker_id),
+        payload={"worker_id": worker_id},
+    )
+
+
+def _should_process_more(
+    *, config: StreamingWorkerConfig, processed: int
+) -> bool:
+    return config.max_messages is None or processed < config.max_messages
+
+
+async def _process_next_batch(
+    *,
+    sub: Any,
+    client: StreamingLogClient,
+    config: StreamingWorkerConfig,
+    handler: StreamingWorkMessageHandler,
+    processed: int,
+) -> int:
+    messages = await _fetch_messages(sub=sub, client=client, config=config)
+    for msg in messages:
+        await handler.process_message(msg)
+        processed += 1
+        if not _should_process_more(config=config, processed=processed):
+            break
+    return processed
+
+
+async def _fetch_messages(
+    *, sub: Any, client: StreamingLogClient, config: StreamingWorkerConfig
+) -> list[Any]:
+    try:
+        return await sub.fetch(
+            client.config.fetch_batch_size,
+            timeout=config.fetch_timeout_seconds,
+        )
+    except TimeoutError:
+        return []
+
+
+__all__ = [
+    "ProviderRegistryStreamingWorkExecutor",
+    "StreamingEventPublisher",
+    "StreamingMessageAcknowledger",
+    "StreamingRetryPolicy",
+    "StreamingWorkAttempt",
+    "StreamingWorkExecutor",
+    "StreamingWorkLifecycleReporter",
+    "StreamingWorkMessageHandler",
+    "StreamingWorkOutcome",
+    "StreamingWorkOutcomeType",
+    "StreamingWorkProcessor",
+    "StreamingWorkerConfig",
+    "run_streaming_worker",
+]

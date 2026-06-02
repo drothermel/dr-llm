@@ -30,8 +30,8 @@ Core implementation lives under
 | `bootstrap.py` | Creates and inspects JetStream streams, consumers, and object buckets. |
 | `client.py` | Publishes events, submits work, writes payloads, reads payload refs, and replays events. |
 | `events.py` | Event envelope, event types, producer metadata, and idempotency helpers. |
-| `work.py` | Queued work messages and worker configuration. |
-| `workers.py` | Async worker loop that runs real provider requests and emits lifecycle events. |
+| `work.py` | Queued work messages. |
+| `workers.py` | Public worker primitives plus the async JetStream worker entrypoint. |
 | `ingest_pools.py` | Snapshot import of existing Postgres pools into streaming-log facts. |
 | `cli.py` | `dr-llm streaming-log ...` commands. |
 
@@ -63,6 +63,24 @@ Use `client.publish_event_with_payloads(...)` directly for context-free
 operational events such as producer startup/shutdown. The event wire shape is
 unchanged: `EventContext` is only the construction primitive for shared
 envelope identity.
+
+## Worker Primitives
+
+`run_streaming_worker(...)` remains the CLI and demo entrypoint, but worker
+processing is built from public primitives so future systems can reuse or
+replace one concern at a time:
+
+- `StreamingWorkAttempt` decodes a queued message into work identity and
+  delivery-attempt metadata.
+- `StreamingWorkProcessor` coordinates one attempt at the workflow level.
+- `StreamingWorkExecutor` and `ProviderRegistryStreamingWorkExecutor` isolate
+  provider execution from queue handling.
+- `StreamingRetryPolicy` converts provider failures into retry or terminal
+  failure outcomes.
+- `StreamingEventPublisher` and `StreamingWorkLifecycleReporter` isolate
+  attempt, provider, retry, and completion event emission.
+- `StreamingMessageAcknowledger` applies the final `ack` or `nak` decision.
+- `StreamingWorkMessageHandler` wires those pieces for one JetStream message.
 
 ## Requirements
 

@@ -229,6 +229,13 @@ behavior for long-running provider calls if supported by the client.
 The permanent event stream should record attempts. The work stream should only
 coordinate available work.
 
+Worker processing should be composed from public primitives rather than one
+large queue-draining function. The transport loop owns connection, subscription,
+fetching, and shutdown. The per-message handler decodes delivery metadata,
+invokes a work processor, and applies the ack/nak decision. Provider execution,
+retry policy, payload serialization, and lifecycle event emission are separate
+replaceable primitives.
+
 ## Pool Import Phase
 
 The first phase of the full switchover is importing existing pools into the new
@@ -324,6 +331,8 @@ Unit tests:
 - Deterministic idempotency key generation.
 - Payload hashing and object key construction.
 - Payload reference serialization.
+- Streaming worker attempt decoding, retry policy, lifecycle event reporting,
+  and ack/nak decisions.
 - Snapshot import event construction from `PoolSample`.
 
 Integration tests with Docker NATS:
