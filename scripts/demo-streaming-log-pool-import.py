@@ -52,10 +52,18 @@ async def _run_import_demo(
     nats_url: str | None,
     keep_nats: bool,
     source_id: str | None,
+    sample_limit: int | None,
     event_sample_limit: int,
 ) -> None:
     step("1. Inspecting source pool")
     source_total = _print_source_pool_summary(dsn=dsn, pool_name=pool_name)
+    expected_import_count = (
+        min(source_total, sample_limit)
+        if sample_limit is not None
+        else source_total
+    )
+    if sample_limit is not None:
+        ok(f"Limiting import to {sample_limit} source samples")
 
     step("2. Preparing NATS")
     lease = prepare_demo_nats(nats_url=nats_url, keep_nats=keep_nats)
@@ -79,6 +87,7 @@ async def _run_import_demo(
                 dsn=dsn,
                 pool_name=pool_name,
                 source_id=source_id,
+                sample_limit=sample_limit,
             )
             ok(
                 f"Imported {result.imported_count} samples "
@@ -92,7 +101,7 @@ async def _run_import_demo(
             )
             counts = summarize_events(events)
             _verify_import_counts(
-                source_total=source_total,
+                expected_import_count=expected_import_count,
                 imported_count=result.imported_count,
                 counts=counts,
             )
@@ -134,18 +143,20 @@ def _print_source_pool_summary(*, dsn: str, pool_name: str) -> int:
 
 def _verify_import_counts(
     *,
-    source_total: int,
+    expected_import_count: int,
     imported_count: int,
     counts,
 ) -> None:
     sample_events = counts["pool_sample_imported"]
-    if imported_count != source_total:
+    if imported_count != expected_import_count:
         raise RuntimeError(
-            f"Importer returned {imported_count} rows, expected {source_total}"
+            "Importer returned "
+            f"{imported_count} rows, expected {expected_import_count}"
         )
-    if sample_events != source_total:
+    if sample_events != expected_import_count:
         raise RuntimeError(
-            f"Replayed {sample_events} sample events, expected {source_total}"
+            "Replayed "
+            f"{sample_events} sample events, expected {expected_import_count}"
         )
     if counts["pool_import_started"] != 1:
         raise RuntimeError("Expected exactly one pool_import_started event")
@@ -202,6 +213,10 @@ def main(
         str | None,
         typer.Option(help="Stable source database identifier."),
     ] = None,
+    sample_limit: Annotated[
+        int | None,
+        typer.Option(help="Import at most this many source samples."),
+    ] = None,
     event_sample_limit: Annotated[
         int,
         typer.Option(help="Number of replayed events to print."),
@@ -215,6 +230,7 @@ def main(
                 nats_url=nats_url,
                 keep_nats=keep_nats,
                 source_id=source_id,
+                sample_limit=sample_limit,
                 event_sample_limit=event_sample_limit,
             )
         )

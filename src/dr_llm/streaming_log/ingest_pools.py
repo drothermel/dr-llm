@@ -32,7 +32,9 @@ async def ingest_pool(
     dsn: str,
     pool_name: str,
     source_id: str | None = None,
+    sample_limit: int | None = None,
 ) -> PoolImportResult:
+    _validate_sample_limit(sample_limit)
     source = source_id or dsn
     runtime = DbRuntime(
         DbConfig(
@@ -60,6 +62,8 @@ async def ingest_pool(
         )
         event_ids.append(started.event_id)
         for sample in reader.samples():
+            if sample_limit is not None and imported_count >= sample_limit:
+                break
             event = await _publish_sample_imported(
                 client=client,
                 sample=sample,
@@ -116,7 +120,9 @@ async def ingest_pools(
     client: StreamingLogClient,
     dsn: str,
     source_id: str | None = None,
+    sample_limit: int | None = None,
 ) -> list[PoolImportResult]:
+    _validate_sample_limit(sample_limit)
     runtime = DbRuntime(
         DbConfig(
             dsn=dsn,
@@ -137,6 +143,7 @@ async def ingest_pools(
                 dsn=dsn,
                 pool_name=pool_name,
                 source_id=source_id,
+                sample_limit=sample_limit,
             )
         )
     return results
@@ -203,6 +210,11 @@ def _sample_snapshot_payload(sample: PoolSample) -> dict[str, Any]:
         exclude_none=True,
         exclude_computed_fields=True,
     )
+
+
+def _validate_sample_limit(sample_limit: int | None) -> None:
+    if sample_limit is not None and sample_limit < 1:
+        raise ValueError("sample_limit must be at least 1 when provided")
 
 
 __all__ = ["PoolImportResult", "ingest_pool", "ingest_pools"]

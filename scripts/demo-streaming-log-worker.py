@@ -3,6 +3,7 @@
 
 Usage:
   uv run python scripts/demo-streaming-log-worker.py
+  uv run python scripts/demo-streaming-log-worker.py --provider openai --model gpt-4o-mini
   uv run python scripts/demo-streaming-log-worker.py --keep-nats
 
 Prerequisites:
@@ -20,6 +21,7 @@ The demo:
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Annotated
 
 import typer
@@ -50,14 +52,28 @@ from dr_llm.llm import (
     build_default_registry,
 )
 from dr_llm.streaming_log import (
+    EventEnvelope,
     QueuedWorkMessage,
     StreamingLogClient,
     StreamingWorkerConfig,
     run_streaming_worker,
 )
 from dr_llm.streaming_log.bootstrap import bootstrap_streaming_log
+from dr_llm.streaming_log.payloads import PayloadRef
 
 app = typer.Typer()
+
+PROVIDER_PREFERENCE = [
+    ProviderName.OPENAI,
+    ProviderName.GOOGLE,
+    ProviderName.GLM,
+    ProviderName.OPENROUTER,
+    ProviderName.MINIMAX,
+    ProviderName.KIMI_CODE,
+    ProviderName.CODEX,
+    ProviderName.CLAUDE_CODE,
+    ProviderName.ANTHROPIC,
+]
 
 
 async def _run_worker_demo(
@@ -66,9 +82,15 @@ async def _run_worker_demo(
     keep_nats: bool,
     prompt: str,
     max_retries: int,
+    provider: ProviderName | None,
+    model: str | None,
 ) -> None:
     step("1. Detecting live provider")
-    provider, model, request = _build_live_request(prompt)
+    provider, model, request = _build_live_request(
+        prompt=prompt,
+        requested_provider=provider,
+        requested_model=model,
+    )
     ok(f"Using {provider}/{model}")
 
     step("2. Preparing NATS")
@@ -111,15 +133,16 @@ async def _run_worker_demo(
             step("6. Replaying and verifying events")
             events = await collect_streaming_log_events(
                 client,
-                expected_min_events=8,
+                expected_min_events=1,
             )
             counts = summarize_events(events)
-            _verify_worker_lifecycle(counts)
             verified_payloads = await verify_payload_refs(client, events)
+            _print_worker_event_summary(events)
+            await _print_failure_details(client, events)
+            _verify_worker_lifecycle(counts)
 
         ok(f"Verified {len(events)} replayed events")
         ok(f"Verified {len(verified_payloads)} payload references")
-        _print_worker_event_summary(events)
         ok("Streaming-log worker demo verified live execution")
     finally:
         if lease.should_destroy_container and lease.container_name is not None:
@@ -132,14 +155,24 @@ async def _run_worker_demo(
             )
 
 
-def _build_live_request(prompt: str):
+def _build_live_request(
+    *,
+    prompt: str,
+    requested_provider: ProviderName | None,
+    requested_model: str | None,
+):
     registry = build_default_registry()
     try:
-        available = _available_providers_or_exit(
-            registry.availability_statuses()
+        statuses = registry.availability_statuses()
+        available = _available_providers_or_exit(statuses)
+        provider = _select_provider(
+            available,
+            requested_provider=requested_provider,
         )
-        provider = available[0].provider
-        model = _resolve_model(provider)
+        model = _resolve_model(
+            provider,
+            requested_model=requested_model,
+        )
         info = show_model_json(provider, model)
         display = info.get("display_name", model)
         ok(f"Model info: {display}")
@@ -155,6 +188,26 @@ def _build_live_request(prompt: str):
         return provider, model, request
     finally:
         registry.close()
+
+
+def _select_provider(
+    available: list[ProviderAvailabilityStatus],
+    *,
+    requested_provider: ProviderName | None,
+) -> str:
+    available_by_name = {status.provider: status for status in available}
+    if requested_provider is not None:
+        provider = str(requested_provider)
+        if provider not in available_by_name:
+            raise RuntimeError(
+                f"Requested provider {provider!r} is not available"
+            )
+        return provider
+
+    for provider in PROVIDER_PREFERENCE:
+        if str(provider) in available_by_name:
+            return str(provider)
+    return available[0].provider
 
 
 def _available_providers_or_exit(
@@ -176,8 +229,11 @@ def _available_providers_or_exit(
     return available
 
 
-def _resolve_model(provider: str) -> str:
+def _resolve_model(provider: str, *, requested_model: str | None) -> str:
     sync_models_json(provider)
+    if requested_model is not None:
+        return requested_model
+
     models = list_models_json(provider)
     if not models:
         raise RuntimeError(f"No models found for {provider}")
@@ -190,6 +246,24 @@ def _resolve_model(provider: str) -> str:
             f"default model {default_model!r} not found; using {model_ids[0]!r}"
         )
     return model_ids[0]
+
+
+async def _print_failure_details(
+    client: StreamingLogClient,
+    events: list[EventEnvelope],
+) -> None:
+    for event in events:
+        if str(event.event_type) != "attempt_failed":
+            continue
+        for raw_ref in event.payload_refs:
+            if raw_ref.get("role") != "error_detail":
+                continue
+            data = await client.read_payload_ref(PayloadRef(**raw_ref))
+            detail = json.loads(data)
+            warn(
+                "Provider attempt failed: "
+                f"{detail.get('error_type')}: {detail.get('message')}"
+            )
 
 
 def _verify_worker_lifecycle(counts) -> None:
@@ -205,6 +279,12 @@ def _verify_worker_lifecycle(counts) -> None:
     ]
     missing = [event_type for event_type in expected if counts[event_type] < 1]
     if missing:
+        if counts["attempt_failed"] > 0:
+            raise RuntimeError(
+                "Provider work failed before a successful response; "
+                "see attempt_failed details above. Missing lifecycle events: "
+                + ", ".join(missing)
+            )
         raise RuntimeError(
             "Missing expected lifecycle events: " + ", ".join(missing)
         )
@@ -253,6 +333,18 @@ def main(
         int,
         typer.Option(help="Retry count for the submitted work message."),
     ] = 0,
+    provider: Annotated[
+        ProviderName | None,
+        typer.Option(
+            help="Provider to use. Defaults to a preferred available provider."
+        ),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            help="Model to use. Defaults to the demo model for the provider."
+        ),
+    ] = None,
 ) -> None:
     try:
         asyncio.run(
@@ -261,6 +353,8 @@ def main(
                 keep_nats=keep_nats,
                 prompt=prompt,
                 max_retries=max_retries,
+                provider=provider,
+                model=model,
             )
         )
     except Exception as exc:

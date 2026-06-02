@@ -42,10 +42,20 @@ def ingest_pool_command(
     source_id: str | None = typer.Option(
         None, "--source-id", help="Stable source database identifier."
     ),
+    sample_limit: int | None = typer.Option(
+        None,
+        "--sample-limit",
+        help="Import at most this many samples from the pool.",
+    ),
 ) -> None:
     """Import one existing pool as reconstructed snapshot facts."""
     result = asyncio.run(
-        _ingest_one_pool(dsn=dsn, pool_name=pool_name, source_id=source_id)
+        _ingest_one_pool(
+            dsn=dsn,
+            pool_name=pool_name,
+            source_id=source_id,
+            sample_limit=sample_limit,
+        )
     )
     console.print_json(result.model_dump_json())
 
@@ -56,9 +66,20 @@ def ingest_pools_command(
     source_id: str | None = typer.Option(
         None, "--source-id", help="Stable source database identifier."
     ),
+    sample_limit: int | None = typer.Option(
+        None,
+        "--sample-limit",
+        help="Import at most this many samples from each pool.",
+    ),
 ) -> None:
     """Import all discovered pools as reconstructed snapshot facts."""
-    results = asyncio.run(_ingest_all_pools(dsn=dsn, source_id=source_id))
+    results = asyncio.run(
+        _ingest_all_pools(
+            dsn=dsn,
+            source_id=source_id,
+            sample_limit=sample_limit,
+        )
+    )
     console.print_json(
         data={"pools": [result.model_dump(mode="json") for result in results]}
     )
@@ -85,22 +106,32 @@ def run_worker(
     asyncio.run(run_streaming_worker(config=config))
 
 
-async def _ingest_one_pool(*, dsn: str, pool_name: str, source_id: str | None):
+async def _ingest_one_pool(
+    *,
+    dsn: str,
+    pool_name: str,
+    source_id: str | None,
+    sample_limit: int | None,
+):
     async with StreamingLogClient(StreamingLogConfig()) as client:
         return await ingest_pool(
             client=client,
             dsn=dsn,
             pool_name=pool_name,
             source_id=source_id,
+            sample_limit=sample_limit,
         )
 
 
-async def _ingest_all_pools(*, dsn: str, source_id: str | None):
+async def _ingest_all_pools(
+    *, dsn: str, source_id: str | None, sample_limit: int | None
+):
     async with StreamingLogClient(StreamingLogConfig()) as client:
         return await ingest_pools(
             client=client,
             dsn=dsn,
             source_id=source_id,
+            sample_limit=sample_limit,
         )
 
 

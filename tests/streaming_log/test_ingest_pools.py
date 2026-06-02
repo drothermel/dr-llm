@@ -1,7 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+from typing import cast
+
+import pytest
+
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.streaming_log.ingest_pools import _sample_snapshot_payload
+from dr_llm.streaming_log import StreamingLogClient
+from dr_llm.streaming_log.ingest_pools import (
+    _sample_snapshot_payload,
+    ingest_pool,
+    ingest_pools,
+)
 
 
 def test_sample_snapshot_payload_preserves_pool_row_state() -> None:
@@ -28,3 +38,26 @@ def test_sample_snapshot_payload_preserves_pool_row_state() -> None:
     assert payload["finish_reason"] == "stop"
     assert payload["attempt_count"] == 2
     assert payload["metadata"] == {"m": 1}
+
+
+def test_ingest_pool_rejects_non_positive_sample_limit() -> None:
+    with pytest.raises(ValueError, match="sample_limit must be at least 1"):
+        asyncio.run(
+            ingest_pool(
+                client=cast(StreamingLogClient, None),
+                dsn="postgresql://unused",
+                pool_name="unused",
+                sample_limit=0,
+            )
+        )
+
+
+def test_ingest_pools_rejects_non_positive_sample_limit() -> None:
+    with pytest.raises(ValueError, match="sample_limit must be at least 1"):
+        asyncio.run(
+            ingest_pools(
+                client=cast(StreamingLogClient, None),
+                dsn="postgresql://unused",
+                sample_limit=0,
+            )
+        )
