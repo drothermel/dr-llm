@@ -277,3 +277,15 @@ def test_sync_project_to_postgres_rejects_invalid_admin_url(
         postgres_sync_module.sync_project_to_postgres("demo", "postgres")
 
     assert operations == []
+
+
+def test_pgpass_line_escapes_colons_and_backslashes() -> None:
+    line = postgres_sync_module._pgpass_line(
+        "db:host",
+        "5432",
+        "db\\name",
+        "user:name",
+        r"pa:ss\word",
+    )
+
+    assert line == r"db\:host:5432:db\\name:user\:name:pa\:ss\\word" + "\n"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -164,10 +164,10 @@ def test_timestamp_is_normalized_to_utc() -> None:
         event_type=StreamingLogEventType.producer_started,
         producer=ProducerInfo(),
         idempotency_key="same",
-        occurred_at=datetime.now(timezone.utc),
+        occurred_at=datetime.now(UTC),
     )
 
-    assert event.occurred_at.tzinfo is timezone.utc
+    assert event.occurred_at.tzinfo is UTC
 
 
 def test_event_context_rejects_extra_fields() -> None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,7 +28,7 @@ class StreamingLogConfig(BaseSettings):
     producer_version: str | None = None
 
 
-class NatsResourceStatus(BaseSettings):
+class NatsResourceStatus(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     events_stream: str

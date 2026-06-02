@@ -281,7 +281,11 @@ def test_prepare_demo_nats_starts_disposable_container(
         lambda: type("Uuid", (), {"hex": "abcdef123456"})(),
     )
 
-    def fake_call_docker(*args: str, check: bool = True, env=None):
+    def fake_call_docker(
+        *args: str,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         _ = (check, env)
         calls.append(args)
         if args[0] == "port":

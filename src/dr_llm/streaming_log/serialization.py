@@ -4,7 +4,9 @@ import json
 from typing import Any
 
 
-def canonical_json_bytes(value: Any) -> bytes:
+def canonical_json_bytes(
+    value: Any,  # noqa: ANN401 - accepts arbitrary JSON-serializable values
+) -> bytes:
     return json.dumps(
         value,
         sort_keys=True,

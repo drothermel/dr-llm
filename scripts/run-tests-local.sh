@@ -22,6 +22,8 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+trap cleanup EXIT
+
 # Clean up any leftover project from a prior run
 uv run dr-llm project destroy "${PROJECT_NAME}" --yes-really-delete-everything 2>/dev/null || true
 docker rm -f "${NATS_CONTAINER_NAME}" >/dev/null 2>&1 || true
@@ -62,8 +64,6 @@ DSN=$(echo "${PROJECT_JSON}" | uv run python -c "import sys,json; print(json.loa
   exit 1
 }
 echo "Postgres ready at ${DSN}"
-
-trap cleanup EXIT
 
 echo "Running integration tests..."
 DR_LLM_TEST_DATABASE_URL="${DSN}" \

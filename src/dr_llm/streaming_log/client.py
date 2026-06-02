@@ -26,6 +26,7 @@ from dr_llm.streaming_log.payloads import (
     PayloadRef,
     PreparedPayload,
     prepare_json_payload,
+    sha256_bytes,
 )
 from dr_llm.streaming_log.work import QueuedWorkMessage
 
@@ -112,7 +113,9 @@ class StreamingPayloadStore:
             raise PayloadIntegrityError(
                 f"Object {payload_ref.object_key!r} returned no bytes"
             )
-        return bytes(result.data)
+        data = bytes(result.data)
+        _validate_payload_ref_bytes(payload_ref, data)
+        return data
 
 
 class StreamingEventPublisher(Protocol):
@@ -260,6 +263,11 @@ class StreamingWorkQueue:
         return self.connection.config
 
     async def submit_work(self, work: QueuedWorkMessage) -> EventEnvelope:
+        if work.max_retries >= self.config.max_deliver:
+            raise ValueError(
+                "work.max_retries must be less than the streaming-log "
+                f"max_deliver setting ({self.config.max_deliver})"
+            )
         request_payload = prepare_json_payload(
             "request_json",
             work.request.model_dump(
@@ -301,6 +309,20 @@ class StreamingWorkQueue:
         return await sub.fetch(
             batch_size or self.config.fetch_batch_size,
             timeout=timeout,
+        )
+
+
+def _validate_payload_ref_bytes(payload_ref: PayloadRef, data: bytes) -> None:
+    if len(data) != payload_ref.size_bytes:
+        raise PayloadIntegrityError(
+            f"Object {payload_ref.object_key!r} size mismatch: "
+            f"{len(data)} != {payload_ref.size_bytes}"
+        )
+    digest = sha256_bytes(data)
+    if digest != payload_ref.sha256:
+        raise PayloadIntegrityError(
+            f"Object {payload_ref.object_key!r} sha256 mismatch: "
+            f"{digest} != {payload_ref.sha256}"
         )
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Any, Literal, Protocol, Self, TypeAlias
+from typing import Any, Literal, Protocol, Self
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -146,10 +146,10 @@ class StreamingWorkFailed(BaseModel):
         }
 
 
-StreamingWorkFailureOutcome: TypeAlias = (
+type StreamingWorkFailureOutcome = (
     StreamingWorkRetryScheduled | StreamingWorkFailed
 )
-StreamingWorkOutcome: TypeAlias = (
+type StreamingWorkOutcome = (
     StreamingWorkSucceeded | StreamingWorkFailureOutcome
 )
 
@@ -168,10 +168,18 @@ class ProviderRegistryStreamingWorkExecutor:
 
 
 class StreamingRetryPolicy:
+    def __init__(self, *, max_deliveries: int | None = None) -> None:
+        self.max_deliveries = max_deliveries
+
     def failure_outcome(
         self, *, attempt: StreamingWorkAttempt, exc: Exception
     ) -> StreamingWorkFailureOutcome:
-        if attempt.attempt <= attempt.work.max_retries:
+        should_retry = attempt.attempt <= attempt.work.max_retries
+        if self.max_deliveries is not None:
+            should_retry = (
+                should_retry and attempt.attempt < self.max_deliveries
+            )
+        if should_retry:
             return StreamingWorkRetryScheduled.from_exception(
                 attempt=attempt.attempt,
                 exc=exc,
@@ -427,7 +435,12 @@ def _message_handler(
     registry: ProviderRegistry,
 ) -> StreamingWorkMessageHandler:
     executor = ProviderRegistryStreamingWorkExecutor(registry)
-    processor = StreamingWorkProcessor(executor=executor)
+    processor = StreamingWorkProcessor(
+        executor=executor,
+        retry_policy=StreamingRetryPolicy(
+            max_deliveries=event_log.config.max_deliver
+        ),
+    )
     return StreamingWorkMessageHandler(
         event_log=event_log, worker_id=worker_id, processor=processor
     )

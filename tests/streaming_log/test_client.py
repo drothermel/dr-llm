@@ -85,6 +85,26 @@ def test_payload_store_reads_payload_ref_bytes() -> None:
     assert data == b"hello"
 
 
+def test_payload_store_rejects_payload_ref_hash_mismatch() -> None:
+    payload_store, _, _, fake_js = _clients()
+    payload = prepare_text_payload("stdout", "hello")
+    ref = payload.ref().model_copy(update={"sha256": "0" * 64})
+    fake_js.store.objects[payload.object_key] = payload.data
+
+    with pytest.raises(PayloadIntegrityError, match="sha256 mismatch"):
+        asyncio.run(payload_store.read_payload_ref(ref))
+
+
+def test_payload_store_rejects_payload_ref_size_mismatch() -> None:
+    payload_store, _, _, fake_js = _clients()
+    payload = prepare_text_payload("stdout", "hello")
+    ref = payload.ref().model_copy(update={"size_bytes": 6})
+    fake_js.store.objects[payload.object_key] = payload.data
+
+    with pytest.raises(PayloadIntegrityError, match="size mismatch"):
+        asyncio.run(payload_store.read_payload_ref(ref))
+
+
 def test_payload_store_rejects_empty_object_result() -> None:
     payload_store, _, _, fake_js = _clients()
     payload = prepare_text_payload("stdout", "hello")
@@ -106,6 +126,19 @@ def test_work_queue_publishes_event_before_work_message() -> None:
     assert fake_js.published[1].subject == "drllm.work.llm"
     assert fake_js.published[1].stream == "DRLLM_WORK"
     assert fake_js.store.objects
+
+
+def test_work_queue_rejects_retry_budget_that_exceeds_deliveries() -> None:
+    _, _, work_queue, fake_js = _clients()
+    work = QueuedWorkMessage(
+        work_id="work-1", request=_request(), max_retries=3
+    )
+
+    with pytest.raises(ValueError, match="max_retries"):
+        asyncio.run(work_queue.submit_work(work))
+
+    assert fake_js.published == []
+    assert fake_js.store.objects == {}
 
 
 def test_event_log_contextual_publisher_applies_context_and_writes_payloads() -> (

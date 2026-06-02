@@ -285,7 +285,7 @@ def _restore_sql_file(target_dsn: str, dump_path: Path) -> None:
     ) as pgpass:
         pgpass_path = Path(pgpass.name)
         os.chmod(pgpass_path, 0o600)
-        pgpass.write(f"{host}:{port}:{dbname}:{user}:{password}\n")
+        pgpass.write(_pgpass_line(host, port, dbname, user, password))
 
     env = os.environ.copy()
     env["PGPASSFILE"] = str(pgpass_path)
@@ -325,6 +325,17 @@ def _restore_sql_file(target_dsn: str, dump_path: Path) -> None:
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace").strip()
         raise ProjectError(f"psql restore failed: {stderr or 'unknown error'}")
+
+
+def _pgpass_line(
+    host: str, port: str, dbname: str, user: str, password: str
+) -> str:
+    fields = (host, port, dbname, user, password)
+    return ":".join(_pgpass_field(field) for field in fields) + "\n"
+
+
+def _pgpass_field(value: str) -> str:
+    return value.replace("\\", "\\\\").replace(":", "\\:")
 
 
 def _connect_admin(admin_url: str) -> psycopg.Connection[tuple]:

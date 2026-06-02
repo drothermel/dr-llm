@@ -298,6 +298,25 @@ def test_retry_policy_retries_through_configured_max_retries() -> None:
     assert failure.outcome_type is StreamingWorkOutcomeType.failed
 
 
+def test_retry_policy_terminal_fails_on_final_delivery() -> None:
+    policy = StreamingRetryPolicy(max_deliveries=3)
+    work = _work(max_retries=3)
+    final_delivery = StreamingWorkAttempt(
+        work=work,
+        worker_id="worker-1",
+        attempt=3,
+        attempt_id="work-1-3",
+    )
+
+    outcome = policy.failure_outcome(
+        attempt=final_delivery, exc=RuntimeError("stop")
+    )
+
+    assert isinstance(outcome, StreamingWorkFailed)
+    assert outcome.outcome_type is StreamingWorkOutcomeType.failed
+    assert outcome.attempt == 3
+
+
 def test_success_outcome_requires_response() -> None:
     model = cast(Any, StreamingWorkSucceeded)
 
