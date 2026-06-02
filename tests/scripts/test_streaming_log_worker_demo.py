@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 from typer.testing import CliRunner
 
@@ -30,10 +31,16 @@ def _load_worker_demo() -> ModuleType:
 
 def test_worker_demo_command_forwards_provider_options(monkeypatch) -> None:
     worker_demo = _load_worker_demo()
-    calls: list[object] = []
+    calls: list[str] = []
 
-    async def fake_run_worker_demo(options: object) -> None:
-        calls.append(options)
+    async def fake_run_worker_demo(options: Any) -> None:
+        assert options.nats.nats_url == "nats://localhost:4222"
+        assert options.nats.keep_nats
+        assert options.provider == ProviderName.ANTHROPIC
+        assert options.prompt == "hello"
+        assert options.max_retries == 2
+        assert options.model == "claude-test"
+        calls.append("run")
 
     monkeypatch.setattr(
         worker_demo,
@@ -59,12 +66,4 @@ def test_worker_demo_command_forwards_provider_options(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
-    assert len(calls) == 1
-    options = calls[0]
-    assert isinstance(options, worker_demo.WorkerDemoOptions)
-    assert options.nats.nats_url == "nats://localhost:4222"
-    assert options.nats.keep_nats
-    assert options.provider == ProviderName.ANTHROPIC
-    assert options.prompt == "hello"
-    assert options.max_retries == 2
-    assert options.model == "claude-test"
+    assert calls == ["run"]

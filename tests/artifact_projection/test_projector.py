@@ -8,10 +8,12 @@ from typing import Any
 import pytest
 
 from dr_llm.artifact_projection import (
+    ArtifactIndexSummary,
     ArtifactProjectionConfig,
     ArtifactStore,
     PayloadArtifactSource,
     ProjectionError,
+    ProjectionErrorKind,
 )
 from dr_llm.artifact_projection.index import ArtifactIndex
 from dr_llm.artifact_projection.projector import (
@@ -140,27 +142,79 @@ def test_projector_records_missing_payload_error_and_acks(
 
     assert result.error_count == 1
     assert message.acked
-    with ArtifactIndex(config.index_path) as index:
-        summary = index.summary(
-            projection_version=config.projection_version,
-            durable_consumer=config.durable_consumer,
-        )
-        row = index.connection.execute(
-            """
-            SELECT error_json
-            FROM projection_errors
-            ORDER BY error_id
-            """
-        ).fetchone()
+    error = _single_projection_error(config)
+    summary = _summary(config)
     assert summary.error_count == 1
     assert summary.artifact_count == 0
-    assert row is not None
-    error = ProjectionError.model_validate_json(row["error_json"])
     assert error.source_ref.event_id == event.event_id
     assert error.source_ref.idempotency_key == "idem-1"
     assert error.source_ref.payload_role == "response_json"
     assert error.event_context.run_id == "run-1"
     assert error.event_context.metadata == {"purpose": "projection-test"}
+
+
+def test_projector_records_payload_size_mismatch_error_and_acks(
+    tmp_path: Path,
+) -> None:
+    config = ArtifactProjectionConfig(artifact_root=tmp_path)
+    store = ArtifactStore(config=config)
+    store.initialize()
+    payload = prepare_json_payload("response_json", {"ok": True})
+    event = _event(payload.ref())
+    message = FakeMessage(event)
+    projector = ArtifactProjector(
+        config=config,
+        store=store,
+        payload_reader=FakePayloadReader({payload.object_key: b"too-small"}),
+    )
+
+    result = _run(
+        projector.process_delivery(
+            ArtifactEventDelivery(
+                event=event, stream_sequence=9, message=message
+            )
+        )
+    )
+
+    assert result.projected_count == 0
+    assert result.error_count == 1
+    assert message.acked
+    assert _summary(config).artifact_count == 0
+    assert _single_projection_error(config).error_kind is (
+        ProjectionErrorKind.source_size_mismatch
+    )
+
+
+def test_projector_records_payload_hash_mismatch_error_and_acks(
+    tmp_path: Path,
+) -> None:
+    config = ArtifactProjectionConfig(artifact_root=tmp_path)
+    store = ArtifactStore(config=config)
+    store.initialize()
+    payload = prepare_json_payload("response_json", {"ok": True})
+    event = _event(payload.ref())
+    message = FakeMessage(event)
+    projector = ArtifactProjector(
+        config=config,
+        store=store,
+        payload_reader=FakePayloadReader({payload.object_key: b'{"ok":null}'}),
+    )
+
+    result = _run(
+        projector.process_delivery(
+            ArtifactEventDelivery(
+                event=event, stream_sequence=10, message=message
+            )
+        )
+    )
+
+    assert result.projected_count == 0
+    assert result.error_count == 1
+    assert message.acked
+    assert _summary(config).artifact_count == 0
+    assert _single_projection_error(config).error_kind is (
+        ProjectionErrorKind.source_hash_mismatch
+    )
 
 
 def test_stream_sequence_for_message_reads_metadata() -> None:
@@ -192,3 +246,26 @@ def _event(*payload_refs: PayloadRef) -> EventEnvelope:
 
 def _run(awaitable: Any) -> Any:
     return asyncio.run(awaitable)
+
+
+def _summary(config: ArtifactProjectionConfig) -> ArtifactIndexSummary:
+    with ArtifactIndex(config.index_path) as index:
+        return index.summary(
+            projection_version=config.projection_version,
+            durable_consumer=config.durable_consumer,
+        )
+
+
+def _single_projection_error(
+    config: ArtifactProjectionConfig,
+) -> ProjectionError:
+    with ArtifactIndex(config.index_path) as index:
+        rows = index.connection.execute(
+            """
+            SELECT error_json
+            FROM projection_errors
+            ORDER BY error_id
+            """
+        ).fetchall()
+    assert len(rows) == 1
+    return ProjectionError.model_validate_json(rows[0]["error_json"])

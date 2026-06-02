@@ -329,6 +329,7 @@ def test_success_outcome_has_no_error_payload_api() -> None:
 
     assert outcome.attempt == 1
     assert outcome.response == _response(_request())
+    assert not hasattr(outcome, "error_payload")
 
 
 def test_retry_outcome_requires_next_attempt() -> None:

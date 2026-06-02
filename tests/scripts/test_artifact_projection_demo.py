@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 from typer.testing import CliRunner
 
@@ -37,10 +38,13 @@ def test_artifact_demo_command_forwards_options(
     tmp_path: Path, monkeypatch
 ) -> None:
     artifact_demo = _load_artifact_demo()
-    calls: list[object] = []
+    calls: list[str] = []
 
-    async def fake_run_artifact_demo(options: object) -> None:
-        calls.append(options)
+    async def fake_run_artifact_demo(options: Any) -> None:
+        assert options.nats.nats_url == "nats://localhost:4222"
+        assert options.nats.keep_nats
+        assert options.artifact_root == tmp_path
+        calls.append("run")
 
     monkeypatch.setattr(
         artifact_demo,
@@ -60,9 +64,4 @@ def test_artifact_demo_command_forwards_options(
     )
 
     assert result.exit_code == 0
-    assert len(calls) == 1
-    options = calls[0]
-    assert isinstance(options, artifact_demo.ArtifactProjectionDemoOptions)
-    assert options.nats.nats_url == "nats://localhost:4222"
-    assert options.nats.keep_nats
-    assert options.artifact_root == tmp_path
+    assert calls == ["run"]
