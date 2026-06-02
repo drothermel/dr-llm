@@ -41,6 +41,17 @@ from dr_llm.demo.projects import (
 )
 from dr_llm.demo.prompts import DemoPrompts
 from dr_llm.demo.requirements import ensure_docker_available
+from dr_llm.demo.streaming_log import (
+    DemoNatsLease,
+    PayloadVerification,
+    cleanup_demo_nats,
+    collect_streaming_log_events,
+    demo_streaming_log_config,
+    prepare_demo_nats,
+    summarize_events,
+    verify_payload_refs,
+    wait_for_nats,
+)
 
 __all__ = [
     "command",
@@ -55,7 +66,12 @@ __all__ = [
     "DemoCounts",
     "DemoDsnLease",
     "DemoPrompts",
+    "DemoNatsLease",
     "demo_pool_fill_llm_configs",
+    "PayloadVerification",
+    "cleanup_demo_nats",
+    "collect_streaming_log_events",
+    "demo_streaming_log_config",
     "ensure_docker_available",
     "fail",
     "header",
@@ -63,6 +79,7 @@ __all__ = [
     "ok",
     "POOL_PROGRESS_FIELDS",
     "prepare_demo_dsn",
+    "prepare_demo_nats",
     "print_list",
     "query_json",
     "require_demo_project_dsn",
@@ -73,6 +90,9 @@ __all__ = [
     "stream_models_list",
     "stream_models_sync",
     "sync_models_json",
+    "summarize_events",
+    "verify_payload_refs",
+    "wait_for_nats",
     "temporary_demo_project",
     "temporary_demo_project_name",
     "warn",

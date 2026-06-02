@@ -11,9 +11,13 @@ import dr_llm.demo.cli_calls as demo_cli_calls
 import dr_llm.demo.counts as demo_counts
 import dr_llm.demo.projects as demo_projects
 import dr_llm.demo.requirements as demo_requirements
+import dr_llm.demo.streaming_log as demo_streaming_log
 from dr_llm.pool import LlmPoolBackendState
 from dr_llm.project import CreateProjectRequest, ProjectInfo
 from dr_llm.project.errors import DockerUnavailableError
+from dr_llm.streaming_log import EventEnvelope, ProducerInfo
+from dr_llm.streaming_log.events import StreamingLogEventType
+from dr_llm.streaming_log.payloads import PayloadRef
 from dr_llm.workers import WorkerSnapshot, WorkerStatCounts
 
 
@@ -221,6 +225,147 @@ def test_prepare_demo_dsn_uses_existing_dsn(
     assert lease == demo_projects.DemoDsnLease(
         dsn="postgresql://localhost/demo"
     )
+
+
+def test_demo_streaming_log_config_uses_isolated_subjects() -> None:
+    config = demo_streaming_log.demo_streaming_log_config(
+        nats_url="nats://localhost:4222",
+        suffix="abc123",
+    )
+
+    assert config.events_stream == "DRLLM_DEMO_EVENTS_ABC123"
+    assert config.work_stream == "DRLLM_DEMO_WORK_ABC123"
+    assert config.payload_bucket == "DRLLM_DEMO_PAYLOADS_ABC123"
+    assert config.events_subject == "drllm.demo.abc123.events.>"
+    assert config.work_subject == "drllm.demo.abc123.work.>"
+    assert config.llm_work_subject == "drllm.demo.abc123.work.llm"
+
+
+def test_prepare_demo_nats_uses_existing_url_without_docker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_docker_check(
+        *, reason: str, recovery_hint: str | None = None
+    ) -> None:
+        _ = (reason, recovery_hint)
+        raise AssertionError("Docker should not be checked")
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "ensure_docker_available",
+        fail_docker_check,
+    )
+
+    lease = demo_streaming_log.prepare_demo_nats(
+        nats_url="nats://localhost:4222"
+    )
+
+    assert lease == demo_streaming_log.DemoNatsLease(
+        nats_url="nats://localhost:4222"
+    )
+
+
+def test_prepare_demo_nats_starts_disposable_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "ensure_docker_available",
+        lambda *, reason, recovery_hint=None: None,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "uuid4",
+        lambda: type("Uuid", (), {"hex": "abcdef123456"})(),
+    )
+
+    def fake_call_docker(*args: str, check: bool = True, env=None):
+        _ = (check, env)
+        calls.append(args)
+        if args[0] == "port":
+            return subprocess.CompletedProcess(
+                ["docker", *args],
+                0,
+                stdout="127.0.0.1:45555\n",
+            )
+        return subprocess.CompletedProcess(["docker", *args], 0, stdout="")
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "call_docker",
+        fake_call_docker,
+    )
+
+    lease = demo_streaming_log.prepare_demo_nats(nats_url=None)
+
+    assert lease.nats_url == "nats://127.0.0.1:45555"
+    assert lease.container_name == "dr_llm_demo_nats_abcdef12"
+    assert lease.should_destroy_container
+    assert calls[0][:5] == (
+        "run",
+        "-d",
+        "--name",
+        "dr_llm_demo_nats_abcdef12",
+        "-p",
+    )
+    assert calls[1] == ("port", "dr_llm_demo_nats_abcdef12", "4222/tcp")
+
+
+def test_summarize_events_counts_event_types() -> None:
+    events = [
+        EventEnvelope(
+            event_type=StreamingLogEventType.work_submitted,
+            producer=ProducerInfo(name="test"),
+            idempotency_key="one",
+        ),
+        EventEnvelope(
+            event_type=StreamingLogEventType.work_submitted,
+            producer=ProducerInfo(name="test"),
+            idempotency_key="two",
+        ),
+        EventEnvelope(
+            event_type=StreamingLogEventType.work_completed,
+            producer=ProducerInfo(name="test"),
+            idempotency_key="three",
+        ),
+    ]
+
+    counts = demo_streaming_log.summarize_events(events)
+
+    assert counts["work_submitted"] == 2
+    assert counts["work_completed"] == 1
+
+
+def test_verify_payload_refs_detects_hash_mismatch() -> None:
+    class FakeClient:
+        async def read_payload_ref(self, payload_ref: PayloadRef) -> bytes:
+            _ = payload_ref
+            return b"wrong"
+
+    event = EventEnvelope(
+        event_type=StreamingLogEventType.work_submitted,
+        producer=ProducerInfo(name="test"),
+        idempotency_key="one",
+        payload_refs=[
+            PayloadRef(
+                role="request_json",
+                object_key="sha256/00/test",
+                sha256="0" * 64,
+                size_bytes=5,
+                content_type="application/json",
+                encoding="utf-8",
+            ).model_dump(mode="json")
+        ],
+    )
+
+    import asyncio
+
+    with pytest.raises(RuntimeError, match="Payload hash mismatch"):
+        asyncio.run(
+            demo_streaming_log.verify_payload_refs(FakeClient(), [event])
+        )
 
 
 def test_prepare_demo_dsn_creates_disposable_project(

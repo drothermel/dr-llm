@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""Demo: submit one real LLM request and process it through the streaming log.
+
+Usage:
+  uv run python scripts/demo-streaming-log-worker.py
+  uv run python scripts/demo-streaming-log-worker.py --keep-nats
+
+Prerequisites:
+  1. At least one real provider available through API keys or CLI tools.
+  2. Docker running, unless --nats-url points at an existing NATS server.
+
+The demo:
+  - Auto-detects an available provider/model
+  - Starts a temporary NATS JetStream server when --nats-url is omitted
+  - Submits a real work message
+  - Runs the async streaming-log worker for one message
+  - Replays and verifies lifecycle events and payload references
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Annotated
+
+import typer
+
+from dr_llm.demo import (
+    DEMO_QUERY_DEFAULT_MODELS,
+    DemoPrompts,
+    cleanup_demo_nats,
+    collect_streaming_log_events,
+    command_hint,
+    demo_streaming_log_config,
+    fail,
+    list_models_json,
+    ok,
+    prepare_demo_nats,
+    show_model_json,
+    step,
+    summarize_events,
+    sync_models_json,
+    verify_payload_refs,
+    wait_for_nats,
+    warn,
+)
+from dr_llm.llm import (
+    Message,
+    ProviderAvailabilityStatus,
+    ProviderName,
+    build_default_registry,
+)
+from dr_llm.streaming_log import (
+    QueuedWorkMessage,
+    StreamingLogClient,
+    StreamingWorkerConfig,
+    run_streaming_worker,
+)
+from dr_llm.streaming_log.bootstrap import bootstrap_streaming_log
+
+app = typer.Typer()
+
+
+async def _run_worker_demo(
+    *,
+    nats_url: str | None,
+    keep_nats: bool,
+    prompt: str,
+    max_retries: int,
+) -> None:
+    step("1. Detecting live provider")
+    provider, model, request = _build_live_request(prompt)
+    ok(f"Using {provider}/{model}")
+
+    step("2. Preparing NATS")
+    lease = prepare_demo_nats(nats_url=nats_url, keep_nats=keep_nats)
+    ok(f"NATS ready at {lease.nats_url}")
+    await wait_for_nats(lease.nats_url)
+    config = demo_streaming_log_config(nats_url=lease.nats_url)
+    ok(f"Using event stream {config.events_stream}")
+    ok(f"Using work stream {config.work_stream}")
+    ok(f"Using payload bucket {config.payload_bucket}")
+
+    try:
+        step("3. Bootstrapping streaming-log resources")
+        await bootstrap_streaming_log(config)
+
+        async with StreamingLogClient(config) as client:
+            step("4. Submitting work")
+            work = QueuedWorkMessage(
+                request=request,
+                source="demo-streaming-log-worker",
+                metadata={"demo": "streaming-log-worker"},
+                max_retries=max_retries,
+            )
+            submitted = await client.submit_work(work)
+            ok(
+                f"Submitted work_id={work.work_id} "
+                f"event_id={submitted.event_id}"
+            )
+
+            step("5. Running async streaming worker")
+            await run_streaming_worker(
+                client=client,
+                config=StreamingWorkerConfig(
+                    worker_id="demo-streaming-worker",
+                    max_messages=1,
+                ),
+            )
+            ok("Worker processed one live message")
+
+            step("6. Replaying and verifying events")
+            events = await collect_streaming_log_events(
+                client,
+                expected_min_events=8,
+            )
+            counts = summarize_events(events)
+            _verify_worker_lifecycle(counts)
+            verified_payloads = await verify_payload_refs(client, events)
+
+        ok(f"Verified {len(events)} replayed events")
+        ok(f"Verified {len(verified_payloads)} payload references")
+        _print_worker_event_summary(events)
+        ok("Streaming-log worker demo verified live execution")
+    finally:
+        if lease.should_destroy_container and lease.container_name is not None:
+            step("Destroying temporary NATS")
+            cleanup_demo_nats(lease)
+        elif lease.container_name is not None:
+            command_hint(
+                "Destroy NATS",
+                f"docker rm -f {lease.container_name}",
+            )
+
+
+def _build_live_request(prompt: str):
+    registry = build_default_registry()
+    try:
+        available = _available_providers_or_exit(
+            registry.availability_statuses()
+        )
+        provider = available[0].provider
+        model = _resolve_model(provider)
+        info = show_model_json(provider, model)
+        display = info.get("display_name", model)
+        ok(f"Model info: {display}")
+        orchestrator = registry.get(provider)
+        defaults = orchestrator.request_defaults(model)
+        request = orchestrator.build_request(
+            model=model,
+            messages=[Message(role="user", content=prompt)],
+            max_tokens=defaults.max_tokens,
+            effort=defaults.effort,
+            reasoning=defaults.reasoning,
+        )
+        return provider, model, request
+    finally:
+        registry.close()
+
+
+def _available_providers_or_exit(
+    statuses: list[ProviderAvailabilityStatus],
+) -> list[ProviderAvailabilityStatus]:
+    available: list[ProviderAvailabilityStatus] = []
+    for status in statuses:
+        if status.available:
+            available.append(status)
+            continue
+        reasons = [f"{env_var} not set" for env_var in status.missing_env_vars]
+        reasons.extend(
+            f"'{executable}' CLI not found"
+            for executable in status.missing_executables
+        )
+        warn(f"{status.provider}: {', '.join(reasons)}")
+    if not available:
+        raise RuntimeError("No live providers available")
+    return available
+
+
+def _resolve_model(provider: str) -> str:
+    sync_models_json(provider)
+    models = list_models_json(provider)
+    if not models:
+        raise RuntimeError(f"No models found for {provider}")
+    model_ids = [str(model["model"]) for model in models]
+    default_model = DEMO_QUERY_DEFAULT_MODELS.get(ProviderName(provider))
+    if default_model is not None and default_model in model_ids:
+        return default_model
+    if default_model is not None:
+        warn(
+            f"default model {default_model!r} not found; using {model_ids[0]!r}"
+        )
+    return model_ids[0]
+
+
+def _verify_worker_lifecycle(counts) -> None:
+    expected = [
+        "work_submitted",
+        "producer_started",
+        "attempt_started",
+        "provider_request_prepared",
+        "provider_response_received",
+        "attempt_succeeded",
+        "work_completed",
+        "producer_stopped",
+    ]
+    missing = [event_type for event_type in expected if counts[event_type] < 1]
+    if missing:
+        raise RuntimeError(
+            "Missing expected lifecycle events: " + ", ".join(missing)
+        )
+    ok("Lifecycle events verified: " + ", ".join(expected))
+
+
+def _print_worker_event_summary(events) -> None:
+    step("7. Event sequence")
+    for event in events:
+        roles = [
+            str(ref.get("role"))
+            for ref in event.payload_refs
+            if isinstance(ref, dict)
+        ]
+        print(
+            f"  {event.event_type} "
+            f"work_id={event.work_id or '-'} "
+            f"attempt_id={event.attempt_id or '-'} "
+            f"payload_roles={roles or '-'}"
+        )
+
+
+@app.command()
+def main(
+    nats_url: Annotated[
+        str | None,
+        typer.Option(
+            help=(
+                "NATS URL. If omitted, a temporary Docker NATS server is "
+                "created."
+            )
+        ),
+    ] = None,
+    keep_nats: Annotated[
+        bool,
+        typer.Option(
+            "--keep-nats",
+            help="Keep the auto-created NATS container for inspection.",
+        ),
+    ] = False,
+    prompt: Annotated[
+        str,
+        typer.Option(help="Prompt to submit as live streaming work."),
+    ] = DemoPrompts.TWO_PLUS_TWO,
+    max_retries: Annotated[
+        int,
+        typer.Option(help="Retry count for the submitted work message."),
+    ] = 0,
+) -> None:
+    try:
+        asyncio.run(
+            _run_worker_demo(
+                nats_url=nats_url,
+                keep_nats=keep_nats,
+                prompt=prompt,
+                max_retries=max_retries,
+            )
+        )
+    except Exception as exc:
+        fail(str(exc))
+        raise typer.Exit(1) from exc
+
+
+if __name__ == "__main__":
+    app()
