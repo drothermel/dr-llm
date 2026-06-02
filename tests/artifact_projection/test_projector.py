@@ -69,6 +69,38 @@ def test_projector_writes_artifact_before_ack(tmp_path: Path) -> None:
     assert ArtifactReader(config).read_json(reference) == {"ok": True}
 
 
+def test_projector_skips_duplicate_ref_in_same_event(tmp_path: Path) -> None:
+    config = ArtifactProjectionConfig(artifact_root=tmp_path)
+    store = ArtifactStore(config=config)
+    store.initialize()
+    payload = prepare_json_payload("response_json", {"ok": True})
+    event = _event(payload.ref(), payload.ref())
+    message = FakeMessage(event)
+    projector = ArtifactProjector(
+        config=config,
+        store=store,
+        payload_reader=FakePayloadReader({payload.object_key: payload.data}),
+    )
+
+    result = _run(
+        projector.process_delivery(
+            ArtifactEventDelivery(
+                event=event, stream_sequence=7, message=message
+            )
+        )
+    )
+
+    assert result.projected_count == 1
+    assert result.skipped_count == 1
+    assert message.acked
+    summary = store.index.summary(
+        projection_version=config.projection_version,
+        durable_consumer=config.durable_consumer,
+    )
+    assert summary.artifact_count == 1
+    assert summary.open_artifact_count == 0
+
+
 def test_projector_records_missing_payload_error_and_acks(
     tmp_path: Path,
 ) -> None:
@@ -103,12 +135,12 @@ def test_projector_records_missing_payload_error_and_acks(
     assert summary.artifact_count == 0
 
 
-def _event(payload_ref: PayloadRef) -> EventEnvelope:
+def _event(*payload_refs: PayloadRef) -> EventEnvelope:
     return EventEnvelope(
         event_type=StreamingLogEventType.provider_response_received,
         producer=ProducerInfo(name="test"),
         idempotency_key="idem-1",
-        payload_refs=[payload_ref],
+        payload_refs=list(payload_refs),
     )
 
 

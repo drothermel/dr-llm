@@ -9,6 +9,7 @@ from typing import cast
 from uuid import uuid4
 
 import numpy as np
+from pydantic import BaseModel, ConfigDict
 import zarr
 
 from dr_llm.artifact_projection.config import ArtifactProjectionConfig
@@ -23,6 +24,20 @@ from dr_llm.artifact_projection.models import (
     PayloadArtifactSource,
     ShardManifest,
 )
+
+
+class FinalizedShard(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    manifest: ShardManifest
+    references: list[ArtifactReference]
+
+
+class ShardWriteResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reference: ArtifactReference
+    finalized_shard: FinalizedShard | None = None
 
 
 class ShardWriter:
@@ -41,25 +56,33 @@ class ShardWriter:
         source: PayloadArtifactSource,
         lane: ArtifactLane,
         data: bytes,
-    ) -> ArtifactReference:
+    ) -> ShardWriteResult:
+        finalized_shard = None
         if self._should_rotate_for(data):
-            self.finalize_current()
-            self._current = OpenShard.create()
-        return self._current.append(
+            finalized_shard = self.finalize_current()
+        reference = self._current.append(
             projection_version=self.config.projection_version,
             source=source,
             lane=lane,
             data=data,
         )
+        return ShardWriteResult(
+            reference=reference, finalized_shard=finalized_shard
+        )
 
-    def finalize_current(self) -> ShardManifest | None:
+    def finalize_current(self) -> FinalizedShard | None:
         if self._current.is_empty:
             return None
+        current = self._current
         manifest = self._current.finalize(
             config=self.config, writer_session=self.writer_session
         )
+        finalized_shard = FinalizedShard(
+            manifest=manifest,
+            references=list(current.references),
+        )
         self._current = OpenShard.create()
-        return manifest
+        return finalized_shard
 
     def _should_rotate_for(self, data: bytes) -> bool:
         if self._current.is_empty:
@@ -263,4 +286,10 @@ def _reset_path(path: Path) -> None:
         path.unlink()
 
 
-__all__ = ["ArtifactReader", "OpenShard", "ShardWriter"]
+__all__ = [
+    "ArtifactReader",
+    "FinalizedShard",
+    "OpenShard",
+    "ShardWriter",
+    "ShardWriteResult",
+]

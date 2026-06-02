@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 
@@ -16,7 +17,13 @@ from dr_llm.artifact_projection.models import (
 
 
 COUNT_TABLE_NAMES = frozenset(
-    {"artifact_references", "shards", "projection_errors"}
+    {
+        "artifact_references",
+        "open_artifact_references",
+        "shards",
+        "open_shards",
+        "projection_errors",
+    }
 )
 
 
@@ -66,8 +73,86 @@ class ArtifactIndex:
         connection.commit()
 
     def insert_reference(self, reference: ArtifactReference) -> bool:
-        try:
+        existing = self.get_reference(reference.artifact_id)
+        if existing is not None:
+            self._raise_if_reference_conflicts(existing, reference)
+            return False
+        with self.transaction():
+            self._insert_finalized_reference(reference)
+        return True
+
+    def insert_open_reference(
+        self, reference: ArtifactReference, *, writer_session: str
+    ) -> bool:
+        existing = self.get_reference(reference.artifact_id)
+        if existing is not None:
+            self._raise_if_reference_conflicts(existing, reference)
+            return False
+        with self.transaction():
+            self._insert_open_shard(reference, writer_session=writer_session)
             cursor = self.connection.execute(
+                """
+                INSERT INTO open_artifact_references (
+                    artifact_id, projection_version, source_event_id,
+                    source_idempotency_key, payload_role, source_object_key,
+                    source_sha256, shard_id, writer_session, reference_json,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(artifact_id) DO NOTHING
+                """,
+                (
+                    reference.artifact_id,
+                    reference.projection_version,
+                    reference.source_event_id,
+                    reference.source_idempotency_key,
+                    reference.payload_role,
+                    reference.source_object_key,
+                    reference.source_sha256,
+                    reference.shard_id,
+                    writer_session,
+                    reference.model_dump_json(),
+                    reference.created_at.isoformat(),
+                ),
+            )
+            if cursor.rowcount == 1:
+                return True
+            existing = self.get_reference(reference.artifact_id)
+            if existing is None:
+                raise RuntimeError(
+                    f"Artifact {reference.artifact_id!r} was not inserted"
+                )
+            self._raise_if_reference_conflicts(existing, reference)
+            return False
+
+    def finalize_shard_references(
+        self, manifest: ShardManifest, references: list[ArtifactReference]
+    ) -> None:
+        with self.transaction():
+            self._insert_shard(manifest)
+            for reference in references:
+                existing = self.get_finalized_reference(reference.artifact_id)
+                if existing is not None:
+                    self._raise_if_reference_conflicts(existing, reference)
+                    continue
+                self._insert_finalized_reference(reference)
+            self.connection.execute(
+                """
+                DELETE FROM open_artifact_references
+                WHERE shard_id = ?
+                """,
+                (manifest.shard_id,),
+            )
+            self.connection.execute(
+                "DELETE FROM open_shards WHERE shard_id = ?",
+                (manifest.shard_id,),
+            )
+
+    def _insert_finalized_reference(
+        self, reference: ArtifactReference
+    ) -> None:
+        try:
+            self.connection.execute(
                 """
                 INSERT INTO artifact_references (
                     artifact_id, projection_version, source_event_id,
@@ -75,7 +160,6 @@ class ArtifactIndex:
                     source_sha256, shard_id, reference_json, created_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(artifact_id) DO NOTHING
                 """,
                 (
                     reference.artifact_id,
@@ -91,28 +175,37 @@ class ArtifactIndex:
                 ),
             )
         except sqlite3.IntegrityError:
-            self.connection.rollback()
-            existing = self.get_reference(reference.artifact_id)
+            existing = self.get_finalized_reference(reference.artifact_id)
             if existing is None:
                 raise
             self._raise_if_reference_conflicts(existing, reference)
-            return False
-        self.connection.commit()
-        if cursor.rowcount == 1:
-            return True
-        existing = self.get_reference(reference.artifact_id)
-        if existing is None:
-            raise RuntimeError(
-                f"Artifact {reference.artifact_id!r} was not inserted"
-            )
-        self._raise_if_reference_conflicts(existing, reference)
-        return False
 
     def get_reference(self, artifact_id: str) -> ArtifactReference | None:
+        finalized = self.get_finalized_reference(artifact_id)
+        if finalized is not None:
+            return finalized
+        return self.get_open_reference(artifact_id)
+
+    def get_finalized_reference(
+        self, artifact_id: str
+    ) -> ArtifactReference | None:
         row = self.connection.execute(
             """
             SELECT reference_json
             FROM artifact_references
+            WHERE artifact_id = ?
+            """,
+            (artifact_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return ArtifactReference.model_validate_json(row["reference_json"])
+
+    def get_open_reference(self, artifact_id: str) -> ArtifactReference | None:
+        row = self.connection.execute(
+            """
+            SELECT reference_json
+            FROM open_artifact_references
             WHERE artifact_id = ?
             """,
             (artifact_id,),
@@ -135,6 +228,10 @@ class ArtifactIndex:
         ]
 
     def insert_shard(self, manifest: ShardManifest) -> None:
+        with self.transaction():
+            self._insert_shard(manifest)
+
+    def _insert_shard(self, manifest: ShardManifest) -> None:
         self.connection.execute(
             """
             INSERT OR REPLACE INTO shards (
@@ -155,7 +252,28 @@ class ArtifactIndex:
                 ),
             ),
         )
-        self.connection.commit()
+
+    def _insert_open_shard(
+        self, reference: ArtifactReference, *, writer_session: str
+    ) -> None:
+        opened_at = datetime.now(UTC).isoformat()
+        self.connection.execute(
+            """
+            INSERT INTO open_shards (
+                shard_id, projection_version, shard_uri, writer_session,
+                opened_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(shard_id) DO NOTHING
+            """,
+            (
+                reference.shard_id,
+                reference.projection_version,
+                reference.shard_uri,
+                writer_session,
+                opened_at,
+            ),
+        )
 
     def record_checkpoint(self, checkpoint: ProjectionCheckpoint) -> None:
         self.connection.execute(
@@ -243,7 +361,9 @@ class ArtifactIndex:
         self, *, projection_version: str, durable_consumer: str
     ) -> ArtifactIndexSummary:
         artifact_count = self._count("artifact_references")
+        open_artifact_count = self._count("open_artifact_references")
         shard_count = self._count("shards")
+        open_shard_count = self._count("open_shards")
         error_count = self._count("projection_errors")
         checkpoint = self.latest_checkpoint(
             projection_version=projection_version,
@@ -251,13 +371,17 @@ class ArtifactIndex:
         )
         return ArtifactIndexSummary(
             artifact_count=artifact_count,
+            open_artifact_count=open_artifact_count,
             shard_count=shard_count,
+            open_shard_count=open_shard_count,
             error_count=error_count,
             checkpoint=checkpoint,
         )
 
     def clear_rebuildable_rows(self) -> None:
         with self.transaction():
+            self.connection.execute("DELETE FROM open_artifact_references")
+            self.connection.execute("DELETE FROM open_shards")
             self.connection.execute("DELETE FROM artifact_references")
             self.connection.execute("DELETE FROM shards")
 
@@ -355,6 +479,39 @@ ON artifact_references(source_event_id);
 
 CREATE INDEX IF NOT EXISTS idx_artifact_references_shard
 ON artifact_references(shard_id);
+
+CREATE TABLE IF NOT EXISTS open_shards (
+    shard_id TEXT PRIMARY KEY,
+    projection_version TEXT NOT NULL,
+    shard_uri TEXT NOT NULL,
+    writer_session TEXT NOT NULL,
+    opened_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_open_shards_writer_session
+ON open_shards(writer_session);
+
+CREATE TABLE IF NOT EXISTS open_artifact_references (
+    artifact_id TEXT PRIMARY KEY,
+    projection_version TEXT NOT NULL,
+    source_event_id TEXT NOT NULL,
+    source_idempotency_key TEXT NOT NULL,
+    payload_role TEXT NOT NULL,
+    source_object_key TEXT NOT NULL,
+    source_sha256 TEXT NOT NULL,
+    shard_id TEXT NOT NULL,
+    writer_session TEXT NOT NULL,
+    reference_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(shard_id) REFERENCES open_shards(shard_id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_open_artifact_references_source_event
+ON open_artifact_references(source_event_id);
+
+CREATE INDEX IF NOT EXISTS idx_open_artifact_references_shard
+ON open_artifact_references(shard_id);
 
 CREATE TABLE IF NOT EXISTS shards (
     shard_id TEXT PRIMARY KEY,

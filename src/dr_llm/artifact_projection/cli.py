@@ -129,7 +129,7 @@ def read(
     """Read one finalized artifact."""
     config = ArtifactProjectionConfig()
     with ArtifactIndex(config.index_path) as index:
-        reference = index.get_reference(artifact_id)
+        reference = index.get_finalized_reference(artifact_id)
     if reference is None:
         raise typer.BadParameter(f"unknown artifact ID {artifact_id!r}")
     reader = ArtifactReader(config)

@@ -252,6 +252,27 @@ Fallback only applies to auto-selected providers. If you pass `--provider` or
 `--model`, that explicit choice is tested directly and failures are reported
 with the replayed `attempt_failed` details.
 
+### Project Artifacts From The Streaming Log
+
+```bash
+uv run python scripts/demo-artifact-projection.py
+```
+
+What it verifies:
+
+- isolated streaming-log resources bootstrap successfully
+- one event with duplicate artifact payload refs projects to one artifact
+- the artifact sidecar records no open references after finalization
+- the finalized artifact can be read back from the Zarr shard
+
+Useful options:
+
+```bash
+uv run python scripts/demo-artifact-projection.py --help
+uv run python scripts/demo-artifact-projection.py --keep-nats
+uv run python scripts/demo-artifact-projection.py --artifact-root /tmp/dr-llm-artifacts
+```
+
 ## Local Project And Pool Discovery
 
 Use the existing pool commands to find a live source pool:

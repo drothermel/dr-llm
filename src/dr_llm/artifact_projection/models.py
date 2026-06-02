@@ -151,7 +151,9 @@ class ArtifactIndexSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     artifact_count: int = Field(ge=0)
+    open_artifact_count: int = Field(ge=0)
     shard_count: int = Field(ge=0)
+    open_shard_count: int = Field(ge=0)
     error_count: int = Field(ge=0)
     checkpoint: ProjectionCheckpoint | None = None
 

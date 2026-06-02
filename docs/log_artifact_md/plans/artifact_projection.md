@@ -207,8 +207,9 @@ projection to design against.
   artifact write, manifest/pointer update, and any needed projection checkpoint
   are durable enough for replay to be idempotent.
 - **Lifecycle:** readers should only consume finalized immutable shards and their
-  committed pointer/manifest data. In-progress shards are writer-owned and
-  recoverable by replay.
+  committed pointer/manifest data. In-progress shard bytes are writer-owned, but
+  accepted open references are durable in the sidecar so duplicate detection does
+  not depend on shard finalization timing.
 
 ## Metadata-Facing Artifact Contract
 
@@ -297,10 +298,11 @@ Implementation steps:
    `PayloadArtifactSource`, `ArtifactReference`, `ShardManifest`,
    `ProjectionCheckpoint`, and `ProjectionError`. Use `extra="forbid"` for
    manifest and reference models so schema drift fails fast.
-4. **Create the sidecar index.** Store artifact references, finalized shard
-   records, open shard state, projection checkpoints, and projection errors in
-   `index/artifacts.sqlite3`. Treat this index as rebuildable from manifests,
-   not as the source of truth.
+4. **Create the sidecar index.** Store finalized artifact references, open
+   artifact references, finalized shard records, open shard state, projection
+   checkpoints, and projection errors in `index/artifacts.sqlite3`. Treat this
+   index as the normal-write idempotency authority and as rebuildable from
+   finalized manifests, not as the permanent source of artifact bytes.
 5. **Create the shard writer.** Stage payload bytes into writer-owned staging
    directories, append them into lane-specific buffers, finalize shards into
    Zarr v3 stores, write manifest JSONL files plus finalized marker JSON, then
@@ -353,17 +355,21 @@ Default physical parameters:
 
 SQLite sidecar tables:
 
-- `artifact_references`: one row per logical artifact reference, unique by
-  `artifact_id`.
+- `artifact_references`: one row per finalized logical artifact reference,
+  unique by `artifact_id`.
+- `open_artifact_references`: one row per accepted but not yet finalized
+  logical artifact reference, unique by `artifact_id`.
 - `shards`: finalized shard metadata and finalized marker state.
+- `open_shards`: open shard state used to group accepted open references.
 - `projection_checkpoints`: projection progress keyed by projection version and
   durable consumer.
 - `projection_errors`: durable recoverable projection errors, including source
   event/ref identity, error type, message, and timestamp.
 
 The sidecar uses WAL mode, foreign keys, and explicit transactions. Duplicate
-identical `artifact_id` references are no-ops. A duplicate `artifact_id` with
-conflicting source or physical fields is a durable projection error.
+identical `artifact_id` references are no-ops across both open and finalized
+references. A duplicate `artifact_id` with conflicting source or physical fields
+is a durable projection error.
 
 Checkpoint and recovery rules:
 
@@ -372,8 +378,8 @@ Checkpoint and recovery rules:
   is a no-op.
 - A duplicate `artifact_id` with conflicting source fields is a hard projection
   error.
-- Event acknowledgments happen only after artifact writes, manifest/index
-  updates, and checkpoint/error records are durable.
+- Event acknowledgments happen only after artifact writes, open/finalized
+  reference updates, and checkpoint/error records are durable.
 - Missing source objects, hash mismatches, size mismatches, and unsupported
   source compression are recorded as `ProjectionError` rows, checkpointed,
   acknowledged, and reported by `verify` instead of blocking later events.
@@ -467,8 +473,9 @@ streaming-log and metadata schemas are fixed.
 ## Clean-Code Implementation Constraints
 
 - Keep responsibilities narrow: `ArtifactRolePolicy` decides whether a ref is an
-  artifact, `ArtifactProjector` orchestrates event processing, `ShardWriter`
-  writes finalized storage, `ArtifactReader` reads finalized storage, and
+  artifact, `ArtifactProjector` orchestrates event processing, `ArtifactStore`
+  owns logical artifact acceptance and reference promotion, `ShardWriter` writes
+  physical shard storage, `ArtifactReader` reads finalized storage, and
   `ArtifactIndex` persists sidecar state.
 - Use intention-revealing names. Avoid vague manager-style classes and avoid
   abbreviations in public model fields.
@@ -507,8 +514,8 @@ Unit tests:
 - Role policy projects selected roles, thresholds `metadata_json`, and ignores
   `pool_schema`.
 - Lane selection maps JSON, text, and binary payloads correctly.
-- SQLite index handles insert, duplicate no-op, conflict error, checkpoint
-  update, and rebuild from finalized manifests.
+- SQLite index handles open/finalized insert, duplicate no-op, conflict error,
+  checkpoint update, and rebuild from finalized manifests.
 - Shard writer writes finalized Zarr arrays and reader returns bytes, text, and
   JSON.
 - Projector with fake message and payload store acknowledges only after durable

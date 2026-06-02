@@ -9,6 +9,7 @@ from dr_llm.artifact_projection.index import (
     load_manifest_references,
     load_shard_manifest,
 )
+from dr_llm.artifact_projection.identity import artifact_id_for_source
 from dr_llm.artifact_projection.models import (
     ArtifactLane,
     ArtifactReference,
@@ -17,7 +18,7 @@ from dr_llm.artifact_projection.models import (
     ProjectionErrorKind,
     ShardManifest,
 )
-from dr_llm.artifact_projection.shards import ShardWriter
+from dr_llm.artifact_projection.shards import FinalizedShard, ShardWriter
 
 
 class ArtifactStore:
@@ -51,20 +52,38 @@ class ArtifactStore:
         lane: ArtifactLane,
         data: bytes,
     ) -> ArtifactReference:
-        return self.writer.write_artifact(source=source, lane=lane, data=data)
+        existing = self.existing_reference(
+            artifact_id=self._artifact_id_for_source(source)
+        )
+        if existing is not None:
+            return existing
+        result = self.writer.write_artifact(
+            source=source, lane=lane, data=data
+        )
+        if result.finalized_shard is not None:
+            self._commit_finalized_shard(result.finalized_shard)
+        self.insert_open_reference(result.reference)
+        return result.reference
 
     def finalize(self) -> ShardManifest | None:
-        manifest = self.writer.finalize_current()
-        if manifest is None:
+        finalized_shard = self.writer.finalize_current()
+        if finalized_shard is None:
             return None
-        self.index.insert_shard(manifest)
-        for reference in self._manifest_references(manifest):
-            self.insert_reference(reference)
-        return manifest
+        self._commit_finalized_shard(finalized_shard)
+        return finalized_shard.manifest
 
     def insert_reference(self, reference: ArtifactReference) -> bool:
         try:
             return self.index.insert_reference(reference)
+        except ArtifactIndexConflictError:
+            self.index.record_reference_conflict(reference)
+            raise
+
+    def insert_open_reference(self, reference: ArtifactReference) -> bool:
+        try:
+            return self.index.insert_open_reference(
+                reference, writer_session=self.writer.writer_session
+            )
         except ArtifactIndexConflictError:
             self.index.record_reference_conflict(reference)
             raise
@@ -91,6 +110,26 @@ class ArtifactStore:
 
     def _finalized_marker_paths(self) -> list[Path]:
         return sorted(self.config.manifest_root.glob("*.finalized.json"))
+
+    def _commit_finalized_shard(self, finalized_shard: FinalizedShard) -> None:
+        try:
+            self.index.finalize_shard_references(
+                finalized_shard.manifest, finalized_shard.references
+            )
+        except ArtifactIndexConflictError as exc:
+            reference = next(
+                reference
+                for reference in finalized_shard.references
+                if reference.artifact_id == exc.artifact_id
+            )
+            self.index.record_reference_conflict(reference)
+            raise
+
+    def _artifact_id_for_source(self, source: PayloadArtifactSource) -> str:
+        return artifact_id_for_source(
+            projection_version=self.config.projection_version,
+            source=source,
+        )
 
 
 def projection_error_for_source(

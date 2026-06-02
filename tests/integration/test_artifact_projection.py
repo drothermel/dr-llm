@@ -56,7 +56,7 @@ async def _test_projector_reads_stream_payload_and_writes_artifact(
             StreamingLogEventType.provider_response_received,
             idempotency_key="artifact-integration-1",
             payload={"provider": "test"},
-            payloads=[payload],
+            payloads=[payload, payload],
         )
 
         processed = await run_artifact_projector(
@@ -67,9 +67,15 @@ async def _test_projector_reads_stream_payload_and_writes_artifact(
 
     store = ArtifactStore(config=artifact_config)
     references = store.index.list_references()
+    summary = store.index.summary(
+        projection_version=artifact_config.projection_version,
+        durable_consumer=artifact_config.durable_consumer,
+    )
 
     assert processed == 1
     assert len(references) == 1
+    assert summary.artifact_count == 1
+    assert summary.open_artifact_count == 0
     assert ArtifactReader(artifact_config).read_json(references[0]) == {
         "ok": True
     }

@@ -19,7 +19,12 @@ from dr_llm.artifact_projection.projector import (
     ArtifactProjectionResult,
     ArtifactProjector,
 )
-from dr_llm.artifact_projection.shards import ArtifactReader, ShardWriter
+from dr_llm.artifact_projection.shards import (
+    ArtifactReader,
+    FinalizedShard,
+    ShardWriter,
+    ShardWriteResult,
+)
 from dr_llm.artifact_projection.store import ArtifactStore
 
 __all__ = [
@@ -33,12 +38,14 @@ __all__ = [
     "ArtifactReference",
     "ArtifactRolePolicy",
     "ArtifactStore",
+    "FinalizedShard",
     "PayloadArtifactSource",
     "ProjectionCheckpoint",
     "ProjectionError",
     "ProjectionErrorKind",
     "ShardManifest",
     "ShardWriter",
+    "ShardWriteResult",
     "artifact_id_for_source",
     "sha256_bytes",
 ]
