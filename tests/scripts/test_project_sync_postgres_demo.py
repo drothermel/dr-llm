@@ -92,4 +92,3 @@ def test_demo_command_syncs_and_verifies_target_database(monkeypatch) -> None:
         ),
     )
     assert calls[3] == ("cleanup", "demo_sync_abcdef12")
-

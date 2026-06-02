@@ -267,13 +267,15 @@ def _dump_project_to_file(name: str, dump_path: Path) -> None:
 
 def _restore_sql_file(target_dsn: str, dump_path: Path) -> None:
     conninfo = conninfo_to_dict(target_dsn)
-    dbname = conninfo.get("dbname")
-    user = conninfo.get("user")
-    password = conninfo.get("password", "")
-    host = conninfo.get("host", "localhost")
-    port = conninfo.get("port", "5432")
-    if dbname is None or user is None:
+    dbname_value = conninfo.get("dbname")
+    user_value = conninfo.get("user")
+    if dbname_value is None or user_value is None:
         raise ProjectError("Target DSN must include a database and user.")
+    dbname = str(dbname_value)
+    user = str(user_value)
+    password = str(conninfo.get("password", ""))
+    host = str(conninfo.get("host", "localhost"))
+    port = str(conninfo.get("port", "5432"))
 
     with tempfile.NamedTemporaryFile(
         "w",
@@ -287,8 +289,9 @@ def _restore_sql_file(target_dsn: str, dump_path: Path) -> None:
 
     env = os.environ.copy()
     env["PGPASSFILE"] = str(pgpass_path)
-    if "sslmode" in conninfo:
-        env["PGSSLMODE"] = conninfo["sslmode"]
+    sslmode = conninfo.get("sslmode")
+    if sslmode is not None:
+        env["PGSSLMODE"] = str(sslmode)
     command = [
         "psql",
         "-h",

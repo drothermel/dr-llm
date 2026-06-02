@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+
 def _load_pool_import_demo() -> ModuleType:
     script_path = (
         Path(__file__).resolve().parents[2]

@@ -100,7 +100,10 @@ async def inspect_streaming_log(
         events_info = await js.stream_info(config.events_stream)
         work_info = await js.stream_info(config.work_stream)
         store = await js.object_store(config.payload_bucket)
-        payload_objects = len(await store.list(ignore_deletes=True))
+        try:
+            payload_objects = len(await store.list(ignore_deletes=True))
+        except NotFoundError:
+            payload_objects = 0
         return StreamingLogStatus(
             nats_url=config.nats_url,
             events_stream=config.events_stream,

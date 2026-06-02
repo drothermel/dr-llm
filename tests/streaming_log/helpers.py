@@ -136,9 +136,7 @@ class SpyEventPublisher:
                 event_type=event_type,
                 idempotency_key=idempotency_key,
                 payload=payload,
-                payload_roles=[
-                    payload_item.role for payload_item in payloads
-                ],
+                payload_roles=[payload_item.role for payload_item in payloads],
                 context=context,
                 metadata=metadata,
                 event=event,

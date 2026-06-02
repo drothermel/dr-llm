@@ -80,9 +80,7 @@ class EventEnvelope(BaseModel):
     event_id: str = Field(default_factory=lambda: uuid4().hex)
     event_type: StreamingLogEventType
     schema_version: int = Field(default=1, ge=1)
-    occurred_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC)
-    )
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     producer: ProducerInfo = Field(default_factory=ProducerInfo)
     idempotency_key: str
     payload: dict[str, Any] = Field(default_factory=dict)
