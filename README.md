@@ -181,6 +181,9 @@ What it verifies:
 - isolated event/work streams and payload buckets bootstrap successfully
 - pool import emits `pool_import_started`, `pool_sample_imported`, and
   `pool_import_completed`
+- source snapshot failures attempt `pool_import_failed`; if that failure event
+  cannot be published, the source error stays primary and the publish failure is
+  logged and attached to the exception
 - replayed event counts match the imported source rows
 - every payload reference can be read back and matches its recorded SHA-256 and
   byte size

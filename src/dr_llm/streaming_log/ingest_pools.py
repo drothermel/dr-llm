@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Iterator
 from typing import Any
 
@@ -18,6 +19,9 @@ from dr_llm.streaming_log.events import (
     stable_hash,
 )
 from dr_llm.streaming_log.payloads import prepare_json_payload
+
+
+logger = logging.getLogger(__name__)
 
 
 class PoolImportResult(BaseModel):
@@ -315,8 +319,19 @@ async def _record_source_failure(
 ) -> None:
     try:
         await recorder.record_failed(exc)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as failure_event_exc:  # noqa: BLE001
+        exc.add_note(
+            "Publishing pool_import_failed event also failed: "
+            f"{type(failure_event_exc).__name__}: {failure_event_exc}"
+        )
+        logger.exception(
+            "Failed to publish pool_import_failed event for pool %r "
+            "from source %r after %s: %s",
+            recorder.pool_name,
+            recorder.source_id,
+            type(exc).__name__,
+            exc,
+        )
 
 
 def _db_runtime(*, dsn: str, application_name: str) -> DbRuntime:

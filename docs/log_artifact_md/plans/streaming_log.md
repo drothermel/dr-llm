@@ -292,7 +292,9 @@ recorder owns started, sample, completed, and failed event emission.
 `pool_import_failed` represents source snapshot acquisition failures, such as
 opening the source pool or reading its samples. Event publication failures are
 streaming-log infrastructure failures and should not be reclassified as source
-pool import failures.
+pool import failures. If publishing `pool_import_failed` itself fails, the
+original source exception remains primary while the secondary publish failure is
+logged and attached to that exception for diagnosis.
 
 ## Projection-Facing Guarantees
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Iterator
 from typing import Any, cast
 
@@ -232,12 +233,17 @@ def test_record_pool_import_records_source_iteration_failure() -> None:
     }
 
 
-def test_record_pool_import_preserves_source_error_when_failure_event_fails() -> (
-    None
-):
+def test_record_pool_import_preserves_source_error_when_failure_event_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     event_log = FakeEventLog(fail_on=StreamingLogEventType.pool_import_failed)
 
-    with pytest.raises(RuntimeError, match="source unavailable"):
+    with (
+        caplog.at_level(
+            logging.ERROR, logger="dr_llm.streaming_log.ingest_pools"
+        ),
+        pytest.raises(RuntimeError, match="source unavailable") as raised,
+    ):
         asyncio.run(
             record_pool_import(
                 event_log=cast(StreamingEventLog, event_log),
@@ -249,6 +255,23 @@ def test_record_pool_import_preserves_source_error_when_failure_event_fails() ->
     assert _event_types(event_log) == [
         StreamingLogEventType.pool_import_started,
     ]
+    notes = getattr(raised.value, "__notes__", [])
+    assert notes == [
+        "Publishing pool_import_failed event also failed: "
+        "RuntimeError: failed to publish pool_import_failed"
+    ]
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "dr_llm.streaming_log.ingest_pools"
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert record.levelno == logging.ERROR
+    assert record.exc_info is not None
+    assert "Failed to publish pool_import_failed event" in record.message
+    assert "pool-1" in record.message
+    assert "source-1" in record.message
 
 
 def test_record_pool_import_does_not_emit_failed_for_publish_failure() -> None:
