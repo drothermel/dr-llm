@@ -222,6 +222,7 @@ async def run_artifact_projector(
     config: ArtifactProjectionConfig,
     max_messages: int | None = None,
     batch_size: int | None = None,
+    flush_on_exit: bool = True,
 ) -> int:
     store = ArtifactStore(config=config)
     store.initialize()
@@ -231,13 +232,17 @@ async def run_artifact_projector(
         store=store,
         payload_reader=payload_reader,
     )
-    return await _consume_events(
-        connection=connection,
-        config=config,
-        projector=projector,
-        max_messages=max_messages,
-        batch_size=batch_size or config.fetch_batch_size,
-    )
+    try:
+        return await _consume_events(
+            connection=connection,
+            config=config,
+            projector=projector,
+            max_messages=max_messages,
+            batch_size=batch_size or config.fetch_batch_size,
+        )
+    finally:
+        if flush_on_exit:
+            store.finalize()
 
 
 async def _consume_events(

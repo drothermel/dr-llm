@@ -29,7 +29,7 @@ class ShardWriter:
     def __init__(self, config: ArtifactProjectionConfig) -> None:
         self.config = config
         self.writer_session = uuid4().hex
-        self._current = OpenShard.create(config=config)
+        self._current = OpenShard.create()
 
     @property
     def current_size(self) -> int:
@@ -44,7 +44,7 @@ class ShardWriter:
     ) -> ArtifactReference:
         if self._should_rotate_for(data):
             self.finalize_current()
-            self._current = OpenShard.create(config=self.config)
+            self._current = OpenShard.create()
         return self._current.append(
             projection_version=self.config.projection_version,
             source=source,
@@ -58,7 +58,7 @@ class ShardWriter:
         manifest = self._current.finalize(
             config=self.config, writer_session=self.writer_session
         )
-        self._current = OpenShard.create(config=self.config)
+        self._current = OpenShard.create()
         return manifest
 
     def _should_rotate_for(self, data: bytes) -> bool:
@@ -78,8 +78,7 @@ class OpenShard:
         self.lanes: dict[ArtifactLane, bytearray] = {}
 
     @classmethod
-    def create(cls, *, config: ArtifactProjectionConfig) -> OpenShard:
-        del config
+    def create(cls) -> OpenShard:
         return cls(
             shard_id=f"shard_{uuid4().hex}",
             created_at=datetime.now(UTC),
@@ -92,6 +91,10 @@ class OpenShard:
     @property
     def total_size(self) -> int:
         return sum(len(buffer) for buffer in self.lanes.values())
+
+    @property
+    def shard_uri(self) -> str:
+        return f"shards/{self.shard_id}.zarr"
 
     def append(
         self,
@@ -168,7 +171,7 @@ class OpenShard:
             source_compression=source.source_compression,
             lane=lane,
             shard_id=self.shard_id,
-            shard_uri=f"shards/{self.shard_id}.zarr",
+            shard_uri=self.shard_uri,
             offset=offset,
             length=len(data),
             run_id=source.run_id,
@@ -185,7 +188,7 @@ class OpenShard:
         return ShardManifest(
             shard_id=self.shard_id,
             projection_version=config.projection_version,
-            shard_uri=f"shards/{self.shard_id}.zarr",
+            shard_uri=self.shard_uri,
             artifact_count=len(self.references),
             lane_sizes={
                 lane: len(buffer) for lane, buffer in self.lanes.items()
@@ -231,7 +234,7 @@ def _write_zarr_store(
     for lane, buffer in lanes.items():
         values = np.frombuffer(bytes(buffer), dtype=np.uint8)
         lane_array = lanes_group.create_array(
-            lane.value,
+            lane,
             shape=(len(values),),
             dtype=np.uint8,
             chunks=(chunk_bytes,),

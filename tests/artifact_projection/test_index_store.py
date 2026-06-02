@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from dr_llm.artifact_projection import (
     ArtifactLane,
     ArtifactProjectionConfig,
@@ -56,12 +58,10 @@ def test_index_conflicting_reference_raises(tmp_path: Path) -> None:
     store.finalize()
     conflicting = reference.model_copy(update={"length": 99})
 
-    try:
+    with pytest.raises(ArtifactIndexConflictError) as excinfo:
         store.index.insert_reference(conflicting)
-    except ArtifactIndexConflictError as exc:
-        assert exc.artifact_id == reference.artifact_id
-    else:
-        raise AssertionError("expected conflicting reference to raise")
+
+    assert excinfo.value.artifact_id == reference.artifact_id
 
 
 def _source() -> PayloadArtifactSource:

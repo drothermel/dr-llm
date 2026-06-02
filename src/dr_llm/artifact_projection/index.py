@@ -15,6 +15,11 @@ from dr_llm.artifact_projection.models import (
 )
 
 
+COUNT_TABLE_NAMES = frozenset(
+    {"artifact_references", "shards", "projection_errors"}
+)
+
+
 class ArtifactIndexConflictError(RuntimeError):
     def __init__(self, artifact_id: str) -> None:
         super().__init__(f"Artifact {artifact_id!r} conflicts with index row")
@@ -61,34 +66,47 @@ class ArtifactIndex:
         connection.commit()
 
     def insert_reference(self, reference: ArtifactReference) -> bool:
-        existing = self.get_reference(reference.artifact_id)
-        if existing is not None:
+        try:
+            cursor = self.connection.execute(
+                """
+                INSERT INTO artifact_references (
+                    artifact_id, projection_version, source_event_id,
+                    source_idempotency_key, payload_role, source_object_key,
+                    source_sha256, shard_id, reference_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(artifact_id) DO NOTHING
+                """,
+                (
+                    reference.artifact_id,
+                    reference.projection_version,
+                    reference.source_event_id,
+                    reference.source_idempotency_key,
+                    reference.payload_role,
+                    reference.source_object_key,
+                    reference.source_sha256,
+                    reference.shard_id,
+                    reference.model_dump_json(),
+                    reference.created_at.isoformat(),
+                ),
+            )
+        except sqlite3.IntegrityError:
+            self.connection.rollback()
+            existing = self.get_reference(reference.artifact_id)
+            if existing is None:
+                raise
             self._raise_if_reference_conflicts(existing, reference)
             return False
-        self.connection.execute(
-            """
-            INSERT INTO artifact_references (
-                artifact_id, projection_version, source_event_id,
-                source_idempotency_key, payload_role, source_object_key,
-                source_sha256, shard_id, reference_json, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                reference.artifact_id,
-                reference.projection_version,
-                reference.source_event_id,
-                reference.source_idempotency_key,
-                reference.payload_role,
-                reference.source_object_key,
-                reference.source_sha256,
-                reference.shard_id,
-                reference.model_dump_json(),
-                reference.created_at.isoformat(),
-            ),
-        )
         self.connection.commit()
-        return True
+        if cursor.rowcount == 1:
+            return True
+        existing = self.get_reference(reference.artifact_id)
+        if existing is None:
+            raise RuntimeError(
+                f"Artifact {reference.artifact_id!r} was not inserted"
+            )
+        self._raise_if_reference_conflicts(existing, reference)
+        return False
 
     def get_reference(self, artifact_id: str) -> ArtifactReference | None:
         row = self.connection.execute(
@@ -254,6 +272,8 @@ class ArtifactIndex:
         return self._connection
 
     def _count(self, table_name: str) -> int:
+        if table_name not in COUNT_TABLE_NAMES:
+            raise ValueError(f"unknown artifact index table {table_name!r}")
         row = self.connection.execute(
             f"SELECT COUNT(*) AS row_count FROM {table_name}"
         ).fetchone()

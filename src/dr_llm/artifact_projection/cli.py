@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 from typing import Annotated
 
@@ -27,7 +26,7 @@ def init() -> None:
     """Create artifact projection directories and sidecar schema."""
     store = ArtifactStore(config=ArtifactProjectionConfig())
     store.initialize()
-    console.print_json(_store_summary(store))
+    console.print_json(data=_store_summary(store))
 
 
 @artifact_projection_app.command("inspect")
@@ -65,9 +64,12 @@ def run(
     ] = True,
 ) -> None:
     """Run the artifact projector against DRLLM_EVENTS."""
-    del flush_on_exit
     processed = asyncio.run(
-        _run_projector(max_messages=max_messages, batch_size=batch_size)
+        _run_projector(
+            max_messages=max_messages,
+            batch_size=batch_size,
+            flush_on_exit=flush_on_exit,
+        )
     )
     console.print_json(data={"processed": processed})
 
@@ -95,7 +97,7 @@ def rebuild_index() -> None:
     """Rebuild the sidecar index from finalized manifests."""
     store = ArtifactStore(config=ArtifactProjectionConfig())
     store.rebuild_index()
-    console.print_json(_store_summary(store))
+    console.print_json(data=_store_summary(store))
 
 
 @artifact_projection_app.command("verify")
@@ -108,7 +110,7 @@ def verify() -> None:
             projection_version=config.projection_version,
             durable_consumer=config.durable_consumer,
         )
-    console.print_json(summary.model_dump_json())
+    console.print_json(data=summary.model_dump(mode="json"))
     if summary.error_count:
         raise typer.Exit(1)
 
@@ -143,7 +145,10 @@ def read(
 
 
 async def _run_projector(
-    *, max_messages: int | None, batch_size: int | None
+    *,
+    max_messages: int | None,
+    batch_size: int | None,
+    flush_on_exit: bool,
 ) -> int:
     async with StreamingLogConnection(StreamingLogConfig()) as connection:
         from dr_llm.artifact_projection.projector import (
@@ -155,22 +160,20 @@ async def _run_projector(
             config=ArtifactProjectionConfig(),
             max_messages=max_messages,
             batch_size=batch_size,
+            flush_on_exit=flush_on_exit,
         )
 
 
-def _store_summary(store: ArtifactStore) -> str:
+def _store_summary(store: ArtifactStore) -> dict[str, object]:
     summary = store.index.summary(
         projection_version=store.config.projection_version,
         durable_consumer=store.config.durable_consumer,
     )
-    return json.dumps(
-        {
-            "artifact_root": str(store.config.artifact_root),
-            "projection_version": store.config.projection_version,
-            **summary.model_dump(mode="json"),
-        },
-        sort_keys=True,
-    )
+    return {
+        "artifact_root": str(store.config.artifact_root),
+        "projection_version": store.config.projection_version,
+        **summary.model_dump(mode="json"),
+    }
 
 
 __all__ = ["artifact_projection_app"]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -112,6 +113,4 @@ def _event(payload_ref: PayloadRef) -> EventEnvelope:
 
 
 def _run(awaitable: Any) -> Any:
-    import asyncio
-
     return asyncio.run(awaitable)
