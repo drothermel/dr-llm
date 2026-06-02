@@ -4,12 +4,16 @@ import logging
 
 import typer
 
+from dr_llm.env import load_dotenv
+from dr_llm.streaming_log.cli import streaming_log_app
+
 from .models import models_app
 from .pool import pool_app
 from .project import project_app
 from .providers import register as register_providers
 from .query import register as register_query
-from dr_llm.streaming_log.cli import streaming_log_app
+
+load_dotenv()
 
 
 def _get_root_logger() -> logging.Logger:
