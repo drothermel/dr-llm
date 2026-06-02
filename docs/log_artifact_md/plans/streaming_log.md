@@ -170,11 +170,12 @@ Core responsibilities:
   durable consumer names, ack wait, max delivery, fetch batch size, and inline
   payload threshold.
 - `events.py`: event type enum, producer model, event envelope model, and
-  idempotency helpers.
+  idempotency helpers. Shared workflow identity is represented by
+  `EventContext`, which is copied into the envelope when the event is built.
 - `payloads.py`: payload serialization, hashing, object key construction, and
   payload reference model.
-- `client.py`: async connection manager, event publisher, payload writer, work
-  publisher, and replay consumer helpers.
+- `client.py`: async connection manager, context-bound event publisher, payload
+  writer, work publisher, and replay consumer helpers.
 - `bootstrap.py`: idempotent creation or validation of JetStream streams,
   consumers, and object bucket.
 - `workers.py`: async worker runtime using JetStream pull consumers.
@@ -188,7 +189,8 @@ For events with object payloads:
 
 1. Serialize and hash payload bytes.
 2. Write missing payload objects to `DRLLM_PAYLOADS`.
-3. Build the event envelope with payload references.
+3. Build the event envelope with payload references and any shared
+   `EventContext`.
 4. Publish the event to `DRLLM_EVENTS`.
 5. Require JetStream publish acknowledgment.
 

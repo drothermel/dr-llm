@@ -8,9 +8,13 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.llm import LlmResponse, ProviderRegistry, build_default_registry
-from dr_llm.streaming_log.client import StreamingLogClient
+from dr_llm.streaming_log.client import (
+    ContextualEventPublisher,
+    StreamingLogClient,
+)
 from dr_llm.streaming_log.config import StreamingLogConfig
 from dr_llm.streaming_log.events import (
+    EventContext,
     StreamingLogEventType,
     idempotency_key,
 )
@@ -97,24 +101,22 @@ async def _process_message(
     work = QueuedWorkMessage.from_payload(msg.data)
     attempt = int(getattr(msg.metadata, "num_delivered", 1))
     attempt_id = f"{work.work_id}-{attempt}"
-    await client.publish_event_with_payloads(
+    publisher = client.with_event_context(
+        EventContext.from_work_attempt(work, attempt_id=attempt_id)
+    )
+    await publisher.publish_event_with_payloads(
         StreamingLogEventType.attempt_started,
         idempotency_key=idempotency_key(
             "attempt_started", work.work_id, attempt
         ),
         payload={"worker_id": worker_id, "attempt": attempt},
-        run_id=work.run_id,
-        work_id=work.work_id,
-        attempt_id=attempt_id,
-        correlation_id=work.correlation_id,
-        source=work.source,
     )
     request_payload = work.request.model_dump(
         mode="json",
         exclude_none=True,
         exclude_computed_fields=True,
     )
-    await client.publish_event_with_payloads(
+    await publisher.publish_event_with_payloads(
         StreamingLogEventType.provider_request_prepared,
         idempotency_key=idempotency_key(
             "provider_request_prepared", work.work_id, attempt
@@ -125,31 +127,24 @@ async def _process_message(
             "mode": work.request.mode,
         },
         payloads=[prepare_json_payload("request_json", request_payload)],
-        run_id=work.run_id,
-        work_id=work.work_id,
-        attempt_id=attempt_id,
-        correlation_id=work.correlation_id,
-        source=work.source,
     )
     try:
         response = await _generate_response(registry, work)
     except Exception as exc:  # noqa: BLE001
         await _handle_failure(
-            client=client,
+            publisher=publisher,
             work=work,
             msg=msg,
             exc=exc,
             attempt=attempt,
-            attempt_id=attempt_id,
         )
         return
     await _handle_success(
-        client=client,
+        publisher=publisher,
         work=work,
         msg=msg,
         response=response,
         attempt=attempt,
-        attempt_id=attempt_id,
     )
 
 
@@ -162,19 +157,18 @@ async def _generate_response(
 
 async def _handle_success(
     *,
-    client: StreamingLogClient,
+    publisher: ContextualEventPublisher,
     work: QueuedWorkMessage,
     msg,
     response: LlmResponse,
     attempt: int,
-    attempt_id: str,
 ) -> None:
     response_payload = response.model_dump(
         mode="json",
         exclude_none=True,
         exclude_computed_fields=True,
     )
-    await client.publish_event_with_payloads(
+    await publisher.publish_event_with_payloads(
         StreamingLogEventType.provider_response_received,
         idempotency_key=idempotency_key(
             "provider_response_received", work.work_id, attempt
@@ -186,88 +180,57 @@ async def _handle_success(
             "finish_reason": response.finish_reason,
         },
         payloads=[prepare_json_payload("response_json", response_payload)],
-        run_id=work.run_id,
-        work_id=work.work_id,
-        attempt_id=attempt_id,
-        correlation_id=work.correlation_id,
-        source=work.source,
     )
-    await client.publish_event_with_payloads(
+    await publisher.publish_event_with_payloads(
         StreamingLogEventType.attempt_succeeded,
         idempotency_key=idempotency_key(
             "attempt_succeeded", work.work_id, attempt
         ),
         payload={"attempt": attempt},
-        run_id=work.run_id,
-        work_id=work.work_id,
-        attempt_id=attempt_id,
-        correlation_id=work.correlation_id,
-        source=work.source,
     )
-    await client.publish_event_with_payloads(
+    await publisher.publish_event_with_payloads(
         StreamingLogEventType.work_completed,
         idempotency_key=idempotency_key("work_completed", work.work_id),
         payload={"status": "succeeded", "attempt": attempt},
-        run_id=work.run_id,
-        work_id=work.work_id,
-        attempt_id=attempt_id,
-        correlation_id=work.correlation_id,
-        source=work.source,
     )
     await msg.ack()
 
 
 async def _handle_failure(
     *,
-    client: StreamingLogClient,
+    publisher: ContextualEventPublisher,
     work: QueuedWorkMessage,
     msg,
     exc: Exception,
     attempt: int,
-    attempt_id: str,
 ) -> None:
     error_payload = {
         "error_type": type(exc).__name__,
         "message": str(exc),
         "attempt": attempt,
     }
-    await client.publish_event_with_payloads(
+    await publisher.publish_event_with_payloads(
         StreamingLogEventType.attempt_failed,
         idempotency_key=idempotency_key(
             "attempt_failed", work.work_id, attempt
         ),
         payload=error_payload,
         payloads=[prepare_json_payload("error_detail", error_payload)],
-        run_id=work.run_id,
-        work_id=work.work_id,
-        attempt_id=attempt_id,
-        correlation_id=work.correlation_id,
-        source=work.source,
     )
     if attempt <= work.max_retries:
-        await client.publish_event_with_payloads(
+        await publisher.publish_event_with_payloads(
             StreamingLogEventType.work_retry_scheduled,
             idempotency_key=idempotency_key(
                 "work_retry_scheduled", work.work_id, attempt
             ),
             payload={"attempt": attempt, "next_attempt": attempt + 1},
-            run_id=work.run_id,
-            work_id=work.work_id,
-            attempt_id=attempt_id,
-            correlation_id=work.correlation_id,
-            source=work.source,
         )
         await msg.nak()
         return
-    await client.publish_event_with_payloads(
+    await publisher.publish_event_with_payloads(
         StreamingLogEventType.work_completed,
         idempotency_key=idempotency_key("work_completed", work.work_id),
         payload={"status": "failed", **error_payload},
-        run_id=work.run_id,
-        work_id=work.work_id,
-        attempt_id=attempt_id,
-        correlation_id=work.correlation_id,
-        source=work.source,
     )
     await msg.ack()
 

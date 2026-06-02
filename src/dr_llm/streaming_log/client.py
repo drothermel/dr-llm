@@ -14,6 +14,7 @@ from nats.js.errors import NotFoundError, ObjectNotFoundError
 from dr_llm.streaming_log.config import StreamingLogConfig
 from dr_llm.streaming_log.errors import PayloadIntegrityError
 from dr_llm.streaming_log.events import (
+    EventContext,
     EventEnvelope,
     ProducerInfo,
     StreamingLogEventType,
@@ -26,6 +27,32 @@ from dr_llm.streaming_log.payloads import (
     prepare_json_payload,
 )
 from dr_llm.streaming_log.work import QueuedWorkMessage
+
+
+class ContextualEventPublisher:
+    def __init__(
+        self, client: StreamingLogClient, context: EventContext
+    ) -> None:
+        self.client = client
+        self.context = context
+
+    async def publish_event_with_payloads(
+        self,
+        event_type: StreamingLogEventType,
+        *,
+        idempotency_key: str,
+        payload: dict[str, Any] | None = None,
+        payloads: list[PreparedPayload] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> EventEnvelope:
+        return await self.client.publish_event_with_payloads(
+            event_type,
+            idempotency_key=idempotency_key,
+            payload=payload,
+            payloads=payloads,
+            context=self.context,
+            metadata=metadata,
+        )
 
 
 class StreamingLogClient:
@@ -89,12 +116,7 @@ class StreamingLogClient:
         idempotency_key: str,
         payload: dict[str, Any] | None = None,
         payloads: list[PreparedPayload] | None = None,
-        run_id: str | None = None,
-        work_id: str | None = None,
-        attempt_id: str | None = None,
-        causation_id: str | None = None,
-        correlation_id: str | None = None,
-        source: str | None = None,
+        context: EventContext | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> EventEnvelope:
         payload_refs = await self.write_payloads(payloads or [])
@@ -104,16 +126,16 @@ class StreamingLogClient:
             idempotency_key=idempotency_key,
             payload=payload,
             payload_refs=payload_refs,
-            run_id=run_id,
-            work_id=work_id,
-            attempt_id=attempt_id,
-            causation_id=causation_id,
-            correlation_id=correlation_id,
-            source=source,
+            context=context,
             metadata=metadata,
         )
         await self.publish_event(event)
         return event
+
+    def with_event_context(
+        self, context: EventContext
+    ) -> ContextualEventPublisher:
+        return ContextualEventPublisher(self, context)
 
     async def write_payloads(
         self, payloads: list[PreparedPayload]
@@ -164,10 +186,7 @@ class StreamingLogClient:
                 "metadata": work.metadata,
             },
             payloads=[request_payload],
-            run_id=work.run_id,
-            work_id=work.work_id,
-            correlation_id=work.correlation_id,
-            source=work.source,
+            context=EventContext.from_work(work),
         )
         await self.js.publish(
             self.config.llm_work_subject,

@@ -29,3 +29,8 @@ The log provides the recovery model:
 The current repo already has generation log events around provider calls, but
 those logs are observational JSONL records. In this architecture, the streaming
 log becomes the persistent source of truth for collected facts.
+
+Event producers should bind repeated workflow identity through `EventContext`
+instead of passing envelope fields on every publish call. This keeps
+event-specific payloads explicit while making shared run, work, attempt,
+correlation, and source fields a single construction concern.

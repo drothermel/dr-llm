@@ -6,6 +6,7 @@ from dr_llm.streaming_log.bootstrap import (
 from dr_llm.streaming_log.client import StreamingLogClient
 from dr_llm.streaming_log.config import StreamingLogConfig
 from dr_llm.streaming_log.events import (
+    EventContext,
     EventEnvelope,
     ProducerInfo,
     StreamingLogEventType,
@@ -19,6 +20,7 @@ from dr_llm.streaming_log.workers import (
 )
 
 __all__ = [
+    "EventContext",
     "EventEnvelope",
     "PayloadRef",
     "PoolImportResult",

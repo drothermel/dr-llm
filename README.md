@@ -40,6 +40,30 @@ Shared live-demo helpers live in
 create temporary NATS containers when needed, isolate demo stream names, replay
 events, and verify payload hashes and sizes.
 
+## Publishing Events
+
+Event envelopes keep workflow identity fields such as `run_id`, `work_id`,
+`attempt_id`, `correlation_id`, and `source` at the top level for replay and
+projection. Callers should not repeat those fields on every publish call.
+Instead, build an `EventContext` once for the workflow step and publish through
+a context-bound publisher:
+
+```python
+context = EventContext.from_work_attempt(work, attempt_id=attempt_id)
+publisher = client.with_event_context(context)
+
+await publisher.publish_event_with_payloads(
+    StreamingLogEventType.attempt_started,
+    idempotency_key=idempotency_key("attempt_started", work.work_id, attempt),
+    payload={"worker_id": worker_id, "attempt": attempt},
+)
+```
+
+Use `client.publish_event_with_payloads(...)` directly for context-free
+operational events such as producer startup/shutdown. The event wire shape is
+unchanged: `EventContext` is only the construction primitive for shared
+envelope identity.
+
 ## Requirements
 
 - Python environment managed by `uv`

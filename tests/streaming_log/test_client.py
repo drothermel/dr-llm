@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, cast
 
 from dr_llm.llm import CallMode, LlmRequest, Message, ProviderName
 from dr_llm.streaming_log.client import StreamingLogClient
 from dr_llm.streaming_log.config import StreamingLogConfig
-from dr_llm.streaming_log.events import StreamingLogEventType
+from dr_llm.streaming_log.events import (
+    EventContext,
+    EventEnvelope,
+    StreamingLogEventType,
+)
+from dr_llm.streaming_log.payloads import prepare_text_payload
 from dr_llm.streaming_log.work import QueuedWorkMessage
 
 
@@ -61,8 +67,6 @@ def test_submit_work_publishes_event_before_work_message() -> None:
 
     work = QueuedWorkMessage(work_id="work-1", request=_request())
 
-    import asyncio
-
     event = asyncio.run(client.submit_work(work))
 
     assert event.event_type is StreamingLogEventType.work_submitted
@@ -71,3 +75,36 @@ def test_submit_work_publishes_event_before_work_message() -> None:
     assert fake_js.published[1][0] == "drllm.work.llm"
     assert fake_js.published[1][2] == "DRLLM_WORK"
     assert fake_js.store.objects
+
+
+def test_contextual_publisher_applies_context_and_writes_payloads() -> None:
+    client = StreamingLogClient(StreamingLogConfig())
+    fake_js = FakeJetStream()
+    client._js = cast(Any, fake_js)
+    publisher = client.with_event_context(
+        EventContext(
+            run_id="run-1",
+            work_id="work-1",
+            attempt_id="attempt-1",
+            correlation_id="corr-1",
+            source="test-source",
+        )
+    )
+
+    event = asyncio.run(
+        publisher.publish_event_with_payloads(
+            StreamingLogEventType.attempt_started,
+            idempotency_key="attempt-started-1",
+            payload={"attempt": 1},
+            payloads=[prepare_text_payload("stdout", "hello")],
+        )
+    )
+    published = EventEnvelope.model_validate_json(fake_js.published[0][1])
+
+    assert event.run_id == "run-1"
+    assert event.work_id == "work-1"
+    assert event.attempt_id == "attempt-1"
+    assert event.correlation_id == "corr-1"
+    assert event.source == "test-source"
+    assert published.model_dump(mode="json") == event.model_dump(mode="json")
+    assert list(fake_js.store.objects.values()) == [b"hello"]

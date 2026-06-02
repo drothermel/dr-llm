@@ -10,6 +10,7 @@ from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.reader import PoolReader
 from dr_llm.streaming_log.client import StreamingLogClient
 from dr_llm.streaming_log.events import (
+    EventContext,
     StreamingLogEventType,
     idempotency_key,
     stable_hash,
@@ -46,6 +47,7 @@ async def ingest_pool(
     )
     event_ids: list[str] = []
     imported_count = 0
+    import_context = EventContext(source=source)
     try:
         reader = PoolReader.open(pool_name, runtime=runtime)
         schema_payload = reader.schema.model_dump(
@@ -58,7 +60,7 @@ async def ingest_pool(
             ),
             payload={"pool_name": pool_name, "source_id": source},
             payloads=[prepare_json_payload("pool_schema", schema_payload)],
-            source=source,
+            context=import_context,
         )
         event_ids.append(started.event_id)
         for sample in reader.samples():
@@ -87,7 +89,7 @@ async def ingest_pool(
                 "imported_count": imported_count,
                 "reconstructed": True,
             },
-            source=source,
+            context=import_context,
         )
         event_ids.append(completed.event_id)
         return PoolImportResult(
@@ -107,7 +109,7 @@ async def ingest_pool(
                 "error_type": type(exc).__name__,
                 "message": str(exc),
             },
-            source=source,
+            context=import_context,
         )
         event_ids.append(failed.event_id)
         raise
@@ -198,8 +200,7 @@ async def _publish_sample_imported(
                 else [prepare_json_payload("response_json", sample.response)]
             ),
         ],
-        run_id=sample.run_id,
-        source=source,
+        context=EventContext(run_id=sample.run_id, source=source),
         metadata={"reconstructed": True},
     )
 

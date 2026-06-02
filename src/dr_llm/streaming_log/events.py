@@ -4,10 +4,13 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+if TYPE_CHECKING:
+    from dr_llm.streaming_log.work import QueuedWorkMessage
 
 
 class StreamingLogEventType(StrEnum):
@@ -35,6 +38,38 @@ class ProducerInfo(BaseModel):
     name: str = "dr-llm"
     version: str | None = None
     instance_id: str = Field(default_factory=lambda: uuid4().hex)
+
+
+class EventContext(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run_id: str | None = None
+    work_id: str | None = None
+    attempt_id: str | None = None
+    causation_id: str | None = None
+    correlation_id: str | None = None
+    source: str | None = None
+
+    @classmethod
+    def from_work(cls, work: QueuedWorkMessage) -> EventContext:
+        return cls(
+            run_id=work.run_id,
+            work_id=work.work_id,
+            correlation_id=work.correlation_id,
+            source=work.source,
+        )
+
+    @classmethod
+    def from_work_attempt(
+        cls, work: QueuedWorkMessage, *, attempt_id: str
+    ) -> EventContext:
+        return cls(
+            run_id=work.run_id,
+            work_id=work.work_id,
+            attempt_id=attempt_id,
+            correlation_id=work.correlation_id,
+            source=work.source,
+        )
 
 
 class EventEnvelope(BaseModel):
@@ -98,31 +133,28 @@ def build_event(
     idempotency_key: str,
     payload: dict[str, Any] | None = None,
     payload_refs: list[Any] | None = None,
-    run_id: str | None = None,
-    work_id: str | None = None,
-    attempt_id: str | None = None,
-    causation_id: str | None = None,
-    correlation_id: str | None = None,
-    source: str | None = None,
+    context: EventContext | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> EventEnvelope:
+    context = context or EventContext()
     return EventEnvelope(
         event_type=event_type,
         producer=producer,
         idempotency_key=idempotency_key,
         payload=payload or {},
         payload_refs=payload_refs or [],
-        run_id=run_id,
-        work_id=work_id,
-        attempt_id=attempt_id,
-        causation_id=causation_id,
-        correlation_id=correlation_id,
-        source=source,
+        run_id=context.run_id,
+        work_id=context.work_id,
+        attempt_id=context.attempt_id,
+        causation_id=context.causation_id,
+        correlation_id=context.correlation_id,
+        source=context.source,
         metadata=metadata or {},
     )
 
 
 __all__ = [
+    "EventContext",
     "EventEnvelope",
     "ProducerInfo",
     "StreamingLogEventType",

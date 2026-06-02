@@ -3,11 +3,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
+from pydantic import ValidationError
 
+from dr_llm.llm import CallMode, LlmRequest, Message, ProviderName
 from dr_llm.streaming_log.events import (
+    EventContext,
     EventEnvelope,
     ProducerInfo,
     StreamingLogEventType,
+    build_event,
     idempotency_key,
 )
 from dr_llm.streaming_log.payloads import (
@@ -16,6 +20,16 @@ from dr_llm.streaming_log.payloads import (
     prepare_text_payload,
     sha256_bytes,
 )
+from dr_llm.streaming_log.work import QueuedWorkMessage
+
+
+def _request() -> LlmRequest:
+    return LlmRequest(
+        provider=ProviderName.OPENAI,
+        model="gpt-test",
+        mode=CallMode.api,
+        messages=[Message(role="user", content="hi")],
+    )
 
 
 def test_event_envelope_requires_strict_event_type() -> None:
@@ -87,3 +101,61 @@ def test_timestamp_is_normalized_to_utc() -> None:
     )
 
     assert event.occurred_at.tzinfo is timezone.utc
+
+
+def test_event_context_rejects_extra_fields() -> None:
+    with pytest.raises(ValidationError):
+        EventContext.model_validate({"run_id": "run-1", "extra_field": "nope"})
+
+
+def test_event_context_builds_from_work_and_attempt() -> None:
+    work = QueuedWorkMessage(
+        work_id="work-1",
+        request=_request(),
+        run_id="run-1",
+        correlation_id="corr-1",
+        source="test-source",
+    )
+
+    context = EventContext.from_work(work)
+    attempt_context = EventContext.from_work_attempt(
+        work, attempt_id="attempt-1"
+    )
+
+    assert context == EventContext(
+        run_id="run-1",
+        work_id="work-1",
+        correlation_id="corr-1",
+        source="test-source",
+    )
+    assert attempt_context == EventContext(
+        run_id="run-1",
+        work_id="work-1",
+        attempt_id="attempt-1",
+        correlation_id="corr-1",
+        source="test-source",
+    )
+
+
+def test_build_event_applies_context_to_envelope() -> None:
+    event = build_event(
+        StreamingLogEventType.attempt_started,
+        producer=ProducerInfo(name="test"),
+        idempotency_key="same",
+        payload={"ok": True},
+        context=EventContext(
+            run_id="run-1",
+            work_id="work-1",
+            attempt_id="attempt-1",
+            causation_id="cause-1",
+            correlation_id="corr-1",
+            source="test-source",
+        ),
+    )
+
+    assert event.run_id == "run-1"
+    assert event.work_id == "work-1"
+    assert event.attempt_id == "attempt-1"
+    assert event.causation_id == "cause-1"
+    assert event.correlation_id == "corr-1"
+    assert event.source == "test-source"
