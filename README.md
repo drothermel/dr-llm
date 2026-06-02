@@ -39,8 +39,10 @@ Core implementation lives under
 
 Shared live-demo helpers live in
 [`src/dr_llm/demo/streaming_log.py`](src/dr_llm/demo/streaming_log.py). They
-create temporary NATS containers when needed, isolate demo stream names, replay
-events, and verify payload hashes and sizes.
+create temporary NATS containers when needed, isolate demo stream names,
+bootstrap resources, expose connected event/payload/work clients through
+`open_streaming_log_demo_runtime(...)`, replay events, and verify payload
+hashes and sizes.
 
 ## Publishing Events
 

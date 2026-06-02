@@ -25,25 +25,26 @@ import json
 from collections import Counter
 from typing import Annotated
 
+from pydantic import BaseModel, ConfigDict, Field
 import typer
 
 from dr_llm.demo import (
     DEMO_QUERY_DEFAULT_MODELS,
     DemoPrompts,
-    cleanup_demo_nats,
     collect_streaming_log_events,
     command_hint,
-    demo_streaming_log_config,
+    DemoNatsOptions,
     fail,
     list_models_json,
     ok,
-    prepare_demo_nats,
+    open_streaming_log_demo_runtime,
     show_model_json,
     step,
     summarize_events,
+    StreamingLogDemoRuntime,
+    StreamingLogDemoRuntimeOptions,
     sync_models_json,
     verify_payload_refs,
-    wait_for_nats,
     warn,
 )
 from dr_llm.llm import (
@@ -56,14 +57,10 @@ from dr_llm.llm import (
 from dr_llm.streaming_log import (
     EventEnvelope,
     QueuedWorkMessage,
-    StreamingLogConnection,
-    StreamingEventLog,
     StreamingPayloadStore,
-    StreamingWorkQueue,
     StreamingWorkerConfig,
     run_streaming_worker,
 )
-from dr_llm.streaming_log.bootstrap import bootstrap_streaming_log
 
 app = typer.Typer()
 
@@ -84,15 +81,43 @@ class ProviderWorkFailedError(RuntimeError):
     pass
 
 
-async def _run_worker_demo(
-    *,
-    nats_url: str | None,
-    keep_nats: bool,
-    prompt: str,
-    max_retries: int,
-    provider: ProviderName | None,
-    model: str | None,
-) -> None:
+class WorkerDemoOptions(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    nats: DemoNatsOptions = Field(default_factory=DemoNatsOptions)
+    prompt: str
+    max_retries: int = 0
+    provider: ProviderName | None = None
+    model: str | None = None
+
+
+class WorkerAttemptOptions(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    nats: DemoNatsOptions = Field(default_factory=DemoNatsOptions)
+    max_retries: int
+    provider: str
+    model: str
+    request: LlmRequest
+    attempt_index: int
+    attempt_count: int
+
+
+WorkerDemoOptions.model_rebuild(
+    _types_namespace={
+        "DemoNatsOptions": DemoNatsOptions,
+        "ProviderName": ProviderName,
+    }
+)
+WorkerAttemptOptions.model_rebuild(
+    _types_namespace={
+        "DemoNatsOptions": DemoNatsOptions,
+        "LlmRequest": LlmRequest,
+    }
+)
+
+
+async def _run_worker_demo(options: WorkerDemoOptions) -> None:
     step("1. Detecting live provider")
     registry = build_default_registry()
     try:
@@ -100,32 +125,33 @@ async def _run_worker_demo(
         available = _available_providers_or_exit(statuses)
         candidate_providers = _candidate_providers(
             available,
-            requested_provider=provider,
+            requested_provider=options.provider,
         )
     finally:
         registry.close()
 
-    allow_fallback = provider is None and model is None
+    allow_fallback = options.provider is None and options.model is None
     if not allow_fallback:
         candidate_providers = candidate_providers[:1]
     failures: list[str] = []
     for index, candidate_provider in enumerate(candidate_providers, start=1):
         provider_name, model_name, request = _build_live_request(
-            prompt=prompt,
+            prompt=options.prompt,
             provider=candidate_provider,
-            requested_model=model,
+            requested_model=options.model,
         )
         ok(f"Using {provider_name}/{model_name}")
         try:
             await _run_worker_attempt(
-                nats_url=nats_url,
-                keep_nats=keep_nats,
-                max_retries=max_retries,
-                provider=provider_name,
-                model=model_name,
-                request=request,
-                attempt_index=index,
-                attempt_count=len(candidate_providers),
+                WorkerAttemptOptions(
+                    nats=options.nats,
+                    max_retries=options.max_retries,
+                    provider=provider_name,
+                    model=model_name,
+                    request=request,
+                    attempt_index=index,
+                    attempt_count=len(candidate_providers),
+                )
             )
             if failures:
                 ok(
@@ -144,58 +170,41 @@ async def _run_worker_demo(
     raise RuntimeError("No live provider attempt completed successfully")
 
 
-async def _run_worker_attempt(
-    *,
-    nats_url: str | None,
-    keep_nats: bool,
-    max_retries: int,
-    provider: str,
-    model: str,
-    request: LlmRequest,
-    attempt_index: int,
-    attempt_count: int,
-) -> None:
+async def _run_worker_attempt(options: WorkerAttemptOptions) -> None:
     step(
         f"2. Preparing NATS for provider attempt "
-        f"{attempt_index}/{attempt_count}"
+        f"{options.attempt_index}/{options.attempt_count}"
     )
-    lease = prepare_demo_nats(nats_url=nats_url, keep_nats=keep_nats)
-    ok(f"NATS ready at {lease.nats_url}")
-    await wait_for_nats(lease.nats_url)
-    config = demo_streaming_log_config(nats_url=lease.nats_url)
-    ok(f"Using event stream {config.events_stream}")
-    ok(f"Using work stream {config.work_stream}")
-    ok(f"Using payload bucket {config.payload_bucket}")
-
+    runtime: StreamingLogDemoRuntime | None = None
+    events: list[EventEnvelope] = []
+    verified_payloads = []
     try:
-        step("3. Bootstrapping streaming-log resources")
-        await bootstrap_streaming_log(config)
+        async with open_streaming_log_demo_runtime(
+            StreamingLogDemoRuntimeOptions(nats=options.nats)
+        ) as session:
+            runtime = session.runtime
+            _print_runtime_summary(runtime)
 
-        async with StreamingLogConnection(config) as connection:
-            payload_store = StreamingPayloadStore(connection)
-            event_log = StreamingEventLog(connection, payload_store)
-            work_queue = StreamingWorkQueue(connection, event_log)
-
-            step("4. Submitting work")
+            step("3. Submitting work")
             work = QueuedWorkMessage(
-                request=request,
+                request=options.request,
                 source="demo-streaming-log-worker",
                 metadata={
                     "demo": "streaming-log-worker",
-                    "provider": provider,
-                    "model": model,
+                    "provider": options.provider,
+                    "model": options.model,
                 },
-                max_retries=max_retries,
+                max_retries=options.max_retries,
             )
-            submitted = await work_queue.submit_work(work)
+            submitted = await session.work_queue.submit_work(work)
             ok(
                 f"Submitted work_id={work.work_id} "
                 f"event_id={submitted.event_id}"
             )
 
-            step("5. Running async streaming worker")
+            step("4. Running async streaming worker")
             await run_streaming_worker(
-                work_queue=work_queue,
+                work_queue=session.work_queue,
                 config=StreamingWorkerConfig(
                     worker_id="demo-streaming-worker",
                     max_messages=1,
@@ -203,31 +212,38 @@ async def _run_worker_attempt(
             )
             ok("Worker processed one live message")
 
-            step("6. Replaying and verifying events")
+            step("5. Replaying and verifying events")
             events = await collect_streaming_log_events(
-                event_log,
+                session.event_log,
                 expected_min_events=1,
             )
             counts = summarize_events(events)
             verified_payloads = await verify_payload_refs(
-                payload_store, events
+                session.payload_store, events
             )
             _print_worker_event_summary(events)
-            await _print_failure_details(payload_store, events)
+            await _print_failure_details(session.payload_store, events)
             _verify_worker_lifecycle(counts)
 
         ok(f"Verified {len(events)} replayed events")
         ok(f"Verified {len(verified_payloads)} payload references")
         ok("Streaming-log worker demo verified live execution")
     finally:
-        if lease.should_destroy_container and lease.container_name is not None:
-            step("Destroying temporary NATS")
-            cleanup_demo_nats(lease)
-        elif lease.container_name is not None:
-            command_hint(
-                "Destroy NATS",
-                f"docker rm -f {lease.container_name}",
-            )
+        _print_cleanup_hint(runtime)
+
+
+def _print_runtime_summary(runtime: StreamingLogDemoRuntime) -> None:
+    ok(f"NATS ready at {runtime.lease.nats_url}")
+    ok(f"Using event stream {runtime.config.events_stream}")
+    ok(f"Using work stream {runtime.config.work_stream}")
+    ok(f"Using payload bucket {runtime.config.payload_bucket}")
+
+
+def _print_cleanup_hint(runtime: StreamingLogDemoRuntime | None) -> None:
+    if runtime is None or runtime.lease.should_destroy_container:
+        return
+    if runtime.cleanup_command is not None:
+        command_hint("Destroy NATS", runtime.cleanup_command)
 
 
 def _build_live_request(
@@ -418,12 +434,16 @@ def main(
     try:
         asyncio.run(
             _run_worker_demo(
-                nats_url=nats_url,
-                keep_nats=keep_nats,
-                prompt=prompt,
-                max_retries=max_retries,
-                provider=provider,
-                model=model,
+                WorkerDemoOptions(
+                    nats=DemoNatsOptions(
+                        nats_url=nats_url,
+                        keep_nats=keep_nats,
+                    ),
+                    prompt=prompt,
+                    max_retries=max_retries,
+                    provider=provider,
+                    model=model,
+                )
             )
         )
     except Exception as exc:

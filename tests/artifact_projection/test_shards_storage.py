@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,6 +17,7 @@ from dr_llm.artifact_projection import (
     ShardContents,
 )
 from dr_llm.artifact_projection.shards import OpenShard, ShardWriter
+import dr_llm.artifact_projection.storage as storage_module
 from dr_llm.artifact_projection.storage import (
     ArtifactReader,
     LocalShardStorage,
@@ -99,6 +101,28 @@ def test_local_storage_publishes_finalized_shard_and_lists_it(
             references=contents.references,
         )
     ]
+
+
+def test_local_storage_caches_opened_shard_groups(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = ArtifactProjectionConfig(artifact_root=tmp_path)
+    storage = LocalShardStorage(config)
+    storage.initialize()
+    contents = _contents()
+    storage.publish_shard(contents, writer_session="writer-1")
+    open_group = storage_module.zarr.open_group
+    calls: list[object] = []
+
+    def counting_open_group(*args: Any, **kwargs: Any) -> object:
+        calls.append((args, kwargs))
+        return open_group(*args, **kwargs)
+
+    monkeypatch.setattr(storage_module.zarr, "open_group", counting_open_group)
+
+    assert storage.read_bytes(contents.references[0]) == b"hello"
+    assert storage.read_bytes(contents.references[0]) == b"hello"
+    assert len(calls) == 1
 
 
 def test_shard_writer_keeps_open_shard_when_publish_fails(

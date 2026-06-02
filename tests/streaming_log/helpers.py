@@ -96,6 +96,8 @@ class SpyEventPublisher:
     async def publish_event_spec(
         self, spec: StreamingEventPublishSpec
     ) -> EventEnvelope:
+        if self.context is None:
+            return self.record_publish(spec)
         return self.record_publish(
             spec.model_copy(update={"context": self.context})
         )

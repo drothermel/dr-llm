@@ -115,10 +115,20 @@ class ArtifactStore:
             )
         except ArtifactIndexConflictError as exc:
             reference = next(
-                reference
-                for reference in finalized_shard.references
-                if reference.artifact_id == exc.artifact_id
+                (
+                    reference
+                    for reference in finalized_shard.references
+                    if reference.artifact_id == exc.artifact_id
+                ),
+                None,
             )
+            if reference is None:
+                raise RuntimeError(
+                    "Artifact index reported conflict for "
+                    f"{exc.artifact_id!r}, but shard "
+                    f"{finalized_shard.manifest.shard_id!r} does not contain "
+                    "that artifact"
+                ) from exc
             self.index.record_reference_conflict(reference)
             raise
 

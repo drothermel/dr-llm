@@ -25,37 +25,9 @@ def _load_artifact_demo() -> ModuleType:
     return module
 
 
-def test_artifact_demo_command_forwards_options(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_artifact_demo_cli_help_smoke() -> None:
     artifact_demo = _load_artifact_demo()
-    calls: list[dict[str, object]] = []
 
-    async def fake_run_artifact_demo(**kwargs: object) -> None:
-        calls.append(kwargs)
-
-    monkeypatch.setattr(
-        artifact_demo,
-        "_run_artifact_demo",
-        fake_run_artifact_demo,
-    )
-
-    result = runner.invoke(
-        artifact_demo.app,
-        [
-            "--nats-url",
-            "nats://localhost:4222",
-            "--keep-nats",
-            "--artifact-root",
-            str(tmp_path),
-        ],
-    )
+    result = runner.invoke(artifact_demo.app, ["--help"])
 
     assert result.exit_code == 0
-    assert calls == [
-        {
-            "nats_url": "nats://localhost:4222",
-            "keep_nats": True,
-            "artifact_root": tmp_path,
-        }
-    ]

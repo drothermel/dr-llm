@@ -281,7 +281,10 @@ def delivery_from_message(message: Any) -> ArtifactEventDelivery:
 def stream_sequence_for_message(message: Any) -> int:
     metadata = getattr(message, "metadata", None)
     sequence = getattr(metadata, "sequence", None)
-    return int(getattr(sequence, "stream", 0))
+    stream_sequence = getattr(sequence, "stream", None)
+    if stream_sequence is None:
+        raise ValueError("message metadata is missing stream sequence")
+    return int(stream_sequence)
 
 
 __all__ = [

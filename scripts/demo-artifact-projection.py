@@ -23,6 +23,7 @@ import tempfile
 from pathlib import Path
 from typing import Annotated
 
+from pydantic import BaseModel, ConfigDict, Field
 import typer
 
 from dr_llm.artifact_projection import (
@@ -32,58 +33,60 @@ from dr_llm.artifact_projection import (
 )
 from dr_llm.artifact_projection.projector import run_artifact_projector
 from dr_llm.demo import (
-    cleanup_demo_nats,
     command_hint,
-    demo_streaming_log_config,
+    DemoNatsOptions,
     fail,
     ok,
-    prepare_demo_nats,
+    open_streaming_log_demo_runtime,
     step,
-    wait_for_nats,
+    StreamingLogDemoRuntime,
+    StreamingLogDemoRuntimeOptions,
 )
 from dr_llm.streaming_log import (
-    StreamingEventLog,
     StreamingEventPublishSpec,
-    StreamingLogConnection,
     StreamingLogEventType,
-    StreamingPayloadStore,
-    bootstrap_streaming_log,
 )
 from dr_llm.streaming_log.payloads import prepare_json_payload
 
 app = typer.Typer()
 
 
-async def _run_artifact_demo(
-    *,
-    nats_url: str | None,
-    keep_nats: bool,
-    artifact_root: Path,
-) -> None:
-    step("1. Preparing NATS")
-    lease = prepare_demo_nats(nats_url=nats_url, keep_nats=keep_nats)
-    ok(f"NATS ready at {lease.nats_url}")
-    await wait_for_nats(lease.nats_url)
-    streaming_config = demo_streaming_log_config(nats_url=lease.nats_url)
-    artifact_config = ArtifactProjectionConfig(artifact_root=artifact_root)
-    ok(f"Using event stream {streaming_config.events_stream}")
-    ok(f"Using payload bucket {streaming_config.payload_bucket}")
+class ArtifactProjectionDemoOptions(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    nats: DemoNatsOptions = Field(default_factory=DemoNatsOptions)
+    artifact_root: Path
+
+
+ArtifactProjectionDemoOptions.model_rebuild(
+    _types_namespace={
+        "DemoNatsOptions": DemoNatsOptions,
+        "Path": Path,
+    }
+)
+
+
+async def _run_artifact_demo(options: ArtifactProjectionDemoOptions) -> None:
+    artifact_config = ArtifactProjectionConfig(
+        artifact_root=options.artifact_root
+    )
     ok(f"Using artifact root {artifact_config.artifact_root}")
 
+    runtime: StreamingLogDemoRuntime | None = None
     try:
-        step("2. Bootstrapping streaming-log resources")
-        await bootstrap_streaming_log(streaming_config)
-
-        async with StreamingLogConnection(streaming_config) as connection:
-            payload_store = StreamingPayloadStore(connection)
-            event_log = StreamingEventLog(connection, payload_store)
+        step("1. Preparing streaming-log runtime")
+        async with open_streaming_log_demo_runtime(
+            StreamingLogDemoRuntimeOptions(nats=options.nats)
+        ) as session:
+            runtime = session.runtime
+            _print_runtime_summary(runtime)
             payload = prepare_json_payload(
                 "response_json",
                 {"demo": "artifact-projection", "ok": True},
             )
 
-            step("3. Publishing duplicate artifact payload refs")
-            event = await event_log.publish_event_spec(
+            step("2. Publishing duplicate artifact payload refs")
+            event = await session.event_log.publish_event_spec(
                 StreamingEventPublishSpec(
                     event_type=StreamingLogEventType.provider_response_received,
                     idempotency_key="demo-artifact-projection-1",
@@ -93,16 +96,16 @@ async def _run_artifact_demo(
             )
             ok(f"Published event_id={event.event_id}")
 
-            step("4. Running artifact projector")
+            step("3. Running artifact projector")
             processed = await run_artifact_projector(
-                connection=connection,
+                connection=session.connection,
                 config=artifact_config,
                 max_messages=1,
             )
             if processed != 1:
                 raise RuntimeError(f"Processed {processed} events, expected 1")
 
-        step("5. Verifying artifact index and readback")
+        step("4. Verifying artifact index and readback")
         store = ArtifactStore(config=artifact_config)
         store.initialize()
         references = store.index.list_references()
@@ -127,14 +130,20 @@ async def _run_artifact_demo(
             f"open={summary.open_artifact_count}"
         )
     finally:
-        if lease.should_destroy_container and lease.container_name is not None:
-            step("Destroying temporary NATS")
-            cleanup_demo_nats(lease)
-        elif lease.container_name is not None:
-            command_hint(
-                "Destroy NATS",
-                f"docker rm -f {lease.container_name}",
-            )
+        _print_cleanup_hint(runtime)
+
+
+def _print_runtime_summary(runtime: StreamingLogDemoRuntime) -> None:
+    ok(f"NATS ready at {runtime.lease.nats_url}")
+    ok(f"Using event stream {runtime.config.events_stream}")
+    ok(f"Using payload bucket {runtime.config.payload_bucket}")
+
+
+def _print_cleanup_hint(runtime: StreamingLogDemoRuntime | None) -> None:
+    if runtime is None or runtime.lease.should_destroy_container:
+        return
+    if runtime.cleanup_command is not None:
+        command_hint("Destroy NATS", runtime.cleanup_command)
 
 
 @app.command()
@@ -166,9 +175,13 @@ def main(
         if artifact_root is not None:
             asyncio.run(
                 _run_artifact_demo(
-                    nats_url=nats_url,
-                    keep_nats=keep_nats,
-                    artifact_root=artifact_root,
+                    ArtifactProjectionDemoOptions(
+                        nats=DemoNatsOptions(
+                            nats_url=nats_url,
+                            keep_nats=keep_nats,
+                        ),
+                        artifact_root=artifact_root,
+                    )
                 )
             )
             return
@@ -177,9 +190,13 @@ def main(
         ) as artifact_dir:
             asyncio.run(
                 _run_artifact_demo(
-                    nats_url=nats_url,
-                    keep_nats=keep_nats,
-                    artifact_root=Path(artifact_dir),
+                    ArtifactProjectionDemoOptions(
+                        nats=DemoNatsOptions(
+                            nats_url=nats_url,
+                            keep_nats=keep_nats,
+                        ),
+                        artifact_root=Path(artifact_dir),
+                    )
                 )
             )
     except Exception as exc:

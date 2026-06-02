@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from threading import Lock
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -71,6 +72,8 @@ class LocalShardLayout(BaseModel):
 class LocalShardStorage:
     def __init__(self, config: ArtifactProjectionConfig) -> None:
         self.config = config
+        self._zarr_group_cache: dict[str, zarr.Group] = {}
+        self._zarr_group_cache_lock = Lock()
 
     def initialize(self) -> None:
         self.config.shard_root.mkdir(parents=True, exist_ok=True)
@@ -118,9 +121,18 @@ class LocalShardStorage:
         return finalized_shards
 
     def _lane_array(self, reference: ArtifactReference) -> zarr.Array:
-        store_path = self.config.layout_root / reference.shard_uri
-        group = zarr.open_group(store=str(store_path), mode="r")
+        group = self._shard_group(reference)
         return cast(zarr.Array, group[f"lanes/{reference.lane}"])
+
+    def _shard_group(self, reference: ArtifactReference) -> zarr.Group:
+        shard_uri = reference.shard_uri
+        with self._zarr_group_cache_lock:
+            group = self._zarr_group_cache.get(shard_uri)
+            if group is None:
+                store_path = self.config.layout_root / shard_uri
+                group = zarr.open_group(store=str(store_path), mode="r")
+                self._zarr_group_cache[shard_uri] = group
+            return group
 
     def _layout_for(
         self, *, shard_id: str, writer_session: str

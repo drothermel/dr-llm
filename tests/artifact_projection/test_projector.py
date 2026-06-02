@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 from dr_llm.artifact_projection import (
     ArtifactProjectionConfig,
@@ -14,6 +17,7 @@ from dr_llm.artifact_projection.index import ArtifactIndex
 from dr_llm.artifact_projection.projector import (
     ArtifactEventDelivery,
     ArtifactProjector,
+    stream_sequence_for_message,
 )
 from dr_llm.artifact_projection.storage import ArtifactReader
 from dr_llm.streaming_log.events import (
@@ -157,6 +161,21 @@ def test_projector_records_missing_payload_error_and_acks(
     assert error.source_ref.payload_role == "response_json"
     assert error.event_context.run_id == "run-1"
     assert error.event_context.metadata == {"purpose": "projection-test"}
+
+
+def test_stream_sequence_for_message_reads_metadata() -> None:
+    message = SimpleNamespace(
+        metadata=SimpleNamespace(sequence=SimpleNamespace(stream=42))
+    )
+
+    assert stream_sequence_for_message(message) == 42
+
+
+def test_stream_sequence_for_message_requires_stream_sequence() -> None:
+    message = SimpleNamespace(metadata=SimpleNamespace(sequence=object()))
+
+    with pytest.raises(ValueError, match="missing stream sequence"):
+        stream_sequence_for_message(message)
 
 
 def _event(*payload_refs: PayloadRef) -> EventEnvelope:

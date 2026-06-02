@@ -30,10 +30,10 @@ def _load_worker_demo() -> ModuleType:
 
 def test_worker_demo_command_forwards_provider_options(monkeypatch) -> None:
     worker_demo = _load_worker_demo()
-    calls: list[dict[str, object]] = []
+    calls: list[object] = []
 
-    async def fake_run_worker_demo(**kwargs: object) -> None:
-        calls.append(kwargs)
+    async def fake_run_worker_demo(options: object) -> None:
+        calls.append(options)
 
     monkeypatch.setattr(
         worker_demo,
@@ -60,6 +60,11 @@ def test_worker_demo_command_forwards_provider_options(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert len(calls) == 1
-    assert calls[0]["provider"] == ProviderName.ANTHROPIC
-    assert calls[0]["prompt"] == "hello"
-    assert calls[0]["model"] == "claude-test"
+    options = calls[0]
+    assert isinstance(options, worker_demo.WorkerDemoOptions)
+    assert options.nats.nats_url == "nats://localhost:4222"
+    assert options.nats.keep_nats
+    assert options.provider == ProviderName.ANTHROPIC
+    assert options.prompt == "hello"
+    assert options.max_retries == 2
+    assert options.model == "claude-test"
