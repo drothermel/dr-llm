@@ -22,6 +22,12 @@ from dr_llm.streaming_log.client import (
     StreamingWorkQueue,
 )
 from dr_llm.streaming_log.config import StreamingLogConfig
+from dr_llm.streaming_log.event_builders import (
+    StreamingEventPublishSpec,
+    attempt_succeeded_event,
+    provider_response_received_event,
+    work_completed_succeeded_event,
+)
 from dr_llm.streaming_log.events import (
     EventContext,
     StreamingLogEventType,
@@ -226,38 +232,24 @@ class StreamingWorkLifecycleReporter:
 
     async def record_success(self, outcome: StreamingWorkOutcome) -> None:
         response = self._response_for(outcome)
-        response_payload = response.model_dump(
-            mode="json",
-            exclude_none=True,
-            exclude_computed_fields=True,
+        await self._publish_event_spec(
+            provider_response_received_event(
+                work_id=self.attempt.work.work_id,
+                attempt=self.attempt.attempt,
+                response=response,
+            )
         )
-        await self.publisher.publish_event_with_payloads(
-            StreamingLogEventType.provider_response_received,
-            idempotency_key=self.idempotency_key_for(
-                "provider_response_received"
-            ),
-            payload={
-                "provider": response.provider,
-                "model": response.model,
-                "mode": response.mode,
-                "finish_reason": response.finish_reason,
-            },
-            payloads=[prepare_json_payload("response_json", response_payload)],
+        await self._publish_event_spec(
+            attempt_succeeded_event(
+                work_id=self.attempt.work.work_id,
+                attempt=self.attempt.attempt,
+            )
         )
-        await self.publisher.publish_event_with_payloads(
-            StreamingLogEventType.attempt_succeeded,
-            idempotency_key=self.idempotency_key_for("attempt_succeeded"),
-            payload={"attempt": self.attempt.attempt},
-        )
-        await self.publisher.publish_event_with_payloads(
-            StreamingLogEventType.work_completed,
-            idempotency_key=idempotency_key(
-                "work_completed", self.attempt.work.work_id
-            ),
-            payload={
-                "status": StreamingWorkOutcomeType.succeeded,
-                "attempt": self.attempt.attempt,
-            },
+        await self._publish_event_spec(
+            work_completed_succeeded_event(
+                work_id=self.attempt.work.work_id,
+                attempt=self.attempt.attempt,
+            )
         )
 
     async def record_failure(self, outcome: StreamingWorkOutcome) -> None:
@@ -300,6 +292,17 @@ class StreamingWorkLifecycleReporter:
     def idempotency_key_for(self, event_name: str) -> str:
         return idempotency_key(
             event_name, self.attempt.work.work_id, self.attempt.attempt
+        )
+
+    async def _publish_event_spec(
+        self, spec: StreamingEventPublishSpec
+    ) -> None:
+        await self.publisher.publish_event_with_payloads(
+            spec.event_type,
+            idempotency_key=spec.idempotency_key,
+            payload=spec.payload,
+            payloads=spec.payloads,
+            metadata=spec.metadata,
         )
 
     @staticmethod

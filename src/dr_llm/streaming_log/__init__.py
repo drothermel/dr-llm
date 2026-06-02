@@ -13,6 +13,13 @@ from dr_llm.streaming_log.client import (
     StreamingWorkQueue,
 )
 from dr_llm.streaming_log.config import StreamingLogConfig
+from dr_llm.streaming_log.event_builders import (
+    StreamingEventPublishSpec,
+    attempt_succeeded_event,
+    pool_sample_imported_event,
+    provider_response_received_event,
+    work_completed_succeeded_event,
+)
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
@@ -57,6 +64,7 @@ __all__ = [
     "QueuedWorkMessage",
     "ContextualEventPublisher",
     "StreamingEventLog",
+    "StreamingEventPublishSpec",
     "StreamingEventPublisher",
     "StreamingLogConnection",
     "StreamingMessageAcknowledger",
@@ -75,8 +83,12 @@ __all__ = [
     "StreamingWorkOutcomeType",
     "StreamingWorkProcessor",
     "StreamingWorkerConfig",
+    "attempt_succeeded_event",
     "bootstrap_streaming_log",
     "inspect_streaming_log",
+    "pool_sample_imported_event",
+    "provider_response_received_event",
     "record_pool_import",
     "run_streaming_worker",
+    "work_completed_succeeded_event",
 ]

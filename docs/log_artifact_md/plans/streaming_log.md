@@ -156,6 +156,7 @@ src/dr_llm/streaming_log/
   __init__.py
   config.py
   events.py
+  event_builders.py
   payloads.py
   client.py
   bootstrap.py
@@ -172,6 +173,8 @@ Core responsibilities:
 - `events.py`: event type enum, producer model, event envelope model, and
   idempotency helpers. Shared workflow identity is represented by
   `EventContext`, which is copied into the envelope when the event is built.
+- `event_builders.py`: public event-specific publish specs and builders for
+  inline payloads, payload references, idempotency keys, context, and metadata.
 - `payloads.py`: payload serialization, hashing, object key construction, and
   payload reference model.
 - `client.py`: async connection manager, context-bound event publisher, payload
@@ -287,7 +290,8 @@ Repeated imports of unchanged rows should not create conflicting logical facts.
 The importer should be composed from public primitives rather than one full
 workflow function. The pool snapshot source owns Postgres runtime setup, catalog
 lookup, schema snapshotting, sample iteration, and cleanup. The import event
-recorder owns started, sample, completed, and failed event emission.
+recorder owns started, sample, completed, and failed event emission, while
+event builders own each event's payload shape and idempotency key.
 
 `pool_import_failed` represents source snapshot acquisition failures, such as
 opening the source pool or reading its samples. Event publication failures are
@@ -343,6 +347,7 @@ Unit tests:
 - Deterministic idempotency key generation.
 - Payload hashing and object key construction.
 - Payload reference serialization.
+- Event builder specs for sample import and worker success lifecycle events.
 - Streaming worker attempt decoding, retry policy, lifecycle event reporting,
   and ack/nak decisions.
 - Snapshot import event construction from `PoolSample`.
