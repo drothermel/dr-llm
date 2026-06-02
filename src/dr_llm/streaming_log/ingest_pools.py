@@ -140,19 +140,21 @@ class PoolImportEventRecorder:
             raise ValueError(
                 "pool schema payload is required for start events"
             )
-        return await self.event_log.publish_event_with_payloads(
-            StreamingLogEventType.pool_import_started,
-            idempotency_key=idempotency_key(
-                self.source_id, self.pool_name, "pool_import_started"
-            ),
-            payload={
-                "pool_name": self.pool_name,
-                "source_id": self.source_id,
-            },
-            payloads=[
-                prepare_json_payload("pool_schema", self.schema_payload)
-            ],
-            context=self.import_context,
+        return await self.event_log.publish_event_spec(
+            StreamingEventPublishSpec(
+                event_type=StreamingLogEventType.pool_import_started,
+                idempotency_key=idempotency_key(
+                    self.source_id, self.pool_name, "pool_import_started"
+                ),
+                payload={
+                    "pool_name": self.pool_name,
+                    "source_id": self.source_id,
+                },
+                payloads=[
+                    prepare_json_payload("pool_schema", self.schema_payload)
+                ],
+                context=self.import_context,
+            )
         )
 
     async def record_sample_imported(
@@ -162,7 +164,7 @@ class PoolImportEventRecorder:
             raise ValueError(
                 "pool schema payload is required for sample events"
             )
-        return await self._publish_event_spec(
+        return await self.event_log.publish_event_spec(
             pool_sample_imported_event(
                 pool_name=self.pool_name,
                 source_id=self.source_id,
@@ -172,51 +174,43 @@ class PoolImportEventRecorder:
         )
 
     async def record_completed(self, imported_count: int) -> EventEnvelope:
-        return await self.event_log.publish_event_with_payloads(
-            StreamingLogEventType.pool_import_completed,
-            idempotency_key=idempotency_key(
-                self.source_id,
-                self.pool_name,
-                "pool_import_completed",
-                imported_count,
-            ),
-            payload={
-                "pool_name": self.pool_name,
-                "source_id": self.source_id,
-                "imported_count": imported_count,
-                "reconstructed": True,
-            },
-            context=self.import_context,
+        return await self.event_log.publish_event_spec(
+            StreamingEventPublishSpec(
+                event_type=StreamingLogEventType.pool_import_completed,
+                idempotency_key=idempotency_key(
+                    self.source_id,
+                    self.pool_name,
+                    "pool_import_completed",
+                    imported_count,
+                ),
+                payload={
+                    "pool_name": self.pool_name,
+                    "source_id": self.source_id,
+                    "imported_count": imported_count,
+                    "reconstructed": True,
+                },
+                context=self.import_context,
+            )
         )
 
     async def record_failed(self, exc: Exception) -> EventEnvelope:
-        return await self.event_log.publish_event_with_payloads(
-            StreamingLogEventType.pool_import_failed,
-            idempotency_key=idempotency_key(
-                self.source_id,
-                self.pool_name,
-                "pool_import_failed",
-                type(exc).__name__,
-            ),
-            payload={
-                "pool_name": self.pool_name,
-                "source_id": self.source_id,
-                "error_type": type(exc).__name__,
-                "message": str(exc),
-            },
-            context=self.import_context,
-        )
-
-    async def _publish_event_spec(
-        self, spec: StreamingEventPublishSpec
-    ) -> EventEnvelope:
-        return await self.event_log.publish_event_with_payloads(
-            spec.event_type,
-            idempotency_key=spec.idempotency_key,
-            payload=spec.payload,
-            payloads=spec.payloads,
-            context=spec.context,
-            metadata=spec.metadata,
+        return await self.event_log.publish_event_spec(
+            StreamingEventPublishSpec(
+                event_type=StreamingLogEventType.pool_import_failed,
+                idempotency_key=idempotency_key(
+                    self.source_id,
+                    self.pool_name,
+                    "pool_import_failed",
+                    type(exc).__name__,
+                ),
+                payload={
+                    "pool_name": self.pool_name,
+                    "source_id": self.source_id,
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+                context=self.import_context,
+            )
         )
 
 

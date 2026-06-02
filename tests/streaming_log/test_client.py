@@ -12,6 +12,7 @@ from dr_llm.streaming_log.client import (
     StreamingWorkQueue,
 )
 from dr_llm.streaming_log.errors import PayloadIntegrityError
+from dr_llm.streaming_log.event_builders import StreamingEventPublishSpec
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
@@ -156,11 +157,13 @@ def test_event_log_contextual_publisher_applies_context_and_writes_payloads() ->
     )
 
     event = asyncio.run(
-        publisher.publish_event_with_payloads(
-            StreamingLogEventType.attempt_started,
-            idempotency_key="attempt-started-1",
-            payload={"attempt": 1},
-            payloads=[prepare_text_payload("stdout", "hello")],
+        publisher.publish_event_spec(
+            StreamingEventPublishSpec(
+                event_type=StreamingLogEventType.attempt_started,
+                idempotency_key="attempt-started-1",
+                payload={"attempt": 1},
+                payloads=[prepare_text_payload("stdout", "hello")],
+            )
         )
     )
     published = EventEnvelope.model_validate_json(fake_js.published[0].payload)

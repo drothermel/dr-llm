@@ -43,9 +43,10 @@ from dr_llm.demo import (
 )
 from dr_llm.streaming_log import (
     StreamingEventLog,
+    StreamingEventPublishSpec,
     StreamingLogConnection,
-    StreamingPayloadStore,
     StreamingLogEventType,
+    StreamingPayloadStore,
     bootstrap_streaming_log,
 )
 from dr_llm.streaming_log.payloads import prepare_json_payload
@@ -82,11 +83,13 @@ async def _run_artifact_demo(
             )
 
             step("3. Publishing duplicate artifact payload refs")
-            event = await event_log.publish_event_with_payloads(
-                StreamingLogEventType.provider_response_received,
-                idempotency_key="demo-artifact-projection-1",
-                payload={"provider": "demo"},
-                payloads=[payload, payload],
+            event = await event_log.publish_event_spec(
+                StreamingEventPublishSpec(
+                    event_type=StreamingLogEventType.provider_response_received,
+                    idempotency_key="demo-artifact-projection-1",
+                    payload={"provider": "demo"},
+                    payloads=[payload, payload],
+                )
             )
             ok(f"Published event_id={event.event_id}")
 

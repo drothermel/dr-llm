@@ -210,13 +210,15 @@ class StreamingWorkLifecycleReporter:
         )
 
     async def record_attempt_started(self) -> None:
-        await self.publisher.publish_event_with_payloads(
-            StreamingLogEventType.attempt_started,
-            idempotency_key=self.idempotency_key_for("attempt_started"),
-            payload={
-                "worker_id": self.attempt.worker_id,
-                "attempt": self.attempt.attempt,
-            },
+        await self.publisher.publish_event_spec(
+            StreamingEventPublishSpec(
+                event_type=StreamingLogEventType.attempt_started,
+                idempotency_key=self.idempotency_key_for("attempt_started"),
+                payload={
+                    "worker_id": self.attempt.worker_id,
+                    "attempt": self.attempt.attempt,
+                },
+            )
         )
 
     async def record_provider_request_prepared(self) -> None:
@@ -226,34 +228,38 @@ class StreamingWorkLifecycleReporter:
             exclude_none=True,
             exclude_computed_fields=True,
         )
-        await self.publisher.publish_event_with_payloads(
-            StreamingLogEventType.provider_request_prepared,
-            idempotency_key=self.idempotency_key_for(
-                "provider_request_prepared"
-            ),
-            payload={
-                "provider": request.provider,
-                "model": request.model,
-                "mode": request.mode,
-            },
-            payloads=[prepare_json_payload("request_json", request_payload)],
+        await self.publisher.publish_event_spec(
+            StreamingEventPublishSpec(
+                event_type=StreamingLogEventType.provider_request_prepared,
+                idempotency_key=self.idempotency_key_for(
+                    "provider_request_prepared"
+                ),
+                payload={
+                    "provider": request.provider,
+                    "model": request.model,
+                    "mode": request.mode,
+                },
+                payloads=[
+                    prepare_json_payload("request_json", request_payload)
+                ],
+            )
         )
 
     async def record_success(self, outcome: StreamingWorkSucceeded) -> None:
-        await self._publish_event_spec(
+        await self.publisher.publish_event_spec(
             provider_response_received_event(
                 work_id=self.attempt.work.work_id,
                 attempt=self.attempt.attempt,
                 response=outcome.response,
             )
         )
-        await self._publish_event_spec(
+        await self.publisher.publish_event_spec(
             attempt_succeeded_event(
                 work_id=self.attempt.work.work_id,
                 attempt=self.attempt.attempt,
             )
         )
-        await self._publish_event_spec(
+        await self.publisher.publish_event_spec(
             work_completed_succeeded_event(
                 work_id=self.attempt.work.work_id,
                 attempt=self.attempt.attempt,
@@ -264,11 +270,13 @@ class StreamingWorkLifecycleReporter:
         self, outcome: StreamingWorkFailureOutcome
     ) -> None:
         error_payload = outcome.error_payload()
-        await self.publisher.publish_event_with_payloads(
-            StreamingLogEventType.attempt_failed,
-            idempotency_key=self.idempotency_key_for("attempt_failed"),
-            payload=error_payload,
-            payloads=[prepare_json_payload("error_detail", error_payload)],
+        await self.publisher.publish_event_spec(
+            StreamingEventPublishSpec(
+                event_type=StreamingLogEventType.attempt_failed,
+                idempotency_key=self.idempotency_key_for("attempt_failed"),
+                payload=error_payload,
+                payloads=[prepare_json_payload("error_detail", error_payload)],
+            )
         )
         if isinstance(outcome, StreamingWorkRetryScheduled):
             await self.record_retry_scheduled(outcome)
@@ -278,41 +286,36 @@ class StreamingWorkLifecycleReporter:
     async def record_retry_scheduled(
         self, outcome: StreamingWorkRetryScheduled
     ) -> None:
-        await self.publisher.publish_event_with_payloads(
-            StreamingLogEventType.work_retry_scheduled,
-            idempotency_key=self.idempotency_key_for("work_retry_scheduled"),
-            payload={
-                "attempt": self.attempt.attempt,
-                "next_attempt": outcome.next_attempt,
-            },
+        await self.publisher.publish_event_spec(
+            StreamingEventPublishSpec(
+                event_type=StreamingLogEventType.work_retry_scheduled,
+                idempotency_key=self.idempotency_key_for(
+                    "work_retry_scheduled"
+                ),
+                payload={
+                    "attempt": self.attempt.attempt,
+                    "next_attempt": outcome.next_attempt,
+                },
+            )
         )
 
     async def record_work_failed(self, error_payload: dict[str, Any]) -> None:
-        await self.publisher.publish_event_with_payloads(
-            StreamingLogEventType.work_completed,
-            idempotency_key=idempotency_key(
-                "work_completed", self.attempt.work.work_id
-            ),
-            payload={
-                "status": StreamingWorkOutcomeType.failed,
-                **error_payload,
-            },
+        await self.publisher.publish_event_spec(
+            StreamingEventPublishSpec(
+                event_type=StreamingLogEventType.work_completed,
+                idempotency_key=idempotency_key(
+                    "work_completed", self.attempt.work.work_id
+                ),
+                payload={
+                    "status": StreamingWorkOutcomeType.failed,
+                    **error_payload,
+                },
+            )
         )
 
     def idempotency_key_for(self, event_name: str) -> str:
         return idempotency_key(
             event_name, self.attempt.work.work_id, self.attempt.attempt
-        )
-
-    async def _publish_event_spec(
-        self, spec: StreamingEventPublishSpec
-    ) -> None:
-        await self.publisher.publish_event_with_payloads(
-            spec.event_type,
-            idempotency_key=spec.idempotency_key,
-            payload=spec.payload,
-            payloads=spec.payloads,
-            metadata=spec.metadata,
         )
 
 
@@ -476,20 +479,24 @@ async def _run_worker_session(
 async def _publish_producer_started(
     *, event_log: StreamingEventLog, worker_id: str
 ) -> None:
-    await event_log.publish_event_with_payloads(
-        StreamingLogEventType.producer_started,
-        idempotency_key=idempotency_key("producer_started", worker_id),
-        payload={"worker_id": worker_id},
+    await event_log.publish_event_spec(
+        StreamingEventPublishSpec(
+            event_type=StreamingLogEventType.producer_started,
+            idempotency_key=idempotency_key("producer_started", worker_id),
+            payload={"worker_id": worker_id},
+        )
     )
 
 
 async def _publish_producer_stopped(
     *, event_log: StreamingEventLog, worker_id: str
 ) -> None:
-    await event_log.publish_event_with_payloads(
-        StreamingLogEventType.producer_stopped,
-        idempotency_key=idempotency_key("producer_stopped", worker_id),
-        payload={"worker_id": worker_id},
+    await event_log.publish_event_spec(
+        StreamingEventPublishSpec(
+            event_type=StreamingLogEventType.producer_stopped,
+            idempotency_key=idempotency_key("producer_stopped", worker_id),
+            payload={"worker_id": worker_id},
+        )
     )
 
 

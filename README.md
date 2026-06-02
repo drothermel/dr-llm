@@ -58,16 +58,18 @@ async with StreamingLogConnection(config) as connection:
     context = EventContext.from_work_attempt(work, attempt_id=attempt_id)
     publisher = event_log.with_event_context(context)
 
-    await publisher.publish_event_with_payloads(
-        StreamingLogEventType.attempt_started,
-        idempotency_key=idempotency_key(
-            "attempt_started", work.work_id, attempt
-        ),
-        payload={"worker_id": worker_id, "attempt": attempt},
+    await publisher.publish_event_spec(
+        StreamingEventPublishSpec(
+            event_type=StreamingLogEventType.attempt_started,
+            idempotency_key=idempotency_key(
+                "attempt_started", work.work_id, attempt
+            ),
+            payload={"worker_id": worker_id, "attempt": attempt},
+        )
     )
 ```
 
-Use `event_log.publish_event_with_payloads(...)` directly for context-free
+Use `event_log.publish_event_spec(...)` directly for context-free
 operational events such as producer startup/shutdown. The event wire shape is
 unchanged: `EventContext` is only the construction primitive for shared
 envelope identity.

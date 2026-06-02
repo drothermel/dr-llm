@@ -20,6 +20,7 @@ from dr_llm.streaming_log.client import (
     StreamingPayloadStore,
 )
 from dr_llm.streaming_log.config import StreamingLogConfig
+from dr_llm.streaming_log.event_builders import StreamingEventPublishSpec
 from dr_llm.streaming_log.events import StreamingLogEventType
 from dr_llm.streaming_log.payloads import prepare_json_payload
 
@@ -52,11 +53,13 @@ async def _test_projector_reads_stream_payload_and_writes_artifact(
         payload_store = StreamingPayloadStore(connection)
         event_log = StreamingEventLog(connection, payload_store)
         payload = prepare_json_payload("response_json", {"ok": True})
-        await event_log.publish_event_with_payloads(
-            StreamingLogEventType.provider_response_received,
-            idempotency_key="artifact-integration-1",
-            payload={"provider": "test"},
-            payloads=[payload, payload],
+        await event_log.publish_event_spec(
+            StreamingEventPublishSpec(
+                event_type=StreamingLogEventType.provider_response_received,
+                idempotency_key="artifact-integration-1",
+                payload={"provider": "test"},
+                payloads=[payload, payload],
+            )
         )
 
         processed = await run_artifact_projector(
