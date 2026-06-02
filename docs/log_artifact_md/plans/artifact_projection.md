@@ -170,10 +170,10 @@ that were previously reserved for later design work.
   permanent source, artifact layout changes should be handled by replaying into
   a new projection/layout version rather than mutating old finalized shards.
 
-## Artifact Decisions Now Mostly Answerable
+## Artifact Decisions Now Locked For V1
 
-These answers are now strong enough to carry into an implementation plan, though
-the physical Zarr details still need a final design pass.
+These answers are now strong enough for implementation and for the metadata
+projection to design against.
 
 - **Artifact categories from streaming refs:** project all event `payload_refs`
   with large/raw roles into artifact storage in v1. This includes
@@ -210,6 +210,134 @@ the physical Zarr details still need a final design pass.
   committed pointer/manifest data. In-progress shards are writer-owned and
   recoverable by replay.
 
+## Metadata-Facing Artifact Contract
+
+The metadata projection should consume artifact references from finalized
+artifact manifests and the rebuildable artifact index. It should not read
+`DRLLM_PAYLOADS` directly, depend on pool rows, or know how the artifact writer
+stages bytes.
+
+The v1 metadata-facing reference is `ArtifactReference` with these fields:
+
+- `artifact_id`: stable logical artifact identifier with an `art_` prefix.
+- `projection_version`: artifact projection version, starting at
+  `artifact-v1`.
+- `source_event_id`: event that introduced the payload reference.
+- `source_idempotency_key`: logical fact key from the source event.
+- `payload_role`: source semantic role, such as `request_json`,
+  `response_json`, `stdout`, `stderr`, `generated_code`,
+  `validation_report`, `metrics_payload`, or `error_detail`.
+- `source_object_key`: immutable object key in `DRLLM_PAYLOADS`.
+- `source_sha256`: SHA-256 of the exact bytes in `DRLLM_PAYLOADS`.
+- `logical_sha256`: SHA-256 of the bytes exposed by the artifact projection
+  after any supported source decompression.
+- `size_bytes`: logical byte length exposed to artifact readers.
+- `content_type`: media type from the source payload reference.
+- `encoding`: text encoding, usually `utf-8`, or `binary` for non-text bytes.
+- `source_compression`: compression recorded on the source payload reference.
+- `lane`: one of `json`, `text`, or `binary`.
+- `shard_id`: finalized shard identifier.
+- `shard_uri`: object-store-compatible relative path to the finalized shard.
+- `offset`: byte offset within the lane array.
+- `length`: byte length within the lane array.
+- `created_at`: artifact projection write timestamp.
+- `schema_version`: artifact reference schema version.
+
+`artifact_id` is derived from source provenance plus content, not from content
+alone:
+
+```text
+art_<sha256("drllm-artifact-v1" + idempotency_key + role + object_key + source_sha256)>
+```
+
+The same bytes can therefore appear as distinct artifacts when they have
+different semantic roles or provenance. Physical deduplication is not required
+for v1.
+
+## Concrete Implementation Plan
+
+The artifact projection should be implemented as a completely new package,
+`src/dr_llm/artifact_projection/`, with no imports from `dr_llm.pool`,
+`dr_llm.sampling`, or current generation-log sinks. The only upstream contracts
+are the streaming-log event envelope and payload-reference shape.
+
+Implementation steps:
+
+1. **Update this plan document first.** Keep this metadata-facing contract
+   current so the metadata projection can be designed against stable artifact
+   references in the same way this plan was designed against the streaming-log
+   contract.
+2. **Add storage dependencies.** Add Zarr v3 support for immutable shard stores.
+   Use the standard-library `sqlite3` module for the local mutable sidecar
+   index. Do not add a Postgres dependency for artifact projection state.
+3. **Create Pydantic models.** Define `ArtifactProjectionConfig`,
+   `PayloadArtifactSource`, `ArtifactReference`, `ShardManifest`,
+   `ProjectionCheckpoint`, and `ProjectionError`. Use `extra="forbid"` for
+   manifest and reference models so schema drift fails fast.
+4. **Create the sidecar index.** Store artifact references, finalized shard
+   records, open shard state, projection checkpoints, and projection errors in
+   `index/artifacts.sqlite3`. Treat this index as rebuildable from manifests,
+   not as the source of truth.
+5. **Create the shard writer.** Stage payload bytes into writer-owned staging
+   directories, append them into lane-specific buffers, finalize shards into
+   Zarr v3 stores, write manifest JSONL files, then atomically mark shards
+   finalized. Readers must never read staging shards.
+6. **Create the reader.** Support `read_artifact`, `read_artifacts`,
+   `read_text`, `read_json`, and `read_bytes` by looking up references in the
+   sidecar index and reading finalized Zarr lane arrays by offset and length.
+7. **Create the projector.** Consume `DRLLM_EVENTS`, ignore events without
+   artifact-bearing `payload_refs`, fetch referenced bytes from
+   `DRLLM_PAYLOADS`, verify source hashes, write artifacts, update manifests and
+   the sidecar index, and acknowledge only after the durable projection outcome
+   is recorded.
+8. **Create CLI commands.** Add `dr-llm artifact-projection init`, `run`,
+   `flush`, `inspect`, `rebuild-index`, `verify`, and `read`.
+9. **Test the layer.** Add unit and storage tests first, then integration tests
+   against Docker NATS once the streaming-log implementation exists.
+
+Default storage layout:
+
+```text
+<artifact-root>/
+  layouts/artifact-v1/
+    shards/<shard_id>.zarr/
+    manifests/<shard_id>.jsonl
+    index/artifacts.sqlite3
+    staging/<writer_session>/<shard_id>/
+```
+
+Each finalized shard stores one one-dimensional `uint8` Zarr array per used
+lane: `json`, `text`, and `binary`. Text-like artifacts are UTF-8 bytes unless
+their source reference states another encoding. JSON artifacts are stored as
+bytes and decoded by readers, not queried inside Zarr.
+
+Default physical parameters:
+
+- target finalized shard size: 128 MiB uncompressed
+- chunk size: 8 MiB
+- large-object behavior: a single artifact may exceed the target shard size
+- projected compression: Zarr chunk/shard compression, not per-artifact
+  compression
+- source compression support: `none` only in v1; unsupported source compression
+  is recorded as a durable projection error
+
+Checkpoint and recovery rules:
+
+- Consumer delivery is at least once; projection must be idempotent.
+- A duplicate event/ref with the same `artifact_id` and identical source fields
+  is a no-op.
+- A duplicate `artifact_id` with conflicting source fields is a hard projection
+  error.
+- Event acknowledgments happen only after artifact writes, manifest/index
+  updates, and checkpoint/error records are durable.
+- On restart, remove partial finalized outputs without finalized markers, resume
+  open staging state when safe, and rebuild missing index rows from finalized
+  manifests.
+
+This is a hard-cutover design. Pool rows may still be imported into the
+streaming log upstream, but artifact projection code must not contain pool
+backfill, pool compatibility, lease, progress, or JSONB-storage logic.
+
 ## Data-Driven Design Questions
 
 Use the measurements to prepare recommendations for these storage decisions.
@@ -227,12 +355,10 @@ Use the measurements to prepare recommendations for these storage decisions.
 - **Operational limits:** expected local disk use, shard count, object-store
   compatibility constraints, and how large individual payloads can be before
   special handling is needed.
-- **Projection handoff:** whether artifact references are exposed to the
-  metadata projection through a manifest table/file, derived projection events,
-  or direct metadata-writer integration.
-- **Checkpoint storage:** where artifact projector progress is recorded, and how
-  checkpoints relate to finalized shard manifests and JetStream consumer
-  acknowledgments.
+- **Projection handoff:** answered for v1. Metadata consumes finalized artifact
+  manifests and a rebuildable sidecar index.
+- **Checkpoint storage:** answered for v1. Checkpoints live in the SQLite
+  sidecar index and are recoverable against finalized manifests.
 
 ## Initial Storage Implementation Suggestions
 
@@ -251,9 +377,9 @@ streaming-log and metadata schemas are fixed.
   reasonable discussion threshold for moving rarely queried metadata blobs into
   artifact storage while retaining searchable summary fields in metadata.
 - **Shard sizing:** design v1 around many finalized shards rather than one file
-  per artifact. A target finalized shard range around 64-256 MiB uncompressed is
-  plausible for the measured 7.6 GB local corpus: it would produce tens to low
-  hundreds of shards, not thousands.
+  per artifact. Use 128 MiB uncompressed as the v1 target. The earlier
+  64-256 MiB range remains useful for later tuning, but the implementer should
+  start with 128 MiB.
 - **Large-object handling:** support individual artifacts above 1 MiB without a
   special fallback path. The measured corpus already contains response and
   metadata blobs around 1-1.6 MiB.
@@ -279,6 +405,13 @@ streaming-log and metadata schemas are fixed.
   garbage collection or compaction while `DRLLM_EVENTS` and `DRLLM_PAYLOADS`
   remain the permanent source of truth and the metadata layer can point to a
   selected artifact layout version.
+- **Metadata handoff:** use finalized shard manifests plus the rebuildable
+  SQLite sidecar index. Do not publish derived artifact events in v1, and do not
+  write directly to the metadata database from the artifact projector.
+- **Clean cutover boundary:** the artifact projection package must not import or
+  call pool, sampling, worker-lease, or generation JSONL code. Pool-equivalent
+  results come from the combination of streaming-log import, artifact manifests,
+  and metadata projection.
 - **Migration posture:** current pool JSONB should be treated as a measurement
   source and possible backfill source, not as the long-term storage model.
   Existing rows show why the artifact projection should also consider oversized
@@ -315,23 +448,17 @@ After the initial measurements, the strongest mostly-independent defaults are:
 - source payload checksums and projected shard checksums are separate integrity
   layers
 
-## Discussion Outputs
+## Remaining Discussion Outputs
 
 The design discussion should leave with concrete answers or explicit follow-up
 owners for the remaining physical-layout and handoff details:
 
-- target shard size and chunk size ranges
 - read API minimum surface
-- metadata handoff mechanism for projected artifact references
-- projection checkpoint storage and recovery behavior
-- finalized shard manifest format
 - local-first storage path and object-store compatibility constraints
 - measurements that must be rerun before implementation
 
 ## Suggested Next Design Decisions
 
-- Decide the first shard target size range. Start discussion at 64-256 MiB
-  uncompressed, then tune by Zarr chunking constraints.
 - Decide the v1 threshold for spilling oversized inline metadata-like payloads
   into artifacts. Start discussion at 16 KiB.
 - Decide whether content-addressed dedupe stays identity-only in v1 or also
@@ -340,10 +467,6 @@ owners for the remaining physical-layout and handoff details:
 - Decide the minimum artifact reader API before implementing writer internals,
   because notebook/debug workflows likely need batch request/response retrieval
   more than low-level shard inspection.
-- Decide whether metadata receives artifact references from a manifest,
-  projector-emitted derived events, or a direct projection service boundary.
-- Decide where projection checkpoints live and what must be durable before
-  acknowledging a consumed event.
 
 ## Non-Goals For This Plan
 
