@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Any, Protocol, Self
+from typing import Any, Literal, Protocol, Self, TypeAlias
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.llm import (
     LlmRequest,
@@ -80,79 +80,78 @@ class StreamingWorkAttempt(BaseModel):
         )
 
 
-class StreamingWorkOutcome(BaseModel):
+class StreamingWorkSucceeded(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    outcome_type: StreamingWorkOutcomeType
+    outcome_type: Literal[StreamingWorkOutcomeType.succeeded] = (
+        StreamingWorkOutcomeType.succeeded
+    )
     attempt: int = Field(ge=1)
-    response: LlmResponse | None = None
-    error_type: str | None = None
-    error_message: str | None = None
-    next_attempt: int | None = Field(default=None, ge=2)
+    response: LlmResponse
+
+
+class StreamingWorkRetryScheduled(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    outcome_type: Literal[StreamingWorkOutcomeType.retry_scheduled] = (
+        StreamingWorkOutcomeType.retry_scheduled
+    )
+    attempt: int = Field(ge=1)
+    error_type: str
+    error_message: str
+    next_attempt: int = Field(ge=2)
 
     @classmethod
-    def succeeded(cls, *, attempt: int, response: LlmResponse) -> Self:
-        return cls(
-            outcome_type=StreamingWorkOutcomeType.succeeded,
-            attempt=attempt,
-            response=response,
-        )
-
-    @classmethod
-    def retry_scheduled(
+    def from_exception(
         cls, *, attempt: int, exc: Exception, next_attempt: int
     ) -> Self:
         return cls(
-            outcome_type=StreamingWorkOutcomeType.retry_scheduled,
             attempt=attempt,
             error_type=type(exc).__name__,
             error_message=str(exc),
             next_attempt=next_attempt,
         )
 
-    @classmethod
-    def failed(cls, *, attempt: int, exc: Exception) -> Self:
-        return cls(
-            outcome_type=StreamingWorkOutcomeType.failed,
-            attempt=attempt,
-            error_type=type(exc).__name__,
-            error_message=str(exc),
-        )
-
-    @model_validator(mode="after")
-    def _validate_outcome_payload(self) -> Self:
-        if self.outcome_type is StreamingWorkOutcomeType.succeeded:
-            if self.response is None:
-                raise ValueError("succeeded outcomes require a response")
-            if self.error_type is not None or self.error_message is not None:
-                raise ValueError("succeeded outcomes cannot include errors")
-            if self.next_attempt is not None:
-                raise ValueError("succeeded outcomes cannot schedule retries")
-            return self
-        if self.response is not None:
-            raise ValueError("failure outcomes cannot include a response")
-        if self.error_type is None or self.error_message is None:
-            raise ValueError("failure outcomes require error details")
-        if (
-            self.outcome_type is StreamingWorkOutcomeType.retry_scheduled
-            and self.next_attempt is None
-        ):
-            raise ValueError("retry outcomes require next_attempt")
-        if (
-            self.outcome_type is StreamingWorkOutcomeType.failed
-            and self.next_attempt is not None
-        ):
-            raise ValueError("failed outcomes cannot schedule retries")
-        return self
-
     def error_payload(self) -> dict[str, Any]:
-        if self.error_type is None or self.error_message is None:
-            raise ValueError("outcome has no error payload")
         return {
             "error_type": self.error_type,
             "message": self.error_message,
             "attempt": self.attempt,
         }
+
+
+class StreamingWorkFailed(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    outcome_type: Literal[StreamingWorkOutcomeType.failed] = (
+        StreamingWorkOutcomeType.failed
+    )
+    attempt: int = Field(ge=1)
+    error_type: str
+    error_message: str
+
+    @classmethod
+    def from_exception(cls, *, attempt: int, exc: Exception) -> Self:
+        return cls(
+            attempt=attempt,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+        )
+
+    def error_payload(self) -> dict[str, Any]:
+        return {
+            "error_type": self.error_type,
+            "message": self.error_message,
+            "attempt": self.attempt,
+        }
+
+
+StreamingWorkFailureOutcome: TypeAlias = (
+    StreamingWorkRetryScheduled | StreamingWorkFailed
+)
+StreamingWorkOutcome: TypeAlias = (
+    StreamingWorkSucceeded | StreamingWorkFailureOutcome
+)
 
 
 class StreamingWorkExecutor(Protocol):
@@ -171,14 +170,16 @@ class ProviderRegistryStreamingWorkExecutor:
 class StreamingRetryPolicy:
     def failure_outcome(
         self, *, attempt: StreamingWorkAttempt, exc: Exception
-    ) -> StreamingWorkOutcome:
+    ) -> StreamingWorkFailureOutcome:
         if attempt.attempt <= attempt.work.max_retries:
-            return StreamingWorkOutcome.retry_scheduled(
+            return StreamingWorkRetryScheduled.from_exception(
                 attempt=attempt.attempt,
                 exc=exc,
                 next_attempt=attempt.attempt + 1,
             )
-        return StreamingWorkOutcome.failed(attempt=attempt.attempt, exc=exc)
+        return StreamingWorkFailed.from_exception(
+            attempt=attempt.attempt, exc=exc
+        )
 
 
 class StreamingWorkLifecycleReporter:
@@ -230,13 +231,12 @@ class StreamingWorkLifecycleReporter:
             payloads=[prepare_json_payload("request_json", request_payload)],
         )
 
-    async def record_success(self, outcome: StreamingWorkOutcome) -> None:
-        response = self._response_for(outcome)
+    async def record_success(self, outcome: StreamingWorkSucceeded) -> None:
         await self._publish_event_spec(
             provider_response_received_event(
                 work_id=self.attempt.work.work_id,
                 attempt=self.attempt.attempt,
-                response=response,
+                response=outcome.response,
             )
         )
         await self._publish_event_spec(
@@ -252,7 +252,9 @@ class StreamingWorkLifecycleReporter:
             )
         )
 
-    async def record_failure(self, outcome: StreamingWorkOutcome) -> None:
+    async def record_failure(
+        self, outcome: StreamingWorkFailureOutcome
+    ) -> None:
         error_payload = outcome.error_payload()
         await self.publisher.publish_event_with_payloads(
             StreamingLogEventType.attempt_failed,
@@ -260,13 +262,13 @@ class StreamingWorkLifecycleReporter:
             payload=error_payload,
             payloads=[prepare_json_payload("error_detail", error_payload)],
         )
-        if outcome.outcome_type is StreamingWorkOutcomeType.retry_scheduled:
+        if isinstance(outcome, StreamingWorkRetryScheduled):
             await self.record_retry_scheduled(outcome)
             return
         await self.record_work_failed(error_payload)
 
     async def record_retry_scheduled(
-        self, outcome: StreamingWorkOutcome
+        self, outcome: StreamingWorkRetryScheduled
     ) -> None:
         await self.publisher.publish_event_with_payloads(
             StreamingLogEventType.work_retry_scheduled,
@@ -305,16 +307,10 @@ class StreamingWorkLifecycleReporter:
             metadata=spec.metadata,
         )
 
-    @staticmethod
-    def _response_for(outcome: StreamingWorkOutcome) -> LlmResponse:
-        if outcome.response is None:
-            raise ValueError("outcome has no response")
-        return outcome.response
-
 
 class StreamingMessageAcknowledger:
     async def apply(self, *, msg: Any, outcome: StreamingWorkOutcome) -> None:
-        if outcome.outcome_type is StreamingWorkOutcomeType.retry_scheduled:
+        if isinstance(outcome, StreamingWorkRetryScheduled):
             await msg.nak()
             return
         await msg.ack()
@@ -346,7 +342,7 @@ class StreamingWorkProcessor:
             )
             await reporter.record_failure(outcome)
             return outcome
-        outcome = StreamingWorkOutcome.succeeded(
+        outcome = StreamingWorkSucceeded(
             attempt=attempt.attempt, response=response
         )
         await reporter.record_success(outcome)
@@ -527,11 +523,15 @@ __all__ = [
     "StreamingRetryPolicy",
     "StreamingWorkAttempt",
     "StreamingWorkExecutor",
+    "StreamingWorkFailed",
+    "StreamingWorkFailureOutcome",
     "StreamingWorkLifecycleReporter",
     "StreamingWorkMessageHandler",
     "StreamingWorkOutcome",
     "StreamingWorkOutcomeType",
     "StreamingWorkProcessor",
+    "StreamingWorkRetryScheduled",
+    "StreamingWorkSucceeded",
     "StreamingWorkerConfig",
     "run_streaming_worker",
 ]

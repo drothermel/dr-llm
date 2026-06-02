@@ -101,8 +101,12 @@ replace one concern at a time:
 - `StreamingWorkProcessor` coordinates one attempt at the workflow level.
 - `StreamingWorkExecutor` and `ProviderRegistryStreamingWorkExecutor` isolate
   provider execution from queue handling.
-- `StreamingRetryPolicy` converts provider failures into retry or terminal
-  failure outcomes.
+- `StreamingRetryPolicy` converts provider failures into explicit
+  `StreamingWorkRetryScheduled` or `StreamingWorkFailed` outcomes.
+- `StreamingWorkSucceeded`, `StreamingWorkRetryScheduled`, and
+  `StreamingWorkFailed` are the concrete outcome primitives. Use
+  `StreamingWorkOutcome` for the full union and
+  `StreamingWorkFailureOutcome` for retry-or-failed consumers.
 - `StreamingEventPublisher` and `StreamingWorkLifecycleReporter` isolate
   attempt, provider, retry, and completion event emission.
 - `StreamingMessageAcknowledger` applies the final `ack` or `nak` decision.

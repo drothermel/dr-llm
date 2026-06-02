@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
+
+import pytest
+from pydantic import ValidationError
 
 from dr_llm.llm import (
     CallMode,
@@ -17,10 +20,13 @@ from dr_llm.streaming_log.work import QueuedWorkMessage
 from dr_llm.streaming_log.workers import (
     StreamingRetryPolicy,
     StreamingWorkAttempt,
+    StreamingWorkFailed,
     StreamingWorkMessageHandler,
     StreamingWorkOutcome,
     StreamingWorkOutcomeType,
     StreamingWorkProcessor,
+    StreamingWorkRetryScheduled,
+    StreamingWorkSucceeded,
 )
 from tests.streaming_log.helpers import (
     PublishCall,
@@ -148,6 +154,7 @@ def test_attempt_uses_delivery_metadata_and_work_context() -> None:
 def test_success_path_returns_succeeded_and_acks() -> None:
     _, msg, outcome = _process_message()
 
+    assert isinstance(outcome, StreamingWorkSucceeded)
     assert outcome.outcome_type is StreamingWorkOutcomeType.succeeded
     assert msg.acked
     assert not msg.naked
@@ -197,6 +204,7 @@ def test_retryable_failure_returns_retry_and_naks() -> None:
         num_delivered=1,
     )
 
+    assert isinstance(outcome, StreamingWorkRetryScheduled)
     assert outcome.outcome_type is StreamingWorkOutcomeType.retry_scheduled
     assert outcome.next_attempt == 2
     assert not msg.acked
@@ -235,6 +243,7 @@ def test_terminal_failure_returns_failed_and_acks() -> None:
         num_delivered=2,
     )
 
+    assert isinstance(outcome, StreamingWorkFailed)
     assert outcome.outcome_type is StreamingWorkOutcomeType.failed
     assert msg.acked
     assert not msg.naked
@@ -282,6 +291,44 @@ def test_retry_policy_retries_through_configured_max_retries() -> None:
     retry = policy.failure_outcome(attempt=first, exc=RuntimeError("retry me"))
     failure = policy.failure_outcome(attempt=second, exc=RuntimeError("stop"))
 
+    assert isinstance(retry, StreamingWorkRetryScheduled)
     assert retry.outcome_type is StreamingWorkOutcomeType.retry_scheduled
     assert retry.next_attempt == 2
+    assert isinstance(failure, StreamingWorkFailed)
     assert failure.outcome_type is StreamingWorkOutcomeType.failed
+
+
+def test_success_outcome_requires_response() -> None:
+    model = cast(Any, StreamingWorkSucceeded)
+
+    with pytest.raises(ValidationError):
+        model(attempt=1)
+
+
+def test_success_outcome_has_no_error_payload_api() -> None:
+    outcome = StreamingWorkSucceeded(attempt=1, response=_response(_request()))
+
+    assert not hasattr(outcome, "error_payload")
+
+
+def test_retry_outcome_requires_next_attempt() -> None:
+    model = cast(Any, StreamingWorkRetryScheduled)
+
+    with pytest.raises(ValidationError):
+        model(
+            attempt=1,
+            error_type="RuntimeError",
+            error_message="provider down",
+        )
+
+
+def test_failed_outcome_rejects_next_attempt() -> None:
+    model = cast(Any, StreamingWorkFailed)
+
+    with pytest.raises(ValidationError):
+        model(
+            attempt=1,
+            error_type="RuntimeError",
+            error_message="stop",
+            next_attempt=2,
+        )
