@@ -120,6 +120,31 @@ def _install_successful_sync_fakes(
     return calls
 
 
+def test_build_sync_plan_derives_temporary_database_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(postgres_sync_module, "get_project", _running_project)
+
+    plan = postgres_sync_module._build_sync_plan(
+        name="demo",
+        admin_url="postgresql://example/postgres?sslmode=require",
+        target_database="remote_demo",
+        drop_previous=True,
+    )
+
+    assert plan.project_name == "demo"
+    assert plan.source_dsn == (
+        "postgresql://postgres:postgres@localhost:5500/dr_llm"
+    )
+    assert plan.target_database == "remote_demo"
+    assert plan.temporary_database.startswith("remote_demo_sync_")
+    assert plan.previous_database.startswith("remote_demo_prev_")
+    assert plan.temporary_dsn == (
+        f"postgresql://example/{plan.temporary_database}?sslmode=require"
+    )
+    assert plan.drop_previous is True
+
+
 def test_sync_project_to_postgres_validates_and_swaps_database(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -229,24 +254,26 @@ def test_sync_project_to_postgres_requires_project_dsn(
 def test_sync_project_to_postgres_rejects_invalid_admin_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    dropped: list[str] = []
+    operations: list[str] = []
 
     monkeypatch.setattr(postgres_sync_module, "get_project", _running_project)
     monkeypatch.setattr(
-        postgres_sync_module, "_create_database", lambda *args: None
+        postgres_sync_module,
+        "_create_database",
+        lambda *args: operations.append("create"),
     )
     monkeypatch.setattr(
         postgres_sync_module,
         "_dump_project_to_file",
-        lambda name, dump_path: dump_path.write_text("select 1;\n"),
+        lambda name, dump_path: operations.append("dump"),
     )
     monkeypatch.setattr(
         postgres_sync_module,
         "_drop_database",
-        lambda admin_url, database_name: dropped.append(database_name),
+        lambda admin_url, database_name: operations.append("drop"),
     )
 
     with pytest.raises(ProjectError, match="scheme and host"):
         postgres_sync_module.sync_project_to_postgres("demo", "postgres")
 
-    assert len(dropped) == 1
+    assert operations == []

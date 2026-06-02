@@ -10,6 +10,7 @@ from time import perf_counter
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
+from pydantic import BaseModel, ConfigDict
 from psycopg import sql
 
 from dr_llm.datetime_utils import UTC
@@ -28,6 +29,19 @@ from dr_llm.project.project_service import get_project
 logger = logging.getLogger(__name__)
 
 
+class SyncPlan(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    project_name: str
+    source_dsn: str
+    admin_url: str
+    target_database: str
+    temporary_database: str
+    previous_database: str
+    temporary_dsn: str
+    drop_previous: bool
+
+
 def sync_project_to_postgres(
     name: str,
     admin_url: str,
@@ -37,6 +51,43 @@ def sync_project_to_postgres(
 ) -> ProjectPostgresSyncResult:
     """Replace a Postgres database with a validated local project snapshot."""
 
+    plan = _build_sync_plan(
+        name=name,
+        admin_url=admin_url,
+        target_database=target_database,
+        drop_previous=drop_previous,
+    )
+    started_at = perf_counter()
+    logger.info(
+        "Starting Postgres sync for project %r to database %r",
+        plan.project_name,
+        plan.target_database,
+    )
+    try:
+        _restore_temporary_database(plan)
+        validation = _validate_temporary_database(plan)
+        replaced_existing = _swap_validated_database(plan)
+        _drop_previous_database_if_requested(plan, replaced_existing)
+        logger.info(
+            "Completed Postgres sync for project %r to database %r in %.2fs",
+            plan.project_name,
+            plan.target_database,
+            perf_counter() - started_at,
+        )
+        return _build_sync_result(plan, validation, replaced_existing)
+    except Exception:
+        with suppress(Exception):
+            _drop_database(plan.admin_url, plan.temporary_database)
+        raise
+
+
+def _build_sync_plan(
+    *,
+    name: str,
+    admin_url: str,
+    target_database: str | None,
+    drop_previous: bool,
+) -> SyncPlan:
     project = get_project(name)
     if project.dsn is None:
         raise ProjectError(f"Project {name!r} has no DSN; start it first.")
@@ -47,60 +98,74 @@ def sync_project_to_postgres(
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     temporary_database = _sync_database_name(target_name, "sync", timestamp)
     previous_database = _sync_database_name(target_name, "prev", timestamp)
-
-    started_at = perf_counter()
-    logger.info(
-        "Starting Postgres sync for project %r to database %r",
-        name,
-        target_name,
+    return SyncPlan(
+        project_name=name,
+        source_dsn=project.dsn,
+        admin_url=admin_url,
+        target_database=target_name,
+        temporary_database=temporary_database,
+        previous_database=previous_database,
+        temporary_dsn=_url_for_database(admin_url, temporary_database),
+        drop_previous=drop_previous,
     )
-    _create_database(admin_url, temporary_database)
-    try:
-        with tempfile.NamedTemporaryFile(
-            prefix=f"dr_llm_{name}_",
-            suffix=".sql",
-            delete=True,
-        ) as dump_file:
-            _dump_project_to_file(name, Path(dump_file.name))
-            _restore_sql_file(
-                _url_for_database(admin_url, temporary_database),
-                Path(dump_file.name),
-            )
-        validation = validate_project_database_copy(
-            source_dsn=project.dsn,
-            target_dsn=_url_for_database(admin_url, temporary_database),
+
+
+def _restore_temporary_database(plan: SyncPlan) -> None:
+    _create_database(plan.admin_url, plan.temporary_database)
+    with tempfile.NamedTemporaryFile(
+        prefix=f"dr_llm_{plan.project_name}_",
+        suffix=".sql",
+        delete=True,
+    ) as dump_file:
+        dump_path = Path(dump_file.name)
+        _dump_project_to_file(plan.project_name, dump_path)
+        _restore_sql_file(plan.temporary_dsn, dump_path)
+
+
+def _validate_temporary_database(plan: SyncPlan) -> ProjectSyncValidation:
+    validation = validate_project_database_copy(
+        source_dsn=plan.source_dsn,
+        target_dsn=plan.temporary_dsn,
+    )
+    if not validation.passed:
+        raise ProjectError(
+            "Postgres sync validation failed before swap: "
+            + "; ".join(validation.mismatches)
         )
-        if not validation.passed:
-            raise ProjectError(
-                "Postgres sync validation failed before swap: "
-                + "; ".join(validation.mismatches)
-            )
-        replaced_existing = _replace_database(
-            admin_url=admin_url,
-            temporary_database=temporary_database,
-            target_database=target_name,
-            previous_database=previous_database,
-        )
-        if drop_previous and replaced_existing:
-            _drop_database(admin_url, previous_database)
-        logger.info(
-            "Completed Postgres sync for project %r to database %r in %.2fs",
-            name,
-            target_name,
-            perf_counter() - started_at,
-        )
-        return ProjectPostgresSyncResult(
-            project_name=name,
-            target_database=target_name,
-            temporary_database=temporary_database,
-            previous_database=previous_database if replaced_existing else None,
-            previous_database_dropped=drop_previous and replaced_existing,
-            validation=validation,
-        )
-    except Exception:
-        with suppress(Exception):
-            _drop_database(admin_url, temporary_database)
-        raise
+    return validation
+
+
+def _swap_validated_database(plan: SyncPlan) -> bool:
+    return _replace_database(
+        admin_url=plan.admin_url,
+        temporary_database=plan.temporary_database,
+        target_database=plan.target_database,
+        previous_database=plan.previous_database,
+    )
+
+
+def _drop_previous_database_if_requested(
+    plan: SyncPlan, replaced_existing: bool
+) -> None:
+    if plan.drop_previous and replaced_existing:
+        _drop_database(plan.admin_url, plan.previous_database)
+
+
+def _build_sync_result(
+    plan: SyncPlan,
+    validation: ProjectSyncValidation,
+    replaced_existing: bool,
+) -> ProjectPostgresSyncResult:
+    return ProjectPostgresSyncResult(
+        project_name=plan.project_name,
+        target_database=plan.target_database,
+        temporary_database=plan.temporary_database,
+        previous_database=plan.previous_database
+        if replaced_existing
+        else None,
+        previous_database_dropped=plan.drop_previous and replaced_existing,
+        validation=validation,
+    )
 
 
 def validate_project_database_copy(

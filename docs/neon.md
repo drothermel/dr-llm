@@ -44,13 +44,14 @@ uv run python -m dr_llm project sync-postgres PROJECT
 
 The command:
 
-1. creates a temporary Neon database
-2. dumps the local Docker project with `pg_dump --no-owner --no-privileges`
-3. restores into the temporary database
-4. validates public table lists, `pool_catalog` count, and exact table row
+1. plans timestamped temporary and previous database names
+2. creates a temporary Neon database
+3. dumps the local Docker project with `pg_dump --no-owner --no-privileges`
+4. restores into the temporary database
+5. validates public table lists, `pool_catalog` count, and exact table row
    counts
-5. renames the old Neon database to a `_prev_...` name
-6. renames the validated temporary database to `PROJECT`
+6. renames the old Neon database to a `_prev_...` name
+7. renames the validated temporary database to `PROJECT`
 
 By default, the previous database is kept as a rollback point. Drop it after a
 successful sync with:
