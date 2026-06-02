@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from dr_llm.streaming_log.serialization import canonical_json_bytes
 
 
 PayloadEncoding = Literal["utf-8", "binary"]
@@ -58,17 +59,8 @@ def object_key_for_sha256(digest: str) -> str:
     return f"sha256/{digest[:2]}/{digest}"
 
 
-def serialize_json_payload(value: Any) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    ).encode("utf-8")
-
-
 def prepare_json_payload(role: str, value: Any) -> PreparedPayload:
-    data = serialize_json_payload(value)
+    data = canonical_json_bytes(value)
     return prepare_payload(
         role=role,
         data=data,
@@ -114,6 +106,5 @@ __all__ = [
     "prepare_json_payload",
     "prepare_payload",
     "prepare_text_payload",
-    "serialize_json_payload",
     "sha256_bytes",
 ]

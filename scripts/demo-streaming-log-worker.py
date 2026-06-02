@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections import Counter
 from typing import Annotated
 
 import typer
@@ -63,7 +64,6 @@ from dr_llm.streaming_log import (
     run_streaming_worker,
 )
 from dr_llm.streaming_log.bootstrap import bootstrap_streaming_log
-from dr_llm.streaming_log.payloads import PayloadRef
 
 app = typer.Typer()
 
@@ -232,7 +232,7 @@ async def _run_worker_attempt(
 
 def _build_live_request(
     *, prompt: str, provider: str, requested_model: str | None
-):
+) -> tuple[str, str, LlmRequest]:
     registry = build_default_registry()
     try:
         model = _resolve_model(
@@ -328,10 +328,10 @@ async def _print_failure_details(
     for event in events:
         if str(event.event_type) != "attempt_failed":
             continue
-        for raw_ref in event.payload_refs:
-            if raw_ref.get("role") != "error_detail":
+        for ref in event.payload_refs:
+            if ref.role != "error_detail":
                 continue
-            data = await payload_store.read_payload_ref(PayloadRef(**raw_ref))
+            data = await payload_store.read_payload_ref(ref)
             detail = json.loads(data)
             summary = f"{detail.get('error_type')}: {detail.get('message')}"
             details.append(summary)
@@ -339,7 +339,7 @@ async def _print_failure_details(
     return details
 
 
-def _verify_worker_lifecycle(counts) -> None:
+def _verify_worker_lifecycle(counts: Counter[str]) -> None:
     expected = [
         "work_submitted",
         "producer_started",
@@ -364,14 +364,10 @@ def _verify_worker_lifecycle(counts) -> None:
     ok("Lifecycle events verified: " + ", ".join(expected))
 
 
-def _print_worker_event_summary(events) -> None:
+def _print_worker_event_summary(events: list[EventEnvelope]) -> None:
     step("7. Event sequence")
     for event in events:
-        roles = [
-            str(ref.get("role"))
-            for ref in event.payload_refs
-            if isinstance(ref, dict)
-        ]
+        roles = [ref.role for ref in event.payload_refs]
         print(
             f"  {event.event_type} "
             f"work_id={event.work_id or '-'} "

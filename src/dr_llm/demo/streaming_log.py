@@ -19,7 +19,6 @@ from dr_llm.streaming_log import (
     StreamingPayloadReader,
 )
 from dr_llm.streaming_log.config import StreamingLogConfig
-from dr_llm.streaming_log.payloads import PayloadRef
 
 DEFAULT_NATS_DOCKER_REASON = (
     "This demo creates a NATS JetStream container when no --nats-url is "
@@ -149,6 +148,11 @@ async def collect_streaming_log_events(
                 continue
             raise
         if not messages:
+            if len(events) < expected_min_events:
+                raise RuntimeError(
+                    "NATS fetch returned no messages before collecting "
+                    f"{expected_min_events} expected events"
+                )
             idle_fetches += 1
             continue
         idle_fetches = 0
@@ -164,8 +168,7 @@ async def verify_payload_refs(
 ) -> list[PayloadVerification]:
     verified: list[PayloadVerification] = []
     for event in events:
-        for raw_ref in event.payload_refs:
-            ref = PayloadRef(**raw_ref)
+        for ref in event.payload_refs:
             data = await payload_reader.read_payload_ref(ref)
             digest = hashlib.sha256(data).hexdigest()
             if digest != ref.sha256:

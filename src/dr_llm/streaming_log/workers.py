@@ -163,7 +163,7 @@ class ProviderRegistryStreamingWorkExecutor:
         self.registry = registry
 
     async def generate(self, request: LlmRequest) -> LlmResponse:
-        orchestrator = self.registry.get(str(request.provider))
+        orchestrator = self.registry.get(request.provider)
         return await asyncio.to_thread(orchestrator.generate, request)
 
 

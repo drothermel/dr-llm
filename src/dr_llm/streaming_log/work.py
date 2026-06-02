@@ -29,15 +29,17 @@ class QueuedWorkMessage(BaseModel):
         metadata = raw.get("metadata", {})
         if not isinstance(metadata, dict):
             raise ValueError("queued work metadata must be a JSON object")
-        return cls(
-            work_id=raw.get("work_id"),
-            request=request,
-            run_id=raw.get("run_id"),
-            correlation_id=raw.get("correlation_id"),
-            source=raw.get("source"),
-            metadata=metadata,
-            max_retries=raw.get("max_retries", 0),
-        )
+        kwargs: dict[str, Any] = {
+            "request": request,
+            "run_id": raw.get("run_id"),
+            "correlation_id": raw.get("correlation_id"),
+            "source": raw.get("source"),
+            "metadata": metadata,
+            "max_retries": raw.get("max_retries", 0),
+        }
+        if raw.get("work_id") is not None:
+            kwargs["work_id"] = raw["work_id"]
+        return cls(**kwargs)
 
     def json_bytes(self) -> bytes:
         payload = self.model_dump(

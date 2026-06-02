@@ -356,7 +356,7 @@ def test_verify_payload_refs_detects_hash_mismatch() -> None:
                 size_bytes=5,
                 content_type="application/json",
                 encoding="utf-8",
-            ).model_dump(mode="json")
+            )
         ],
     )
 

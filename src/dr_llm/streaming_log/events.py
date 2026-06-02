@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import hashlib
-import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from dr_llm.streaming_log.payloads import PayloadRef
+from dr_llm.streaming_log.serialization import canonical_json_bytes
 
 if TYPE_CHECKING:
     from dr_llm.streaming_log.work import QueuedWorkMessage
@@ -79,12 +81,12 @@ class EventEnvelope(BaseModel):
     event_type: StreamingLogEventType
     schema_version: int = Field(default=1, ge=1)
     occurred_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(UTC)
     )
     producer: ProducerInfo = Field(default_factory=ProducerInfo)
     idempotency_key: str
     payload: dict[str, Any] = Field(default_factory=dict)
-    payload_refs: list[Any] = Field(default_factory=list)
+    payload_refs: list[PayloadRef] = Field(default_factory=list)
     run_id: str | None = None
     work_id: str | None = None
     attempt_id: str | None = None
@@ -98,24 +100,13 @@ class EventEnvelope(BaseModel):
     def _require_timezone(cls, value: datetime) -> datetime:
         if value.tzinfo is None:
             raise ValueError("occurred_at must be timezone-aware")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
     def json_bytes(self) -> bytes:
         payload = self.model_dump(
             mode="json", exclude_none=True, exclude_computed_fields=True
         )
-        return json.dumps(
-            payload, sort_keys=True, separators=(",", ":")
-        ).encode("utf-8")
-
-
-def canonical_json_bytes(value: Any) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    ).encode("utf-8")
+        return canonical_json_bytes(payload)
 
 
 def stable_hash(value: Any) -> str:
@@ -132,7 +123,7 @@ def build_event(
     producer: ProducerInfo,
     idempotency_key: str,
     payload: dict[str, Any] | None = None,
-    payload_refs: list[Any] | None = None,
+    payload_refs: list[PayloadRef] | None = None,
     context: EventContext | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> EventEnvelope:
@@ -159,7 +150,6 @@ __all__ = [
     "ProducerInfo",
     "StreamingLogEventType",
     "build_event",
-    "canonical_json_bytes",
     "idempotency_key",
     "stable_hash",
 ]

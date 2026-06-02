@@ -20,6 +20,7 @@ The demo:
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from typing import Annotated
 
 import typer
@@ -39,6 +40,7 @@ from dr_llm.demo import (
 )
 from dr_llm.pool import DbConfig, DbRuntime, PoolReader
 from dr_llm.streaming_log import (
+    EventEnvelope,
     StreamingEventLog,
     StreamingLogConnection,
     StreamingPayloadStore,
@@ -154,7 +156,7 @@ def _verify_import_counts(
     *,
     expected_import_count: int,
     imported_count: int,
-    counts,
+    counts: Counter[str],
 ) -> None:
     sample_events = counts["pool_sample_imported"]
     if imported_count != expected_import_count:
@@ -179,14 +181,10 @@ def _verify_import_counts(
     )
 
 
-def _print_event_sample(events, limit: int) -> None:
+def _print_event_sample(events: list[EventEnvelope], limit: int) -> None:
     step("6. Event sample")
     for event in events[:limit]:
-        roles = [
-            str(ref.get("role"))
-            for ref in event.payload_refs
-            if isinstance(ref, dict)
-        ]
+        roles = [ref.role for ref in event.payload_refs]
         print(
             f"  {event.event_type} "
             f"event_id={event.event_id} "

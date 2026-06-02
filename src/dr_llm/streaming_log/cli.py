@@ -15,7 +15,11 @@ from dr_llm.streaming_log.client import (
     StreamingPayloadStore,
 )
 from dr_llm.streaming_log.config import StreamingLogConfig
-from dr_llm.streaming_log.ingest_pools import ingest_pool, ingest_pools
+from dr_llm.streaming_log.ingest_pools import (
+    PoolImportResult,
+    ingest_pool,
+    ingest_pools,
+)
 from dr_llm.streaming_log.workers import (
     StreamingWorkerConfig,
     run_streaming_worker,
@@ -116,7 +120,7 @@ async def _ingest_one_pool(
     pool_name: str,
     source_id: str | None,
     sample_limit: int | None,
-):
+) -> PoolImportResult:
     async with StreamingLogConnection(StreamingLogConfig()) as connection:
         event_log = _event_log(connection)
         return await ingest_pool(
@@ -130,7 +134,7 @@ async def _ingest_one_pool(
 
 async def _ingest_all_pools(
     *, dsn: str, source_id: str | None, sample_limit: int | None
-):
+) -> list[PoolImportResult]:
     async with StreamingLogConnection(StreamingLogConfig()) as connection:
         event_log = _event_log(connection)
         return await ingest_pools(

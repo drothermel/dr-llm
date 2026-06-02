@@ -92,15 +92,13 @@ class PoolSnapshotSource:
     def samples(self) -> Iterator[PoolSample]:
         if self._reader is None:
             raise RuntimeError("pool snapshot source is not open")
-        imported_count = 0
-        for sample in self._reader.samples():
+        for imported_count, sample in enumerate(self._reader.samples()):
             if (
                 self.sample_limit is not None
                 and imported_count >= self.sample_limit
             ):
                 break
             yield sample
-            imported_count += 1
 
     def close(self) -> None:
         if self._runtime is None:

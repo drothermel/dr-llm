@@ -34,6 +34,16 @@ docker run -d \
 NATS_PORT_LINE=$(docker port "${NATS_CONTAINER_NAME}" 4222/tcp | head -n 1)
 NATS_PORT="${NATS_PORT_LINE##*:}"
 NATS_URL="nats://127.0.0.1:${NATS_PORT}"
+NATS_READY_TIMEOUT_SECONDS="${NATS_READY_TIMEOUT_SECONDS:-30}"
+NATS_READY_DEADLINE=$((SECONDS + NATS_READY_TIMEOUT_SECONDS))
+while ! (exec 3<>"/dev/tcp/127.0.0.1/${NATS_PORT}") 2>/dev/null; do
+  if [ "${SECONDS}" -ge "${NATS_READY_DEADLINE}" ]; then
+    echo "NATS did not become ready at ${NATS_URL} within ${NATS_READY_TIMEOUT_SECONDS}s."
+    exit 1
+  fi
+  sleep 0.2
+done
+exec 3>&- 3<&-
 echo "NATS ready at ${NATS_URL}"
 
 echo "Creating temporary project '${PROJECT_NAME}'..."

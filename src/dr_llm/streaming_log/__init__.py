@@ -34,6 +34,7 @@ from dr_llm.streaming_log.ingest_pools import (
     record_pool_import,
 )
 from dr_llm.streaming_log.payloads import PayloadRef, PreparedPayload
+from dr_llm.streaming_log.serialization import canonical_json_bytes
 from dr_llm.streaming_log.work import QueuedWorkMessage
 from dr_llm.streaming_log.workers import (
     ProviderRegistryStreamingWorkExecutor,
@@ -93,6 +94,7 @@ __all__ = [
     "StreamingWorkerConfig",
     "attempt_succeeded_event",
     "bootstrap_streaming_log",
+    "canonical_json_bytes",
     "inspect_streaming_log",
     "pool_sample_imported_event",
     "provider_response_received_event",

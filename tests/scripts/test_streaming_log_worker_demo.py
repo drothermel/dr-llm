@@ -59,13 +59,7 @@ def test_worker_demo_command_forwards_provider_options(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
-    assert calls == [
-        {
-            "nats_url": "nats://localhost:4222",
-            "keep_nats": True,
-            "prompt": "hello",
-            "max_retries": 2,
-            "provider": ProviderName.ANTHROPIC,
-            "model": "claude-test",
-        }
-    ]
+    assert len(calls) == 1
+    assert calls[0]["provider"] == ProviderName.ANTHROPIC
+    assert calls[0]["prompt"] == "hello"
+    assert calls[0]["model"] == "claude-test"

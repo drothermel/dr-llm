@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from types import TracebackType
 from typing import Any, Protocol, Self
@@ -83,10 +84,9 @@ class StreamingPayloadStore:
     async def write_payloads(
         self, payloads: list[PreparedPayload]
     ) -> list[PayloadRef]:
-        refs: list[PayloadRef] = []
-        for payload in payloads:
-            refs.append(await self.write_payload(payload))
-        return refs
+        return await asyncio.gather(
+            *(self.write_payload(payload) for payload in payloads)
+        )
 
     async def write_payload(self, payload: PreparedPayload) -> PayloadRef:
         store = await self.connection.js.object_store(
@@ -222,7 +222,10 @@ class StreamingEventLog:
         timeout: float = 1.0,
     ) -> AsyncIterator[EventEnvelope]:
         sub = await self.event_subscription(durable)
-        messages = await sub.fetch(batch_size or self.config.fetch_batch_size)
+        messages = await sub.fetch(
+            batch_size or self.config.fetch_batch_size,
+            timeout=timeout,
+        )
         for msg in messages:
             yield EventEnvelope.model_validate_json(msg.data)
             await msg.ack()

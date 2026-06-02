@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import tempfile
 from contextlib import suppress
@@ -11,6 +12,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
 from pydantic import BaseModel, ConfigDict
+from psycopg.conninfo import conninfo_to_dict
 from psycopg import sql
 
 from dr_llm.datetime_utils import UTC
@@ -173,8 +175,21 @@ def validate_project_database_copy(
     source_dsn: str,
     target_dsn: str,
 ) -> ProjectSyncValidation:
-    source_tables = _public_table_names(source_dsn)
-    target_tables = _public_table_names(target_dsn)
+    with psycopg.connect(source_dsn) as source_conn:
+        with psycopg.connect(target_dsn) as target_conn:
+            return _validate_project_database_copy(
+                source_conn=source_conn,
+                target_conn=target_conn,
+            )
+
+
+def _validate_project_database_copy(
+    *,
+    source_conn: psycopg.Connection[tuple],
+    target_conn: psycopg.Connection[tuple],
+) -> ProjectSyncValidation:
+    source_tables = _public_table_names(source_conn)
+    target_tables = _public_table_names(target_conn)
     mismatches: list[str] = []
     if source_tables != target_tables:
         missing = sorted(set(source_tables) - set(target_tables))
@@ -184,8 +199,8 @@ def validate_project_database_copy(
         if extra:
             mismatches.append("extra target tables: " + ", ".join(extra))
 
-    source_pool_count = _pool_catalog_count(source_dsn)
-    target_pool_count = _pool_catalog_count(target_dsn)
+    source_pool_count = _pool_catalog_count(source_conn)
+    target_pool_count = _pool_catalog_count(target_conn)
     if source_pool_count != target_pool_count:
         mismatches.append(
             "pool_catalog count mismatch: "
@@ -195,8 +210,8 @@ def validate_project_database_copy(
     checked_table_count = 0
     if source_tables == target_tables:
         for table_name in source_tables:
-            source_rows = _table_row_count(source_dsn, table_name)
-            target_rows = _table_row_count(target_dsn, table_name)
+            source_rows = _table_row_count(source_conn, table_name)
+            target_rows = _table_row_count(target_conn, table_name)
             checked_table_count += 1
             if source_rows != target_rows:
                 mismatches.append(
@@ -218,7 +233,7 @@ def _sync_database_name(
     target_database: str, label: str, timestamp: str
 ) -> str:
     suffix = f"_{label}_{timestamp}"
-    max_prefix_length = 63 - len(suffix)
+    max_prefix_length = max(0, 63 - len(suffix))
     return validate_pg_identifier(
         f"{target_database[:max_prefix_length]}{suffix}", "database name"
     )
@@ -251,18 +266,59 @@ def _dump_project_to_file(name: str, dump_path: Path) -> None:
 
 
 def _restore_sql_file(target_dsn: str, dump_path: Path) -> None:
+    conninfo = conninfo_to_dict(target_dsn)
+    dbname = conninfo.get("dbname")
+    user = conninfo.get("user")
+    password = conninfo.get("password", "")
+    host = conninfo.get("host", "localhost")
+    port = conninfo.get("port", "5432")
+    if dbname is None or user is None:
+        raise ProjectError("Target DSN must include a database and user.")
+
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        prefix="dr_llm_pgpass_",
+        delete=False,
+    ) as pgpass:
+        pgpass_path = Path(pgpass.name)
+        os.chmod(pgpass_path, 0o600)
+        pgpass.write(f"{host}:{port}:{dbname}:{user}:{password}\n")
+
+    env = os.environ.copy()
+    env["PGPASSFILE"] = str(pgpass_path)
+    if "sslmode" in conninfo:
+        env["PGSSLMODE"] = conninfo["sslmode"]
+    command = [
+        "psql",
+        "-h",
+        host,
+        "-p",
+        port,
+        "-U",
+        user,
+        "-d",
+        dbname,
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-q",
+    ]
     try:
-        with dump_path.open("rb") as sql_stream:
-            result = subprocess.run(
-                ["psql", target_dsn, "-v", "ON_ERROR_STOP=1", "-q"],
-                stdin=sql_stream,
-                capture_output=True,
-                check=False,
-            )
-    except FileNotFoundError as exc:
-        raise ProjectError(
-            "psql is required to restore remote databases."
-        ) from exc
+        try:
+            with dump_path.open("rb") as sql_stream:
+                result = subprocess.run(
+                    command,
+                    stdin=sql_stream,
+                    env=env,
+                    capture_output=True,
+                    check=False,
+                )
+        except FileNotFoundError as exc:
+            raise ProjectError(
+                "psql is required to restore remote databases."
+            ) from exc
+    finally:
+        pgpass_path.unlink(missing_ok=True)
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace").strip()
         raise ProjectError(f"psql restore failed: {stderr or 'unknown error'}")
@@ -316,12 +372,46 @@ def _replace_database(
                         sql.Identifier(previous_database),
                     )
                 )
-            cur.execute(
-                sql.SQL("ALTER DATABASE {} RENAME TO {}").format(
-                    sql.Identifier(temporary_database),
-                    sql.Identifier(target_database),
+            try:
+                cur.execute(
+                    sql.SQL("ALTER DATABASE {} RENAME TO {}").format(
+                        sql.Identifier(temporary_database),
+                        sql.Identifier(target_database),
+                    )
                 )
-            )
+            except Exception as exc:
+                if not target_exists:
+                    raise
+                logger.exception(
+                    "Failed to rename temporary database %r to %r; "
+                    "attempting to restore previous target %r.",
+                    temporary_database,
+                    target_database,
+                    previous_database,
+                )
+                try:
+                    _terminate_database_connections(cur, previous_database)
+                    cur.execute(
+                        sql.SQL("ALTER DATABASE {} RENAME TO {}").format(
+                            sql.Identifier(previous_database),
+                            sql.Identifier(target_database),
+                        )
+                    )
+                    logger.info(
+                        "Restored previous target database %r after failed "
+                        "swap.",
+                        target_database,
+                    )
+                except Exception as rollback_exc:
+                    logger.exception(
+                        "Failed to restore previous target database %r.",
+                        target_database,
+                    )
+                    raise ProjectError(
+                        "Postgres sync database swap failed and rollback "
+                        "also failed."
+                    ) from rollback_exc
+                raise exc
     return target_exists
 
 
@@ -351,45 +441,40 @@ def _terminate_database_connections(
     )
 
 
-def _public_table_names(dsn: str) -> list[str]:
-    with psycopg.connect(dsn) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT relname
-                FROM pg_class
-                WHERE relkind = 'r'
-                  AND relnamespace = 'public'::regnamespace
-                ORDER BY relname
-                """
+def _public_table_names(conn: psycopg.Connection[tuple]) -> list[str]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT relname
+            FROM pg_class
+            WHERE relkind = 'r'
+              AND relnamespace = 'public'::regnamespace
+            ORDER BY relname
+            """
+        )
+        return [row[0] for row in cur.fetchall()]
+
+
+def _pool_catalog_count(conn: psycopg.Connection[tuple]) -> int | None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('public.pool_catalog') IS NOT NULL")
+        exists_row = cur.fetchone()
+        assert exists_row is not None
+        if not exists_row[0]:
+            return None
+        cur.execute("SELECT count(*) FROM pool_catalog")
+        count_row = cur.fetchone()
+        assert count_row is not None
+        return count_row[0]
+
+
+def _table_row_count(conn: psycopg.Connection[tuple], table_name: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            sql.SQL("SELECT count(*) FROM {}").format(
+                sql.Identifier(table_name)
             )
-            return [row[0] for row in cur.fetchall()]
-
-
-def _pool_catalog_count(dsn: str) -> int | None:
-    with psycopg.connect(dsn) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT to_regclass('public.pool_catalog') IS NOT NULL"
-            )
-            exists_row = cur.fetchone()
-            assert exists_row is not None
-            if not exists_row[0]:
-                return None
-            cur.execute("SELECT count(*) FROM pool_catalog")
-            count_row = cur.fetchone()
-            assert count_row is not None
-            return count_row[0]
-
-
-def _table_row_count(dsn: str, table_name: str) -> int:
-    with psycopg.connect(dsn) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                sql.SQL("SELECT count(*) FROM {}").format(
-                    sql.Identifier(table_name)
-                )
-            )
-            count_row = cur.fetchone()
-            assert count_row is not None
-            return count_row[0]
+        )
+        count_row = cur.fetchone()
+        assert count_row is not None
+        return count_row[0]

@@ -69,7 +69,8 @@ Required envelope fields:
 - `producer`: producer identity and version metadata.
 - `idempotency_key`: deterministic key for safe duplicate handling.
 - `payload`: JSON object for inline facts.
-- `payload_refs`: list of object references for large or raw payloads.
+- `payload_refs`: list of validated object references for large or raw
+  payloads.
 
 Optional envelope fields:
 
@@ -90,6 +91,10 @@ defines idempotent behavior.
 
 Large raw payloads must be written to `DRLLM_PAYLOADS` before publishing the
 event that references them.
+
+In the Python implementation, every event envelope validates payload references
+as `PayloadRef` models at construction and replay time. Consumers should treat
+`event.payload_refs` as typed references, not unvalidated dictionaries.
 
 Each payload reference should include:
 
@@ -155,6 +160,7 @@ Recommended package layout:
 src/dr_llm/streaming_log/
   __init__.py
   config.py
+  serialization.py
   events.py
   event_builders.py
   payloads.py
@@ -173,10 +179,12 @@ Core responsibilities:
 - `events.py`: event type enum, producer model, event envelope model, and
   idempotency helpers. Shared workflow identity is represented by
   `EventContext`, which is copied into the envelope when the event is built.
+- `serialization.py`: canonical JSON byte serialization shared by event
+  publishing, idempotency hashing, and JSON payload storage.
 - `event_builders.py`: public event-specific publish specs and builders for
   inline payloads, payload references, idempotency keys, context, and metadata.
-- `payloads.py`: payload serialization, hashing, object key construction, and
-  payload reference model.
+- `payloads.py`: payload hashing, object key construction, prepared payloads,
+  and payload reference model.
 - `client.py`: async connection manager, context-bound event publisher, payload
   writer, work publisher, and replay consumer helpers.
 - `bootstrap.py`: idempotent creation or validation of JetStream streams,

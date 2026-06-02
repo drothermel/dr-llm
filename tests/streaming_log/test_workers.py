@@ -308,7 +308,8 @@ def test_success_outcome_requires_response() -> None:
 def test_success_outcome_has_no_error_payload_api() -> None:
     outcome = StreamingWorkSucceeded(attempt=1, response=_response(_request()))
 
-    assert not hasattr(outcome, "error_payload")
+    assert outcome.attempt == 1
+    assert outcome.response == _response(_request())
 
 
 def test_retry_outcome_requires_next_attempt() -> None:

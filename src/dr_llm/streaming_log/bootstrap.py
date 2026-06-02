@@ -100,7 +100,7 @@ async def inspect_streaming_log(
         events_info = await js.stream_info(config.events_stream)
         work_info = await js.stream_info(config.work_stream)
         store = await js.object_store(config.payload_bucket)
-        store_status = await store.status()
+        payload_objects = len(await store.list(ignore_deletes=True))
         return StreamingLogStatus(
             nats_url=config.nats_url,
             events_stream=config.events_stream,
@@ -108,7 +108,7 @@ async def inspect_streaming_log(
             payload_bucket=config.payload_bucket,
             events_subjects=list(events_info.config.subjects or []),
             work_subjects=list(work_info.config.subjects or []),
-            payload_objects=int(getattr(store_status, "size", 0)),
+            payload_objects=payload_objects,
         )
     finally:
         if owns_connection and nc is not None:

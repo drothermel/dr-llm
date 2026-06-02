@@ -17,14 +17,10 @@ def test_load_dotenv_sets_values_without_overriding_existing(
     fake_environ = {"EXISTING": "from-env"}
     env_path = tmp_path / ".env"
     env_path.write_text(
-        "\n".join(
-            [
-                "# ignored",
-                "PLAIN=value",
-                "export EXPORTED='quoted value'",
-                'EXISTING="from-file"',
-            ]
-        )
+        "# ignored\n"
+        "PLAIN=value\n"
+        "export EXPORTED='quoted value'\n"
+        'EXISTING="from-file"'
     )
     monkeypatch.setattr(os, "environ", fake_environ)
 

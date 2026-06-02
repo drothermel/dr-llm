@@ -13,13 +13,16 @@ from dr_llm.streaming_log.events import (
     StreamingLogEventType,
     build_event,
     idempotency_key,
+    stable_hash,
 )
 from dr_llm.streaming_log.payloads import (
+    PayloadRef,
     object_key_for_sha256,
     prepare_json_payload,
     prepare_text_payload,
     sha256_bytes,
 )
+from dr_llm.streaming_log.serialization import canonical_json_bytes
 from dr_llm.streaming_log.work import QueuedWorkMessage
 
 
@@ -62,6 +65,16 @@ def test_idempotency_key_is_deterministic() -> None:
     assert first != different
 
 
+def test_stable_json_bytes_are_shared_by_hashing_and_payloads() -> None:
+    payload = {"b": 2, "a": 1}
+    prepared = prepare_json_payload("request_json", payload)
+
+    assert canonical_json_bytes(payload) == b'{"a":1,"b":2}'
+    assert prepared.data == canonical_json_bytes(payload)
+    assert prepared.sha256 == sha256_bytes(canonical_json_bytes(payload))
+    assert stable_hash(payload) == sha256_bytes(canonical_json_bytes(payload))
+
+
 def test_payload_hash_and_object_key_are_content_addressed() -> None:
     payload = prepare_text_payload("stdout", "hello")
     digest = sha256_bytes(b"hello")
@@ -85,6 +98,60 @@ def test_json_payload_serialization_is_stable() -> None:
 
     assert left.data == b'{"a":1,"b":2}'
     assert left.sha256 == right.sha256
+
+
+def test_event_envelope_validates_payload_refs() -> None:
+    with pytest.raises(ValidationError):
+        EventEnvelope.model_validate(
+            {
+                "event_type": StreamingLogEventType.work_submitted,
+                "producer": ProducerInfo(name="test"),
+                "idempotency_key": "same",
+                "payload_refs": [{"role": "request_json"}],
+            }
+        )
+
+
+def test_event_envelope_restores_typed_payload_refs_from_json() -> None:
+    ref = PayloadRef(
+        role="request_json",
+        object_key="sha256/00/test",
+        sha256="0" * 64,
+        size_bytes=5,
+        content_type="application/json",
+        encoding="utf-8",
+    )
+    event = EventEnvelope(
+        event_type=StreamingLogEventType.work_submitted,
+        producer=ProducerInfo(name="test"),
+        idempotency_key="same",
+        payload_refs=[ref],
+    )
+
+    restored = EventEnvelope.model_validate_json(event.json_bytes())
+
+    assert restored.payload_refs == [ref]
+    assert isinstance(restored.payload_refs[0], PayloadRef)
+
+
+def test_build_event_accepts_typed_payload_refs() -> None:
+    ref = PayloadRef(
+        role="request_json",
+        object_key="sha256/00/test",
+        sha256="0" * 64,
+        size_bytes=5,
+        content_type="application/json",
+        encoding="utf-8",
+    )
+
+    event = build_event(
+        StreamingLogEventType.work_submitted,
+        producer=ProducerInfo(name="test"),
+        idempotency_key="same",
+        payload_refs=[ref],
+    )
+
+    assert event.payload_refs == [ref]
 
 
 def test_object_key_rejects_invalid_digest() -> None:

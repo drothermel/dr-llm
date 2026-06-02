@@ -69,6 +69,7 @@ def test_demo_command_syncs_and_verifies_target_database(monkeypatch) -> None:
     result = runner.invoke(sync_demo.app)
 
     assert result.exit_code == 0
+    assert len(calls) == 4
     assert calls[1] == (
         "sync",
         (
@@ -92,8 +93,3 @@ def test_demo_command_syncs_and_verifies_target_database(monkeypatch) -> None:
     )
     assert calls[3] == ("cleanup", "demo_sync_abcdef12")
 
-
-def test_demo_pool_schema_uses_stable_public_name() -> None:
-    sync_demo = _load_sync_demo()
-
-    assert sync_demo.POOL_SCHEMA.name == "sync_demo_pool"

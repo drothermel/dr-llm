@@ -201,20 +201,20 @@ def test_sync_project_to_postgres_drops_temp_database_when_validation_fails(
 
     monkeypatch.setattr(postgres_sync_module, "get_project", _running_project)
     monkeypatch.setattr(
-        postgres_sync_module, "_create_database", lambda *args: None
+        postgres_sync_module, "_create_database", lambda *_args: None
     )
     monkeypatch.setattr(
         postgres_sync_module,
         "_dump_project_to_file",
-        lambda name, dump_path: dump_path.write_text("select 1;\n"),
+        lambda _name, dump_path: dump_path.write_text("select 1;\n"),
     )
     monkeypatch.setattr(
-        postgres_sync_module, "_restore_sql_file", lambda *args: None
+        postgres_sync_module, "_restore_sql_file", lambda *_args: None
     )
     monkeypatch.setattr(
         postgres_sync_module,
         "validate_project_database_copy",
-        lambda *, source_dsn, target_dsn: ProjectSyncValidation(
+        lambda **_kwargs: ProjectSyncValidation(
             source_table_count=1,
             target_table_count=1,
             checked_table_count=1,
@@ -224,7 +224,7 @@ def test_sync_project_to_postgres_drops_temp_database_when_validation_fails(
     monkeypatch.setattr(
         postgres_sync_module,
         "_drop_database",
-        lambda admin_url, database_name: dropped.append(database_name),
+        lambda _admin_url, database_name: dropped.append(database_name),
     )
 
     with pytest.raises(ProjectError, match="validation failed"):
@@ -260,17 +260,17 @@ def test_sync_project_to_postgres_rejects_invalid_admin_url(
     monkeypatch.setattr(
         postgres_sync_module,
         "_create_database",
-        lambda *args: operations.append("create"),
+        lambda *_args: operations.append("create"),
     )
     monkeypatch.setattr(
         postgres_sync_module,
         "_dump_project_to_file",
-        lambda name, dump_path: operations.append("dump"),
+        lambda _name, _dump_path: operations.append("dump"),
     )
     monkeypatch.setattr(
         postgres_sync_module,
         "_drop_database",
-        lambda admin_url, database_name: operations.append("drop"),
+        lambda _admin_url, _database_name: operations.append("drop"),
     )
 
     with pytest.raises(ProjectError, match="scheme and host"):

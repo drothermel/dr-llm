@@ -30,6 +30,8 @@ Core implementation lives under
 | `bootstrap.py` | Creates and inspects JetStream streams, consumers, and object buckets. |
 | `client.py` | Explicit streaming-log primitives for NATS connection, payload storage, event publishing/replay, and work queues. |
 | `events.py` | Event envelope, event types, producer metadata, and idempotency helpers. |
+| `serialization.py` | Canonical JSON byte serialization shared by event hashing, event publishing, and JSON payload storage. |
+| `payloads.py` | Payload hashing, object key construction, prepared payloads, and typed payload references. |
 | `work.py` | Queued work messages. |
 | `workers.py` | Public worker primitives plus the async JetStream worker entrypoint. |
 | `ingest_pools.py` | Snapshot import of existing Postgres pools into streaming-log facts. |
@@ -69,6 +71,11 @@ Use `event_log.publish_event_with_payloads(...)` directly for context-free
 operational events such as producer startup/shutdown. The event wire shape is
 unchanged: `EventContext` is only the construction primitive for shared
 envelope identity.
+
+JSON event bytes, idempotency hashes, and JSON payload bytes all use the shared
+`canonical_json_bytes(...)` primitive. Payload references on an
+`EventEnvelope` are validated `PayloadRef` models, so replay consumers can use
+`event.payload_refs` directly instead of reparsing raw dictionaries.
 
 ## Streaming-Log Primitives
 
