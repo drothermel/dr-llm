@@ -4,9 +4,12 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-import pytest
+from typer.testing import CliRunner
 
-from dr_llm.llm import ProviderAvailabilityStatus, ProviderName
+from dr_llm.llm import ProviderName
+
+
+runner = CliRunner()
 
 
 def _load_worker_demo() -> ModuleType:
@@ -25,41 +28,44 @@ def _load_worker_demo() -> ModuleType:
     return module
 
 
-def _status(provider: str) -> ProviderAvailabilityStatus:
-    return ProviderAvailabilityStatus(provider=provider, available=True)
-
-
-def test_candidate_providers_prefer_configured_order() -> None:
+def test_worker_demo_command_forwards_provider_options(monkeypatch) -> None:
     worker_demo = _load_worker_demo()
+    calls: list[dict[str, object]] = []
 
-    providers = worker_demo._candidate_providers(
+    async def fake_run_worker_demo(**kwargs: object) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr(
+        worker_demo,
+        "_run_worker_demo",
+        fake_run_worker_demo,
+    )
+
+    result = runner.invoke(
+        worker_demo.app,
         [
-            _status("anthropic"),
-            _status("custom-provider"),
-            _status("openai"),
+            "--nats-url",
+            "nats://localhost:4222",
+            "--keep-nats",
+            "--prompt",
+            "hello",
+            "--max-retries",
+            "2",
+            "--provider",
+            "anthropic",
+            "--model",
+            "claude-test",
         ],
-        requested_provider=None,
     )
 
-    assert providers == ["openai", "anthropic", "custom-provider"]
-
-
-def test_candidate_providers_honor_requested_provider() -> None:
-    worker_demo = _load_worker_demo()
-
-    providers = worker_demo._candidate_providers(
-        [_status("anthropic"), _status("openai")],
-        requested_provider=ProviderName.ANTHROPIC,
-    )
-
-    assert providers == ["anthropic"]
-
-
-def test_candidate_providers_reject_unavailable_requested_provider() -> None:
-    worker_demo = _load_worker_demo()
-
-    with pytest.raises(RuntimeError, match="Requested provider 'anthropic'"):
-        worker_demo._candidate_providers(
-            [_status("openai")],
-            requested_provider=ProviderName.ANTHROPIC,
-        )
+    assert result.exit_code == 0
+    assert calls == [
+        {
+            "nats_url": "nats://localhost:4222",
+            "keep_nats": True,
+            "prompt": "hello",
+            "max_retries": 2,
+            "provider": ProviderName.ANTHROPIC,
+            "model": "claude-test",
+        }
+    ]

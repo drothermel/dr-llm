@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, ConfigDict, Field
 
 import dr_llm.project.postgres_sync as postgres_sync_module
 from dr_llm.project.docker_project_metadata import ContainerStatus
@@ -11,66 +12,118 @@ from dr_llm.project.models import ProjectSyncValidation
 from dr_llm.project.project_info import ProjectInfo
 
 
-def test_sync_project_to_postgres_validates_and_swaps_database(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    events: list[tuple[str, object]] = []
+class ValidationCall(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "get_project",
-        lambda name: ProjectInfo(
-            name=name, port=5500, status=ContainerStatus.RUNNING
-        ),
+    source_dsn: str
+    target_dsn: str
+
+
+class SyncCallRecorder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operations: list[str] = Field(default_factory=list)
+    created_databases: list[str] = Field(default_factory=list)
+    dumped_projects: list[str] = Field(default_factory=list)
+    restored_dsns: list[str] = Field(default_factory=list)
+    validations: list[ValidationCall] = Field(default_factory=list)
+    replaced_databases: list[str] = Field(default_factory=list)
+    dropped_databases: list[str] = Field(default_factory=list)
+
+    @property
+    def operation_names(self) -> list[str]:
+        return self.operations
+
+    def create_database(self, admin_url: str, database_name: str) -> None:
+        _ = admin_url
+        self.operations.append("create")
+        self.created_databases.append(database_name)
+
+    def dump_project_to_file(self, name: str, dump_path: Path) -> None:
+        self.operations.append("dump")
+        self.dumped_projects.append(name)
+        dump_path.write_text("select 1;\n")
+
+    def restore_sql_file(self, target_dsn: str, dump_path: Path) -> None:
+        _ = dump_path
+        self.operations.append("restore")
+        self.restored_dsns.append(target_dsn)
+
+    def validate_project_database_copy(
+        self, *, source_dsn: str, target_dsn: str
+    ) -> ProjectSyncValidation:
+        self.operations.append("validate")
+        self.validations.append(
+            ValidationCall(source_dsn=source_dsn, target_dsn=target_dsn)
+        )
+        return ProjectSyncValidation(
+            source_table_count=1,
+            target_table_count=1,
+            checked_table_count=1,
+        )
+
+    def replace_database(self, **kwargs: str) -> bool:
+        self.operations.append("replace")
+        self.replaced_databases.append(kwargs["target_database"])
+        return True
+
+    def drop_database(self, admin_url: str, database_name: str) -> None:
+        _ = admin_url
+        self.operations.append("drop")
+        self.dropped_databases.append(database_name)
+
+
+def _running_project(name: str) -> ProjectInfo:
+    return ProjectInfo(
+        name=name,
+        port=5500,
+        status=ContainerStatus.RUNNING,
     )
+
+
+def _install_successful_sync_fakes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> SyncCallRecorder:
+    calls = SyncCallRecorder()
+
+    monkeypatch.setattr(postgres_sync_module, "get_project", _running_project)
     monkeypatch.setattr(
         postgres_sync_module,
         "_create_database",
-        lambda admin_url, database_name: events.append(
-            ("create", database_name)
-        ),
+        calls.create_database,
     )
-
-    def fake_dump_project_to_file(name: str, dump_path: Path) -> None:
-        events.append(("dump", name))
-        dump_path.write_text("select 1;\n")
-
     monkeypatch.setattr(
         postgres_sync_module,
         "_dump_project_to_file",
-        fake_dump_project_to_file,
+        calls.dump_project_to_file,
     )
     monkeypatch.setattr(
         postgres_sync_module,
         "_restore_sql_file",
-        lambda target_dsn, dump_path: events.append(("restore", target_dsn)),
+        calls.restore_sql_file,
     )
     monkeypatch.setattr(
         postgres_sync_module,
         "validate_project_database_copy",
-        lambda *, source_dsn, target_dsn: (
-            events.append(("validate", (source_dsn, target_dsn)))
-            or ProjectSyncValidation(
-                source_table_count=1,
-                target_table_count=1,
-                checked_table_count=1,
-            )
-        ),
+        calls.validate_project_database_copy,
     )
     monkeypatch.setattr(
         postgres_sync_module,
         "_replace_database",
-        lambda **kwargs: (
-            events.append(("replace", kwargs["target_database"])) or True
-        ),
+        calls.replace_database,
     )
     monkeypatch.setattr(
         postgres_sync_module,
         "_drop_database",
-        lambda admin_url, database_name: events.append(
-            ("drop", database_name)
-        ),
+        calls.drop_database,
     )
+    return calls
+
+
+def test_sync_project_to_postgres_validates_and_swaps_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _install_successful_sync_fakes(monkeypatch)
 
     result = postgres_sync_module.sync_project_to_postgres(
         "demo",
@@ -82,7 +135,7 @@ def test_sync_project_to_postgres_validates_and_swaps_database(
     assert result.target_database == "demo"
     assert result.previous_database is not None
     assert result.previous_database_dropped is True
-    assert [event[0] for event in events] == [
+    assert calls.operation_names == [
         "create",
         "dump",
         "restore",
@@ -90,7 +143,30 @@ def test_sync_project_to_postgres_validates_and_swaps_database(
         "replace",
         "drop",
     ]
-    assert ("dump", "demo") in events
+    assert calls.dumped_projects == ["demo"]
+
+
+def test_sync_project_to_postgres_restores_and_validates_temporary_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _install_successful_sync_fakes(monkeypatch)
+
+    result = postgres_sync_module.sync_project_to_postgres(
+        "demo",
+        "postgresql://example/postgres?sslmode=require",
+    )
+
+    expected_target_dsn = (
+        f"postgresql://example/{result.temporary_database}?sslmode=require"
+    )
+    assert calls.created_databases == [result.temporary_database]
+    assert calls.restored_dsns == [expected_target_dsn]
+    assert calls.validations == [
+        ValidationCall(
+            source_dsn="postgresql://postgres:postgres@localhost:5500/dr_llm",
+            target_dsn=expected_target_dsn,
+        )
+    ]
 
 
 def test_sync_project_to_postgres_drops_temp_database_when_validation_fails(
@@ -98,13 +174,7 @@ def test_sync_project_to_postgres_drops_temp_database_when_validation_fails(
 ) -> None:
     dropped: list[str] = []
 
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "get_project",
-        lambda name: ProjectInfo(
-            name=name, port=5500, status=ContainerStatus.RUNNING
-        ),
-    )
+    monkeypatch.setattr(postgres_sync_module, "get_project", _running_project)
     monkeypatch.setattr(
         postgres_sync_module, "_create_database", lambda *args: None
     )
@@ -156,16 +226,27 @@ def test_sync_project_to_postgres_requires_project_dsn(
         )
 
 
-def test_url_for_database_preserves_connection_options() -> None:
-    assert (
-        postgres_sync_module._url_for_database(
-            "postgresql://user:pass@example/postgres?sslmode=require",
-            "target_db",
-        )
-        == "postgresql://user:pass@example/target_db?sslmode=require"
+def test_sync_project_to_postgres_rejects_invalid_admin_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dropped: list[str] = []
+
+    monkeypatch.setattr(postgres_sync_module, "get_project", _running_project)
+    monkeypatch.setattr(
+        postgres_sync_module, "_create_database", lambda *args: None
+    )
+    monkeypatch.setattr(
+        postgres_sync_module,
+        "_dump_project_to_file",
+        lambda name, dump_path: dump_path.write_text("select 1;\n"),
+    )
+    monkeypatch.setattr(
+        postgres_sync_module,
+        "_drop_database",
+        lambda admin_url, database_name: dropped.append(database_name),
     )
 
-
-def test_url_for_database_requires_scheme_and_host() -> None:
     with pytest.raises(ProjectError, match="scheme and host"):
-        postgres_sync_module._url_for_database("postgres", "target_db")
+        postgres_sync_module.sync_project_to_postgres("demo", "postgres")
+
+    assert len(dropped) == 1

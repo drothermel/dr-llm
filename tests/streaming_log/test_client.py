@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
 
 import pytest
 
@@ -12,7 +11,6 @@ from dr_llm.streaming_log.client import (
     StreamingPayloadStore,
     StreamingWorkQueue,
 )
-from dr_llm.streaming_log.config import StreamingLogConfig
 from dr_llm.streaming_log.errors import PayloadIntegrityError
 from dr_llm.streaming_log.events import (
     EventContext,
@@ -21,42 +19,10 @@ from dr_llm.streaming_log.events import (
 )
 from dr_llm.streaming_log.payloads import prepare_text_payload
 from dr_llm.streaming_log.work import QueuedWorkMessage
-
-
-class FakeObjectResult:
-    def __init__(self, data: bytes | None) -> None:
-        self.data = data
-
-
-class FakeObjectStore:
-    def __init__(self) -> None:
-        self.objects: dict[str, bytes | None] = {}
-
-    async def get(self, name: str):
-        from nats.js.errors import ObjectNotFoundError
-
-        if name not in self.objects:
-            raise ObjectNotFoundError
-        return FakeObjectResult(self.objects[name])
-
-    async def put(self, name: str, data: bytes) -> None:
-        self.objects[name] = data
-
-
-class FakeJetStream:
-    def __init__(self) -> None:
-        self.store = FakeObjectStore()
-        self.published: list[tuple[str, bytes, str | None]] = []
-
-    async def object_store(self, bucket: str) -> FakeObjectStore:
-        assert bucket == "DRLLM_PAYLOADS"
-        return self.store
-
-    async def publish(
-        self, subject: str, payload: bytes, *, stream: str | None = None
-    ) -> object:
-        self.published.append((subject, payload, stream))
-        return object()
+from tests.streaming_log.helpers import (
+    FakeJetStream,
+    FakeStreamingLogConnection,
+)
 
 
 def _request() -> LlmRequest:
@@ -71,9 +37,8 @@ def _request() -> LlmRequest:
 def _clients() -> tuple[
     StreamingPayloadStore, StreamingEventLog, StreamingWorkQueue, FakeJetStream
 ]:
-    connection = StreamingLogConnection(StreamingLogConfig())
     fake_js = FakeJetStream()
-    connection._js = cast(Any, fake_js)
+    connection: StreamingLogConnection = FakeStreamingLogConnection(fake_js)
     payload_store = StreamingPayloadStore(connection)
     event_log = StreamingEventLog(connection, payload_store)
     work_queue = StreamingWorkQueue(connection, event_log)
@@ -136,10 +101,10 @@ def test_work_queue_publishes_event_before_work_message() -> None:
     event = asyncio.run(work_queue.submit_work(work))
 
     assert event.event_type is StreamingLogEventType.work_submitted
-    assert fake_js.published[0][0] == "drllm.events.work_submitted"
-    assert fake_js.published[0][2] == "DRLLM_EVENTS"
-    assert fake_js.published[1][0] == "drllm.work.llm"
-    assert fake_js.published[1][2] == "DRLLM_WORK"
+    assert fake_js.published[0].subject == "drllm.events.work_submitted"
+    assert fake_js.published[0].stream == "DRLLM_EVENTS"
+    assert fake_js.published[1].subject == "drllm.work.llm"
+    assert fake_js.published[1].stream == "DRLLM_WORK"
     assert fake_js.store.objects
 
 
@@ -165,7 +130,7 @@ def test_event_log_contextual_publisher_applies_context_and_writes_payloads() ->
             payloads=[prepare_text_payload("stdout", "hello")],
         )
     )
-    published = EventEnvelope.model_validate_json(fake_js.published[0][1])
+    published = EventEnvelope.model_validate_json(fake_js.published[0].payload)
 
     assert event.run_id == "run-1"
     assert event.work_id == "work-1"

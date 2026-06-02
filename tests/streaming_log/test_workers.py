@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import Any, cast
-
-from pydantic import BaseModel, ConfigDict, Field
+from typing import cast
 
 from dr_llm.llm import (
     CallMode,
@@ -14,75 +12,22 @@ from dr_llm.llm import (
     ProviderName,
 )
 from dr_llm.streaming_log.client import StreamingEventLog
-from dr_llm.streaming_log.events import (
-    EventContext,
-    EventEnvelope,
-    ProducerInfo,
-    StreamingLogEventType,
-    build_event,
-)
-from dr_llm.streaming_log.payloads import PreparedPayload
+from dr_llm.streaming_log.events import EventContext, StreamingLogEventType
 from dr_llm.streaming_log.work import QueuedWorkMessage
 from dr_llm.streaming_log.workers import (
     StreamingRetryPolicy,
     StreamingWorkAttempt,
     StreamingWorkMessageHandler,
+    StreamingWorkOutcome,
     StreamingWorkOutcomeType,
     StreamingWorkProcessor,
 )
-
-
-class PublishedEvent(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    event: EventEnvelope
-    payload_roles: list[str] = Field(default_factory=list)
-
-
-class FakePublisher:
-    def __init__(self, context: EventContext) -> None:
-        self.context = context
-        self.published: list[PublishedEvent] = []
-
-    @property
-    def events(self) -> list[EventEnvelope]:
-        return [record.event for record in self.published]
-
-    async def publish_event_with_payloads(
-        self,
-        event_type: StreamingLogEventType,
-        *,
-        idempotency_key: str,
-        payload: dict[str, Any] | None = None,
-        payloads: list[PreparedPayload] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> EventEnvelope:
-        payloads = payloads or []
-        event = build_event(
-            event_type,
-            producer=ProducerInfo(name="test"),
-            idempotency_key=idempotency_key,
-            payload=payload,
-            payload_refs=[payload.ref() for payload in payloads],
-            context=self.context,
-            metadata=metadata,
-        )
-        self.published.append(
-            PublishedEvent(
-                event=event,
-                payload_roles=[payload.role for payload in payloads],
-            )
-        )
-        return event
-
-
-class FakeEventLog:
-    def __init__(self) -> None:
-        self.publisher: FakePublisher | None = None
-
-    def with_event_context(self, context: EventContext) -> FakePublisher:
-        self.publisher = FakePublisher(context)
-        return self.publisher
+from tests.streaming_log.helpers import (
+    PublishCall,
+    SpyStreamingEventLog,
+    event_types,
+    published_call,
+)
 
 
 class FakeExecutor:
@@ -150,7 +95,7 @@ def _work(*, max_retries: int = 0) -> QueuedWorkMessage:
 
 def _handler(
     *,
-    event_log: FakeEventLog,
+    event_log: SpyStreamingEventLog,
     executor: FakeExecutor,
 ) -> StreamingWorkMessageHandler:
     processor = StreamingWorkProcessor(executor=executor)
@@ -161,17 +106,28 @@ def _handler(
     )
 
 
-def _event_types(publisher: FakePublisher) -> list[StreamingLogEventType]:
-    return [event.event_type for event in publisher.events]
+def _process_message(
+    *,
+    work: QueuedWorkMessage | None = None,
+    executor: FakeExecutor | None = None,
+    num_delivered: int = 2,
+) -> tuple[SpyStreamingEventLog, FakeMessage, StreamingWorkOutcome]:
+    event_log = SpyStreamingEventLog()
+    msg = FakeMessage(work or _work(), num_delivered=num_delivered)
+
+    outcome = asyncio.run(
+        _handler(
+            event_log=event_log,
+            executor=executor or FakeExecutor(),
+        ).process_message(msg)
+    )
+
+    return event_log, msg, outcome
 
 
-def _published(
-    publisher: FakePublisher, event_type: StreamingLogEventType
-) -> PublishedEvent:
-    for record in publisher.published:
-        if record.event.event_type is event_type:
-            return record
-    raise AssertionError(f"missing event {event_type}")
+def _published_messages(event_log: SpyStreamingEventLog) -> list[PublishCall]:
+    assert len(event_log.contextual_publishers) == 1
+    return event_log.contextual_publishers[0].published
 
 
 def test_attempt_uses_delivery_metadata_and_work_context() -> None:
@@ -189,106 +145,117 @@ def test_attempt_uses_delivery_metadata_and_work_context() -> None:
     )
 
 
-def test_success_path_emits_lifecycle_payloads_and_acks() -> None:
-    work = _work()
-    event_log = FakeEventLog()
-    msg = FakeMessage(work, num_delivered=2)
-
-    outcome = asyncio.run(
-        _handler(event_log=event_log, executor=FakeExecutor()).process_message(
-            msg
-        )
-    )
+def test_success_path_returns_succeeded_and_acks() -> None:
+    _, msg, outcome = _process_message()
 
     assert outcome.outcome_type is StreamingWorkOutcomeType.succeeded
     assert msg.acked
     assert not msg.naked
-    assert event_log.publisher is not None
-    assert _event_types(event_log.publisher) == [
+
+
+def test_success_path_emits_lifecycle_in_order() -> None:
+    event_log, _, _ = _process_message()
+
+    assert event_types(_published_messages(event_log)) == [
         StreamingLogEventType.attempt_started,
         StreamingLogEventType.provider_request_prepared,
         StreamingLogEventType.provider_response_received,
         StreamingLogEventType.attempt_succeeded,
         StreamingLogEventType.work_completed,
     ]
-    assert _published(
-        event_log.publisher, StreamingLogEventType.provider_request_prepared
+
+
+def test_success_path_records_request_and_response_payload_roles() -> None:
+    event_log, _, _ = _process_message()
+    calls = _published_messages(event_log)
+
+    assert published_call(
+        calls, StreamingLogEventType.provider_request_prepared
     ).payload_roles == ["request_json"]
-    assert _published(
-        event_log.publisher, StreamingLogEventType.provider_response_received
+    assert published_call(
+        calls, StreamingLogEventType.provider_response_received
     ).payload_roles == ["response_json"]
-    for event in event_log.publisher.events:
-        assert event.run_id == "run-1"
-        assert event.work_id == "work-1"
-        assert event.attempt_id == "work-1-2"
-        assert event.correlation_id == "corr-1"
-        assert event.source == "test-source"
 
 
-def test_retryable_failure_emits_retry_event_and_naks() -> None:
-    work = _work(max_retries=2)
-    event_log = FakeEventLog()
-    msg = FakeMessage(work, num_delivered=1)
+def test_success_path_applies_work_context_to_all_events() -> None:
+    event_log, _, _ = _process_message()
 
-    outcome = asyncio.run(
-        _handler(
-            event_log=event_log,
-            executor=FakeExecutor(exc=RuntimeError("provider down")),
-        ).process_message(msg)
+    for call in _published_messages(event_log):
+        assert call.context == EventContext(
+            run_id="run-1",
+            work_id="work-1",
+            attempt_id="work-1-2",
+            correlation_id="corr-1",
+            source="test-source",
+        )
+
+
+def test_retryable_failure_returns_retry_and_naks() -> None:
+    _, msg, outcome = _process_message(
+        work=_work(max_retries=2),
+        executor=FakeExecutor(exc=RuntimeError("provider down")),
+        num_delivered=1,
     )
 
     assert outcome.outcome_type is StreamingWorkOutcomeType.retry_scheduled
     assert outcome.next_attempt == 2
     assert not msg.acked
     assert msg.naked
-    assert event_log.publisher is not None
-    assert _event_types(event_log.publisher) == [
+
+
+def test_retryable_failure_emits_failure_and_retry_events() -> None:
+    event_log, _, _ = _process_message(
+        work=_work(max_retries=2),
+        executor=FakeExecutor(exc=RuntimeError("provider down")),
+        num_delivered=1,
+    )
+    calls = _published_messages(event_log)
+
+    assert event_types(calls) == [
         StreamingLogEventType.attempt_started,
         StreamingLogEventType.provider_request_prepared,
         StreamingLogEventType.attempt_failed,
         StreamingLogEventType.work_retry_scheduled,
     ]
-    failed = _published(
-        event_log.publisher, StreamingLogEventType.attempt_failed
-    )
+    failed = published_call(calls, StreamingLogEventType.attempt_failed)
     assert failed.payload_roles == ["error_detail"]
-    assert failed.event.payload == {
+    assert failed.payload == {
         "error_type": "RuntimeError",
         "message": "provider down",
         "attempt": 1,
     }
-    retry = _published(
-        event_log.publisher, StreamingLogEventType.work_retry_scheduled
-    )
-    assert retry.event.payload == {"attempt": 1, "next_attempt": 2}
+    retry = published_call(calls, StreamingLogEventType.work_retry_scheduled)
+    assert retry.payload == {"attempt": 1, "next_attempt": 2}
 
 
-def test_terminal_failure_emits_completion_event_and_acks() -> None:
-    work = _work(max_retries=1)
-    event_log = FakeEventLog()
-    msg = FakeMessage(work, num_delivered=2)
-
-    outcome = asyncio.run(
-        _handler(
-            event_log=event_log,
-            executor=FakeExecutor(exc=RuntimeError("still down")),
-        ).process_message(msg)
+def test_terminal_failure_returns_failed_and_acks() -> None:
+    _, msg, outcome = _process_message(
+        work=_work(max_retries=1),
+        executor=FakeExecutor(exc=RuntimeError("still down")),
+        num_delivered=2,
     )
 
     assert outcome.outcome_type is StreamingWorkOutcomeType.failed
     assert msg.acked
     assert not msg.naked
-    assert event_log.publisher is not None
-    assert _event_types(event_log.publisher) == [
+
+
+def test_terminal_failure_emits_completion_event() -> None:
+    event_log, _, _ = _process_message(
+        work=_work(max_retries=1),
+        executor=FakeExecutor(exc=RuntimeError("still down")),
+        num_delivered=2,
+    )
+    calls = _published_messages(event_log)
+
+    assert event_types(calls) == [
         StreamingLogEventType.attempt_started,
         StreamingLogEventType.provider_request_prepared,
         StreamingLogEventType.attempt_failed,
         StreamingLogEventType.work_completed,
     ]
-    completed = _published(
-        event_log.publisher, StreamingLogEventType.work_completed
-    )
-    assert completed.event.payload == {
+    completed = published_call(calls, StreamingLogEventType.work_completed)
+    assert completed.payload == {
         "status": StreamingWorkOutcomeType.failed,
         "error_type": "RuntimeError",
         "message": "still down",

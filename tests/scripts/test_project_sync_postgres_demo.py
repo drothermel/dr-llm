@@ -4,6 +4,13 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+from typer.testing import CliRunner
+
+from dr_llm.demo.projects import DemoDsnLease
+
+
+runner = CliRunner()
+
 
 def _load_sync_demo() -> ModuleType:
     script_path = (
@@ -21,16 +28,69 @@ def _load_sync_demo() -> ModuleType:
     return module
 
 
-def test_database_url_rewrites_database_and_preserves_options() -> None:
+def test_demo_command_syncs_and_verifies_target_database(monkeypatch) -> None:
     sync_demo = _load_sync_demo()
+    calls: list[tuple[str, object]] = []
 
-    assert (
-        sync_demo._database_url(
-            "postgresql://user:pass@example/dr_llm?sslmode=require",
-            "target_db",
-        )
-        == "postgresql://user:pass@example/target_db?sslmode=require"
+    monkeypatch.setattr(
+        sync_demo,
+        "uuid4",
+        lambda: type("Uuid", (), {"hex": "abcdef123456"})(),
     )
+
+    def fake_prepare_demo_dsn(**kwargs: object) -> DemoDsnLease:
+        calls.append(("prepare", kwargs))
+        return DemoDsnLease(
+            dsn="postgresql://user:pass@example/source?sslmode=require",
+            project_name=str(kwargs["project_name"]),
+            should_destroy_project=True,
+        )
+
+    def fake_run_dr_llm_streaming(*args: str) -> None:
+        calls.append(("sync", args))
+
+    def fake_verify_target_pool(dsn: str, expected_sample_id: str) -> None:
+        calls.append(("verify", (dsn, expected_sample_id)))
+
+    monkeypatch.setattr(sync_demo, "prepare_demo_dsn", fake_prepare_demo_dsn)
+    monkeypatch.setattr(sync_demo, "_seed_source_pool", lambda dsn: "sample-1")
+    monkeypatch.setattr(
+        sync_demo, "run_dr_llm_streaming", fake_run_dr_llm_streaming
+    )
+    monkeypatch.setattr(
+        sync_demo, "_verify_target_pool", fake_verify_target_pool
+    )
+    monkeypatch.setattr(
+        sync_demo,
+        "cleanup_demo_dsn",
+        lambda lease: calls.append(("cleanup", lease.project_name)),
+    )
+
+    result = runner.invoke(sync_demo.app)
+
+    assert result.exit_code == 0
+    assert calls[1] == (
+        "sync",
+        (
+            "project",
+            "sync-postgres",
+            "demo_sync_abcdef12",
+            "--admin-url",
+            "postgresql://user:pass@example/source?sslmode=require",
+            "--target-database",
+            "demo_sync_target_abcdef12",
+            "--drop-previous",
+        ),
+    )
+    assert calls[2] == (
+        "verify",
+        (
+            "postgresql://user:pass@example/demo_sync_target_abcdef12"
+            "?sslmode=require",
+            "sample-1",
+        ),
+    )
+    assert calls[3] == ("cleanup", "demo_sync_abcdef12")
 
 
 def test_demo_pool_schema_uses_stable_public_name() -> None:

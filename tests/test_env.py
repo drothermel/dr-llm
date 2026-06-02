@@ -14,8 +14,7 @@ def test_load_dotenv_sets_values_without_overriding_existing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    tracked_keys = ["PLAIN", "EXPORTED", "EXISTING"]
-    original_values = {key: os.environ.get(key) for key in tracked_keys}
+    fake_environ = {"EXISTING": "from-env"}
     env_path = tmp_path / ".env"
     env_path.write_text(
         "\n".join(
@@ -27,20 +26,13 @@ def test_load_dotenv_sets_values_without_overriding_existing(
             ]
         )
     )
-    monkeypatch.setenv("EXISTING", "from-env")
+    monkeypatch.setattr(os, "environ", fake_environ)
 
-    try:
-        load_dotenv(env_path)
+    load_dotenv(env_path)
 
-        assert os.environ["PLAIN"] == "value"
-        assert os.environ["EXPORTED"] == "quoted value"
-        assert os.environ["EXISTING"] == "from-env"
-    finally:
-        for key, value in original_values.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+    assert os.environ["PLAIN"] == "value"
+    assert os.environ["EXPORTED"] == "quoted value"
+    assert os.environ["EXISTING"] == "from-env"
 
 
 def test_find_dotenv_walks_up_from_nested_directory(tmp_path: Path) -> None:

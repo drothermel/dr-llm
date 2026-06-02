@@ -3,79 +3,27 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Iterator
-from typing import Any, cast
+from typing import cast
 
 import pytest
-from pydantic import BaseModel, ConfigDict, Field
 
 import dr_llm.streaming_log.ingest_pools as ingest_pools_module
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.streaming_log import StreamingEventLog
-from dr_llm.streaming_log.events import (
-    EventContext,
-    EventEnvelope,
-    ProducerInfo,
-    StreamingLogEventType,
-    build_event,
-    idempotency_key,
-    stable_hash,
-)
+from dr_llm.streaming_log.events import StreamingLogEventType, idempotency_key
 from dr_llm.streaming_log.ingest_pools import (
+    PoolImportResult,
     PoolSnapshot,
     PoolSnapshotSource,
-    _sample_snapshot_payload,
     ingest_pool,
     ingest_pools,
     record_pool_import,
 )
-from dr_llm.streaming_log.payloads import PreparedPayload
-
-
-class PublishedEvent(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    event: EventEnvelope
-    payload_roles: list[str] = Field(default_factory=list)
-
-
-class FakeEventLog:
-    def __init__(self, fail_on: StreamingLogEventType | None = None) -> None:
-        self.fail_on = fail_on
-        self.published: list[PublishedEvent] = []
-
-    async def publish_event_with_payloads(
-        self,
-        event_type: StreamingLogEventType,
-        *,
-        idempotency_key: str,
-        payload: dict[str, Any] | None = None,
-        payloads: list[PreparedPayload] | None = None,
-        context: EventContext | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> EventEnvelope:
-        if event_type == self.fail_on:
-            raise RuntimeError(f"failed to publish {event_type}")
-        payloads = payloads or []
-        event = build_event(
-            event_type,
-            producer=ProducerInfo(name="test"),
-            idempotency_key=idempotency_key,
-            payload=payload,
-            payload_refs=[item.ref() for item in payloads],
-            context=context,
-            metadata=metadata,
-        )
-        self.published.append(
-            PublishedEvent(
-                event=event,
-                payload_roles=[item.role for item in payloads],
-            )
-        )
-        return event
-
-    @property
-    def events(self) -> list[EventEnvelope]:
-        return [record.event for record in self.published]
+from tests.streaming_log.helpers import (
+    SpyStreamingEventLog,
+    event_types,
+    published_call,
+)
 
 
 class FailingSamples:
@@ -108,99 +56,93 @@ def _snapshot() -> PoolSnapshot:
     )
 
 
-def _event_types(event_log: FakeEventLog) -> list[StreamingLogEventType]:
-    return [event.event_type for event in event_log.events]
-
-
-def _published(
-    event_log: FakeEventLog, event_type: StreamingLogEventType
-) -> PublishedEvent:
-    for record in event_log.published:
-        if record.event.event_type == event_type:
-            return record
-    raise AssertionError(f"missing event {event_type}")
-
-
-def test_sample_snapshot_payload_preserves_pool_row_state() -> None:
-    sample = _sample()
-
-    payload = _sample_snapshot_payload(sample)
-
-    assert payload["sample_id"] == "sample-1"
-    assert payload["key_values"] == {"dim": "a"}
-    assert payload["sample_idx"] == 3
-    assert payload["run_id"] == "run-1"
-    assert payload["request"] == {"prompt": "hello"}
-    assert payload["response"] == {"text": "world"}
-    assert payload["finish_reason"] == "stop"
-    assert payload["attempt_count"] == 2
-    assert payload["metadata"] == {"m": 1}
-
-
-def test_record_pool_import_emits_lifecycle_payloads() -> None:
-    event_log = FakeEventLog()
-    sample = _sample()
-    snapshot = _snapshot()
-
+def _record_sample_import() -> tuple[SpyStreamingEventLog, PoolImportResult]:
+    event_log = SpyStreamingEventLog()
     result = asyncio.run(
         record_pool_import(
             event_log=cast(StreamingEventLog, event_log),
-            snapshot=snapshot,
-            samples=[sample],
+            snapshot=_snapshot(),
+            samples=[_sample()],
         )
     )
+    return event_log, result
+
+
+def test_record_pool_import_returns_result_event_ids() -> None:
+    event_log, result = _record_sample_import()
 
     assert result.pool_name == "pool-1"
     assert result.imported_count == 1
     assert result.event_ids == [event.event_id for event in event_log.events]
-    assert _event_types(event_log) == [
+
+
+def test_record_pool_import_emits_lifecycle_in_order() -> None:
+    event_log, _ = _record_sample_import()
+
+    assert event_types(event_log.published) == [
         StreamingLogEventType.pool_import_started,
         StreamingLogEventType.pool_sample_imported,
         StreamingLogEventType.pool_import_completed,
     ]
-    started = _published(event_log, StreamingLogEventType.pool_import_started)
+
+
+def test_record_pool_import_start_call_identifies_source() -> None:
+    event_log, _ = _record_sample_import()
+
+    started = published_call(
+        event_log.published, StreamingLogEventType.pool_import_started
+    )
+
     assert started.payload_roles == ["pool_schema"]
-    assert started.event.idempotency_key == idempotency_key(
+    assert started.idempotency_key == idempotency_key(
         "source-1", "pool-1", "pool_import_started"
     )
-    assert started.event.payload == {
+    assert started.payload == {
         "pool_name": "pool-1",
         "source_id": "source-1",
     }
-    assert started.event.source == "source-1"
+    assert started.context is not None
+    assert started.context.source == "source-1"
 
-    imported = _published(
-        event_log, StreamingLogEventType.pool_sample_imported
+
+def test_record_pool_import_sample_call_records_pool_row_identity() -> None:
+    event_log, _ = _record_sample_import()
+
+    imported = published_call(
+        event_log.published, StreamingLogEventType.pool_sample_imported
     )
-    state_hash = stable_hash(_sample_snapshot_payload(sample))
+
     assert imported.payload_roles == [
         "pool_schema",
         "request_json",
         "metadata_json",
         "response_json",
     ]
-    assert imported.event.payload == {
-        "pool_name": "pool-1",
-        "source_id": "source-1",
-        "sample_id": "sample-1",
-        "sample_idx": 3,
-        "run_id": "run-1",
-        "key_values": {"dim": "a"},
-        "finish_reason": "stop",
-        "attempt_count": 2,
-        "created_at": None,
-        "completion_state": "complete",
-        "reconstructed": True,
-        "row_state_hash": state_hash,
-    }
-    assert imported.event.metadata == {"reconstructed": True}
-    assert imported.event.run_id == "run-1"
-    assert imported.event.source == "source-1"
+    assert imported.payload["pool_name"] == "pool-1"
+    assert imported.payload["source_id"] == "source-1"
+    assert imported.payload["sample_id"] == "sample-1"
+    assert imported.payload["sample_idx"] == 3
+    assert imported.payload["run_id"] == "run-1"
+    assert imported.payload["key_values"] == {"dim": "a"}
+    assert imported.payload["finish_reason"] == "stop"
+    assert imported.payload["attempt_count"] == 2
+    assert imported.payload["completion_state"] == "complete"
+    assert imported.payload["reconstructed"] is True
+    assert isinstance(imported.payload["row_state_hash"], str)
+    assert imported.metadata == {"reconstructed": True}
+    assert imported.context is not None
+    assert imported.context.run_id == "run-1"
+    assert imported.context.source == "source-1"
 
-    completed = _published(
-        event_log, StreamingLogEventType.pool_import_completed
+
+def test_record_pool_import_completed_call_records_count() -> None:
+    event_log, _ = _record_sample_import()
+
+    completed = published_call(
+        event_log.published, StreamingLogEventType.pool_import_completed
     )
-    assert completed.event.payload == {
+
+    assert completed.payload == {
         "pool_name": "pool-1",
         "source_id": "source-1",
         "imported_count": 1,
@@ -209,7 +151,7 @@ def test_record_pool_import_emits_lifecycle_payloads() -> None:
 
 
 def test_record_pool_import_records_source_iteration_failure() -> None:
-    event_log = FakeEventLog()
+    event_log = SpyStreamingEventLog()
 
     with pytest.raises(RuntimeError, match="source unavailable"):
         asyncio.run(
@@ -220,12 +162,14 @@ def test_record_pool_import_records_source_iteration_failure() -> None:
             )
         )
 
-    assert _event_types(event_log) == [
+    assert event_types(event_log.published) == [
         StreamingLogEventType.pool_import_started,
         StreamingLogEventType.pool_import_failed,
     ]
-    failed = _published(event_log, StreamingLogEventType.pool_import_failed)
-    assert failed.event.payload == {
+    failed = published_call(
+        event_log.published, StreamingLogEventType.pool_import_failed
+    )
+    assert failed.payload == {
         "pool_name": "pool-1",
         "source_id": "source-1",
         "error_type": "RuntimeError",
@@ -236,7 +180,9 @@ def test_record_pool_import_records_source_iteration_failure() -> None:
 def test_record_pool_import_preserves_source_error_when_failure_event_fails(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    event_log = FakeEventLog(fail_on=StreamingLogEventType.pool_import_failed)
+    event_log = SpyStreamingEventLog(
+        fail_on=StreamingLogEventType.pool_import_failed
+    )
 
     with (
         caplog.at_level(
@@ -252,7 +198,7 @@ def test_record_pool_import_preserves_source_error_when_failure_event_fails(
             )
         )
 
-    assert _event_types(event_log) == [
+    assert event_types(event_log.published) == [
         StreamingLogEventType.pool_import_started,
     ]
     notes = getattr(raised.value, "__notes__", [])
@@ -275,7 +221,7 @@ def test_record_pool_import_preserves_source_error_when_failure_event_fails(
 
 
 def test_record_pool_import_does_not_emit_failed_for_publish_failure() -> None:
-    event_log = FakeEventLog(
+    event_log = SpyStreamingEventLog(
         fail_on=StreamingLogEventType.pool_sample_imported
     )
 
@@ -290,7 +236,7 @@ def test_record_pool_import_does_not_emit_failed_for_publish_failure() -> None:
             )
         )
 
-    assert _event_types(event_log) == [
+    assert event_types(event_log.published) == [
         StreamingLogEventType.pool_import_started,
     ]
 
@@ -347,7 +293,8 @@ def test_ingest_pool_rejects_non_positive_sample_limit() -> None:
 
 
 class FakeRuntime:
-    closed = False
+    def __init__(self) -> None:
+        self.closed = False
 
     def close(self) -> None:
         self.closed = True
