@@ -168,6 +168,8 @@ database, and reads the synced pool back:
 uv run python scripts/demo-project-sync-postgres.py
 ```
 
+Prerequisites: Docker must be running and `psql` must be available on `PATH`.
+
 Useful options:
 
 ```bash

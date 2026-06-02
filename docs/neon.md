@@ -47,7 +47,8 @@ The command:
 1. plans timestamped temporary and previous database names
 2. creates a temporary Neon database
 3. dumps the local Docker project with `pg_dump --no-owner --no-privileges`
-4. restores into the temporary database
+4. restores into the temporary database with `psql`, using a temporary
+   `pgpass` file that is removed after the restore attempt
 5. validates public table lists, `pool_catalog` count, and exact table row
    counts
 6. renames the old Neon database to a `_prev_...` name
@@ -62,6 +63,12 @@ uv run python -m dr_llm project sync-postgres PROJECT --drop-previous
 
 Use `--target-database NAME` when the remote database name differs from the
 local project name.
+
+If the final rename from the validated temporary database to the target database
+fails after an existing target was moved aside, the sync attempts to rename the
+previous database back to the target name. If that rollback also fails, the
+command reports a sync swap failure so the remote databases can be inspected
+manually before another attempt.
 
 The implementation is provider-neutral Postgres sync. Neon is one compatible
 target because its direct connection string supports the required database

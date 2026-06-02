@@ -4,7 +4,8 @@ import logging
 import os
 import subprocess
 import tempfile
-from contextlib import suppress
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 from time import perf_counter
@@ -42,6 +43,26 @@ class SyncPlan(BaseModel):
     previous_database: str
     temporary_dsn: str
     drop_previous: bool
+
+
+class PsqlRestoreTarget(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    dbname: str
+    user: str
+    password: str = ""
+    host: str = "localhost"
+    port: str = "5432"
+    sslmode: str | None = None
+
+
+class DatabaseSwapPlan(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    admin_url: str
+    temporary_database: str
+    target_database: str
+    previous_database: str
 
 
 def sync_project_to_postgres(
@@ -266,17 +287,35 @@ def _dump_project_to_file(name: str, dump_path: Path) -> None:
 
 
 def _restore_sql_file(target_dsn: str, dump_path: Path) -> None:
+    target = _parse_restore_target(target_dsn)
+    with _temporary_pgpass_file(target) as pgpass_path:
+        result = _run_psql_restore(
+            target=target,
+            dump_path=dump_path,
+            pgpass_path=pgpass_path,
+        )
+    _raise_for_psql_restore_failure(result)
+
+
+def _parse_restore_target(target_dsn: str) -> PsqlRestoreTarget:
     conninfo = conninfo_to_dict(target_dsn)
     dbname_value = conninfo.get("dbname")
     user_value = conninfo.get("user")
     if dbname_value is None or user_value is None:
         raise ProjectError("Target DSN must include a database and user.")
-    dbname = str(dbname_value)
-    user = str(user_value)
-    password = str(conninfo.get("password", ""))
-    host = str(conninfo.get("host", "localhost"))
-    port = str(conninfo.get("port", "5432"))
+    sslmode = conninfo.get("sslmode")
+    return PsqlRestoreTarget(
+        dbname=str(dbname_value),
+        user=str(user_value),
+        password=str(conninfo.get("password", "")),
+        host=str(conninfo.get("host", "localhost")),
+        port=str(conninfo.get("port", "5432")),
+        sslmode=str(sslmode) if sslmode is not None else None,
+    )
 
+
+@contextmanager
+def _temporary_pgpass_file(target: PsqlRestoreTarget) -> Iterator[Path]:
     with tempfile.NamedTemporaryFile(
         "w",
         encoding="utf-8",
@@ -285,43 +324,73 @@ def _restore_sql_file(target_dsn: str, dump_path: Path) -> None:
     ) as pgpass:
         pgpass_path = Path(pgpass.name)
         os.chmod(pgpass_path, 0o600)
-        pgpass.write(_pgpass_line(host, port, dbname, user, password))
+        pgpass.write(
+            _pgpass_line(
+                target.host,
+                target.port,
+                target.dbname,
+                target.user,
+                target.password,
+            )
+        )
 
+    try:
+        yield pgpass_path
+    finally:
+        pgpass_path.unlink(missing_ok=True)
+
+
+def _run_psql_restore(
+    *,
+    target: PsqlRestoreTarget,
+    dump_path: Path,
+    pgpass_path: Path,
+) -> subprocess.CompletedProcess[bytes]:
+    try:
+        with dump_path.open("rb") as sql_stream:
+            return subprocess.run(
+                _psql_restore_command(target),
+                stdin=sql_stream,
+                env=_psql_restore_env(target, pgpass_path),
+                capture_output=True,
+                check=False,
+            )
+    except FileNotFoundError as exc:
+        raise ProjectError(
+            "psql is required to restore remote databases."
+        ) from exc
+
+
+def _psql_restore_env(
+    target: PsqlRestoreTarget, pgpass_path: Path
+) -> Mapping[str, str]:
     env = os.environ.copy()
     env["PGPASSFILE"] = str(pgpass_path)
-    sslmode = conninfo.get("sslmode")
-    if sslmode is not None:
-        env["PGSSLMODE"] = str(sslmode)
-    command = [
+    if target.sslmode is not None:
+        env["PGSSLMODE"] = target.sslmode
+    return env
+
+
+def _psql_restore_command(target: PsqlRestoreTarget) -> list[str]:
+    return [
         "psql",
         "-h",
-        host,
+        target.host,
         "-p",
-        port,
+        target.port,
         "-U",
-        user,
+        target.user,
         "-d",
-        dbname,
+        target.dbname,
         "-v",
         "ON_ERROR_STOP=1",
         "-q",
     ]
-    try:
-        try:
-            with dump_path.open("rb") as sql_stream:
-                result = subprocess.run(
-                    command,
-                    stdin=sql_stream,
-                    env=env,
-                    capture_output=True,
-                    check=False,
-                )
-        except FileNotFoundError as exc:
-            raise ProjectError(
-                "psql is required to restore remote databases."
-            ) from exc
-    finally:
-        pgpass_path.unlink(missing_ok=True)
+
+
+def _raise_for_psql_restore_failure(
+    result: subprocess.CompletedProcess[bytes],
+) -> None:
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace").strip()
         raise ProjectError(f"psql restore failed: {stderr or 'unknown error'}")
@@ -375,58 +444,89 @@ def _replace_database(
     target_database: str,
     previous_database: str,
 ) -> bool:
-    with _connect_admin(admin_url) as conn:
+    return _replace_database_from_plan(
+        DatabaseSwapPlan(
+            admin_url=admin_url,
+            temporary_database=temporary_database,
+            target_database=target_database,
+            previous_database=previous_database,
+        )
+    )
+
+
+def _replace_database_from_plan(plan: DatabaseSwapPlan) -> bool:
+    with _connect_admin(plan.admin_url) as conn:
         with conn.cursor() as cur:
-            target_exists = _database_exists(cur, target_database)
-            if target_exists:
-                _terminate_database_connections(cur, target_database)
-                cur.execute(
-                    sql.SQL("ALTER DATABASE {} RENAME TO {}").format(
-                        sql.Identifier(target_database),
-                        sql.Identifier(previous_database),
-                    )
-                )
+            target_exists = _move_existing_target_to_previous(cur, plan)
             try:
-                cur.execute(
-                    sql.SQL("ALTER DATABASE {} RENAME TO {}").format(
-                        sql.Identifier(temporary_database),
-                        sql.Identifier(target_database),
-                    )
+                _rename_database(
+                    cur, plan.temporary_database, plan.target_database
                 )
             except Exception as exc:
                 if not target_exists:
                     raise
-                logger.exception(
-                    "Failed to rename temporary database %r to %r; "
-                    "attempting to restore previous target %r.",
-                    temporary_database,
-                    target_database,
-                    previous_database,
-                )
-                try:
-                    _terminate_database_connections(cur, previous_database)
-                    cur.execute(
-                        sql.SQL("ALTER DATABASE {} RENAME TO {}").format(
-                            sql.Identifier(previous_database),
-                            sql.Identifier(target_database),
-                        )
-                    )
-                    logger.info(
-                        "Restored previous target database %r after failed "
-                        "swap.",
-                        target_database,
-                    )
-                except Exception as rollback_exc:
-                    logger.exception(
-                        "Failed to restore previous target database %r.",
-                        target_database,
-                    )
-                    raise ProjectError(
-                        "Postgres sync database swap failed and rollback "
-                        "also failed."
-                    ) from rollback_exc
+                _restore_previous_target_after_failed_swap(cur, plan)
                 raise exc
     return target_exists
+
+
+def _move_existing_target_to_previous(
+    cur: psycopg.Cursor[tuple],
+    plan: DatabaseSwapPlan,
+) -> bool:
+    if not _database_exists(cur, plan.target_database):
+        return False
+    _terminate_database_connections(cur, plan.target_database)
+    _rename_database(cur, plan.target_database, plan.previous_database)
+    return True
+
+
+def _restore_previous_target_after_failed_swap(
+    cur: psycopg.Cursor[tuple],
+    plan: DatabaseSwapPlan,
+) -> None:
+    logger.exception(
+        "Failed to rename temporary database %r to %r; "
+        "attempting to restore previous target %r.",
+        plan.temporary_database,
+        plan.target_database,
+        plan.previous_database,
+    )
+    try:
+        _terminate_database_connections(cur, plan.previous_database)
+        _rename_database(cur, plan.previous_database, plan.target_database)
+        logger.info(
+            "Restored previous target database %r after failed swap.",
+            plan.target_database,
+        )
+    except Exception as rollback_exc:
+        _raise_swap_failure_after_rollback_failure(
+            plan.target_database, rollback_exc
+        )
+
+
+def _raise_swap_failure_after_rollback_failure(
+    target_database: str, rollback_exc: Exception
+) -> None:
+    logger.exception(
+        "Failed to restore previous target database %r.", target_database
+    )
+    raise ProjectError(
+        "Postgres sync database swap failed and rollback also failed."
+    ) from rollback_exc
+
+
+def _rename_database(
+    cur: psycopg.Cursor[tuple],
+    source_database: str,
+    target_database: str,
+) -> None:
+    cur.execute(
+        sql.SQL("ALTER DATABASE {} RENAME TO {}").format(
+            sql.Identifier(source_database),
+            sql.Identifier(target_database),
+        )
+    )
 
 
 def _database_exists(
