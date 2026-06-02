@@ -34,3 +34,7 @@ Event producers should bind repeated workflow identity through `EventContext`
 instead of passing envelope fields on every publish call. This keeps
 event-specific payloads explicit while making shared run, work, attempt,
 correlation, and source fields a single construction concern.
+
+Workflow-specific reporters should own lifecycle event emission. Source readers
+should remain log-agnostic so snapshot acquisition and event recording can be
+reused independently by future import and projection systems.

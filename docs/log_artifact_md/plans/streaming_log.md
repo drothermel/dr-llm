@@ -179,7 +179,7 @@ Core responsibilities:
 - `bootstrap.py`: idempotent creation or validation of JetStream streams,
   consumers, and object bucket.
 - `workers.py`: async worker runtime using JetStream pull consumers.
-- `ingest_pools.py`: pool snapshot import logic.
+- `ingest_pools.py`: pool snapshot source reading and import event recording.
 - `cli.py`: Typer commands for bootstrap, inspect, ingest-pool, and worker
   execution.
 
@@ -283,6 +283,16 @@ Importer idempotency keys should be deterministic from:
 - row state hash
 
 Repeated imports of unchanged rows should not create conflicting logical facts.
+
+The importer should be composed from public primitives rather than one full
+workflow function. The pool snapshot source owns Postgres runtime setup, catalog
+lookup, schema snapshotting, sample iteration, and cleanup. The import event
+recorder owns started, sample, completed, and failed event emission.
+
+`pool_import_failed` represents source snapshot acquisition failures, such as
+opening the source pool or reading its samples. Event publication failures are
+streaming-log infrastructure failures and should not be reclassified as source
+pool import failures.
 
 ## Projection-Facing Guarantees
 
