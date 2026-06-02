@@ -23,6 +23,15 @@ finalized shard references. Finalized manifests remain the rebuild source of
 truth, so a missing or stale sidecar can be reconstructed from finalized marker
 files.
 
+The shard layer separates domain state from publishing mechanics. `OpenShard`
+tracks in-memory lane buffers and artifact references, then produces an
+immutable `ShardContents` snapshot. `ShardWriter` owns rotation and finalization
+orchestration, while a `ShardStorageBackend` publishes finalized shard contents,
+loads finalized manifests for rebuild, and reads finalized bytes. The current
+backend is `LocalShardStorage`, which implements the local Zarr v3 layout,
+writer-owned staging directories, manifest JSONL files, finalized marker JSON,
+and atomic replacement of finalized paths.
+
 Zarr is attractive because it supports chunked storage, compression,
 structured grouping, and efficient partial reads. It is also better aligned
 with a local-to-object-store path than traditional HDF5, which is strongest in

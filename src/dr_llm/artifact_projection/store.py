@@ -1,24 +1,25 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from dr_llm.artifact_projection.config import ArtifactProjectionConfig
 from dr_llm.artifact_projection.index import (
     ArtifactIndex,
     ArtifactIndexConflictError,
-    load_manifest_references,
-    load_shard_manifest,
 )
 from dr_llm.artifact_projection.identity import artifact_id_for_source
 from dr_llm.artifact_projection.models import (
     ArtifactLane,
     ArtifactReference,
+    FinalizedShard,
     PayloadArtifactSource,
     ProjectionError,
     ProjectionErrorKind,
     ShardManifest,
 )
-from dr_llm.artifact_projection.shards import FinalizedShard, ShardWriter
+from dr_llm.artifact_projection.shards import ShardWriter
+from dr_llm.artifact_projection.storage import (
+    LocalShardStorage,
+    ShardStorageBackend,
+)
 
 
 class ArtifactStore:
@@ -28,15 +29,22 @@ class ArtifactStore:
         config: ArtifactProjectionConfig,
         index: ArtifactIndex | None = None,
         writer: ShardWriter | None = None,
+        storage: ShardStorageBackend | None = None,
     ) -> None:
         self.config = config
         self.index = index or ArtifactIndex(config.index_path)
-        self.writer = writer or ShardWriter(config)
+        self.storage = storage or (
+            writer.storage if writer is not None else LocalShardStorage(config)
+        )
+        if writer is not None and storage is not None:
+            if writer.storage is not storage:
+                raise ValueError(
+                    "writer and storage must use the same backend"
+                )
+        self.writer = writer or ShardWriter(config, storage=self.storage)
 
     def initialize(self) -> None:
-        self.config.shard_root.mkdir(parents=True, exist_ok=True)
-        self.config.manifest_root.mkdir(parents=True, exist_ok=True)
-        self.config.staging_root.mkdir(parents=True, exist_ok=True)
+        self.storage.initialize()
         self.config.index_path.parent.mkdir(parents=True, exist_ok=True)
         self.index.initialize()
 
@@ -91,25 +99,14 @@ class ArtifactStore:
     def rebuild_index(self) -> None:
         self.index.initialize()
         self.index.clear_rebuildable_rows()
-        for marker_path in self._finalized_marker_paths():
-            manifest = load_shard_manifest(marker_path)
+        for finalized_shard in self.storage.list_finalized_shards():
+            manifest = finalized_shard.manifest
             self.index.insert_shard(manifest)
-            for reference in self._manifest_references(manifest):
+            for reference in finalized_shard.references:
                 self.index.insert_reference(reference)
 
     def record_error(self, error: ProjectionError) -> None:
         self.index.record_error(error)
-
-    def _manifest_references(
-        self, manifest: ShardManifest
-    ) -> list[ArtifactReference]:
-        manifest_path = (
-            self.config.manifest_root / f"{manifest.shard_id}.jsonl"
-        )
-        return load_manifest_references(manifest_path)
-
-    def _finalized_marker_paths(self) -> list[Path]:
-        return sorted(self.config.manifest_root.glob("*.finalized.json"))
 
     def _commit_finalized_shard(self, finalized_shard: FinalizedShard) -> None:
         try:

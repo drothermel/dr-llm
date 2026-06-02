@@ -303,11 +303,13 @@ Implementation steps:
    checkpoints, and projection errors in `index/artifacts.sqlite3`. Treat this
    index as the normal-write idempotency authority and as rebuildable from
    finalized manifests, not as the permanent source of artifact bytes.
-5. **Create the shard writer.** Stage payload bytes into writer-owned staging
-   directories, append them into lane-specific buffers, finalize shards into
-   Zarr v3 stores, write manifest JSONL files plus finalized marker JSON, then
-   atomically move finalized outputs into place. Readers must never read staging
-   shards.
+5. **Create the shard writer and storage backend.** Append payload bytes into
+   lane-specific open-shard buffers, snapshot open shards into immutable
+   contents at finalization, and delegate durable publishing to a
+   `ShardStorageBackend`. The local backend stages Zarr v3 stores in
+   writer-owned directories, writes manifest JSONL files plus finalized marker
+   JSON, then atomically moves finalized outputs into place. Readers must never
+   read staging shards.
 6. **Create the reader.** Support `read_artifact`, `read_artifacts`,
    `read_text`, `read_json`, and `read_bytes` by looking up references in the
    sidecar index and reading finalized Zarr lane arrays by offset and length.
@@ -474,9 +476,10 @@ streaming-log and metadata schemas are fixed.
 
 - Keep responsibilities narrow: `ArtifactRolePolicy` decides whether a ref is an
   artifact, `ArtifactProjector` orchestrates event processing, `ArtifactStore`
-  owns logical artifact acceptance and reference promotion, `ShardWriter` writes
-  physical shard storage, `ArtifactReader` reads finalized storage, and
-  `ArtifactIndex` persists sidecar state.
+  owns logical artifact acceptance and reference promotion, `OpenShard` builds
+  in-memory shard contents, `ShardWriter` orchestrates rotation and
+  finalization, `ShardStorageBackend` owns durable publishing and finalized
+  reads, and `ArtifactIndex` persists sidecar state.
 - Use intention-revealing names. Avoid vague manager-style classes and avoid
   abbreviations in public model fields.
 - Keep projector flow top-down and delegate low-level hashing, lane selection,
@@ -516,8 +519,8 @@ Unit tests:
 - Lane selection maps JSON, text, and binary payloads correctly.
 - SQLite index handles open/finalized insert, duplicate no-op, conflict error,
   checkpoint update, and rebuild from finalized manifests.
-- Shard writer writes finalized Zarr arrays and reader returns bytes, text, and
-  JSON.
+- Open-shard snapshots do not perform filesystem publishing, local shard storage
+  writes finalized Zarr arrays, and reader returns bytes, text, and JSON.
 - Projector with fake message and payload store acknowledges only after durable
   success or durable error.
 

@@ -10,7 +10,7 @@ from dr_llm.artifact_projection.projector import (
     ArtifactEventDelivery,
     ArtifactProjector,
 )
-from dr_llm.artifact_projection.shards import ArtifactReader
+from dr_llm.artifact_projection.storage import ArtifactReader
 from dr_llm.streaming_log.events import (
     EventEnvelope,
     ProducerInfo,

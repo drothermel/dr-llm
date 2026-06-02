@@ -9,7 +9,7 @@ from rich.console import Console
 
 from dr_llm.artifact_projection.config import ArtifactProjectionConfig
 from dr_llm.artifact_projection.index import ArtifactIndex
-from dr_llm.artifact_projection.shards import ArtifactReader
+from dr_llm.artifact_projection.storage import ArtifactReader
 from dr_llm.artifact_projection.store import ArtifactStore
 from dr_llm.streaming_log.client import StreamingLogConnection
 from dr_llm.streaming_log.config import StreamingLogConfig

@@ -123,6 +123,29 @@ class ShardManifest(BaseModel):
     schema_version: int = Field(default=1, ge=1)
 
 
+class ShardContents(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    shard_id: str
+    manifest: ShardManifest
+    references: list[ArtifactReference]
+    lanes: dict[ArtifactLane, bytes]
+
+
+class FinalizedShard(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    manifest: ShardManifest
+    references: list[ArtifactReference]
+
+
+class ShardWriteResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reference: ArtifactReference
+    finalized_shard: FinalizedShard | None = None
+
+
 class ProjectionCheckpoint(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -162,9 +185,12 @@ __all__ = [
     "ArtifactIndexSummary",
     "ArtifactLane",
     "ArtifactReference",
+    "FinalizedShard",
     "PayloadArtifactSource",
     "ProjectionCheckpoint",
     "ProjectionError",
     "ProjectionErrorKind",
+    "ShardContents",
     "ShardManifest",
+    "ShardWriteResult",
 ]

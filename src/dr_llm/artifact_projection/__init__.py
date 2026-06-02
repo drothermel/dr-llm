@@ -7,11 +7,14 @@ from dr_llm.artifact_projection.models import (
     ArtifactIndexSummary,
     ArtifactLane,
     ArtifactReference,
+    FinalizedShard,
     PayloadArtifactSource,
     ProjectionCheckpoint,
     ProjectionError,
     ProjectionErrorKind,
+    ShardContents,
     ShardManifest,
+    ShardWriteResult,
 )
 from dr_llm.artifact_projection.policy import ArtifactRolePolicy
 from dr_llm.artifact_projection.projector import (
@@ -19,11 +22,11 @@ from dr_llm.artifact_projection.projector import (
     ArtifactProjectionResult,
     ArtifactProjector,
 )
-from dr_llm.artifact_projection.shards import (
+from dr_llm.artifact_projection.shards import ShardWriter
+from dr_llm.artifact_projection.storage import (
     ArtifactReader,
-    FinalizedShard,
-    ShardWriter,
-    ShardWriteResult,
+    LocalShardStorage,
+    ShardStorageBackend,
 )
 from dr_llm.artifact_projection.store import ArtifactStore
 
@@ -43,9 +46,12 @@ __all__ = [
     "ProjectionCheckpoint",
     "ProjectionError",
     "ProjectionErrorKind",
+    "ShardContents",
     "ShardManifest",
+    "ShardStorageBackend",
     "ShardWriter",
     "ShardWriteResult",
+    "LocalShardStorage",
     "artifact_id_for_source",
     "sha256_bytes",
 ]
