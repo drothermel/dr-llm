@@ -129,6 +129,8 @@ What it verifies:
 - provider availability is detected from real environment variables and CLI
   tools
 - a model catalog is synced and a real model is selected
+- auto-selected providers fall back gracefully if a configured provider fails at
+  execution time, for example because of billing or account limits
 - one work message is submitted to JetStream
 - the streaming worker processes that message through the provider
 - replay includes the expected lifecycle events:
@@ -141,10 +143,15 @@ Useful options:
 
 ```bash
 uv run python scripts/demo-streaming-log-worker.py --help
+uv run python scripts/demo-streaming-log-worker.py
 uv run python scripts/demo-streaming-log-worker.py --provider openai --model gpt-4o-mini
 uv run python scripts/demo-streaming-log-worker.py --keep-nats
 uv run python scripts/demo-streaming-log-worker.py --nats-url nats://127.0.0.1:4222
 ```
+
+Fallback only applies to auto-selected providers. If you pass `--provider` or
+`--model`, that explicit choice is tested directly and failures are reported
+with the replayed `attempt_failed` details.
 
 ## Local Project And Pool Discovery
 

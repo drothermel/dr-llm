@@ -11,7 +11,7 @@ Prerequisites:
   2. Docker running, unless --nats-url points at an existing NATS server.
 
 The demo:
-  - Auto-detects an available provider/model
+  - Auto-detects an available provider/model, falling back on provider failures
   - Starts a temporary NATS JetStream server when --nats-url is omitted
   - Submits a real work message
   - Runs the async streaming-log worker for one message
@@ -46,6 +46,7 @@ from dr_llm.demo import (
     warn,
 )
 from dr_llm.llm import (
+    LlmRequest,
     Message,
     ProviderAvailabilityStatus,
     ProviderName,
@@ -76,6 +77,10 @@ PROVIDER_PREFERENCE = [
 ]
 
 
+class ProviderWorkFailedError(RuntimeError):
+    pass
+
+
 async def _run_worker_demo(
     *,
     nats_url: str | None,
@@ -86,14 +91,71 @@ async def _run_worker_demo(
     model: str | None,
 ) -> None:
     step("1. Detecting live provider")
-    provider, model, request = _build_live_request(
-        prompt=prompt,
-        requested_provider=provider,
-        requested_model=model,
-    )
-    ok(f"Using {provider}/{model}")
+    registry = build_default_registry()
+    try:
+        statuses = registry.availability_statuses()
+        available = _available_providers_or_exit(statuses)
+        candidate_providers = _candidate_providers(
+            available,
+            requested_provider=provider,
+        )
+    finally:
+        registry.close()
 
-    step("2. Preparing NATS")
+    allow_fallback = provider is None and model is None
+    if not allow_fallback:
+        candidate_providers = candidate_providers[:1]
+    failures: list[str] = []
+    for index, candidate_provider in enumerate(candidate_providers, start=1):
+        provider_name, model_name, request = _build_live_request(
+            prompt=prompt,
+            provider=candidate_provider,
+            requested_model=model,
+        )
+        ok(f"Using {provider_name}/{model_name}")
+        try:
+            await _run_worker_attempt(
+                nats_url=nats_url,
+                keep_nats=keep_nats,
+                max_retries=max_retries,
+                provider=provider_name,
+                model=model_name,
+                request=request,
+                attempt_index=index,
+                attempt_count=len(candidate_providers),
+            )
+            if failures:
+                ok(
+                    "Fallback succeeded after skipped provider attempts: "
+                    + "; ".join(failures)
+                )
+            return
+        except ProviderWorkFailedError as exc:
+            failures.append(f"{provider_name}/{model_name}: {exc}")
+            if not allow_fallback or index == len(candidate_providers):
+                raise
+            warn(
+                f"{provider_name}/{model_name} failed during live execution; "
+                "trying the next available provider"
+            )
+    raise RuntimeError("No live provider attempt completed successfully")
+
+
+async def _run_worker_attempt(
+    *,
+    nats_url: str | None,
+    keep_nats: bool,
+    max_retries: int,
+    provider: str,
+    model: str,
+    request: LlmRequest,
+    attempt_index: int,
+    attempt_count: int,
+) -> None:
+    step(
+        f"2. Preparing NATS for provider attempt "
+        f"{attempt_index}/{attempt_count}"
+    )
     lease = prepare_demo_nats(nats_url=nats_url, keep_nats=keep_nats)
     ok(f"NATS ready at {lease.nats_url}")
     await wait_for_nats(lease.nats_url)
@@ -111,7 +173,11 @@ async def _run_worker_demo(
             work = QueuedWorkMessage(
                 request=request,
                 source="demo-streaming-log-worker",
-                metadata={"demo": "streaming-log-worker"},
+                metadata={
+                    "demo": "streaming-log-worker",
+                    "provider": provider,
+                    "model": model,
+                },
                 max_retries=max_retries,
             )
             submitted = await client.submit_work(work)
@@ -156,19 +222,10 @@ async def _run_worker_demo(
 
 
 def _build_live_request(
-    *,
-    prompt: str,
-    requested_provider: ProviderName | None,
-    requested_model: str | None,
+    *, prompt: str, provider: str, requested_model: str | None
 ):
     registry = build_default_registry()
     try:
-        statuses = registry.availability_statuses()
-        available = _available_providers_or_exit(statuses)
-        provider = _select_provider(
-            available,
-            requested_provider=requested_provider,
-        )
         model = _resolve_model(
             provider,
             requested_model=requested_model,
@@ -190,11 +247,11 @@ def _build_live_request(
         registry.close()
 
 
-def _select_provider(
+def _candidate_providers(
     available: list[ProviderAvailabilityStatus],
     *,
     requested_provider: ProviderName | None,
-) -> str:
+) -> list[str]:
     available_by_name = {status.provider: status for status in available}
     if requested_provider is not None:
         provider = str(requested_provider)
@@ -202,12 +259,18 @@ def _select_provider(
             raise RuntimeError(
                 f"Requested provider {provider!r} is not available"
             )
-        return provider
+        return [provider]
 
+    providers: list[str] = []
     for provider in PROVIDER_PREFERENCE:
         if str(provider) in available_by_name:
-            return str(provider)
-    return available[0].provider
+            providers.append(str(provider))
+    providers.extend(
+        status.provider
+        for status in available
+        if status.provider not in providers
+    )
+    return providers
 
 
 def _available_providers_or_exit(
@@ -251,7 +314,8 @@ def _resolve_model(provider: str, *, requested_model: str | None) -> str:
 async def _print_failure_details(
     client: StreamingLogClient,
     events: list[EventEnvelope],
-) -> None:
+) -> list[str]:
+    details: list[str] = []
     for event in events:
         if str(event.event_type) != "attempt_failed":
             continue
@@ -260,10 +324,10 @@ async def _print_failure_details(
                 continue
             data = await client.read_payload_ref(PayloadRef(**raw_ref))
             detail = json.loads(data)
-            warn(
-                "Provider attempt failed: "
-                f"{detail.get('error_type')}: {detail.get('message')}"
-            )
+            summary = f"{detail.get('error_type')}: {detail.get('message')}"
+            details.append(summary)
+            warn("Provider attempt failed: " + summary)
+    return details
 
 
 def _verify_worker_lifecycle(counts) -> None:
@@ -280,7 +344,7 @@ def _verify_worker_lifecycle(counts) -> None:
     missing = [event_type for event_type in expected if counts[event_type] < 1]
     if missing:
         if counts["attempt_failed"] > 0:
-            raise RuntimeError(
+            raise ProviderWorkFailedError(
                 "Provider work failed before a successful response; "
                 "see attempt_failed details above. Missing lifecycle events: "
                 + ", ".join(missing)
