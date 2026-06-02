@@ -6,8 +6,9 @@ from dr_llm.artifact_projection import (
     ArtifactLane,
     ArtifactProjectionConfig,
     ArtifactRolePolicy,
+    ArtifactSourceRef,
     PayloadArtifactSource,
-    artifact_id_for_source,
+    artifact_id_for_source_ref,
 )
 from dr_llm.streaming_log.payloads import PayloadRef
 
@@ -15,15 +16,15 @@ from dr_llm.streaming_log.payloads import PayloadRef
 def test_artifact_id_is_stable_and_depends_on_logical_source() -> None:
     source = _source(payload_role="response_json")
 
-    first = artifact_id_for_source(
-        projection_version="artifact-v1", source=source
+    first = artifact_id_for_source_ref(
+        projection_version="artifact-v1", source_ref=source.source_ref
     )
-    second = artifact_id_for_source(
-        projection_version="artifact-v1", source=source
+    second = artifact_id_for_source_ref(
+        projection_version="artifact-v1", source_ref=source.source_ref
     )
-    changed = artifact_id_for_source(
+    changed = artifact_id_for_source_ref(
         projection_version="artifact-v1",
-        source=_source(payload_role="request_json"),
+        source_ref=_source(payload_role="request_json").source_ref,
     )
 
     assert first == second
@@ -64,17 +65,19 @@ def test_role_policy_selects_lane_from_content_type_and_encoding() -> None:
 
 def _source(*, payload_role: str) -> PayloadArtifactSource:
     return PayloadArtifactSource(
-        source_event_id="event-1",
-        source_event_type="provider_response_received",
-        source_schema_version=1,
-        source_idempotency_key="idem-1",
-        payload_role=payload_role,
-        source_object_key="sha256/ab/abc",
-        source_sha256="a" * 64,
-        source_size_bytes=3,
-        content_type="application/json",
-        encoding="utf-8",
-        source_compression="none",
+        source_ref=ArtifactSourceRef(
+            event_id="event-1",
+            event_type="provider_response_received",
+            schema_version=1,
+            idempotency_key="idem-1",
+            payload_role=payload_role,
+            object_key="sha256/ab/abc",
+            sha256="a" * 64,
+            size_bytes=3,
+            content_type="application/json",
+            encoding="utf-8",
+            compression="none",
+        )
     )
 
 

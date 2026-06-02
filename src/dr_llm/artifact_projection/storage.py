@@ -151,9 +151,10 @@ class ArtifactReader:
         return self.storage.read_bytes(reference)
 
     def read_text(self, reference: ArtifactReference) -> str:
-        if reference.encoding == "binary":
+        encoding = reference.source_ref.encoding
+        if encoding == "binary":
             raise ValueError("binary artifact cannot be decoded as text")
-        return self.read_bytes(reference).decode(reference.encoding)
+        return self.read_bytes(reference).decode(encoding)
 
     def read_json(self, reference: ArtifactReference) -> object:
         return json.loads(self.read_text(reference))

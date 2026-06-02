@@ -26,53 +26,71 @@ class ProjectionErrorKind(StrEnum):
     storage_error = "storage_error"
 
 
-class PayloadArtifactSource(BaseModel):
+class ArtifactSourceRef(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    source_event_id: str
-    source_event_type: str
-    source_schema_version: int
-    source_idempotency_key: str
+    event_id: str
+    event_type: str
+    schema_version: int
+    idempotency_key: str
     payload_role: str
-    source_object_key: str
-    source_sha256: str
-    source_size_bytes: int = Field(ge=0)
+    object_key: str
+    sha256: str
+    size_bytes: int = Field(ge=0)
     content_type: str
     encoding: str
-    source_compression: str
+    compression: str
+
+
+class ArtifactEventContext(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
     run_id: str | None = None
     work_id: str | None = None
     attempt_id: str | None = None
     causation_id: str | None = None
     correlation_id: str | None = None
-    source: str | None = None
+    event_source: str | None = None
     producer: dict[str, Any] = Field(default_factory=dict)
-    event_metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PayloadArtifactSource(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_ref: ArtifactSourceRef
+    event_context: ArtifactEventContext = Field(
+        default_factory=ArtifactEventContext
+    )
 
     @classmethod
     def from_event_ref(
         cls, *, event: EventEnvelope, payload_ref: PayloadRef
     ) -> PayloadArtifactSource:
         return cls(
-            source_event_id=event.event_id,
-            source_event_type=str(event.event_type),
-            source_schema_version=event.schema_version,
-            source_idempotency_key=event.idempotency_key,
-            payload_role=payload_ref.role,
-            source_object_key=payload_ref.object_key,
-            source_sha256=payload_ref.sha256,
-            source_size_bytes=payload_ref.size_bytes,
-            content_type=payload_ref.content_type,
-            encoding=payload_ref.encoding,
-            source_compression=payload_ref.compression,
-            run_id=event.run_id,
-            work_id=event.work_id,
-            attempt_id=event.attempt_id,
-            causation_id=event.causation_id,
-            correlation_id=event.correlation_id,
-            source=event.source,
-            producer=event.producer.model_dump(mode="json"),
-            event_metadata=event.metadata,
+            source_ref=ArtifactSourceRef(
+                event_id=event.event_id,
+                event_type=str(event.event_type),
+                schema_version=event.schema_version,
+                idempotency_key=event.idempotency_key,
+                payload_role=payload_ref.role,
+                object_key=payload_ref.object_key,
+                sha256=payload_ref.sha256,
+                size_bytes=payload_ref.size_bytes,
+                content_type=payload_ref.content_type,
+                encoding=payload_ref.encoding,
+                compression=payload_ref.compression,
+            ),
+            event_context=ArtifactEventContext(
+                run_id=event.run_id,
+                work_id=event.work_id,
+                attempt_id=event.attempt_id,
+                causation_id=event.causation_id,
+                correlation_id=event.correlation_id,
+                event_source=event.source,
+                producer=event.producer.model_dump(mode="json"),
+                metadata=event.metadata,
+            ),
         )
 
 
@@ -81,18 +99,12 @@ class ArtifactReference(BaseModel):
 
     artifact_id: str
     projection_version: str
-    source_event_id: str
-    source_event_type: str
-    source_schema_version: int
-    source_idempotency_key: str
-    payload_role: str
-    source_object_key: str
-    source_sha256: str
+    source_ref: ArtifactSourceRef
+    event_context: ArtifactEventContext = Field(
+        default_factory=ArtifactEventContext
+    )
     logical_sha256: str
     size_bytes: int = Field(ge=0)
-    content_type: str
-    encoding: str
-    source_compression: str
     lane: ArtifactLane
     shard_id: str
     shard_uri: str
@@ -100,14 +112,6 @@ class ArtifactReference(BaseModel):
     length: int = Field(ge=0)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     schema_version: int = Field(default=1, ge=1)
-    run_id: str | None = None
-    work_id: str | None = None
-    attempt_id: str | None = None
-    causation_id: str | None = None
-    correlation_id: str | None = None
-    source: str | None = None
-    producer: dict[str, Any] = Field(default_factory=dict)
-    event_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ShardManifest(BaseModel):
@@ -160,10 +164,10 @@ class ProjectionError(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     projection_version: str
-    source_event_id: str
-    source_idempotency_key: str
-    payload_role: str | None = None
-    source_object_key: str | None = None
+    source_ref: ArtifactSourceRef
+    event_context: ArtifactEventContext = Field(
+        default_factory=ArtifactEventContext
+    )
     error_kind: ProjectionErrorKind
     message: str
     stream_sequence: int | None = Field(default=None, ge=0)
@@ -182,9 +186,11 @@ class ArtifactIndexSummary(BaseModel):
 
 
 __all__ = [
+    "ArtifactEventContext",
     "ArtifactIndexSummary",
     "ArtifactLane",
     "ArtifactReference",
+    "ArtifactSourceRef",
     "FinalizedShard",
     "PayloadArtifactSource",
     "ProjectionCheckpoint",

@@ -9,6 +9,7 @@ from types import TracebackType
 from dr_llm.artifact_projection.models import (
     ArtifactIndexSummary,
     ArtifactReference,
+    ArtifactSourceRef,
     ProjectionCheckpoint,
     ProjectionError,
     ProjectionErrorKind,
@@ -104,11 +105,7 @@ class ArtifactIndex:
                 (
                     reference.artifact_id,
                     reference.projection_version,
-                    reference.source_event_id,
-                    reference.source_idempotency_key,
-                    reference.payload_role,
-                    reference.source_object_key,
-                    reference.source_sha256,
+                    *_source_ref_index_values(reference.source_ref),
                     reference.shard_id,
                     writer_session,
                     reference.model_dump_json(),
@@ -164,11 +161,7 @@ class ArtifactIndex:
                 (
                     reference.artifact_id,
                     reference.projection_version,
-                    reference.source_event_id,
-                    reference.source_idempotency_key,
-                    reference.payload_role,
-                    reference.source_object_key,
-                    reference.source_sha256,
+                    *_source_ref_index_values(reference.source_ref),
                     reference.shard_id,
                     reference.model_dump_json(),
                     reference.created_at.isoformat(),
@@ -328,10 +321,7 @@ class ArtifactIndex:
             """,
             (
                 error.projection_version,
-                error.source_event_id,
-                error.source_idempotency_key,
-                error.payload_role,
-                error.source_object_key,
+                *_source_ref_error_values(error.source_ref),
                 error.error_kind,
                 error.model_dump_json(),
                 error.created_at.isoformat(),
@@ -344,10 +334,8 @@ class ArtifactIndex:
     ) -> ProjectionError:
         error = ProjectionError(
             projection_version=reference.projection_version,
-            source_event_id=reference.source_event_id,
-            source_idempotency_key=reference.source_idempotency_key,
-            payload_role=reference.payload_role,
-            source_object_key=reference.source_object_key,
+            source_ref=reference.source_ref,
+            event_context=reference.event_context,
             error_kind=ProjectionErrorKind.duplicate_artifact_conflict,
             message=(
                 f"Artifact {reference.artifact_id!r} conflicts with "
@@ -439,6 +427,29 @@ def _reference_identity(reference: ArtifactReference) -> dict[str, object]:
     return {
         key: value for key, value in payload.items() if key not in ignored_keys
     }
+
+
+def _source_ref_index_values(
+    source_ref: ArtifactSourceRef,
+) -> tuple[str, str, str, str, str]:
+    return (
+        source_ref.event_id,
+        source_ref.idempotency_key,
+        source_ref.payload_role,
+        source_ref.object_key,
+        source_ref.sha256,
+    )
+
+
+def _source_ref_error_values(
+    source_ref: ArtifactSourceRef,
+) -> tuple[str, str, str, str]:
+    return (
+        source_ref.event_id,
+        source_ref.idempotency_key,
+        source_ref.payload_role,
+        source_ref.object_key,
+    )
 
 
 def load_manifest_references(path: Path) -> list[ArtifactReference]:

@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 from dr_llm.artifact_projection import (
     ArtifactLane,
     ArtifactProjectionConfig,
+    ArtifactSourceRef,
     ArtifactStore,
     PayloadArtifactSource,
 )
@@ -39,15 +40,17 @@ def test_artifact_read_rejects_open_reference(
 
 def _source() -> PayloadArtifactSource:
     return PayloadArtifactSource(
-        source_event_id="event-1",
-        source_event_type="provider_response_received",
-        source_schema_version=1,
-        source_idempotency_key="idem-1",
-        payload_role="response_json",
-        source_object_key="sha256/ab/abc",
-        source_sha256="a" * 64,
-        source_size_bytes=5,
-        content_type="text/plain",
-        encoding="utf-8",
-        source_compression="none",
+        source_ref=ArtifactSourceRef(
+            event_id="event-1",
+            event_type="provider_response_received",
+            schema_version=1,
+            idempotency_key="idem-1",
+            payload_role="response_json",
+            object_key="sha256/ab/abc",
+            sha256="a" * 64,
+            size_bytes=5,
+            content_type="text/plain",
+            encoding="utf-8",
+            compression="none",
+        )
     )

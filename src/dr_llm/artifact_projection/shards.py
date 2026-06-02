@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from dr_llm.artifact_projection.config import ArtifactProjectionConfig
 from dr_llm.artifact_projection.identity import (
-    artifact_id_for_source,
+    artifact_id_for_source_ref,
     sha256_bytes,
 )
 from dr_llm.artifact_projection.models import (
@@ -150,36 +150,20 @@ class OpenShard:
         offset: int,
     ) -> ArtifactReference:
         return ArtifactReference(
-            artifact_id=artifact_id_for_source(
+            artifact_id=artifact_id_for_source_ref(
                 projection_version=projection_version,
-                source=source,
+                source_ref=source.source_ref,
             ),
             projection_version=projection_version,
-            source_event_id=source.source_event_id,
-            source_event_type=source.source_event_type,
-            source_schema_version=source.source_schema_version,
-            source_idempotency_key=source.source_idempotency_key,
-            payload_role=source.payload_role,
-            source_object_key=source.source_object_key,
-            source_sha256=source.source_sha256,
+            source_ref=source.source_ref,
+            event_context=source.event_context,
             logical_sha256=sha256_bytes(data),
             size_bytes=len(data),
-            content_type=source.content_type,
-            encoding=source.encoding,
-            source_compression=source.source_compression,
             lane=lane,
             shard_id=self.shard_id,
             shard_uri=self.shard_uri,
             offset=offset,
             length=len(data),
-            run_id=source.run_id,
-            work_id=source.work_id,
-            attempt_id=source.attempt_id,
-            causation_id=source.causation_id,
-            correlation_id=source.correlation_id,
-            source=source.source,
-            producer=source.producer,
-            event_metadata=source.event_metadata,
         )
 
     def _manifest(self, *, projection_version: str) -> ShardManifest:

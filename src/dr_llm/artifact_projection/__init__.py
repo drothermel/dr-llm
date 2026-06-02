@@ -1,12 +1,14 @@
 from dr_llm.artifact_projection.config import ArtifactProjectionConfig
 from dr_llm.artifact_projection.identity import (
-    artifact_id_for_source,
+    artifact_id_for_source_ref,
     sha256_bytes,
 )
 from dr_llm.artifact_projection.models import (
+    ArtifactEventContext,
     ArtifactIndexSummary,
     ArtifactLane,
     ArtifactReference,
+    ArtifactSourceRef,
     FinalizedShard,
     PayloadArtifactSource,
     ProjectionCheckpoint,
@@ -31,6 +33,7 @@ from dr_llm.artifact_projection.storage import (
 from dr_llm.artifact_projection.store import ArtifactStore
 
 __all__ = [
+    "ArtifactEventContext",
     "ArtifactEventDelivery",
     "ArtifactIndexSummary",
     "ArtifactLane",
@@ -40,6 +43,7 @@ __all__ = [
     "ArtifactReader",
     "ArtifactReference",
     "ArtifactRolePolicy",
+    "ArtifactSourceRef",
     "ArtifactStore",
     "FinalizedShard",
     "PayloadArtifactSource",
@@ -52,6 +56,6 @@ __all__ = [
     "ShardWriter",
     "ShardWriteResult",
     "LocalShardStorage",
-    "artifact_id_for_source",
+    "artifact_id_for_source_ref",
     "sha256_bytes",
 ]

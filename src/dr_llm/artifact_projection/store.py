@@ -5,7 +5,7 @@ from dr_llm.artifact_projection.index import (
     ArtifactIndex,
     ArtifactIndexConflictError,
 )
-from dr_llm.artifact_projection.identity import artifact_id_for_source
+from dr_llm.artifact_projection.identity import artifact_id_for_source_ref
 from dr_llm.artifact_projection.models import (
     ArtifactLane,
     ArtifactReference,
@@ -123,9 +123,9 @@ class ArtifactStore:
             raise
 
     def _artifact_id_for_source(self, source: PayloadArtifactSource) -> str:
-        return artifact_id_for_source(
+        return artifact_id_for_source_ref(
             projection_version=self.config.projection_version,
-            source=source,
+            source_ref=source.source_ref,
         )
 
 
@@ -139,10 +139,8 @@ def projection_error_for_source(
 ) -> ProjectionError:
     return ProjectionError(
         projection_version=config.projection_version,
-        source_event_id=source.source_event_id,
-        source_idempotency_key=source.source_idempotency_key,
-        payload_role=source.payload_role,
-        source_object_key=source.source_object_key,
+        source_ref=source.source_ref,
+        event_context=source.event_context,
         error_kind=error_kind,
         message=message,
         stream_sequence=stream_sequence,

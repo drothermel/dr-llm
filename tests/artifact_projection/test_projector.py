@@ -4,7 +4,12 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from dr_llm.artifact_projection import ArtifactProjectionConfig, ArtifactStore
+from dr_llm.artifact_projection import (
+    ArtifactProjectionConfig,
+    ArtifactStore,
+    PayloadArtifactSource,
+    ProjectionError,
+)
 from dr_llm.artifact_projection.index import ArtifactIndex
 from dr_llm.artifact_projection.projector import (
     ArtifactEventDelivery,
@@ -66,6 +71,11 @@ def test_projector_writes_artifact_before_ack(tmp_path: Path) -> None:
     assert summary.artifact_count == 1
     assert summary.checkpoint is not None
     reference = store.index.list_references()[0]
+    source = PayloadArtifactSource.from_event_ref(
+        event=event, payload_ref=payload.ref()
+    )
+    assert reference.source_ref == source.source_ref
+    assert reference.event_context == source.event_context
     assert ArtifactReader(config).read_json(reference) == {"ok": True}
 
 
@@ -131,8 +141,22 @@ def test_projector_records_missing_payload_error_and_acks(
             projection_version=config.projection_version,
             durable_consumer=config.durable_consumer,
         )
+        row = index.connection.execute(
+            """
+            SELECT error_json
+            FROM projection_errors
+            ORDER BY error_id
+            """
+        ).fetchone()
     assert summary.error_count == 1
     assert summary.artifact_count == 0
+    assert row is not None
+    error = ProjectionError.model_validate_json(row["error_json"])
+    assert error.source_ref.event_id == event.event_id
+    assert error.source_ref.idempotency_key == "idem-1"
+    assert error.source_ref.payload_role == "response_json"
+    assert error.event_context.run_id == "run-1"
+    assert error.event_context.metadata == {"purpose": "projection-test"}
 
 
 def _event(*payload_refs: PayloadRef) -> EventEnvelope:
@@ -141,6 +165,9 @@ def _event(*payload_refs: PayloadRef) -> EventEnvelope:
         producer=ProducerInfo(name="test"),
         idempotency_key="idem-1",
         payload_refs=list(payload_refs),
+        run_id="run-1",
+        source="test-suite",
+        metadata={"purpose": "projection-test"},
     )
 
 

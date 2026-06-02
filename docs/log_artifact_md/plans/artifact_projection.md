@@ -188,8 +188,9 @@ projection to design against.
 - **Artifact identity:** use a logical artifact identity that includes source
   logical fact identity, payload role, object key, and content hash. Content
   hash alone is not enough because the same bytes may play different semantic
-  roles or appear in different provenance contexts. Preserve `source_event_id`
-  as provenance, not as the primary artifact identity input.
+  roles or appear in different provenance contexts. Preserve
+  `source_ref.event_id` as provenance, not as the primary artifact identity
+  input.
 - **Pointer metadata:** artifact references emitted to or consumed by metadata
   should include source fields from the payload ref, source event provenance,
   logical artifact ID, projection/layout version, shard identifier, shard
@@ -223,19 +224,26 @@ The v1 metadata-facing reference is `ArtifactReference` with these fields:
 - `artifact_id`: stable logical artifact identifier with an `art_` prefix.
 - `projection_version`: artifact projection version, starting at
   `artifact-v1`.
-- `source_event_id`: event that introduced the payload reference.
-- `source_idempotency_key`: logical fact key from the source event.
-- `payload_role`: source semantic role, such as `request_json`,
-  `response_json`, `stdout`, `stderr`, `generated_code`,
-  `validation_report`, `metrics_payload`, or `error_detail`.
-- `source_object_key`: immutable object key in `DRLLM_PAYLOADS`.
-- `source_sha256`: SHA-256 of the exact bytes in `DRLLM_PAYLOADS`.
+- `source_ref`: durable source event and payload-reference identity:
+  - `event_id`: event that introduced the payload reference.
+  - `event_type`: source event type.
+  - `schema_version`: source event schema version.
+  - `idempotency_key`: logical fact key from the source event.
+  - `payload_role`: source semantic role, such as `request_json`,
+    `response_json`, `stdout`, `stderr`, `generated_code`,
+    `validation_report`, `metrics_payload`, or `error_detail`.
+  - `object_key`: immutable object key in `DRLLM_PAYLOADS`.
+  - `sha256`: SHA-256 of the exact bytes in `DRLLM_PAYLOADS`.
+  - `size_bytes`: byte length recorded on the source payload reference.
+  - `content_type`: media type from the source payload reference.
+  - `encoding`: text encoding, usually `utf-8`, or `binary` for non-text
+    bytes.
+  - `compression`: compression recorded on the source payload reference.
+- `event_context`: optional run/work/attempt/causation/correlation/source,
+  producer, and event metadata context copied from the source event.
 - `logical_sha256`: SHA-256 of the bytes exposed by the artifact projection
   after any supported source decompression.
 - `size_bytes`: logical byte length exposed to artifact readers.
-- `content_type`: media type from the source payload reference.
-- `encoding`: text encoding, usually `utf-8`, or `binary` for non-text bytes.
-- `source_compression`: compression recorded on the source payload reference.
 - `lane`: one of `json`, `text`, or `binary`.
 - `shard_id`: finalized shard identifier.
 - `shard_uri`: object-store-compatible relative path to the finalized shard.
@@ -251,10 +259,10 @@ unambiguous:
 ```text
 art_<sha256(canonical_json({
   "projection_version": "artifact-v1",
-  "source_idempotency_key": source_idempotency_key,
-  "payload_role": payload_role,
-  "source_object_key": source_object_key,
-  "source_sha256": source_sha256
+  "source_idempotency_key": source_ref.idempotency_key,
+  "payload_role": source_ref.payload_role,
+  "source_object_key": source_ref.object_key,
+  "source_sha256": source_ref.sha256
 }))>
 ```
 
@@ -295,9 +303,10 @@ Implementation steps:
    the local mutable sidecar index. Do not add a Postgres dependency for
    artifact projection state.
 3. **Create Pydantic models.** Define `ArtifactProjectionConfig`,
-   `PayloadArtifactSource`, `ArtifactReference`, `ShardManifest`,
-   `ProjectionCheckpoint`, and `ProjectionError`. Use `extra="forbid"` for
-   manifest and reference models so schema drift fails fast.
+   `ArtifactSourceRef`, `ArtifactEventContext`, `PayloadArtifactSource`,
+   `ArtifactReference`, `ShardManifest`, `ProjectionCheckpoint`, and
+   `ProjectionError`. Use `extra="forbid"` for manifest and reference models so
+   schema drift fails fast.
 4. **Create the sidecar index.** Store finalized artifact references, open
    artifact references, finalized shard records, open shard state, projection
    checkpoints, and projection errors in `index/artifacts.sqlite3`. Treat this
@@ -371,7 +380,9 @@ SQLite sidecar tables:
 The sidecar uses WAL mode, foreign keys, and explicit transactions. Duplicate
 identical `artifact_id` references are no-ops across both open and finalized
 references. A duplicate `artifact_id` with conflicting source or physical fields
-is a durable projection error.
+is a durable projection error. The sidecar may store selected `source_ref`
+values in flat SQL columns for indexing, but the durable JSON contract remains
+the nested `ArtifactReference` and `ProjectionError` model shape.
 
 Checkpoint and recovery rules:
 

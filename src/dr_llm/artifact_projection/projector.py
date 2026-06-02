@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.artifact_projection.config import ArtifactProjectionConfig
 from dr_llm.artifact_projection.identity import (
-    artifact_id_for_source,
+    artifact_id_for_source_ref,
     sha256_bytes,
 )
 from dr_llm.artifact_projection.models import (
@@ -107,19 +107,19 @@ class ArtifactProjector:
         payload_ref: PayloadRef,
         stream_sequence: int,
     ) -> str:
-        artifact_id = artifact_id_for_source(
+        artifact_id = artifact_id_for_source_ref(
             projection_version=self.config.projection_version,
-            source=source,
+            source_ref=source.source_ref,
         )
         if self.store.existing_reference(artifact_id=artifact_id) is not None:
             return "skipped"
-        if source.source_compression != "none":
+        if source.source_ref.compression != "none":
             self._record_source_error(
                 source=source,
                 error_kind=ProjectionErrorKind.unsupported_source_compression,
                 message=(
                     "Unsupported source compression "
-                    f"{source.source_compression!r}"
+                    f"{source.source_ref.compression!r}"
                 ),
                 stream_sequence=stream_sequence,
             )
@@ -163,24 +163,24 @@ class ArtifactProjector:
         data: bytes,
         stream_sequence: int,
     ) -> bytes | None:
-        if len(data) != source.source_size_bytes:
+        if len(data) != source.source_ref.size_bytes:
             self._record_source_error(
                 source=source,
                 error_kind=ProjectionErrorKind.source_size_mismatch,
                 message=(
-                    f"Expected {source.source_size_bytes} bytes, "
+                    f"Expected {source.source_ref.size_bytes} bytes, "
                     f"read {len(data)} bytes"
                 ),
                 stream_sequence=stream_sequence,
             )
             return None
         digest = sha256_bytes(data)
-        if digest != source.source_sha256:
+        if digest != source.source_ref.sha256:
             self._record_source_error(
                 source=source,
                 error_kind=ProjectionErrorKind.source_hash_mismatch,
                 message=(
-                    f"Expected sha256 {source.source_sha256}, read {digest}"
+                    f"Expected sha256 {source.source_ref.sha256}, read {digest}"
                 ),
                 stream_sequence=stream_sequence,
             )

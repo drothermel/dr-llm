@@ -8,6 +8,7 @@ from dr_llm.artifact_projection import (
     ArtifactLane,
     ArtifactProjectionConfig,
     ArtifactReader,
+    ArtifactSourceRef,
     ArtifactStore,
     PayloadArtifactSource,
 )
@@ -195,15 +196,17 @@ def _source(
     source_object_key: str = "sha256/ab/abc",
 ) -> PayloadArtifactSource:
     return PayloadArtifactSource(
-        source_event_id="event-1",
-        source_event_type="provider_response_received",
-        source_schema_version=1,
-        source_idempotency_key=source_idempotency_key,
-        payload_role="response_json",
-        source_object_key=source_object_key,
-        source_sha256="a" * 64,
-        source_size_bytes=12,
-        content_type="application/json",
-        encoding="utf-8",
-        source_compression="none",
+        source_ref=ArtifactSourceRef(
+            event_id="event-1",
+            event_type="provider_response_received",
+            schema_version=1,
+            idempotency_key=source_idempotency_key,
+            payload_role="response_json",
+            object_key=source_object_key,
+            sha256="a" * 64,
+            size_bytes=12,
+            content_type="application/json",
+            encoding="utf-8",
+            compression="none",
+        )
     )
