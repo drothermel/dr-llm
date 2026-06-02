@@ -1,0 +1,377 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+from types import TracebackType
+
+from dr_llm.artifact_projection.models import (
+    ArtifactIndexSummary,
+    ArtifactReference,
+    ProjectionCheckpoint,
+    ProjectionError,
+    ProjectionErrorKind,
+    ShardManifest,
+)
+
+
+class ArtifactIndexConflictError(RuntimeError):
+    def __init__(self, artifact_id: str) -> None:
+        super().__init__(f"Artifact {artifact_id!r} conflicts with index row")
+        self.artifact_id = artifact_id
+
+
+class ArtifactIndex:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._connection: sqlite3.Connection | None = None
+
+    def __enter__(self) -> ArtifactIndex:
+        self.connect()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        del exc_type, exc, traceback
+        self.close()
+
+    def connect(self) -> None:
+        if self._connection is not None:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(self.path)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA journal_mode = WAL")
+        self._connection = connection
+
+    def close(self) -> None:
+        if self._connection is None:
+            return
+        self._connection.close()
+        self._connection = None
+
+    def initialize(self) -> None:
+        connection = self.connection
+        connection.executescript(SCHEMA_SQL)
+        connection.commit()
+
+    def insert_reference(self, reference: ArtifactReference) -> bool:
+        existing = self.get_reference(reference.artifact_id)
+        if existing is not None:
+            self._raise_if_reference_conflicts(existing, reference)
+            return False
+        self.connection.execute(
+            """
+            INSERT INTO artifact_references (
+                artifact_id, projection_version, source_event_id,
+                source_idempotency_key, payload_role, source_object_key,
+                source_sha256, shard_id, reference_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                reference.artifact_id,
+                reference.projection_version,
+                reference.source_event_id,
+                reference.source_idempotency_key,
+                reference.payload_role,
+                reference.source_object_key,
+                reference.source_sha256,
+                reference.shard_id,
+                reference.model_dump_json(),
+                reference.created_at.isoformat(),
+            ),
+        )
+        self.connection.commit()
+        return True
+
+    def get_reference(self, artifact_id: str) -> ArtifactReference | None:
+        row = self.connection.execute(
+            """
+            SELECT reference_json
+            FROM artifact_references
+            WHERE artifact_id = ?
+            """,
+            (artifact_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return ArtifactReference.model_validate_json(row["reference_json"])
+
+    def list_references(self) -> list[ArtifactReference]:
+        rows = self.connection.execute(
+            """
+            SELECT reference_json
+            FROM artifact_references
+            ORDER BY artifact_id
+            """
+        ).fetchall()
+        return [
+            ArtifactReference.model_validate_json(row["reference_json"])
+            for row in rows
+        ]
+
+    def insert_shard(self, manifest: ShardManifest) -> None:
+        self.connection.execute(
+            """
+            INSERT OR REPLACE INTO shards (
+                shard_id, projection_version, shard_uri, manifest_json,
+                finalized_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                manifest.shard_id,
+                manifest.projection_version,
+                manifest.shard_uri,
+                manifest.model_dump_json(),
+                (
+                    manifest.finalized_at.isoformat()
+                    if manifest.finalized_at is not None
+                    else None
+                ),
+            ),
+        )
+        self.connection.commit()
+
+    def record_checkpoint(self, checkpoint: ProjectionCheckpoint) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO projection_checkpoints (
+                projection_version, durable_consumer, stream_sequence,
+                event_id, checkpoint_json, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(projection_version, durable_consumer)
+            DO UPDATE SET
+                stream_sequence = excluded.stream_sequence,
+                event_id = excluded.event_id,
+                checkpoint_json = excluded.checkpoint_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                checkpoint.projection_version,
+                checkpoint.durable_consumer,
+                checkpoint.stream_sequence,
+                checkpoint.event_id,
+                checkpoint.model_dump_json(),
+                checkpoint.updated_at.isoformat(),
+            ),
+        )
+        self.connection.commit()
+
+    def latest_checkpoint(
+        self, *, projection_version: str, durable_consumer: str
+    ) -> ProjectionCheckpoint | None:
+        row = self.connection.execute(
+            """
+            SELECT checkpoint_json
+            FROM projection_checkpoints
+            WHERE projection_version = ? AND durable_consumer = ?
+            """,
+            (projection_version, durable_consumer),
+        ).fetchone()
+        if row is None:
+            return None
+        return ProjectionCheckpoint.model_validate_json(row["checkpoint_json"])
+
+    def record_error(self, error: ProjectionError) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO projection_errors (
+                projection_version, source_event_id, source_idempotency_key,
+                payload_role, source_object_key, error_kind, error_json,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                error.projection_version,
+                error.source_event_id,
+                error.source_idempotency_key,
+                error.payload_role,
+                error.source_object_key,
+                error.error_kind,
+                error.model_dump_json(),
+                error.created_at.isoformat(),
+            ),
+        )
+        self.connection.commit()
+
+    def record_reference_conflict(
+        self, reference: ArtifactReference
+    ) -> ProjectionError:
+        error = ProjectionError(
+            projection_version=reference.projection_version,
+            source_event_id=reference.source_event_id,
+            source_idempotency_key=reference.source_idempotency_key,
+            payload_role=reference.payload_role,
+            source_object_key=reference.source_object_key,
+            error_kind=ProjectionErrorKind.duplicate_artifact_conflict,
+            message=(
+                f"Artifact {reference.artifact_id!r} conflicts with "
+                "an existing artifact reference"
+            ),
+        )
+        self.record_error(error)
+        return error
+
+    def summary(
+        self, *, projection_version: str, durable_consumer: str
+    ) -> ArtifactIndexSummary:
+        artifact_count = self._count("artifact_references")
+        shard_count = self._count("shards")
+        error_count = self._count("projection_errors")
+        checkpoint = self.latest_checkpoint(
+            projection_version=projection_version,
+            durable_consumer=durable_consumer,
+        )
+        return ArtifactIndexSummary(
+            artifact_count=artifact_count,
+            shard_count=shard_count,
+            error_count=error_count,
+            checkpoint=checkpoint,
+        )
+
+    def clear_rebuildable_rows(self) -> None:
+        with self.transaction():
+            self.connection.execute("DELETE FROM artifact_references")
+            self.connection.execute("DELETE FROM shards")
+
+    def transaction(self) -> _Transaction:
+        return _Transaction(self.connection)
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        self.connect()
+        if self._connection is None:
+            raise RuntimeError("artifact index is not connected")
+        return self._connection
+
+    def _count(self, table_name: str) -> int:
+        row = self.connection.execute(
+            f"SELECT COUNT(*) AS row_count FROM {table_name}"
+        ).fetchone()
+        return int(row["row_count"])
+
+    def _raise_if_reference_conflicts(
+        self,
+        existing: ArtifactReference,
+        candidate: ArtifactReference,
+    ) -> None:
+        if _reference_identity(existing) == _reference_identity(candidate):
+            return
+        raise ArtifactIndexConflictError(candidate.artifact_id)
+
+
+class _Transaction:
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self.connection = connection
+
+    def __enter__(self) -> None:
+        self.connection.execute("BEGIN")
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        del exc, traceback
+        if exc_type is None:
+            self.connection.commit()
+            return
+        self.connection.rollback()
+
+
+def _reference_identity(reference: ArtifactReference) -> dict[str, object]:
+    payload = reference.model_dump(mode="json")
+    ignored_keys = {"created_at"}
+    return {
+        key: value for key, value in payload.items() if key not in ignored_keys
+    }
+
+
+def load_manifest_references(path: Path) -> list[ArtifactReference]:
+    references: list[ArtifactReference] = []
+    with path.open() as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            references.append(ArtifactReference.model_validate_json(line))
+    return references
+
+
+def load_shard_manifest(path: Path) -> ShardManifest:
+    return ShardManifest.model_validate_json(path.read_text())
+
+
+def dump_json_line(value: ArtifactReference) -> str:
+    return json.dumps(value.model_dump(mode="json"), sort_keys=True) + "\n"
+
+
+SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS artifact_references (
+    artifact_id TEXT PRIMARY KEY,
+    projection_version TEXT NOT NULL,
+    source_event_id TEXT NOT NULL,
+    source_idempotency_key TEXT NOT NULL,
+    payload_role TEXT NOT NULL,
+    source_object_key TEXT NOT NULL,
+    source_sha256 TEXT NOT NULL,
+    shard_id TEXT NOT NULL,
+    reference_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifact_references_source_event
+ON artifact_references(source_event_id);
+
+CREATE INDEX IF NOT EXISTS idx_artifact_references_shard
+ON artifact_references(shard_id);
+
+CREATE TABLE IF NOT EXISTS shards (
+    shard_id TEXT PRIMARY KEY,
+    projection_version TEXT NOT NULL,
+    shard_uri TEXT NOT NULL,
+    manifest_json TEXT NOT NULL,
+    finalized_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS projection_checkpoints (
+    projection_version TEXT NOT NULL,
+    durable_consumer TEXT NOT NULL,
+    stream_sequence INTEGER NOT NULL,
+    event_id TEXT,
+    checkpoint_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (projection_version, durable_consumer)
+);
+
+CREATE TABLE IF NOT EXISTS projection_errors (
+    error_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    projection_version TEXT NOT NULL,
+    source_event_id TEXT NOT NULL,
+    source_idempotency_key TEXT NOT NULL,
+    payload_role TEXT,
+    source_object_key TEXT,
+    error_kind TEXT NOT NULL,
+    error_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
+
+__all__ = [
+    "ArtifactIndex",
+    "ArtifactIndexConflictError",
+    "dump_json_line",
+    "load_manifest_references",
+    "load_shard_manifest",
+]
