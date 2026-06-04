@@ -13,7 +13,6 @@ Prerequisites:
 from __future__ import annotations
 
 import asyncio
-from collections import Counter
 import tempfile
 from pathlib import Path
 from typing import Annotated, Any, cast
@@ -28,32 +27,31 @@ from dr_llm.artifact_projection import (
 )
 from dr_llm.artifact_projection.projector import run_artifact_projector
 from dr_llm.demo import (
-    DEMO_QUERY_DEFAULT_MODELS,
     DemoDsnLease,
     DemoNatsOptions,
+    DemoProviderCandidate,
     DemoPrompts,
     cleanup_demo_dsn,
     collect_streaming_log_events,
     command_hint,
+    demo_provider_candidates,
     fail,
-    list_models_json,
     ok,
     open_streaming_log_demo_runtime,
     prepare_demo_dsn,
     step,
     StreamingLogDemoRuntime,
     StreamingLogDemoRuntimeOptions,
-    sync_models_json,
     warn,
+    verify_successful_work_lifecycle,
 )
-from dr_llm.llm import CallMode, Message, ProviderName, build_default_registry
+from dr_llm.llm import CallMode, Message, build_default_registry
 from dr_llm.metadata_projection import MetadataProjectionConfig, MetadataStore
 from dr_llm.metadata_projection.cli import attach_finalized_artifacts
 from dr_llm.metadata_projection.projector import run_metadata_projector
 from dr_llm.streaming_log import (
     EventEnvelope,
     QueuedWorkMessage,
-    StreamingLogEventType,
     StreamingWorkerConfig,
 )
 from dr_llm.streaming_log.workers import run_streaming_worker
@@ -74,17 +72,10 @@ class MetadataProjectionE2EOptions(BaseModel):
     model: str | None = None
 
 
-class ProviderCandidate(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    provider: str
-    model: str
-
-
 class SuccessfulProviderRun(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    candidate: ProviderCandidate
+    candidate: DemoProviderCandidate
     work: QueuedWorkMessage
     events: list[EventEnvelope]
 
@@ -192,82 +183,6 @@ def _initialize_metadata(config: MetadataProjectionConfig) -> None:
         store.close()
 
 
-def _resolve_provider_model(
-    options: MetadataProjectionE2EOptions,
-) -> tuple[str, str]:
-    candidates = _provider_candidates(options)
-    candidate = candidates[0]
-    return candidate.provider, candidate.model
-
-
-def _provider_candidates(
-    options: MetadataProjectionE2EOptions,
-) -> list[ProviderCandidate]:
-    registry = build_default_registry()
-    try:
-        available = [
-            status
-            for status in registry.availability_statuses()
-            if status.available
-        ]
-        if not available:
-            raise RuntimeError(
-                "No providers available. Set provider API keys or install a "
-                "supported provider CLI."
-            )
-        available_names = [status.provider for status in available]
-        if (
-            options.provider is not None
-            and options.provider not in available_names
-        ):
-            raise RuntimeError(
-                f"Requested provider {options.provider!r} is not available. "
-                f"Available providers: {sorted(available_names)}"
-            )
-        provider_names: list[str] = (
-            [options.provider]
-            if options.provider is not None
-            else available_names
-        )
-        candidates: list[ProviderCandidate] = []
-        for provider in provider_names:
-            candidate = _candidate_for_provider(provider, model=options.model)
-            if candidate is not None:
-                candidates.append(candidate)
-        if candidates:
-            return candidates
-        raise RuntimeError("No provider candidate could resolve a model")
-    finally:
-        registry.close()
-
-
-def _candidate_for_provider(
-    provider: str, *, model: str | None
-) -> ProviderCandidate | None:
-    if model is not None:
-        return ProviderCandidate(provider=provider, model=model)
-    try:
-        return ProviderCandidate(
-            provider=provider, model=_default_model(provider)
-        )
-    except Exception as exc:  # noqa: BLE001
-        warn(f"Skipping provider {provider}: could not resolve model: {exc}")
-        return None
-
-
-def _default_model(provider: str) -> str:
-    provider_name = ProviderName(provider)
-    default_model = DEMO_QUERY_DEFAULT_MODELS.get(provider_name)
-    sync_models_json(provider_name)
-    model_ids = [item["model"] for item in list_models_json(provider_name)]
-    if default_model in model_ids:
-        return default_model
-    if model_ids:
-        warn(f"Default model unavailable for {provider}; using {model_ids[0]}")
-        return model_ids[0]
-    raise RuntimeError(f"No models found for provider {provider!r}")
-
-
 def _queued_work(*, provider: str, model: str) -> QueuedWorkMessage:
     registry = build_default_registry()
     try:
@@ -296,7 +211,13 @@ async def _run_successful_provider_work(
     *, options: MetadataProjectionE2EOptions, session: Any
 ) -> SuccessfulProviderRun:
     failures: list[str] = []
-    for idx, candidate in enumerate(_provider_candidates(options), start=1):
+    for idx, candidate in enumerate(
+        demo_provider_candidates(
+            requested_provider=options.provider,
+            requested_model=options.model,
+        ),
+        start=1,
+    ):
         ok(
             "Trying provider candidate "
             f"{idx}: {candidate.provider}/{candidate.model}"
@@ -323,7 +244,11 @@ async def _run_successful_provider_work(
         )
         _print_event_sequence(events)
         try:
-            _verify_successful_lifecycle(events, work_id=work.work_id)
+            verify_successful_work_lifecycle(
+                events,
+                work_id=work.work_id,
+                success_message="Successful lifecycle events verified",
+            )
             return SuccessfulProviderRun(
                 candidate=candidate,
                 work=work,
@@ -338,69 +263,6 @@ async def _run_successful_provider_work(
         "No provider candidate produced a successful lifecycle. "
         + "; ".join(failures)
     )
-
-
-def _verify_successful_lifecycle(
-    events: list[EventEnvelope], *, work_id: str
-) -> None:
-    work_events = [event for event in events if event.work_id == work_id]
-    counts = Counter(str(event.event_type) for event in work_events)
-    expected = [
-        StreamingLogEventType.work_submitted,
-        StreamingLogEventType.attempt_started,
-        StreamingLogEventType.provider_request_prepared,
-        StreamingLogEventType.provider_response_received,
-        StreamingLogEventType.attempt_succeeded,
-        StreamingLogEventType.work_completed,
-    ]
-    missing = [
-        str(event_type)
-        for event_type in expected
-        if not counts[str(event_type)]
-    ]
-    if missing:
-        failure_details = _attempt_failure_details(work_events)
-        detail = (
-            f"; failure_details={failure_details}" if failure_details else ""
-        )
-        raise RuntimeError(
-            "missing successful lifecycle events: "
-            + ", ".join(missing)
-            + detail
-        )
-    if counts[str(StreamingLogEventType.attempt_failed)]:
-        raise RuntimeError("attempt_failed was emitted for the selected work")
-    completed = _single_event(
-        work_events, StreamingLogEventType.work_completed
-    )
-    status = getattr(completed.payload, "status", None)
-    if status != "succeeded":
-        raise RuntimeError(
-            f"work_completed status is {status!r}, expected 'succeeded'"
-        )
-    ok("Successful lifecycle events verified")
-
-
-def _attempt_failure_details(events: list[EventEnvelope]) -> list[str]:
-    details: list[str] = []
-    for event in events:
-        if event.event_type is not StreamingLogEventType.attempt_failed:
-            continue
-        error_type = getattr(event.payload, "error_type", "unknown")
-        message = getattr(event.payload, "message", "")
-        details.append(f"{error_type}: {message}")
-    return details
-
-
-def _single_event(
-    events: list[EventEnvelope], event_type: StreamingLogEventType
-) -> EventEnvelope:
-    matches = [event for event in events if event.event_type is event_type]
-    if len(matches) != 1:
-        raise RuntimeError(
-            f"Expected exactly one {event_type}, found {len(matches)}"
-        )
-    return matches[0]
 
 
 def _print_event_sequence(events: list[EventEnvelope]) -> None:
