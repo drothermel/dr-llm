@@ -127,6 +127,8 @@ def read(
     ] = "text",
 ) -> None:
     """Read one finalized artifact."""
+    if output not in {"bytes", "text", "json"}:
+        raise typer.BadParameter("output must be bytes, text, or json")
     config = ArtifactProjectionConfig()
     with ArtifactIndex(config.index_path) as index:
         reference = index.get_finalized_reference(artifact_id)
@@ -139,8 +141,6 @@ def read(
     if output == "json":
         console.print_json(data=reader.read_json(reference))
         return
-    if output != "text":
-        raise typer.BadParameter("output must be bytes, text, or json")
     console.print(reader.read_text(reference))
 
 

@@ -32,12 +32,14 @@ def _load_artifact_demo() -> ModuleType:
     return module
 
 
-def test_artifact_demo_cli_help_smoke() -> None:
+def test_artifact_demo_registers_main_command() -> None:
     artifact_demo = _load_artifact_demo()
 
-    result = runner.invoke(artifact_demo.app, ["--help"])
+    commands = artifact_demo.app.registered_commands
 
-    assert result.exit_code == 0
+    assert len(commands) == 1
+    assert commands[0].callback is artifact_demo.main
+    assert commands[0].name is None
 
 
 def test_artifact_demo_command_forwards_options(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dr_llm.artifact_projection import (
@@ -17,7 +18,7 @@ runner = CliRunner()
 
 
 def test_artifact_read_rejects_open_reference(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(
         "DR_LLM_ARTIFACT_PROJECTION_ARTIFACT_ROOT", str(tmp_path)

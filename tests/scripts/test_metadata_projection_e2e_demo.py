@@ -5,6 +5,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 from dr_llm.streaming_log.events import (
@@ -39,12 +40,14 @@ def _load_metadata_demo() -> ModuleType:
     return module
 
 
-def test_metadata_projection_e2e_demo_help_smoke() -> None:
+def test_metadata_projection_e2e_demo_registers_main_command() -> None:
     metadata_demo = _load_metadata_demo()
 
-    result = runner.invoke(metadata_demo.app, ["--help"])
+    commands = metadata_demo.app.registered_commands
 
-    assert result.exit_code == 0
+    assert len(commands) == 1
+    assert commands[0].callback is metadata_demo.main
+    assert commands[0].name is None
 
 
 def test_metadata_projection_e2e_demo_forwards_options(
@@ -101,15 +104,13 @@ def test_successful_lifecycle_requires_provider_response_and_success() -> None:
 def test_successful_lifecycle_rejects_clean_failure() -> None:
     metadata_demo = _load_metadata_demo()
 
-    try:
+    with pytest.raises(RuntimeError) as excinfo:
         metadata_demo._verify_successful_lifecycle(
             _failed_events(), work_id="work-1"
         )
-    except RuntimeError as exc:
-        assert "missing successful lifecycle events" in str(exc)
-        assert "BillingError" in str(exc)
-    else:
-        raise AssertionError("clean failure lifecycle should not pass")
+    message = str(excinfo.value)
+    assert "missing successful lifecycle events" in message
+    assert "BillingError" in message
 
 
 def _successful_events() -> list[EventEnvelope]:
