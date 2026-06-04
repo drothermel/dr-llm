@@ -26,6 +26,7 @@ from dr_llm.streaming_log.event_builders import (
     StreamingEventPublishSpec,
     attempt_succeeded_event,
     provider_response_received_event,
+    request_summary_from_request,
     work_completed_succeeded_event,
 )
 from dr_llm.streaming_log.events import (
@@ -244,6 +245,7 @@ class StreamingWorkLifecycleReporter:
                     provider=str(request.provider),
                     model=request.model,
                     mode=str(request.mode),
+                    request_summary=request_summary_from_request(request),
                 ),
                 payloads=[
                     prepare_json_payload("request_json", request_payload)

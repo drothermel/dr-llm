@@ -19,7 +19,10 @@ from dr_llm.streaming_log.errors import (
     PayloadReadError,
     StreamingLogError,
 )
-from dr_llm.streaming_log.event_builders import StreamingEventPublishSpec
+from dr_llm.streaming_log.event_builders import (
+    StreamingEventPublishSpec,
+    request_summary_from_request,
+)
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
@@ -281,6 +284,7 @@ class StreamingWorkQueue:
                     run_id=work.run_id,
                     max_retries=work.max_retries,
                     metadata=work.metadata,
+                    request_summary=request_summary_from_request(work.request),
                 ),
                 payloads=[request_payload],
                 context=EventContext.from_work(work),

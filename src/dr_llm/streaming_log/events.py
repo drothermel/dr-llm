@@ -126,6 +126,35 @@ class PoolImportFailedPayload(BaseModel):
     message: str
 
 
+class RequestSummary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: str
+    model: str
+    mode: str
+    message_count: int = Field(ge=0)
+    messages_sha256: str
+    prompt_preview: str | None = None
+    max_tokens: int | None = Field(default=None, ge=0)
+    effort: str | None = None
+    sampling: dict[str, Any] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResponseSummary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: str
+    model: str
+    mode: str
+    text_sha256: str
+    text_preview: str | None = None
+    finish_reason: str | None = None
+    usage: dict[str, Any] = Field(default_factory=dict)
+    cost: dict[str, Any] | None = None
+    latency_ms: int = Field(default=0, ge=0)
+
+
 class WorkSubmittedPayload(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -133,6 +162,7 @@ class WorkSubmittedPayload(BaseModel):
     run_id: str | None = None
     max_retries: int = Field(ge=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    request_summary: RequestSummary | None = None
 
 
 class AttemptStartedPayload(BaseModel):
@@ -148,6 +178,7 @@ class ProviderRequestPreparedPayload(BaseModel):
     provider: str
     model: str
     mode: str
+    request_summary: RequestSummary | None = None
 
 
 class ProviderResponseReceivedPayload(BaseModel):
@@ -157,6 +188,7 @@ class ProviderResponseReceivedPayload(BaseModel):
     model: str
     mode: str
     finish_reason: str | None = None
+    response_summary: ResponseSummary | None = None
 
 
 class AttemptSucceededPayload(BaseModel):

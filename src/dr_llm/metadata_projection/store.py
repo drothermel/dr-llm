@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -28,6 +29,12 @@ from dr_llm.metadata_projection.schema import (
     metadata_projection_errors,
 )
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
+
+
+class AssertionWriteOutcome(StrEnum):
+    inserted = "inserted"
+    identical = "identical"
+    conflicted = "conflicted"
 
 
 class MetadataStore:
@@ -70,9 +77,7 @@ class MetadataStore:
             )
             conn.execute(
                 delete(metadata_assertion_roles).where(
-                    metadata_assertion_roles.c.assertion_id.in_(
-                        assertion_ids
-                    )
+                    metadata_assertion_roles.c.assertion_id.in_(assertion_ids)
                 )
             )
             conn.execute(
@@ -137,10 +142,14 @@ class MetadataStore:
     ) -> None:
         for entity in plan.entities:
             self._upsert_entity(conn, entity, plan)
+        accepted_assertions: set[str] = set()
         for assertion in plan.assertions:
-            self._upsert_assertion(conn, assertion, plan)
+            outcome = self._upsert_assertion(conn, assertion, plan)
+            if outcome is not AssertionWriteOutcome.conflicted:
+                accepted_assertions.add(assertion.assertion_id)
         for role in plan.roles:
-            self._insert_role(conn, role)
+            if role.assertion_id in accepted_assertions:
+                self._insert_role(conn, role)
         for error in plan.errors:
             self._insert_error(conn, error)
         if checkpoint is not None:
@@ -152,14 +161,18 @@ class MetadataStore:
         entity: MetadataEntity,
         plan: MetadataWritePlan,
     ) -> None:
-        existing = conn.execute(
-            select(metadata_entities).where(
-                metadata_entities.c.entity_id == entity.entity_id
+        existing = (
+            conn.execute(
+                select(metadata_entities).where(
+                    metadata_entities.c.entity_id == entity.entity_id
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if existing is not None:
             if _entity_stable_fields(existing) != _entity_stable_fields(
-                entity.model_dump(mode="json")
+                entity.model_dump(mode="python")
             ):
                 self._insert_error(
                     conn,
@@ -167,6 +180,7 @@ class MetadataStore:
                         plan,
                         MetadataProjectionErrorKind.duplicate_entity_conflict,
                         f"Entity {entity.entity_id!r} conflicts",
+                        self.config.projection_version,
                     ),
                 )
             return
@@ -182,23 +196,28 @@ class MetadataStore:
         conn: Connection,
         assertion: MetadataAssertion,
         plan: MetadataWritePlan,
-    ) -> None:
-        existing = conn.execute(
-            select(metadata_assertions).where(
-                metadata_assertions.c.assertion_id == assertion.assertion_id
+    ) -> AssertionWriteOutcome:
+        existing = (
+            conn.execute(
+                select(metadata_assertions).where(
+                    metadata_assertions.c.assertion_id
+                    == assertion.assertion_id
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if existing is not None:
-            self._record_assertion_conflict_if_needed(
+            return self._record_assertion_conflict_if_needed(
                 conn, assertion, existing, plan
             )
-            return
         stmt = (
             pg_insert(metadata_assertions)
             .values(assertion.model_dump(mode="json"))
             .on_conflict_do_nothing()
         )
         conn.execute(stmt)
+        return AssertionWriteOutcome.inserted
 
     def _record_assertion_conflict_if_needed(
         self,
@@ -206,25 +225,29 @@ class MetadataStore:
         assertion: MetadataAssertion,
         existing: Any,
         plan: MetadataWritePlan,
-    ) -> None:
+    ) -> AssertionWriteOutcome:
         stable_fields_match = _assertion_stable_fields(
             existing
-        ) == _assertion_stable_fields(assertion.model_dump(mode="json"))
-        planned_roles = _roles_for_assertion(plan.roles, assertion.assertion_id)
+        ) == _assertion_stable_fields(assertion.model_dump(mode="python"))
+        planned_roles = _roles_for_assertion(
+            plan.roles, assertion.assertion_id
+        )
         existing_roles = _roles_for_assertion(
             self._existing_roles(conn, assertion.assertion_id),
             assertion.assertion_id,
         )
         if stable_fields_match and existing_roles == planned_roles:
-            return
+            return AssertionWriteOutcome.identical
         self._insert_error(
             conn,
             _conflict_error(
                 plan,
                 MetadataProjectionErrorKind.duplicate_assertion_conflict,
                 f"Assertion {assertion.assertion_id!r} conflicts",
+                self.config.projection_version,
             ),
         )
+        return AssertionWriteOutcome.conflicted
 
     def _existing_roles(
         self, conn: Connection, assertion_id: str
@@ -275,14 +298,18 @@ class MetadataStore:
     def _checkpoint(
         self, conn: Connection, durable_consumer: str
     ) -> MetadataProjectionCheckpoint | None:
-        row = conn.execute(
-            select(metadata_projection_checkpoints).where(
-                metadata_projection_checkpoints.c.projection_version
-                == self.config.projection_version,
-                metadata_projection_checkpoints.c.durable_consumer
-                == durable_consumer,
+        row = (
+            conn.execute(
+                select(metadata_projection_checkpoints).where(
+                    metadata_projection_checkpoints.c.projection_version
+                    == self.config.projection_version,
+                    metadata_projection_checkpoints.c.durable_consumer
+                    == durable_consumer,
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if row is None:
             return None
         return MetadataProjectionCheckpoint(**dict(row))
@@ -418,11 +445,12 @@ def _conflict_error(
     plan: MetadataWritePlan,
     error_kind: MetadataProjectionErrorKind,
     message: str,
+    projection_version: str,
 ) -> MetadataProjectionError:
     assertion = plan.assertions[0] if plan.assertions else None
     if assertion is None:
         return MetadataProjectionError(
-            projection_version="metadata-v1",
+            projection_version=projection_version,
             source_event_id="unknown",
             source_idempotency_key="unknown",
             error_kind=error_kind,
@@ -439,7 +467,7 @@ def _conflict_error(
 
 
 def _source_event_id_from_artifact_metadata(
-    metadata_json: dict[str, Any]
+    metadata_json: dict[str, Any],
 ) -> str | None:
     source_ref = metadata_json.get("source_ref")
     if not isinstance(source_ref, dict):

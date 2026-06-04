@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from dr_llm.llm import LlmResponse
+from dr_llm.llm import LlmRequest, LlmResponse
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.streaming_log.events import (
     AttemptSucceededPayload,
@@ -12,6 +12,8 @@ from dr_llm.streaming_log.events import (
     EventContext,
     PoolSampleImportedPayload,
     ProviderResponseReceivedPayload,
+    RequestSummary,
+    ResponseSummary,
     StreamingLogEventType,
     WorkCompletedPayload,
     idempotency_key,
@@ -97,8 +99,42 @@ def provider_response_received_event(
             model=response.model,
             mode=str(response.mode),
             finish_reason=response.finish_reason,
+            response_summary=response_summary_from_response(response),
         ),
         payloads=[prepare_json_payload("response_json", response_payload)],
+    )
+
+
+def request_summary_from_request(request: LlmRequest) -> RequestSummary:
+    messages = [
+        message.model_dump(mode="json")
+        for message in getattr(request, "messages", [])
+    ]
+    return RequestSummary(
+        provider=str(request.provider),
+        model=request.model,
+        mode=str(request.mode),
+        message_count=len(messages),
+        messages_sha256=stable_hash(messages),
+        prompt_preview=_prompt_preview(messages),
+        max_tokens=request.max_tokens,
+        effort=str(request.effort),
+        sampling=_optional_model_dump(request.sampling),
+        metadata=request.metadata,
+    )
+
+
+def response_summary_from_response(response: LlmResponse) -> ResponseSummary:
+    return ResponseSummary(
+        provider=response.provider,
+        model=response.model,
+        mode=str(response.mode),
+        text_sha256=stable_hash(response.text),
+        text_preview=_text_preview(response.text),
+        finish_reason=response.finish_reason,
+        usage=response.usage.model_dump(mode="json"),
+        cost=_optional_model_dump(response.cost),
+        latency_ms=response.latency_ms,
     )
 
 
@@ -172,6 +208,23 @@ def _response_payloads(sample: PoolSample) -> list[PreparedPayload]:
     return [prepare_json_payload("response_json", sample.response)]
 
 
+def _optional_model_dump(value: Any | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    return value.model_dump(mode="json", exclude_none=True)
+
+
+def _prompt_preview(messages: list[dict[str, Any]]) -> str | None:
+    text = "\n".join(str(message.get("content", "")) for message in messages)
+    return _text_preview(text)
+
+
+def _text_preview(text: str, *, max_chars: int = 500) -> str | None:
+    if not text:
+        return None
+    return text[:max_chars]
+
+
 def _sample_snapshot_payload(sample: PoolSample) -> dict[str, Any]:
     return sample.model_dump(
         mode="json",
@@ -185,5 +238,7 @@ __all__ = [
     "attempt_succeeded_event",
     "pool_sample_imported_event",
     "provider_response_received_event",
+    "request_summary_from_request",
+    "response_summary_from_response",
     "work_completed_succeeded_event",
 ]

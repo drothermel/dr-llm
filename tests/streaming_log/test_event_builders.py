@@ -104,6 +104,26 @@ def test_provider_response_received_event_builds_response_fact() -> None:
         "model": "gpt-test",
         "mode": "api",
         "finish_reason": "stop",
+        "response_summary": {
+            "provider": "openai",
+            "model": "gpt-test",
+            "mode": "api",
+            "text_sha256": (
+                "58bf5b5478e5d1fb7441daeff9fd1ed60a4ad5fbfabc64715c"
+                "d8608f3f59f6da"
+            ),
+            "text_preview": "done",
+            "finish_reason": "stop",
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "reasoning_tokens": 0,
+                "total_tokens": 0,
+                "computed_total_tokens": 0,
+            },
+            "cost": None,
+            "latency_ms": 0,
+        },
     }
     assert [payload.role for payload in spec.payloads] == ["response_json"]
     assert spec.context is None
