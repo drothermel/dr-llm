@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any
-from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,18 +14,18 @@ from dr_llm.metadata_projection.models import (
 )
 from dr_llm.metadata_projection.store import MetadataStore
 from dr_llm.streaming_log.client import StreamingLogConnection
-from dr_llm.streaming_log.events import EventEnvelope
+from dr_llm.streaming_log.projection_runtime import (
+    ProjectionEventDelivery,
+    ProjectionMessageHandler,
+    consume_projection_events,
+    process_delivery_with_ack,
+    process_invalid_message_with_ack,
+    stream_sequence_for_message,
+)
 
 
-class MetadataEventDelivery(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
-
-    event: EventEnvelope
-    stream_sequence: int = Field(ge=0)
-    message: Any
-
-    async def ack(self) -> None:
-        await self.message.ack()
+class MetadataEventDelivery(ProjectionEventDelivery):
+    pass
 
 
 class MetadataProjectionResult(BaseModel):
@@ -51,12 +50,18 @@ class MetadataProjector:
     async def process_delivery(
         self, delivery: MetadataEventDelivery
     ) -> MetadataProjectionResult:
+        return await process_delivery_with_ack(
+            delivery, self._process_delivery
+        )
+
+    async def _process_delivery(
+        self, delivery: MetadataEventDelivery
+    ) -> MetadataProjectionResult:
         plan = self.mapper.map_event(delivery.event)
         self.store.apply_write_plan(
             plan,
             checkpoint=checkpoint_for_delivery(self.config, delivery),
         )
-        await delivery.ack()
         return MetadataProjectionResult(
             processed_count=1,
             error_count=len(plan.errors),
@@ -69,6 +74,21 @@ class MetadataProjector:
         stream_sequence: int,
         exc: Exception,
     ) -> MetadataProjectionResult:
+        return await process_invalid_message_with_ack(
+            message,
+            stream_sequence=stream_sequence,
+            exc=exc,
+            process_invalid_message=self._process_invalid_message,
+        )
+
+    async def _process_invalid_message(
+        self,
+        message: Any,
+        *,
+        stream_sequence: int,
+        exc: Exception,
+    ) -> MetadataProjectionResult:
+        del message
         error = MetadataProjectionError(
             projection_version=self.config.projection_version,
             source_event_id="unknown",
@@ -85,7 +105,6 @@ class MetadataProjector:
                 stream_sequence=stream_sequence,
             ),
         )
-        await message.ack()
         return MetadataProjectionResult(processed_count=1, error_count=1)
 
 
@@ -122,36 +141,18 @@ async def _consume_events(
     batch_size: int,
     from_start: bool,
 ) -> int:
-    sub = await connection.js.pull_subscribe(
-        connection.config.events_subject,
-        durable=_consumer_name(config, from_start=from_start),
-        stream=connection.config.events_stream,
+    return await consume_projection_events(
+        connection=connection,
+        durable_consumer=config.durable_consumer,
+        handler=ProjectionMessageHandler(
+            delivery_type=MetadataEventDelivery,
+            process_delivery=projector.process_delivery,
+            process_invalid_message=projector.process_invalid_message,
+        ),
+        max_messages=max_messages,
+        batch_size=batch_size,
+        from_start=from_start,
     )
-    processed = 0
-    while max_messages is None or processed < max_messages:
-        messages = await sub.fetch(batch_size, timeout=1)
-        for message in messages:
-            await _process_message(projector, message)
-            processed += 1
-            if max_messages is not None and processed >= max_messages:
-                break
-    return processed
-
-
-async def _process_message(projector: MetadataProjector, message: Any) -> None:
-    stream_sequence = stream_sequence_for_message(message)
-    try:
-        delivery = MetadataEventDelivery(
-            event=EventEnvelope.model_validate_json(message.data),
-            stream_sequence=stream_sequence,
-            message=message,
-        )
-    except Exception as exc:  # noqa: BLE001
-        await projector.process_invalid_message(
-            message, stream_sequence=stream_sequence, exc=exc
-        )
-        return
-    await projector.process_delivery(delivery)
 
 
 def checkpoint_for_delivery(
@@ -164,23 +165,6 @@ def checkpoint_for_delivery(
         stream_sequence=delivery.stream_sequence,
         event_id=delivery.event.event_id,
     )
-
-
-def stream_sequence_for_message(message: Any) -> int:
-    metadata = getattr(message, "metadata", None)
-    sequence = getattr(metadata, "sequence", None)
-    stream_sequence = getattr(sequence, "stream", None)
-    if stream_sequence is None:
-        raise ValueError("message metadata is missing stream sequence")
-    return int(stream_sequence)
-
-
-def _consumer_name(
-    config: MetadataProjectionConfig, *, from_start: bool
-) -> str:
-    if not from_start:
-        return config.durable_consumer
-    return f"{config.durable_consumer}_replay_{uuid4().hex[:8]}"
 
 
 __all__ = [
