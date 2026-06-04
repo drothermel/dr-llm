@@ -1,5 +1,45 @@
 # Testing
 
+## Review Skill Loading
+
+When reviewing a chunk of code, load the review skills that match the scope
+before giving feedback. Prefer a small, relevant set over every installed
+skill.
+
+For general structural review, load:
+
+- `code-review-excellence` for the review workflow and prioritization.
+- `karpathy-guidelines` for simplicity, surgical changes, and explicit
+  tradeoffs.
+- `clean-code` for naming, function shape, responsibilities, and readability.
+- `python-design-patterns` or `refactor` when looking for duplicated flows,
+  misplaced abstractions, long functions, or split-out opportunities.
+
+For Python-specific code, also load:
+
+- `python-type-safety` when reviewing public APIs, Pydantic models, typed
+  protocols, or `ty` failures.
+- `python-testing-patterns` when reviewing tests, fixtures, integration
+  boundaries, or missing regression coverage.
+- `python-error-handling` when reviewing validation, CLI exits, partial
+  failures, persistence errors, or external-service boundaries.
+- `async-python-patterns` when reviewing async projectors, workers, clients,
+  or concurrent/background flows.
+- `python-configuration` when reviewing environment parsing, settings models,
+  or config defaults.
+- `python-resilience` when reviewing retries, timeouts, transient failures, or
+  long-running services.
+
+Use the specialized skills only when the code touches that area:
+
+- `marimo-pair` is required before reading, editing, verifying, or reviewing
+  notebooks under `nbs/`.
+- `web-design-guidelines`, `frontend-design`, or React-specific skills apply
+  only to UI/frontend review.
+- GitHub plugin skills such as `github:gh-address-comments`,
+  `github:gh-fix-ci`, and `github:github` apply when reviewing PR comments,
+  GitHub Actions failures, or repository metadata through GitHub.
+
 ## Metadata Projection End-to-End Demo
 
 Run:
