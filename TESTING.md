@@ -8,12 +8,10 @@ skill.
 
 For general structural review, load:
 
-- `code-review-excellence` for the review workflow and prioritization.
-- `karpathy-guidelines` for simplicity, surgical changes, and explicit
-  tradeoffs.
-- `clean-code` for naming, function shape, responsibilities, and readability.
-- `python-design-patterns` or `refactor` when looking for duplicated flows,
-  misplaced abstractions, long functions, or split-out opportunities.
+- `danielle-code-quality` for Danielle's review, implementation, refactoring,
+  and code-quality preferences.
+- `python-design-patterns` when looking for duplicated flows, misplaced
+  abstractions, long functions, or split-out opportunities.
 
 For Python-specific code, also load:
 
