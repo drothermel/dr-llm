@@ -52,6 +52,7 @@ from dr_llm.metadata_projection.projector import run_metadata_projector
 from dr_llm.streaming_log import (
     EventEnvelope,
     QueuedWorkMessage,
+    StreamingLogConnection,
     StreamingWorkerConfig,
 )
 from dr_llm.streaming_log.workers import run_streaming_worker
@@ -365,7 +366,7 @@ def _metadata_has_successful_work(
 async def _verify_replay(
     *,
     metadata_config: MetadataProjectionConfig,
-    connection,
+    connection: StreamingLogConnection,
     event_count: int,
 ) -> None:
     before = _summary_counts(metadata_config)
@@ -386,7 +387,7 @@ async def _verify_replay(
 async def _verify_rebuild(
     *,
     metadata_config: MetadataProjectionConfig,
-    connection,
+    connection: StreamingLogConnection,
     event_count: int,
 ) -> None:
     store = MetadataStore(config=metadata_config)

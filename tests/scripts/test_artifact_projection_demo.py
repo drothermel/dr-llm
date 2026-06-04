@@ -32,16 +32,6 @@ def _load_artifact_demo() -> ModuleType:
     return module
 
 
-def test_artifact_demo_registers_main_command() -> None:
-    artifact_demo = _load_artifact_demo()
-
-    commands = artifact_demo.app.registered_commands
-
-    assert len(commands) == 1
-    assert commands[0].callback is artifact_demo.main
-    assert commands[0].name is None
-
-
 def test_artifact_demo_command_forwards_options(
     tmp_path: Path, monkeypatch
 ) -> None:

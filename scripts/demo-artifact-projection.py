@@ -214,33 +214,28 @@ def main(
     ] = None,
 ) -> None:
     try:
-        if artifact_root is not None:
-            asyncio.run(
-                _run_artifact_demo(
-                    ArtifactProjectionDemoOptions(
-                        nats=DemoNatsOptions(
-                            nats_url=nats_url,
-                            keep_nats=keep_nats,
-                        ),
-                        artifact_root=artifact_root,
+        nats = DemoNatsOptions(nats_url=nats_url, keep_nats=keep_nats)
+        if artifact_root is None:
+            with tempfile.TemporaryDirectory(
+                prefix="dr_llm_artifacts_"
+            ) as artifact_dir:
+                asyncio.run(
+                    _run_artifact_demo(
+                        ArtifactProjectionDemoOptions(
+                            nats=nats,
+                            artifact_root=Path(artifact_dir),
+                        )
                     )
                 )
-            )
             return
-        with tempfile.TemporaryDirectory(
-            prefix="dr_llm_artifacts_"
-        ) as artifact_dir:
-            asyncio.run(
-                _run_artifact_demo(
-                    ArtifactProjectionDemoOptions(
-                        nats=DemoNatsOptions(
-                            nats_url=nats_url,
-                            keep_nats=keep_nats,
-                        ),
-                        artifact_root=Path(artifact_dir),
-                    )
+        asyncio.run(
+            _run_artifact_demo(
+                ArtifactProjectionDemoOptions(
+                    nats=nats,
+                    artifact_root=artifact_root,
                 )
             )
+        )
     except Exception as exc:
         fail(str(exc))
         raise typer.Exit(1) from exc

@@ -97,7 +97,7 @@ class EventWritePlanBuilder:
                 self.assertion_type,
                 self.event.idempotency_key,
             ),
-            assertion_type=str(self.assertion_type),
+            assertion_type=self.assertion_type,
             projection_version=self.config.projection_version,
             source_event_id=self.event.event_id,
             source_event_type=str(self.event.event_type),

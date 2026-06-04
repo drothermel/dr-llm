@@ -39,7 +39,7 @@ from dr_llm.demo import (
     verify_payload_refs,
 )
 from dr_llm.pool import DbConfig, DbRuntime, PoolReader
-from dr_llm.streaming_log import EventEnvelope
+from dr_llm.streaming_log import EventEnvelope, StreamingLogEventType
 from dr_llm.streaming_log.ingest_pools import PoolImportResult, ingest_pool
 
 app = typer.Typer()
@@ -194,7 +194,9 @@ def _verify_import_events(
     if counts["pool_import_failed"] != 0:
         raise RuntimeError("Expected no pool_import_failed events")
     completed = _single_import_event(
-        import_events, "pool_import_completed", pool_name=pool_name
+        import_events,
+        StreamingLogEventType.pool_import_completed,
+        pool_name=pool_name,
     )
     completed_count = getattr(completed.payload, "imported_count", None)
     if completed_count != result.imported_count:
@@ -228,11 +230,12 @@ def _events_for_pool_import(
 
 
 def _single_import_event(
-    events: list[EventEnvelope], event_type: str, *, pool_name: str
+    events: list[EventEnvelope],
+    event_type: StreamingLogEventType,
+    *,
+    pool_name: str,
 ) -> EventEnvelope:
-    matches = [
-        event for event in events if str(event.event_type) == event_type
-    ]
+    matches = [event for event in events if event.event_type == event_type]
     if len(matches) != 1:
         raise RuntimeError(
             f"Expected exactly one {event_type} event for {pool_name}, "

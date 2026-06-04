@@ -204,11 +204,11 @@ class PsycopgPostgresAdminOperations:
                         plan.temporary_database,
                         plan.target_database,
                     )
-                except Exception as exc:
+                except Exception:
                     if not target_exists:
                         raise
                     self._restore_previous_target_after_failed_swap(cur, plan)
-                    raise exc
+                    raise
         return target_exists
 
     def _move_existing_target_to_previous(

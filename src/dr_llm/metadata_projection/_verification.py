@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from sqlalchemy import func, select
 from sqlalchemy.engine import Connection
 
@@ -9,7 +7,10 @@ from dr_llm.metadata_projection._checkpoints import (
     MetadataCheckpointRepository,
 )
 from dr_llm.metadata_projection.config import MetadataProjectionConfig
-from dr_llm.metadata_projection.models import MetadataVerificationResult
+from dr_llm.metadata_projection.models import (
+    MetadataAssertionType,
+    MetadataVerificationResult,
+)
 from dr_llm.metadata_projection.schema import (
     metadata_assertion_roles,
     metadata_assertions,
@@ -75,40 +76,35 @@ class MetadataVerificationQueries:
         ]
 
     def _artifact_source_problems(self, conn: Connection) -> list[str]:
-        artifact_rows = conn.execute(
-            select(metadata_assertions.c.metadata_json).where(
-                metadata_assertions.c.projection_version
+        artifact_assertions = metadata_assertions.alias("artifact_assertions")
+        source_assertions = metadata_assertions.alias("source_assertions")
+        source_event_id = artifact_assertions.c.metadata_json["source_ref"][
+            "event_id"
+        ].astext
+        source_exists = (
+            select(1)
+            .select_from(source_assertions)
+            .where(
+                source_assertions.c.projection_version
                 == self.config.projection_version,
-                metadata_assertions.c.assertion_type == "artifact_attached",
+                source_assertions.c.source_event_id == source_event_id,
+                source_assertions.c.assertion_type
+                != MetadataAssertionType.artifact_attached,
             )
-        ).mappings()
-        missing = 0
-        for row in artifact_rows:
-            event_id = _source_event_id_from_artifact_metadata(
-                row["metadata_json"]
+            .exists()
+        )
+        missing = conn.execute(
+            select(func.count())
+            .select_from(artifact_assertions)
+            .where(
+                artifact_assertions.c.projection_version
+                == self.config.projection_version,
+                artifact_assertions.c.assertion_type
+                == MetadataAssertionType.artifact_attached,
+                source_event_id.is_not(None),
+                ~source_exists,
             )
-            if event_id is None:
-                continue
-            exists = conn.execute(
-                select(func.count()).where(
-                    metadata_assertions.c.projection_version
-                    == self.config.projection_version,
-                    metadata_assertions.c.source_event_id == event_id,
-                    metadata_assertions.c.assertion_type
-                    != "artifact_attached",
-                )
-            ).scalar_one()
-            missing += int(int(exists) == 0)
+        ).scalar_one()
         if missing:
             return [f"{missing} artifact references lack source assertions"]
         return []
-
-
-def _source_event_id_from_artifact_metadata(
-    metadata_json: dict[str, Any],
-) -> str | None:
-    source_ref = metadata_json.get("source_ref")
-    if not isinstance(source_ref, dict):
-        return None
-    value = source_ref.get("event_id")
-    return value if isinstance(value, str) else None

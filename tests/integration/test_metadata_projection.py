@@ -12,7 +12,9 @@ from dr_llm.errors import TransientPersistenceError
 from dr_llm.metadata_projection import (
     MetadataAssertion,
     MetadataAssertionRole,
+    MetadataAssertionType,
     MetadataEntity,
+    MetadataEntityType,
     MetadataProjectionCheckpoint,
     MetadataProjectionConfig,
     MetadataStore,
@@ -61,7 +63,7 @@ def metadata_store() -> Generator[MetadataStore, None, None]:
 
 
 def test_store_replay_is_idempotent(metadata_store: MetadataStore) -> None:
-    plan = _plan(["run"])
+    plan = _plan([MetadataEntityType.run])
     checkpoint = MetadataProjectionCheckpoint(
         projection_version="metadata-v1",
         durable_consumer="drllm_metadata_projection_v1",
@@ -84,9 +86,11 @@ def test_store_replay_is_idempotent(metadata_store: MetadataStore) -> None:
 def test_conflicting_assertion_does_not_add_roles(
     metadata_store: MetadataStore,
 ) -> None:
-    metadata_store.apply_write_plan(_plan(["run"]))
+    metadata_store.apply_write_plan(_plan([MetadataEntityType.run]))
 
-    metadata_store.apply_write_plan(_plan(["run", "work"]))
+    metadata_store.apply_write_plan(
+        _plan([MetadataEntityType.run, MetadataEntityType.work])
+    )
 
     summary = metadata_store.summary()
     assert summary.assertion_count == 1
@@ -94,7 +98,7 @@ def test_conflicting_assertion_does_not_add_roles(
     assert summary.error_count == 1
 
 
-def _plan(role_entity_types: list[str]) -> MetadataWritePlan:
+def _plan(role_entity_types: list[MetadataEntityType]) -> MetadataWritePlan:
     assertion = _assertion()
     entities = [_entity(entity_type) for entity_type in role_entity_types]
     return MetadataWritePlan(
@@ -115,10 +119,10 @@ def _assertion() -> MetadataAssertion:
     return MetadataAssertion(
         assertion_id=assertion_id(
             projection_version="metadata-v1",
-            assertion_type="work_submitted",
+            assertion_type=MetadataAssertionType.work_submitted,
             source_idempotency_key="idem-1",
         ),
-        assertion_type="work_submitted",
+        assertion_type=MetadataAssertionType.work_submitted,
         projection_version="metadata-v1",
         source_event_id="event-1",
         source_event_type="work_submitted",
@@ -128,10 +132,10 @@ def _assertion() -> MetadataAssertion:
     )
 
 
-def _entity(entity_type: str) -> MetadataEntity:
+def _entity(entity_type: MetadataEntityType) -> MetadataEntity:
     identity_key = f"{entity_type}-1"
     return MetadataEntity(
-        entity_id=entity_id(entity_type, identity_key),
+        entity_id=entity_id(str(entity_type), identity_key),
         entity_type=entity_type,
         identity_key=identity_key,
     )

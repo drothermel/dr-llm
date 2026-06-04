@@ -55,7 +55,7 @@ class MetadataEntity(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     entity_id: str
-    entity_type: str
+    entity_type: MetadataEntityType
     identity_key: str
     content_hash: str | None = None
     display_name: str | None = None
@@ -67,7 +67,7 @@ class MetadataAssertion(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     assertion_id: str
-    assertion_type: str
+    assertion_type: MetadataAssertionType
     projection_version: str
     source_event_id: str
     source_event_type: str

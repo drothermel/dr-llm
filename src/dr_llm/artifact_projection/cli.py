@@ -9,6 +9,7 @@ from rich.console import Console
 
 from dr_llm.artifact_projection.config import ArtifactProjectionConfig
 from dr_llm.artifact_projection.index import ArtifactIndex
+from dr_llm.artifact_projection.projector import run_artifact_projector
 from dr_llm.artifact_projection.storage import ArtifactReader
 from dr_llm.artifact_projection.store import ArtifactStore
 from dr_llm.streaming_log.client import StreamingLogConnection
@@ -151,10 +152,6 @@ async def _run_projector(
     flush_on_exit: bool,
 ) -> int:
     async with StreamingLogConnection(StreamingLogConfig()) as connection:
-        from dr_llm.artifact_projection.projector import (
-            run_artifact_projector,
-        )
-
         return await run_artifact_projector(
             connection=connection,
             config=ArtifactProjectionConfig(),

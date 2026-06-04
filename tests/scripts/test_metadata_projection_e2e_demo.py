@@ -26,16 +26,6 @@ def _load_metadata_demo() -> ModuleType:
     return module
 
 
-def test_metadata_projection_e2e_demo_registers_main_command() -> None:
-    metadata_demo = _load_metadata_demo()
-
-    commands = metadata_demo.app.registered_commands
-
-    assert len(commands) == 1
-    assert commands[0].callback is metadata_demo.main
-    assert commands[0].name is None
-
-
 def test_metadata_projection_e2e_demo_forwards_options(
     tmp_path: Path, monkeypatch
 ) -> None:

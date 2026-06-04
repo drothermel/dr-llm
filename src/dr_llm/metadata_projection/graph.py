@@ -65,6 +65,7 @@ EVENT_ASSERTION_TYPES: dict[StreamingLogEventType, MetadataAssertionType] = {
         MetadataAssertionType.streaming_log_error
     ),
 }
+PRODUCER_VERSION_NONE = "<None>"
 
 
 class MetadataGraph:
@@ -147,7 +148,7 @@ def metadata_entity(
 ) -> MetadataEntity:
     return MetadataEntity(
         entity_id=entity_id(str(entity_type), identity_key),
-        entity_type=str(entity_type),
+        entity_type=entity_type,
         identity_key=identity_key,
         content_hash=content_hash(content) if content is not None else None,
         display_name=display_name,
@@ -254,7 +255,8 @@ def _producer_entity(
     instance_id: str,
     metadata: dict[str, Any],
 ) -> MetadataEntity:
-    identity_key = "|".join([name, version or "", instance_id])
+    version_key = PRODUCER_VERSION_NONE if version is None else version
+    identity_key = "|".join([name, version_key, instance_id])
     return metadata_entity(
         MetadataEntityType.producer,
         identity_key,

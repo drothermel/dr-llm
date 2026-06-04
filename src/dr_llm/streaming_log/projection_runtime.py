@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeAlias, TypeVar
 from uuid import uuid4
@@ -67,6 +68,8 @@ async def consume_projection_events(
     max_messages: int | None,
     batch_size: int,
     from_start: bool = False,
+    fetch_timeout: float = 1.0,
+    idle_sleep: float = 0.1,
 ) -> int:
     sub = await connection.js.pull_subscribe(
         connection.config.events_subject,
@@ -77,7 +80,10 @@ async def consume_projection_events(
     )
     processed = 0
     while should_process_more(max_messages=max_messages, processed=processed):
-        messages = await sub.fetch(batch_size, timeout=1)
+        messages = await sub.fetch(batch_size, timeout=fetch_timeout)
+        if not messages:
+            await asyncio.sleep(idle_sleep)
+            continue
         for message in messages:
             await process_projection_message(handler=handler, message=message)
             processed += 1

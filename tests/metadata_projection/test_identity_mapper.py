@@ -4,8 +4,10 @@ from dr_llm.llm import CallMode, LlmRequest, LlmResponse, Message, ProviderName
 from dr_llm.metadata_projection import (
     EventFactMapper,
     MetadataAssertionType,
+    MetadataEntity,
     MetadataEntityType,
     MetadataProjectionConfig,
+    MetadataWritePlan,
     assertion_id,
     content_hash,
     entity_id,
@@ -179,7 +181,7 @@ def _request_event(request: LlmRequest) -> EventEnvelope:
     )
 
 
-def _prompt_entity(plan):
+def _prompt_entity(plan: MetadataWritePlan) -> MetadataEntity:
     return next(
         entity
         for entity in plan.entities

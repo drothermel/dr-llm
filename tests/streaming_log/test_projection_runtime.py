@@ -44,10 +44,10 @@ class FakeMessage:
 class FakeSubscription:
     def __init__(self, batches: list[list[FakeMessage]]) -> None:
         self.batches = batches
-        self.fetches: list[tuple[int, int]] = []
+        self.fetches: list[tuple[int, float]] = []
 
     async def fetch(
-        self, batch_size: int, *, timeout: int
+        self, batch_size: int, *, timeout: float
     ) -> list[FakeMessage]:
         self.fetches.append((batch_size, timeout))
         if not self.batches:
@@ -214,6 +214,7 @@ def test_consume_projection_events_applies_subscription_and_max_messages() -> (
 
     async def handle(delivery: ProjectionEventDelivery) -> None:
         handled.append(delivery.stream_sequence)
+        await delivery.ack()
 
     processed = _run(
         consume_projection_events(
@@ -230,7 +231,10 @@ def test_consume_projection_events_applies_subscription_and_max_messages() -> (
 
     assert processed == 2
     assert handled == [1, 2]
-    assert subscription.fetches == [(10, 1)]
+    assert subscription.fetches == [(10, 1.0)]
+    assert messages[0].actions == ["ack"]
+    assert messages[1].actions == ["ack"]
+    assert messages[2].actions == []
     assert connection.js.pull_subscribe_calls == [
         {
             "subject": "events.>",
