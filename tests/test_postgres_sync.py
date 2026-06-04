@@ -21,6 +21,16 @@ class ValidationCall(BaseModel):
     target_dsn: str
 
 
+class ProjectLookupFake(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    project: ProjectInfo
+
+    def get_project(self, name: str) -> ProjectInfo:
+        assert name == self.project.name
+        return self.project
+
+
 class SyncCallRecorder(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -31,6 +41,14 @@ class SyncCallRecorder(BaseModel):
     validations: list[ValidationCall] = Field(default_factory=list)
     replaced_databases: list[str] = Field(default_factory=list)
     dropped_databases: list[str] = Field(default_factory=list)
+    validation_result: ProjectSyncValidation = Field(
+        default_factory=lambda: ProjectSyncValidation(
+            source_table_count=1,
+            target_table_count=1,
+            checked_table_count=1,
+        )
+    )
+    replaced_existing: bool = True
 
     @property
     def operation_names(self) -> list[str]:
@@ -41,9 +59,9 @@ class SyncCallRecorder(BaseModel):
         self.operations.append("create")
         self.created_databases.append(database_name)
 
-    def dump_project_to_file(self, name: str, dump_path: Path) -> None:
+    def dump_project_to_file(self, project_name: str, dump_path: Path) -> None:
         self.operations.append("dump")
-        self.dumped_projects.append(name)
+        self.dumped_projects.append(project_name)
         dump_path.write_text("select 1;\n")
 
     def restore_sql_file(self, target_dsn: str, dump_path: Path) -> None:
@@ -58,16 +76,14 @@ class SyncCallRecorder(BaseModel):
         self.validations.append(
             ValidationCall(source_dsn=source_dsn, target_dsn=target_dsn)
         )
-        return ProjectSyncValidation(
-            source_table_count=1,
-            target_table_count=1,
-            checked_table_count=1,
-        )
+        return self.validation_result
 
-    def replace_database(self, **kwargs: str) -> bool:
+    def replace_database(
+        self, plan: postgres_sync_module.DatabaseSwapPlan
+    ) -> bool:
         self.operations.append("replace")
-        self.replaced_databases.append(kwargs["target_database"])
-        return True
+        self.replaced_databases.append(plan.target_database)
+        return self.replaced_existing
 
     def drop_database(self, admin_url: str, database_name: str) -> None:
         _ = admin_url
@@ -83,51 +99,31 @@ def _running_project(name: str) -> ProjectInfo:
     )
 
 
-def _install_successful_sync_fakes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> SyncCallRecorder:
-    calls = SyncCallRecorder()
+def _sync_service(
+    calls: SyncCallRecorder,
+    *,
+    project: ProjectInfo | None = None,
+) -> postgres_sync_module.PostgresSyncService:
+    return postgres_sync_module.PostgresSyncService(
+        project_lookup=ProjectLookupFake(
+            project=project or _running_project("demo")
+        ),
+        transfer=calls,
+        validator=calls,
+        admin=calls,
+    )
 
-    monkeypatch.setattr(postgres_sync_module, "get_project", _running_project)
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_create_database",
-        calls.create_database,
-    )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_dump_project_to_file",
-        calls.dump_project_to_file,
-    )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_restore_sql_file",
-        calls.restore_sql_file,
-    )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "validate_project_database_copy",
-        calls.validate_project_database_copy,
-    )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_replace_database",
-        calls.replace_database,
-    )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_drop_database",
-        calls.drop_database,
-    )
+
+def _successful_sync_calls() -> SyncCallRecorder:
+    calls = SyncCallRecorder()
     return calls
 
 
-def test_build_sync_plan_derives_temporary_database_target(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(postgres_sync_module, "get_project", _running_project)
+def test_build_sync_plan_derives_temporary_database_target() -> None:
+    calls = SyncCallRecorder()
+    service = _sync_service(calls)
 
-    plan = postgres_sync_module._build_sync_plan(
+    plan = service.build_sync_plan(
         name="demo",
         admin_url="postgresql://example/postgres?sslmode=require",
         target_database="remote_demo",
@@ -147,12 +143,11 @@ def test_build_sync_plan_derives_temporary_database_target(
     assert plan.drop_previous is True
 
 
-def test_sync_project_to_postgres_validates_and_swaps_database(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls = _install_successful_sync_fakes(monkeypatch)
+def test_sync_project_to_postgres_validates_and_swaps_database() -> None:
+    calls = _successful_sync_calls()
+    service = _sync_service(calls)
 
-    result = postgres_sync_module.sync_project_to_postgres(
+    result = service.sync_project_to_postgres(
         "demo",
         "postgresql://example/postgres?sslmode=require",
         drop_previous=True,
@@ -173,12 +168,13 @@ def test_sync_project_to_postgres_validates_and_swaps_database(
     assert calls.dumped_projects == ["demo"]
 
 
-def test_sync_project_to_postgres_restores_and_validates_temporary_database(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls = _install_successful_sync_fakes(monkeypatch)
+def test_sync_project_to_postgres_restores_and_validates_temporary_database() -> (
+    None
+):
+    calls = _successful_sync_calls()
+    service = _sync_service(calls)
 
-    result = postgres_sync_module.sync_project_to_postgres(
+    result = service.sync_project_to_postgres(
         "demo",
         "postgresql://example/postgres?sslmode=require",
     )
@@ -196,89 +192,49 @@ def test_sync_project_to_postgres_restores_and_validates_temporary_database(
     ]
 
 
-def test_sync_project_to_postgres_drops_temp_database_when_validation_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    dropped: list[str] = []
-
-    monkeypatch.setattr(postgres_sync_module, "get_project", _running_project)
-    monkeypatch.setattr(
-        postgres_sync_module, "_create_database", lambda *_args: None
-    )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_dump_project_to_file",
-        lambda _name, dump_path: dump_path.write_text("select 1;\n"),
-    )
-    monkeypatch.setattr(
-        postgres_sync_module, "_restore_sql_file", lambda *_args: None
-    )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "validate_project_database_copy",
-        lambda **_kwargs: ProjectSyncValidation(
+def test_sync_project_to_postgres_drops_temp_database_when_validation_fails() -> (
+    None
+):
+    calls = SyncCallRecorder(
+        validation_result=ProjectSyncValidation(
             source_table_count=1,
             target_table_count=1,
             checked_table_count=1,
             mismatches=["alpha row count mismatch: source=1 target=0"],
         ),
     )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_drop_database",
-        lambda _admin_url, database_name: dropped.append(database_name),
-    )
+    service = _sync_service(calls)
 
     with pytest.raises(ProjectError, match="validation failed"):
-        postgres_sync_module.sync_project_to_postgres(
+        service.sync_project_to_postgres(
             "demo", "postgresql://example/postgres"
         )
 
-    assert len(dropped) == 1
-    assert "_sync_" in dropped[0]
+    assert len(calls.dropped_databases) == 1
+    assert "_sync_" in calls.dropped_databases[0]
 
 
-def test_sync_project_to_postgres_requires_project_dsn(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "get_project",
-        lambda name: ProjectInfo(name=name, status=ContainerStatus.STOPPED),
+def test_sync_project_to_postgres_requires_project_dsn() -> None:
+    calls = SyncCallRecorder()
+    service = _sync_service(
+        calls,
+        project=ProjectInfo(name="demo", status=ContainerStatus.STOPPED),
     )
 
     with pytest.raises(ProjectError, match="has no DSN"):
-        postgres_sync_module.sync_project_to_postgres(
+        service.sync_project_to_postgres(
             "demo", "postgresql://example/postgres"
         )
 
 
-def test_sync_project_to_postgres_rejects_invalid_admin_url(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    operations: list[str] = []
-
-    monkeypatch.setattr(postgres_sync_module, "get_project", _running_project)
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_create_database",
-        lambda *_args: operations.append("create"),
-    )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_dump_project_to_file",
-        lambda _name, _dump_path: operations.append("dump"),
-    )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_drop_database",
-        lambda _admin_url, _database_name: operations.append("drop"),
-    )
+def test_sync_project_to_postgres_rejects_invalid_admin_url() -> None:
+    calls = SyncCallRecorder()
+    service = _sync_service(calls)
 
     with pytest.raises(ProjectError, match="scheme and host"):
-        postgres_sync_module.sync_project_to_postgres("demo", "postgres")
+        service.sync_project_to_postgres("demo", "postgres")
 
-    assert operations == []
+    assert calls.operation_names == []
 
 
 def test_pgpass_line_escapes_colons_and_backslashes() -> None:
@@ -481,30 +437,19 @@ class FakeConnection(BaseModel):
         return self.cursor_value
 
 
-def _install_fake_admin_connection(
-    monkeypatch: pytest.MonkeyPatch,
-    cursor: FakeCursor,
-) -> None:
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_connect_admin",
-        lambda _admin_url: FakeConnection(cursor_value=cursor),
-    )
-
-
-def _install_fake_rename_database(
-    monkeypatch: pytest.MonkeyPatch,
+def _fake_admin_operations(
     cursor: FakeCursor,
     *,
     fail_renames: set[tuple[str, str]] | None = None,
-) -> None:
+) -> postgres_sync_module.PsycopgPostgresAdminOperations:
     failed = fail_renames or set()
 
     def fake_rename_database(
-        _cur: FakeCursor,
+        cur: postgres_sync_module.AdminCursor,
         source_database: str,
         target_database: str,
     ) -> None:
+        _ = cur
         if (source_database, target_database) in failed:
             raise RuntimeError(
                 f"rename {source_database} to {target_database} failed"
@@ -513,51 +458,56 @@ def _install_fake_rename_database(
             ("rename", f"{source_database}->{target_database}")
         )
 
-    monkeypatch.setattr(
-        postgres_sync_module, "_rename_database", fake_rename_database
+    def fake_database_exists(
+        cur: postgres_sync_module.AdminCursor,
+        database_name: str,
+    ) -> bool:
+        _ = cur
+        return database_name in cursor.existing_databases
+
+    def fake_terminate_connections(
+        cur: postgres_sync_module.AdminCursor,
+        database_name: str,
+    ) -> None:
+        _ = cur
+        cursor.operations.append(("terminate", database_name))
+
+    return postgres_sync_module.PsycopgPostgresAdminOperations(
+        connect_admin=lambda admin_url: FakeConnection(cursor_value=cursor),
+        database_exists=fake_database_exists,
+        rename_database=fake_rename_database,
+        terminate_connections=fake_terminate_connections,
     )
 
 
-def test_replace_database_renames_temporary_when_target_is_absent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_replace_database_renames_temporary_when_target_is_absent() -> None:
     cursor = FakeCursor()
-    _install_fake_admin_connection(monkeypatch, cursor)
-    _install_fake_rename_database(monkeypatch, cursor)
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_database_exists",
-        lambda _cur, _database_name: False,
-    )
+    admin = _fake_admin_operations(cursor)
 
-    replaced_existing = postgres_sync_module._replace_database(
-        admin_url="postgresql://example/postgres",
-        temporary_database="demo_sync",
-        target_database="demo",
-        previous_database="demo_prev",
+    replaced_existing = admin.replace_database(
+        postgres_sync_module.DatabaseSwapPlan(
+            admin_url="postgresql://example/postgres",
+            temporary_database="demo_sync",
+            target_database="demo",
+            previous_database="demo_prev",
+        )
     )
 
     assert replaced_existing is False
     assert cursor.operations == [("rename", "demo_sync->demo")]
 
 
-def test_replace_database_moves_existing_target_before_swap(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cursor = FakeCursor()
-    _install_fake_admin_connection(monkeypatch, cursor)
-    _install_fake_rename_database(monkeypatch, cursor)
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_database_exists",
-        lambda _cur, _database_name: True,
-    )
+def test_replace_database_moves_existing_target_before_swap() -> None:
+    cursor = FakeCursor(existing_databases={"demo"})
+    admin = _fake_admin_operations(cursor)
 
-    replaced_existing = postgres_sync_module._replace_database(
-        admin_url="postgresql://example/postgres",
-        temporary_database="demo_sync",
-        target_database="demo",
-        previous_database="demo_prev",
+    replaced_existing = admin.replace_database(
+        postgres_sync_module.DatabaseSwapPlan(
+            admin_url="postgresql://example/postgres",
+            temporary_database="demo_sync",
+            target_database="demo",
+            previous_database="demo_prev",
+        )
     )
 
     assert replaced_existing is True
@@ -568,28 +518,21 @@ def test_replace_database_moves_existing_target_before_swap(
     ]
 
 
-def test_replace_database_restores_previous_when_swap_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cursor = FakeCursor()
-    _install_fake_admin_connection(monkeypatch, cursor)
-    _install_fake_rename_database(
-        monkeypatch,
+def test_replace_database_restores_previous_when_swap_fails() -> None:
+    cursor = FakeCursor(existing_databases={"demo"})
+    admin = _fake_admin_operations(
         cursor,
         fail_renames={("demo_sync", "demo")},
     )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_database_exists",
-        lambda _cur, _database_name: True,
-    )
 
     with pytest.raises(RuntimeError, match="rename demo_sync to demo failed"):
-        postgres_sync_module._replace_database(
-            admin_url="postgresql://example/postgres",
-            temporary_database="demo_sync",
-            target_database="demo",
-            previous_database="demo_prev",
+        admin.replace_database(
+            postgres_sync_module.DatabaseSwapPlan(
+                admin_url="postgresql://example/postgres",
+                temporary_database="demo_sync",
+                target_database="demo",
+                previous_database="demo_prev",
+            )
         )
 
     assert cursor.operations == [
@@ -600,31 +543,24 @@ def test_replace_database_restores_previous_when_swap_fails(
     ]
 
 
-def test_replace_database_translates_failed_rollback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cursor = FakeCursor()
-    _install_fake_admin_connection(monkeypatch, cursor)
-    _install_fake_rename_database(
-        monkeypatch,
+def test_replace_database_translates_failed_rollback() -> None:
+    cursor = FakeCursor(existing_databases={"demo"})
+    admin = _fake_admin_operations(
         cursor,
         fail_renames={
             ("demo_sync", "demo"),
             ("demo_prev", "demo"),
         },
     )
-    monkeypatch.setattr(
-        postgres_sync_module,
-        "_database_exists",
-        lambda _cur, _database_name: True,
-    )
 
     with pytest.raises(ProjectError, match="rollback also failed"):
-        postgres_sync_module._replace_database(
-            admin_url="postgresql://example/postgres",
-            temporary_database="demo_sync",
-            target_database="demo",
-            previous_database="demo_prev",
+        admin.replace_database(
+            postgres_sync_module.DatabaseSwapPlan(
+                admin_url="postgresql://example/postgres",
+                temporary_database="demo_sync",
+                target_database="demo",
+                previous_database="demo_prev",
+            )
         )
 
     assert cursor.operations == [
