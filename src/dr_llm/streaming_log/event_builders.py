@@ -11,11 +11,13 @@ from dr_llm.streaming_log.events import (
     EventPayload,
     EventContext,
     PoolSampleImportedPayload,
+    ProviderRequestPreparedPayload,
     ProviderResponseReceivedPayload,
     RequestSummary,
     ResponseSummary,
     StreamingLogEventType,
     WorkCompletedPayload,
+    WorkSubmittedPayload,
     idempotency_key,
     payload_model_for_event_type,
     stable_hash,
@@ -24,6 +26,7 @@ from dr_llm.streaming_log.payloads import (
     PreparedPayload,
     prepare_json_payload,
 )
+from dr_llm.streaming_log.work import QueuedWorkMessage
 
 
 class StreamingEventPublishSpec(BaseModel):
@@ -84,11 +87,6 @@ def provider_response_received_event(
     attempt: int,
     response: LlmResponse,
 ) -> StreamingEventPublishSpec:
-    response_payload = response.model_dump(
-        mode="json",
-        exclude_none=True,
-        exclude_computed_fields=True,
-    )
     return StreamingEventPublishSpec(
         event_type=StreamingLogEventType.provider_response_received,
         idempotency_key=idempotency_key(
@@ -101,7 +99,71 @@ def provider_response_received_event(
             finish_reason=response.finish_reason,
             response_summary=response_summary_from_response(response),
         ),
-        payloads=[prepare_json_payload("response_json", response_payload)],
+        payloads=[response_json_payload_from_response(response)],
+    )
+
+
+def work_submitted_event(work: QueuedWorkMessage) -> StreamingEventPublishSpec:
+    return StreamingEventPublishSpec(
+        event_type=StreamingLogEventType.work_submitted,
+        idempotency_key=idempotency_key("work_submitted", work.work_id),
+        payload=WorkSubmittedPayload(
+            work_id=work.work_id,
+            run_id=work.run_id,
+            max_retries=work.max_retries,
+            metadata=work.metadata,
+            request_summary=request_summary_from_request(work.request),
+        ),
+        payloads=[request_json_payload_from_request(work.request)],
+        context=EventContext.from_work(work),
+    )
+
+
+def provider_request_prepared_event(
+    *, work_id: str, attempt: int, request: LlmRequest
+) -> StreamingEventPublishSpec:
+    return StreamingEventPublishSpec(
+        event_type=StreamingLogEventType.provider_request_prepared,
+        idempotency_key=idempotency_key(
+            "provider_request_prepared", work_id, attempt
+        ),
+        payload=ProviderRequestPreparedPayload(
+            provider=str(request.provider),
+            model=request.model,
+            mode=str(request.mode),
+            request_summary=request_summary_from_request(request),
+        ),
+        payloads=[request_json_payload_from_request(request)],
+    )
+
+
+def request_json_payload_from_request(request: LlmRequest) -> PreparedPayload:
+    return prepare_json_payload(
+        "request_json", request_json_from_request(request)
+    )
+
+
+def response_json_payload_from_response(
+    response: LlmResponse,
+) -> PreparedPayload:
+    return prepare_json_payload(
+        "response_json", response_json_from_response(response)
+    )
+
+
+def request_json_from_request(request: LlmRequest) -> dict[str, Any]:
+    return request.model_dump(
+        mode="json",
+        exclude_none=True,
+        exclude_computed_fields=True,
+    )
+
+
+def response_json_from_response(response: LlmResponse) -> dict[str, Any]:
+    return response.model_dump(
+        mode="json",
+        exclude_none=True,
+        exclude_computed_fields=True,
     )
 
 
@@ -237,8 +299,14 @@ __all__ = [
     "StreamingEventPublishSpec",
     "attempt_succeeded_event",
     "pool_sample_imported_event",
+    "provider_request_prepared_event",
     "provider_response_received_event",
+    "request_json_from_request",
+    "request_json_payload_from_request",
     "request_summary_from_request",
+    "response_json_from_response",
+    "response_json_payload_from_response",
     "response_summary_from_response",
+    "work_submitted_event",
     "work_completed_succeeded_event",
 ]

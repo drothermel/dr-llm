@@ -1,20 +1,31 @@
 from __future__ import annotations
 
-from dr_llm.llm import CallMode, LlmResponse
+from dr_llm.llm import CallMode, LlmRequest, LlmResponse, Message, ProviderName
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.streaming_log.event_builders import (
     attempt_succeeded_event,
     pool_sample_imported_event,
+    provider_request_prepared_event,
     provider_response_received_event,
+    request_json_from_request,
+    request_json_payload_from_request,
+    response_json_from_response,
+    response_json_payload_from_response,
     work_completed_succeeded_event,
+    work_submitted_event,
 )
 from dr_llm.streaming_log.events import (
     AttemptSucceededPayload,
     EventContext,
     PoolSampleImportedPayload,
+    ProviderRequestPreparedPayload,
     StreamingLogEventType,
     WorkCompletedPayload,
+    WorkSubmittedPayload,
+    idempotency_key,
 )
+from dr_llm.streaming_log.serialization import canonical_json_bytes
+from dr_llm.streaming_log.work import QueuedWorkMessage
 
 
 def _sample() -> PoolSample:
@@ -39,6 +50,16 @@ def _response() -> LlmResponse:
         mode=CallMode.api,
         finish_reason="stop",
         raw_json={"id": "resp-1"},
+    )
+
+
+def _request() -> LlmRequest:
+    return LlmRequest(
+        provider=ProviderName.OPENAI,
+        model="gpt-test",
+        mode=CallMode.api,
+        messages=[Message(role="user", content="hello")],
+        metadata={"purpose": "test"},
     )
 
 
@@ -128,6 +149,84 @@ def test_provider_response_received_event_builds_response_fact() -> None:
     assert [payload.role for payload in spec.payloads] == ["response_json"]
     assert spec.context is None
     assert spec.metadata == {}
+
+
+def test_work_submitted_event_builds_shared_request_snapshot() -> None:
+    work = QueuedWorkMessage(
+        work_id="work-1",
+        request=_request(),
+        run_id="run-1",
+        correlation_id="corr-1",
+        source="test-source",
+        metadata={"priority": "low"},
+        max_retries=2,
+    )
+
+    spec = work_submitted_event(work)
+
+    assert spec.event_type is StreamingLogEventType.work_submitted
+    assert spec.idempotency_key == idempotency_key("work_submitted", "work-1")
+    assert isinstance(spec.payload, WorkSubmittedPayload)
+    assert spec.payload.work_id == "work-1"
+    assert spec.payload.run_id == "run-1"
+    assert spec.payload.max_retries == 2
+    assert spec.payload.metadata == {"priority": "low"}
+    summary = spec.payload.request_summary
+    assert summary is not None
+    assert summary.provider == "openai"
+    assert summary.model == "gpt-test"
+    assert summary.mode == "api"
+    assert summary.message_count == 1
+    assert len(summary.messages_sha256) == 64
+    assert summary.prompt_preview == "hello"
+    assert summary.metadata == {"purpose": "test"}
+    assert [payload.role for payload in spec.payloads] == ["request_json"]
+    assert spec.payloads[0].data == canonical_json_bytes(
+        request_json_from_request(work.request)
+    )
+    assert spec.context == EventContext.from_work(work)
+
+
+def test_provider_request_prepared_event_reuses_request_snapshot() -> None:
+    request = _request()
+    work = QueuedWorkMessage(work_id="work-1", request=request)
+
+    submitted = work_submitted_event(work)
+    prepared = provider_request_prepared_event(
+        work_id="work-1", attempt=2, request=request
+    )
+    assert isinstance(submitted.payload, WorkSubmittedPayload)
+    assert submitted.payload.request_summary is not None
+
+    assert (
+        prepared.event_type is StreamingLogEventType.provider_request_prepared
+    )
+    assert prepared.idempotency_key == idempotency_key(
+        "provider_request_prepared", "work-1", 2
+    )
+    assert isinstance(prepared.payload, ProviderRequestPreparedPayload)
+    assert prepared.payload.model_dump(mode="json") == {
+        "provider": "openai",
+        "model": "gpt-test",
+        "mode": "api",
+        "request_summary": submitted.payload.request_summary.model_dump(
+            mode="json"
+        ),
+    }
+    assert [payload.role for payload in prepared.payloads] == ["request_json"]
+    assert prepared.payloads == [request_json_payload_from_request(request)]
+    assert prepared.context is None
+
+
+def test_response_payload_helper_uses_response_snapshot_role() -> None:
+    response = _response()
+
+    payload = response_json_payload_from_response(response)
+
+    assert payload.role == "response_json"
+    assert payload.data == canonical_json_bytes(
+        response_json_from_response(response)
+    )
 
 
 def test_success_completion_event_builders_record_attempt_identity() -> None:
