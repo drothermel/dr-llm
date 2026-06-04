@@ -9,11 +9,16 @@ from dr_llm.artifact_projection.index import (
 )
 from dr_llm.artifact_projection.models import ArtifactReference
 from dr_llm.metadata_projection.config import MetadataProjectionConfig
-from dr_llm.metadata_projection.identity import assertion_id, entity_id
-from dr_llm.metadata_projection.mapper import merge_write_plans
+from dr_llm.metadata_projection.graph import (
+    MetadataGraph,
+    merge_write_plans,
+    metadata_entity,
+    producer_entity_from_metadata,
+    source_event_assertion_id,
+    source_event_entity,
+)
 from dr_llm.metadata_projection.models import (
     MetadataAssertion,
-    MetadataAssertionRole,
     MetadataAssertionType,
     MetadataEntity,
     MetadataEntityType,
@@ -29,19 +34,11 @@ class ArtifactAttachmentPlanner:
         self, reference: ArtifactReference
     ) -> MetadataWritePlan:
         assertion = self._assertion(reference)
-        entities = self._entities(reference)
-        roles = [
-            MetadataAssertionRole(
-                assertion_id=assertion.assertion_id,
-                role_name=entity.entity_type,
-                entity_id=entity.entity_id,
-            )
-            for entity in entities
-        ]
+        graph = self._graph(reference)
         return MetadataWritePlan(
-            entities=entities,
+            entities=graph.entities(),
             assertions=[assertion],
-            roles=roles,
+            roles=graph.roles_for(assertion.assertion_id),
         )
 
     def plan_references(
@@ -54,10 +51,10 @@ class ArtifactAttachmentPlanner:
     def _assertion(self, reference: ArtifactReference) -> MetadataAssertion:
         source_key = artifact_assertion_source_key(reference.artifact_id)
         return MetadataAssertion(
-            assertion_id=assertion_id(
-                projection_version=self.config.projection_version,
-                assertion_type=MetadataAssertionType.artifact_attached,
-                source_idempotency_key=source_key,
+            assertion_id=source_event_assertion_id(
+                self.config,
+                MetadataAssertionType.artifact_attached,
+                source_key,
             ),
             assertion_type=MetadataAssertionType.artifact_attached,
             projection_version=self.config.projection_version,
@@ -69,36 +66,30 @@ class ArtifactAttachmentPlanner:
             metadata_json=reference.model_dump(mode="json"),
         )
 
-    def _entities(self, reference: ArtifactReference) -> list[MetadataEntity]:
-        entities = [self._artifact_entity(reference)]
+    def _graph(self, reference: ArtifactReference) -> MetadataGraph:
+        graph = MetadataGraph()
+        graph.add_existing_entity(self._artifact_entity(reference))
         source_ref = reference.source_ref
         context = reference.event_context
-        entities.append(
-            _entity(
-                MetadataEntityType.source_event,
+        graph.add_existing_entity(
+            source_event_entity(
                 source_ref.event_id,
-                metadata={
-                    "event_type": source_ref.event_type,
-                    "idempotency_key": source_ref.idempotency_key,
-                },
+                source_ref.event_type,
+                source_ref.idempotency_key,
             )
         )
-        entities.extend(
-            _optional_identity(MetadataEntityType.run, context.run_id)
+        graph.add_optional_identity(MetadataEntityType.run, context.run_id)
+        graph.add_optional_identity(MetadataEntityType.work, context.work_id)
+        graph.add_optional_identity(
+            MetadataEntityType.attempt, context.attempt_id
         )
-        entities.extend(
-            _optional_identity(MetadataEntityType.work, context.work_id)
-        )
-        entities.extend(
-            _optional_identity(MetadataEntityType.attempt, context.attempt_id)
-        )
-        producer = _producer_entity(context.producer)
+        producer = producer_entity_from_metadata(context.producer)
         if producer is not None:
-            entities.append(producer)
-        return _unique_entities(entities)
+            graph.add_existing_entity(producer)
+        return graph
 
     def _artifact_entity(self, reference: ArtifactReference) -> MetadataEntity:
-        return _entity(
+        return metadata_entity(
             MetadataEntityType.artifact,
             reference.artifact_id,
             display_name=reference.artifact_id,
@@ -150,54 +141,6 @@ def load_finalized_manifest_references(
     for path in manifest_paths:
         references.extend(load_manifest_references(path))
     return references
-
-
-def _entity(
-    entity_type: MetadataEntityType,
-    identity_key: str,
-    *,
-    display_name: str | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> MetadataEntity:
-    return MetadataEntity(
-        entity_id=entity_id(str(entity_type), identity_key),
-        entity_type=str(entity_type),
-        identity_key=identity_key,
-        display_name=display_name,
-        metadata_json=metadata or {},
-    )
-
-
-def _optional_identity(
-    entity_type: MetadataEntityType,
-    identity_key: str | None,
-) -> list[MetadataEntity]:
-    if identity_key is None:
-        return []
-    return [_entity(entity_type, identity_key)]
-
-
-def _producer_entity(producer: dict[str, Any]) -> MetadataEntity | None:
-    name = producer.get("name")
-    instance_id = producer.get("instance_id")
-    if not isinstance(name, str) or not isinstance(instance_id, str):
-        return None
-    version = producer.get("version")
-    identity_key = "|".join(
-        [name, version if isinstance(version, str) else "", instance_id]
-    )
-    return _entity(
-        MetadataEntityType.producer,
-        identity_key,
-        display_name=name,
-        metadata=producer,
-    )
-
-
-def _unique_entities(
-    entities: list[MetadataEntity],
-) -> list[MetadataEntity]:
-    return list({entity.entity_id: entity for entity in entities}.values())
 
 
 __all__ = [
