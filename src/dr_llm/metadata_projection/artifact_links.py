@@ -3,10 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from dr_llm.artifact_projection.index import (
-    ArtifactIndex,
-    load_manifest_references,
-)
+from dr_llm.artifact_projection._manifest_io import load_manifest_references
+from dr_llm.artifact_projection.index import ArtifactIndex
 from dr_llm.artifact_projection.models import ArtifactReference
 from dr_llm.metadata_projection.config import MetadataProjectionConfig
 from dr_llm.metadata_projection.graph import (
