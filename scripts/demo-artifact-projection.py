@@ -31,6 +31,7 @@ from dr_llm.artifact_projection import (
     ArtifactReader,
     ArtifactStore,
 )
+from dr_llm.artifact_projection.models import ArtifactIndexSummary
 from dr_llm.artifact_projection.projector import run_artifact_projector
 from dr_llm.demo import (
     command_hint,
@@ -111,28 +112,10 @@ async def _run_artifact_demo(options: ArtifactProjectionDemoOptions) -> None:
                 raise RuntimeError(f"Processed {processed} events, expected 1")
 
         step("4. Verifying artifact index and readback")
-        store = ArtifactStore(config=artifact_config)
-        store.initialize()
-        references = store.index.list_references()
-        summary = store.index.summary(
-            projection_version=artifact_config.projection_version,
-            durable_consumer=artifact_config.durable_consumer,
-        )
-        if len(references) != 1:
-            raise RuntimeError(
-                f"Projected {len(references)} artifacts, expected 1"
-            )
-        if summary.open_artifact_count != 0:
-            raise RuntimeError(
-                "Expected no open references after projector finalization"
-            )
-        data = ArtifactReader(artifact_config).read_json(references[0])
-        if data != {"demo": "artifact-projection", "ok": True}:
-            raise RuntimeError(f"Unexpected artifact payload: {data!r}")
-        ok(
-            "Artifact projection verified: "
-            f"finalized={summary.artifact_count} "
-            f"open={summary.open_artifact_count}"
+        _verify_artifact_projection(
+            config=artifact_config,
+            event_id=event.event_id,
+            expected_payload={"demo": "artifact-projection", "ok": True},
         )
     finally:
         _print_cleanup_hint(runtime)
@@ -149,6 +132,60 @@ def _print_cleanup_hint(runtime: StreamingLogDemoRuntime | None) -> None:
         return
     if runtime.cleanup_command is not None:
         command_hint("Destroy NATS", runtime.cleanup_command)
+
+
+def _verify_artifact_projection(
+    *,
+    config: ArtifactProjectionConfig,
+    event_id: str,
+    expected_payload: dict[str, object],
+) -> None:
+    store = ArtifactStore(config=config)
+    store.initialize()
+    references = store.index.list_references()
+    summary = store.index.summary(
+        projection_version=config.projection_version,
+        durable_consumer=config.durable_consumer,
+    )
+    _verify_artifact_summary(summary, event_id=event_id)
+    if len(references) != 1:
+        raise RuntimeError(
+            f"Projected {len(references)} artifacts, expected 1"
+        )
+    data = ArtifactReader(config).read_json(references[0])
+    if data != expected_payload:
+        raise RuntimeError(f"Unexpected artifact payload: {data!r}")
+    ok(
+        "Artifact projection verified: "
+        f"finalized={summary.artifact_count} "
+        f"open={summary.open_artifact_count} "
+        f"errors={summary.error_count} "
+        f"checkpoint_event={event_id}"
+    )
+
+
+def _verify_artifact_summary(
+    summary: ArtifactIndexSummary, *, event_id: str
+) -> None:
+    if summary.open_artifact_count != 0:
+        raise RuntimeError(
+            "Expected no open references after projector finalization"
+        )
+    if summary.open_shard_count != 0:
+        raise RuntimeError(
+            "Expected no open shards after projector finalization"
+        )
+    if summary.error_count != 0:
+        raise RuntimeError(
+            f"Expected no projection errors, found {summary.error_count}"
+        )
+    if summary.checkpoint is None:
+        raise RuntimeError("Expected artifact projection checkpoint")
+    if summary.checkpoint.event_id != event_id:
+        raise RuntimeError(
+            "Artifact projection checkpoint event mismatch: "
+            f"{summary.checkpoint.event_id!r} != {event_id!r}"
+        )
 
 
 @app.command()

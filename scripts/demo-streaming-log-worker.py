@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import Counter
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 import typer
@@ -40,7 +40,6 @@ from dr_llm.demo import (
     open_streaming_log_demo_runtime,
     show_model_json,
     step,
-    summarize_events,
     StreamingLogDemoRuntime,
     StreamingLogDemoRuntimeOptions,
     sync_models_json,
@@ -217,13 +216,21 @@ async def _run_worker_attempt(options: WorkerAttemptOptions) -> None:
                 session.event_log,
                 expected_min_events=1,
             )
-            counts = summarize_events(events)
             verified_payloads = await verify_payload_refs(
                 session.payload_store, events
             )
             _print_worker_event_summary(events)
             await _print_failure_details(session.payload_store, events)
-            _verify_worker_lifecycle(counts)
+            _verify_worker_lifecycle(
+                events, work_id=work.work_id, max_retries=options.max_retries
+            )
+            response = await _verify_response_payload(
+                session.payload_store, events, work_id=work.work_id
+            )
+            ok(
+                "Response payload verified: "
+                f"text_preview={response['text_preview']!r}"
+            )
 
         ok(f"Verified {len(events)} replayed events")
         ok(f"Verified {len(verified_payloads)} payload references")
@@ -355,29 +362,126 @@ async def _print_failure_details(
     return details
 
 
-def _verify_worker_lifecycle(counts: Counter[str]) -> None:
-    expected = [
+def _verify_worker_lifecycle(
+    events: list[EventEnvelope], *, work_id: str, max_retries: int
+) -> None:
+    work_events = _work_events(events, work_id=work_id)
+    work_counts = Counter(str(event.event_type) for event in work_events)
+    producer_counts = Counter(str(event.event_type) for event in events)
+    expected_work_events = [
         "work_submitted",
-        "producer_started",
         "attempt_started",
         "provider_request_prepared",
         "provider_response_received",
         "attempt_succeeded",
         "work_completed",
+    ]
+    expected_producer_events = [
+        "producer_started",
         "producer_stopped",
     ]
-    missing = [event_type for event_type in expected if counts[event_type] < 1]
+    missing = [
+        event_type
+        for event_type in expected_work_events
+        if work_counts[event_type] < 1
+    ]
+    missing.extend(
+        event_type
+        for event_type in expected_producer_events
+        if producer_counts[event_type] < 1
+    )
     if missing:
-        if counts["attempt_failed"] > 0:
+        if work_counts["attempt_failed"] > 0:
             raise ProviderWorkFailedError(
                 "Provider work failed before a successful response; "
-                "see attempt_failed details above. Missing lifecycle events: "
+                "missing lifecycle events: "
                 + ", ".join(missing)
+                + _failure_details_suffix(work_events)
             )
         raise RuntimeError(
             "Missing expected lifecycle events: " + ", ".join(missing)
         )
-    ok("Lifecycle events verified: " + ", ".join(expected))
+    if max_retries == 0 and work_counts["attempt_failed"] > 0:
+        raise ProviderWorkFailedError(
+            "attempt_failed was emitted for the selected work"
+            + _failure_details_suffix(work_events)
+        )
+    completed = _single_work_event(
+        work_events, "work_completed", work_id=work_id
+    )
+    status = getattr(completed.payload, "status", None)
+    if status != "succeeded":
+        raise ProviderWorkFailedError(
+            f"work_completed status is {status!r}, expected 'succeeded'"
+            + _failure_details_suffix(work_events)
+        )
+    ok(
+        "Lifecycle events verified: "
+        + ", ".join([*expected_work_events, *expected_producer_events])
+    )
+
+
+async def _verify_response_payload(
+    payload_store: StreamingPayloadStore,
+    events: list[EventEnvelope],
+    *,
+    work_id: str,
+) -> dict[str, str]:
+    response_event = _single_work_event(
+        _work_events(events, work_id=work_id),
+        "provider_response_received",
+        work_id=work_id,
+    )
+    refs = [
+        ref
+        for ref in response_event.payload_refs
+        if ref.role == "response_json"
+    ]
+    if len(refs) != 1:
+        raise RuntimeError(
+            f"Expected one response_json payload for {work_id}, found {len(refs)}"
+        )
+    data = await payload_store.read_payload_ref(refs[0])
+    payload = json.loads(data)
+    if not isinstance(payload, dict):
+        raise RuntimeError("response_json payload is not a JSON object")
+    response_payload: dict[str, Any] = payload
+    text = response_payload.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("response_json payload has no non-empty text field")
+    return {"text_preview": text[:120].replace("\n", " ")}
+
+
+def _work_events(
+    events: list[EventEnvelope], *, work_id: str
+) -> list[EventEnvelope]:
+    return [event for event in events if event.work_id == work_id]
+
+
+def _single_work_event(
+    events: list[EventEnvelope], event_type: str, *, work_id: str
+) -> EventEnvelope:
+    matches = [
+        event for event in events if str(event.event_type) == event_type
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"Expected exactly one {event_type} event for {work_id}, "
+            f"found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _failure_details_suffix(events: list[EventEnvelope]) -> str:
+    details = [
+        f"{getattr(event.payload, 'error_type', 'unknown')}: "
+        f"{getattr(event.payload, 'message', '')}"
+        for event in events
+        if str(event.event_type) == "attempt_failed"
+    ]
+    if not details:
+        return ""
+    return "; failure_details=" + "; ".join(details)
 
 
 def _print_worker_event_summary(events: list[EventEnvelope]) -> None:

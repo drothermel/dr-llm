@@ -20,7 +20,6 @@ The demo:
 from __future__ import annotations
 
 import asyncio
-from collections import Counter
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -41,7 +40,7 @@ from dr_llm.demo import (
 )
 from dr_llm.pool import DbConfig, DbRuntime, PoolReader
 from dr_llm.streaming_log import EventEnvelope
-from dr_llm.streaming_log.ingest_pools import ingest_pool
+from dr_llm.streaming_log.ingest_pools import PoolImportResult, ingest_pool
 
 app = typer.Typer()
 
@@ -105,11 +104,12 @@ async def _run_import_demo(options: PoolImportDemoOptions) -> None:
                 session.event_log,
                 expected_min_events=result.imported_count + 2,
             )
-            counts = summarize_events(events)
-            _verify_import_counts(
+            _verify_import_events(
                 expected_import_count=expected_import_count,
-                imported_count=result.imported_count,
-                counts=counts,
+                result=result,
+                events=events,
+                pool_name=options.pool_name,
+                source_id=options.source_id or options.dsn,
             )
             verified_payloads = await verify_payload_refs(
                 session.payload_store, events
@@ -158,17 +158,29 @@ def _print_source_pool_summary(*, dsn: str, pool_name: str) -> int:
         runtime.close()
 
 
-def _verify_import_counts(
+def _verify_import_events(
     *,
     expected_import_count: int,
-    imported_count: int,
-    counts: Counter[str],
+    result: PoolImportResult,
+    events: list[EventEnvelope],
+    pool_name: str,
+    source_id: str,
 ) -> None:
+    import_events = _events_for_pool_import(
+        events, pool_name=pool_name, source_id=source_id
+    )
+    event_ids = [event.event_id for event in import_events]
+    if event_ids != result.event_ids:
+        raise RuntimeError(
+            "Replayed import event IDs do not match importer result: "
+            f"{event_ids!r} != {result.event_ids!r}"
+        )
+    counts = summarize_events(import_events)
     sample_events = counts["pool_sample_imported"]
-    if imported_count != expected_import_count:
+    if result.imported_count != expected_import_count:
         raise RuntimeError(
             "Importer returned "
-            f"{imported_count} rows, expected {expected_import_count}"
+            f"{result.imported_count} rows, expected {expected_import_count}"
         )
     if sample_events != expected_import_count:
         raise RuntimeError(
@@ -179,12 +191,77 @@ def _verify_import_counts(
         raise RuntimeError("Expected exactly one pool_import_started event")
     if counts["pool_import_completed"] != 1:
         raise RuntimeError("Expected exactly one pool_import_completed event")
+    if counts["pool_import_failed"] != 0:
+        raise RuntimeError("Expected no pool_import_failed events")
+    completed = _single_import_event(
+        import_events, "pool_import_completed", pool_name=pool_name
+    )
+    completed_count = getattr(completed.payload, "imported_count", None)
+    if completed_count != result.imported_count:
+        raise RuntimeError(
+            "pool_import_completed imported_count mismatch: "
+            f"{completed_count!r} != {result.imported_count!r}"
+        )
+    for event in import_events:
+        if str(event.event_type) != "pool_sample_imported":
+            continue
+        _verify_sample_import_event(
+            event, pool_name=pool_name, source_id=source_id
+        )
     ok(
         "Event counts verified: "
         f"started={counts['pool_import_started']} "
         f"samples={sample_events} "
         f"completed={counts['pool_import_completed']}"
     )
+
+
+def _events_for_pool_import(
+    events: list[EventEnvelope], *, pool_name: str, source_id: str
+) -> list[EventEnvelope]:
+    return [
+        event
+        for event in events
+        if getattr(event.payload, "pool_name", None) == pool_name
+        and getattr(event.payload, "source_id", None) == source_id
+    ]
+
+
+def _single_import_event(
+    events: list[EventEnvelope], event_type: str, *, pool_name: str
+) -> EventEnvelope:
+    matches = [
+        event for event in events if str(event.event_type) == event_type
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"Expected exactly one {event_type} event for {pool_name}, "
+            f"found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _verify_sample_import_event(
+    event: EventEnvelope, *, pool_name: str, source_id: str
+) -> None:
+    payload = event.payload
+    if getattr(payload, "pool_name", None) != pool_name:
+        raise RuntimeError("pool_sample_imported pool_name mismatch")
+    if getattr(payload, "source_id", None) != source_id:
+        raise RuntimeError("pool_sample_imported source_id mismatch")
+    sample_id = getattr(payload, "sample_id", "")
+    if not isinstance(sample_id, str) or not sample_id:
+        raise RuntimeError("pool_sample_imported has no sample_id")
+    row_state_hash = getattr(payload, "row_state_hash", "")
+    if not isinstance(row_state_hash, str) or not row_state_hash:
+        raise RuntimeError("pool_sample_imported has no row_state_hash")
+    roles = {ref.role for ref in event.payload_refs}
+    required_roles = {"pool_schema", "request_json", "metadata_json"}
+    missing = sorted(required_roles - roles)
+    if missing:
+        raise RuntimeError(
+            "pool_sample_imported missing payload roles: " + ", ".join(missing)
+        )
 
 
 def _print_event_sample(events: list[EventEnvelope], limit: int) -> None:
