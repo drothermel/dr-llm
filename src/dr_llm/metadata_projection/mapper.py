@@ -255,7 +255,7 @@ class EventWritePlanBuilder:
             assertion,
             MetadataEntityType.prompt_instance,
             content_hash(_prompt_content(summary_json)),
-            content=summary_json,
+            content=_prompt_content(summary_json),
             metadata=_prompt_content(summary_json),
         )
 

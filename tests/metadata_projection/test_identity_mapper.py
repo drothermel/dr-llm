@@ -136,12 +136,54 @@ def test_mapper_creates_request_prepared_facts() -> None:
     assert MetadataEntityType.model_config in role_names
 
 
+def test_prompt_instance_is_independent_of_provider_config() -> None:
+    first = _request()
+    second = first.model_copy(update={"model": "other-model"})
+    config = MetadataProjectionConfig(database_dsn="postgresql://unused")
+
+    first_prompt = _prompt_entity(
+        EventFactMapper(config).map_event(_request_event(first))
+    )
+    second_prompt = _prompt_entity(
+        EventFactMapper(config).map_event(_request_event(second))
+    )
+
+    assert first_prompt.entity_id == second_prompt.entity_id
+    assert first_prompt.content_hash == second_prompt.content_hash
+    assert first_prompt.metadata_json == second_prompt.metadata_json
+
+
 def _request() -> LlmRequest:
     return LlmRequest(
         provider=ProviderName.OPENAI,
         model="gpt-test",
         mode=CallMode.api,
         messages=[Message(role="user", content="hello")],
+    )
+
+
+def _request_event(request: LlmRequest) -> EventEnvelope:
+    return EventEnvelope(
+        event_type=StreamingLogEventType.provider_request_prepared,
+        producer=ProducerInfo(name="test"),
+        idempotency_key=f"idem-{request.model}",
+        payload=ProviderRequestPreparedPayload(
+            provider=str(request.provider),
+            model=request.model,
+            mode=str(request.mode),
+            request_summary=request_summary_from_request(request),
+        ),
+        run_id="run-1",
+        work_id=f"work-{request.model}",
+        attempt_id=f"attempt-{request.model}",
+    )
+
+
+def _prompt_entity(plan):
+    return next(
+        entity
+        for entity in plan.entities
+        if entity.entity_type == MetadataEntityType.prompt_instance
     )
 
 

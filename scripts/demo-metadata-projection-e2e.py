@@ -13,14 +13,19 @@ Prerequisites:
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 import tempfile
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 import typer
 
-from dr_llm.artifact_projection import ArtifactProjectionConfig
+from dr_llm.artifact_projection import (
+    ArtifactProjectionConfig,
+    ArtifactReader,
+    ArtifactStore,
+)
 from dr_llm.artifact_projection.projector import run_artifact_projector
 from dr_llm.demo import (
     DEMO_QUERY_DEFAULT_MODELS,
@@ -41,11 +46,16 @@ from dr_llm.demo import (
     sync_models_json,
     warn,
 )
-from dr_llm.llm import Message, ProviderName, build_default_registry
+from dr_llm.llm import CallMode, Message, ProviderName, build_default_registry
 from dr_llm.metadata_projection import MetadataProjectionConfig, MetadataStore
 from dr_llm.metadata_projection.cli import attach_finalized_artifacts
 from dr_llm.metadata_projection.projector import run_metadata_projector
-from dr_llm.streaming_log import QueuedWorkMessage, StreamingWorkerConfig
+from dr_llm.streaming_log import (
+    EventEnvelope,
+    QueuedWorkMessage,
+    StreamingLogEventType,
+    StreamingWorkerConfig,
+)
 from dr_llm.streaming_log.workers import run_streaming_worker
 
 
@@ -62,6 +72,21 @@ class MetadataProjectionE2EOptions(BaseModel):
     artifact_root: Path
     provider: str | None = None
     model: str | None = None
+
+
+class ProviderCandidate(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: str
+    model: str
+
+
+class SuccessfulProviderRun(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    candidate: ProviderCandidate
+    work: QueuedWorkMessage
+    events: list[EventEnvelope]
 
 
 MetadataProjectionE2EOptions.model_rebuild(
@@ -92,38 +117,39 @@ async def _run_demo(options: MetadataProjectionE2EOptions) -> None:
             StreamingLogDemoRuntimeOptions(nats=options.nats)
         ) as session:
             runtime = session.runtime
-            provider, model = _resolve_provider_model(options)
-            ok(f"Using provider/model {provider}/{model}")
 
-            step("2. Submitting real queued work")
-            work = _queued_work(provider=provider, model=model)
-            await session.work_queue.submit_work(work)
-            ok(f"Submitted work_id={work.work_id}")
-
-            step("3. Running streaming worker")
-            await run_streaming_worker(
-                work_queue=session.work_queue,
-                config=StreamingWorkerConfig(
-                    worker_id="metadata-demo-worker",
-                    max_messages=1,
-                ),
+            step("2. Running real provider work")
+            provider_run = await _run_successful_provider_work(
+                options=options,
+                session=session,
+            )
+            events = provider_run.events
+            work = provider_run.work
+            ok(
+                "Successful provider lifecycle: "
+                f"{provider_run.candidate.provider}/"
+                f"{provider_run.candidate.model} "
+                f"work_id={work.work_id}"
             )
 
-            step("4. Replaying emitted events")
-            events = await collect_streaming_log_events(
-                session.event_log, expected_min_events=6
-            )
-            ok(f"Collected {len(events)} streaming events")
-
-            step("5. Running artifact projection")
+            step("3. Running artifact projection")
             artifact_count = await run_artifact_projector(
                 connection=session.connection,
                 config=artifact_config,
                 max_messages=len(events),
             )
             ok(f"Artifact projector consumed {artifact_count} events")
+            response_artifact = _verify_response_artifact(
+                artifact_config=artifact_config,
+                work_id=work.work_id,
+            )
+            ok(
+                "Response artifact verified: "
+                f"artifact_id={response_artifact['artifact_id']} "
+                f"text_preview={response_artifact['text_preview']!r}"
+            )
 
-            step("6. Running metadata projection")
+            step("4. Running metadata projection")
             projected_count = await run_metadata_projector(
                 connection=session.connection,
                 config=metadata_config,
@@ -131,12 +157,16 @@ async def _run_demo(options: MetadataProjectionE2EOptions) -> None:
             )
             ok(f"Metadata projector consumed {projected_count} events")
 
-            step("7. Attaching finalized artifacts")
+            step("5. Attaching finalized artifacts")
             attached = attach_finalized_artifacts(metadata_config)
             ok(f"Attached {attached} artifacts")
 
-            step("8. Verifying replay and rebuild")
-            _verify_projection(metadata_config, expected_events=len(events))
+            step("6. Verifying metadata, replay, and rebuild")
+            _verify_projection(
+                metadata_config,
+                expected_events=len(events),
+                expected_work_id=work.work_id,
+            )
             await _verify_replay(
                 metadata_config=metadata_config,
                 connection=session.connection,
@@ -165,6 +195,14 @@ def _initialize_metadata(config: MetadataProjectionConfig) -> None:
 def _resolve_provider_model(
     options: MetadataProjectionE2EOptions,
 ) -> tuple[str, str]:
+    candidates = _provider_candidates(options)
+    candidate = candidates[0]
+    return candidate.provider, candidate.model
+
+
+def _provider_candidates(
+    options: MetadataProjectionE2EOptions,
+) -> list[ProviderCandidate]:
     registry = build_default_registry()
     try:
         available = [
@@ -177,17 +215,44 @@ def _resolve_provider_model(
                 "No providers available. Set provider API keys or install a "
                 "supported provider CLI."
             )
-        available_names = {status.provider for status in available}
-        provider = options.provider or available[0].provider
-        if provider not in available_names:
+        available_names = [status.provider for status in available]
+        if (
+            options.provider is not None
+            and options.provider not in available_names
+        ):
             raise RuntimeError(
-                f"Requested provider {provider!r} is not available. "
+                f"Requested provider {options.provider!r} is not available. "
                 f"Available providers: {sorted(available_names)}"
             )
-        model = options.model or _default_model(provider)
-        return provider, model
+        provider_names: list[str] = (
+            [options.provider]
+            if options.provider is not None
+            else available_names
+        )
+        candidates: list[ProviderCandidate] = []
+        for provider in provider_names:
+            candidate = _candidate_for_provider(provider, model=options.model)
+            if candidate is not None:
+                candidates.append(candidate)
+        if candidates:
+            return candidates
+        raise RuntimeError("No provider candidate could resolve a model")
     finally:
         registry.close()
+
+
+def _candidate_for_provider(
+    provider: str, *, model: str | None
+) -> ProviderCandidate | None:
+    if model is not None:
+        return ProviderCandidate(provider=provider, model=model)
+    try:
+        return ProviderCandidate(
+            provider=provider, model=_default_model(provider)
+        )
+    except Exception as exc:  # noqa: BLE001
+        warn(f"Skipping provider {provider}: could not resolve model: {exc}")
+        return None
 
 
 def _default_model(provider: str) -> str:
@@ -206,11 +271,16 @@ def _default_model(provider: str) -> str:
 def _queued_work(*, provider: str, model: str) -> QueuedWorkMessage:
     registry = build_default_registry()
     try:
-        request = registry.get(provider).build_request(
-            model=model,
-            messages=[Message(role="user", content=str(DemoPrompts.EXACT_OK))],
-            max_tokens=64,
-        )
+        orchestrator = registry.get(provider)
+        request_kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": [
+                Message(role="user", content=str(DemoPrompts.EXACT_OK))
+            ],
+        }
+        if orchestrator.mode is CallMode.api:
+            request_kwargs["max_tokens"] = 64
+        request = orchestrator.build_request(**request_kwargs)
     finally:
         registry.close()
     return QueuedWorkMessage(
@@ -222,8 +292,163 @@ def _queued_work(*, provider: str, model: str) -> QueuedWorkMessage:
     )
 
 
+async def _run_successful_provider_work(
+    *, options: MetadataProjectionE2EOptions, session: Any
+) -> SuccessfulProviderRun:
+    failures: list[str] = []
+    for idx, candidate in enumerate(_provider_candidates(options), start=1):
+        ok(
+            "Trying provider candidate "
+            f"{idx}: {candidate.provider}/{candidate.model}"
+        )
+        try:
+            work = _queued_work(
+                provider=candidate.provider, model=candidate.model
+            )
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"{candidate.provider}/{candidate.model}: {exc}")
+            warn(f"Skipping provider candidate before submit: {exc}")
+            continue
+        await session.work_queue.submit_work(work)
+        await run_streaming_worker(
+            work_queue=session.work_queue,
+            config=StreamingWorkerConfig(
+                worker_id=f"metadata-demo-worker-{idx}",
+                max_messages=1,
+            ),
+        )
+        events = await collect_streaming_log_events(
+            session.event_log,
+            expected_min_events=6,
+        )
+        _print_event_sequence(events)
+        try:
+            _verify_successful_lifecycle(events, work_id=work.work_id)
+            return SuccessfulProviderRun(
+                candidate=candidate,
+                work=work,
+                events=events,
+            )
+        except RuntimeError as exc:
+            failures.append(f"{candidate.provider}/{candidate.model}: {exc}")
+            warn(f"Provider candidate failed success checks: {exc}")
+            if options.provider is not None:
+                break
+    raise RuntimeError(
+        "No provider candidate produced a successful lifecycle. "
+        + "; ".join(failures)
+    )
+
+
+def _verify_successful_lifecycle(
+    events: list[EventEnvelope], *, work_id: str
+) -> None:
+    work_events = [event for event in events if event.work_id == work_id]
+    counts = Counter(str(event.event_type) for event in work_events)
+    expected = [
+        StreamingLogEventType.work_submitted,
+        StreamingLogEventType.attempt_started,
+        StreamingLogEventType.provider_request_prepared,
+        StreamingLogEventType.provider_response_received,
+        StreamingLogEventType.attempt_succeeded,
+        StreamingLogEventType.work_completed,
+    ]
+    missing = [
+        str(event_type)
+        for event_type in expected
+        if not counts[str(event_type)]
+    ]
+    if missing:
+        failure_details = _attempt_failure_details(work_events)
+        detail = (
+            f"; failure_details={failure_details}" if failure_details else ""
+        )
+        raise RuntimeError(
+            "missing successful lifecycle events: "
+            + ", ".join(missing)
+            + detail
+        )
+    if counts[str(StreamingLogEventType.attempt_failed)]:
+        raise RuntimeError("attempt_failed was emitted for the selected work")
+    completed = _single_event(
+        work_events, StreamingLogEventType.work_completed
+    )
+    status = getattr(completed.payload, "status", None)
+    if status != "succeeded":
+        raise RuntimeError(
+            f"work_completed status is {status!r}, expected 'succeeded'"
+        )
+    ok("Successful lifecycle events verified")
+
+
+def _attempt_failure_details(events: list[EventEnvelope]) -> list[str]:
+    details: list[str] = []
+    for event in events:
+        if event.event_type is not StreamingLogEventType.attempt_failed:
+            continue
+        error_type = getattr(event.payload, "error_type", "unknown")
+        message = getattr(event.payload, "message", "")
+        details.append(f"{error_type}: {message}")
+    return details
+
+
+def _single_event(
+    events: list[EventEnvelope], event_type: StreamingLogEventType
+) -> EventEnvelope:
+    matches = [event for event in events if event.event_type is event_type]
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"Expected exactly one {event_type}, found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _print_event_sequence(events: list[EventEnvelope]) -> None:
+    ok("Streaming event sequence:")
+    for event in events:
+        roles = [ref.role for ref in event.payload_refs]
+        print(
+            f"  {event.event_type} "
+            f"work_id={event.work_id or '-'} "
+            f"attempt_id={event.attempt_id or '-'} "
+            f"roles={roles or '-'}"
+        )
+
+
+def _verify_response_artifact(
+    *, artifact_config: ArtifactProjectionConfig, work_id: str
+) -> dict[str, str]:
+    store = ArtifactStore(config=artifact_config)
+    store.initialize()
+    references = [
+        reference
+        for reference in store.index.list_references()
+        if reference.source_ref.payload_role == "response_json"
+        and reference.event_context.work_id == work_id
+    ]
+    if len(references) != 1:
+        raise RuntimeError(
+            f"Expected one response_json artifact for {work_id}, "
+            f"found {len(references)}"
+        )
+    response = ArtifactReader(artifact_config).read_json(references[0])
+    if not isinstance(response, dict):
+        raise RuntimeError("Response artifact is not a JSON object")
+    response_payload = cast("dict[str, Any]", response)
+    text = response_payload.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("Response artifact has no non-empty text field")
+    return {
+        "artifact_id": references[0].artifact_id,
+        "text_preview": text[:120].replace("\n", " "),
+    }
+
+
 def _verify_projection(
-    config: MetadataProjectionConfig, *, expected_events: int
+    config: MetadataProjectionConfig,
+    *,
+    expected_events: int,
+    expected_work_id: str,
 ) -> None:
     store = MetadataStore(config=config)
     try:
@@ -238,12 +463,41 @@ def _verify_projection(
             f"Projected {summary.assertion_count} assertions, "
             f"expected at least {expected_events}"
         )
+    if not _metadata_has_successful_work(config, work_id=expected_work_id):
+        raise RuntimeError(
+            f"Metadata projection lacks successful work_completed for {expected_work_id}"
+        )
     ok(
         "Metadata verified: "
         f"entities={summary.entity_count} "
         f"assertions={summary.assertion_count} "
         f"errors={summary.error_count}"
     )
+
+
+def _metadata_has_successful_work(
+    config: MetadataProjectionConfig, *, work_id: str
+) -> bool:
+    from sqlalchemy import select
+
+    from dr_llm.metadata_projection.schema import metadata_assertions
+
+    store = MetadataStore(config=config)
+    try:
+        with store.runtime.connect() as conn:
+            row = conn.execute(
+                select(metadata_assertions.c.metadata_json).where(
+                    metadata_assertions.c.assertion_type == "work_completed",
+                    metadata_assertions.c.status == "succeeded",
+                    metadata_assertions.c.metadata_json["event"][
+                        "work_id"
+                    ].astext
+                    == work_id,
+                )
+            ).first()
+    finally:
+        store.close()
+    return row is not None
 
 
 async def _verify_replay(
