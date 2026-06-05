@@ -698,7 +698,9 @@ def destroy_project(name: str) -> None:
     raise ProjectError(result.message or "Project deletion failed.")
 
 
-def backup_project(name: str, output_dir: Path | None = None) -> Path:
+def backup_project(
+    name: str, output_dir: Path | None = None, *, portable: bool = False
+) -> Path:
     backup_dir = (output_dir or DEFAULT_BACKUP_DIR) / name
     backup_dir.mkdir(parents=True, exist_ok=True)
 
@@ -722,6 +724,7 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
                     db_user=ProjectInfo.db_user,
                     db_name=ProjectInfo.db_name,
                     output_stream=cast(IO[bytes], progress_stream),
+                    extra_args=_pg_dump_portable_args(portable),
                 )
                 progress_stream.finalize()
             except DockerContainerNotFoundError as exc:
@@ -758,6 +761,12 @@ def backup_project(name: str, output_dir: Path | None = None) -> Path:
     )
 
     return backup_file
+
+
+def _pg_dump_portable_args(portable: bool) -> tuple[str, ...]:
+    if not portable:
+        return ()
+    return ("--no-owner", "--no-privileges")
 
 
 def restore_project(name: str, backup_file: Path) -> None:

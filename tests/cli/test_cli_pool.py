@@ -19,6 +19,62 @@ from dr_llm.pool.admin.deletion import (
 runner = CliRunner()
 
 
+def test_pool_list_dsn_invokes_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    discovered: list[str] = []
+
+    def fake_discover_pools(dsn: str) -> list[str]:
+        discovered.append(dsn)
+        return ["alpha", "beta"]
+
+    monkeypatch.setattr(pool_cli, "discover_pools", fake_discover_pools)
+
+    result = runner.invoke(
+        app,
+        ["pool", "list-dsn", "--dsn", "postgresql://example/demo"],
+    )
+
+    assert result.exit_code == 0
+    assert discovered == ["postgresql://example/demo"]
+    assert json.loads(result.stdout) == {"pools": ["alpha", "beta"]}
+
+
+def test_pool_inspect_dsn_invokes_inspection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inspected: list[tuple[str, str]] = []
+
+    class FakeInspection:
+        def model_dump(self, **kwargs: object) -> dict[str, object]:
+            _ = kwargs
+            return {"name": "alpha", "progress": {"total": 2}}
+
+    def fake_inspect_pool_dsn(*, dsn: str, pool_name: str) -> FakeInspection:
+        inspected.append((dsn, pool_name))
+        return FakeInspection()
+
+    monkeypatch.setattr(pool_cli, "inspect_pool_dsn", fake_inspect_pool_dsn)
+
+    result = runner.invoke(
+        app,
+        [
+            "pool",
+            "inspect-dsn",
+            "alpha",
+            "--dsn",
+            "postgresql://example/demo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert inspected == [("postgresql://example/demo", "alpha")]
+    assert json.loads(result.stdout) == {
+        "name": "alpha",
+        "progress": {"total": 2},
+    }
+
+
 def test_pool_destroy_invokes_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

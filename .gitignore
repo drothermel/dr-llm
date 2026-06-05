@@ -200,6 +200,7 @@ cython_debug/
 # dr-llm runtime artifacts
 .dr_llm/
 .llm_pool/
+.worktrees/
 
 # PyPI configuration file
 .pypirc

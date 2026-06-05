@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from typing import Any
 
@@ -11,9 +12,26 @@ import dr_llm.demo.cli_calls as demo_cli_calls
 import dr_llm.demo.counts as demo_counts
 import dr_llm.demo.projects as demo_projects
 import dr_llm.demo.requirements as demo_requirements
+import dr_llm.demo.streaming_log as demo_streaming_log
+from dr_llm.llm import ProviderAvailabilityStatus, ProviderName
 from dr_llm.pool import LlmPoolBackendState
 from dr_llm.project import CreateProjectRequest, ProjectInfo
 from dr_llm.project.errors import DockerUnavailableError
+from dr_llm.streaming_log import (
+    AttemptFailedPayload,
+    AttemptStartedPayload,
+    AttemptSucceededPayload,
+    EventEnvelope,
+    ProducerInfo,
+    ProducerLifecyclePayload,
+    ProviderRequestPreparedPayload,
+    ProviderResponseReceivedPayload,
+    StreamingLogStatus,
+    WorkCompletedPayload,
+    WorkSubmittedPayload,
+)
+from dr_llm.streaming_log.events import StreamingLogEventType
+from dr_llm.streaming_log.payloads import PayloadRef, prepare_json_payload
 from dr_llm.workers import WorkerSnapshot, WorkerStatCounts
 
 
@@ -221,6 +239,634 @@ def test_prepare_demo_dsn_uses_existing_dsn(
     assert lease == demo_projects.DemoDsnLease(
         dsn="postgresql://localhost/demo"
     )
+
+
+def test_demo_streaming_log_config_uses_isolated_subjects() -> None:
+    config = demo_streaming_log.demo_streaming_log_config(
+        nats_url="nats://localhost:4222",
+        suffix="abc123",
+    )
+
+    assert config.events_stream == "DRLLM_DEMO_EVENTS_ABC123"
+    assert config.work_stream == "DRLLM_DEMO_WORK_ABC123"
+    assert config.payload_bucket == "DRLLM_DEMO_PAYLOADS_ABC123"
+    assert config.events_subject == "drllm.demo.abc123.events.>"
+    assert config.work_subject == "drllm.demo.abc123.work.>"
+    assert config.llm_work_subject == "drllm.demo.abc123.work.llm"
+
+
+def test_prepare_demo_nats_uses_existing_url_without_docker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_docker_check(
+        *, reason: str, recovery_hint: str | None = None
+    ) -> None:
+        _ = (reason, recovery_hint)
+        raise AssertionError("Docker should not be checked")
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "ensure_docker_available",
+        fail_docker_check,
+    )
+
+    lease = demo_streaming_log.prepare_demo_nats(
+        nats_url="nats://localhost:4222"
+    )
+
+    assert lease == demo_streaming_log.DemoNatsLease(
+        nats_url="nats://localhost:4222"
+    )
+
+
+def test_prepare_demo_nats_starts_disposable_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "ensure_docker_available",
+        lambda *, reason, recovery_hint=None: None,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "uuid4",
+        lambda: type("Uuid", (), {"hex": "abcdef123456"})(),
+    )
+
+    def fake_call_docker(
+        *args: str,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = (check, env)
+        calls.append(args)
+        if args[0] == "port":
+            return subprocess.CompletedProcess(
+                ["docker", *args],
+                0,
+                stdout="127.0.0.1:45555\n",
+            )
+        return subprocess.CompletedProcess(["docker", *args], 0, stdout="")
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "call_docker",
+        fake_call_docker,
+    )
+
+    lease = demo_streaming_log.prepare_demo_nats(nats_url=None)
+
+    assert lease.nats_url == "nats://127.0.0.1:45555"
+    assert lease.container_name == "dr_llm_demo_nats_abcdef12"
+    assert lease.should_destroy_container
+    assert calls[0][:5] == (
+        "run",
+        "-d",
+        "--name",
+        "dr_llm_demo_nats_abcdef12",
+        "-p",
+    )
+    assert calls[1] == ("port", "dr_llm_demo_nats_abcdef12", "4222/tcp")
+
+
+def test_streaming_log_demo_runtime_uses_existing_nats_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    wait_calls: list[str] = []
+    bootstrap_calls: list[str] = []
+    connect_calls: list[str] = []
+    close_calls: list[str] = []
+    cleanup_leases: list[demo_streaming_log.DemoNatsLease] = []
+
+    async def fake_wait_for_nats(nats_url: str) -> None:
+        wait_calls.append(nats_url)
+
+    async def fake_bootstrap(config) -> StreamingLogStatus:
+        bootstrap_calls.append(config.nats_url)
+        return StreamingLogStatus(
+            nats_url=config.nats_url,
+            events_stream=config.events_stream,
+            work_stream=config.work_stream,
+            payload_bucket=config.payload_bucket,
+            events_subjects=[config.events_subject],
+            work_subjects=[config.work_subject],
+            payload_objects=0,
+        )
+
+    async def fake_connect(connection) -> None:
+        connect_calls.append(connection.config.nats_url)
+
+    async def fake_close(connection) -> None:
+        close_calls.append(connection.config.nats_url)
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "wait_for_nats",
+        fake_wait_for_nats,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "bootstrap_streaming_log",
+        fake_bootstrap,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log.StreamingLogConnection,
+        "connect",
+        fake_connect,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log.StreamingLogConnection,
+        "close",
+        fake_close,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "cleanup_demo_nats",
+        cleanup_leases.append,
+    )
+
+    async def run_runtime() -> demo_streaming_log.StreamingLogDemoSession:
+        async with demo_streaming_log.open_streaming_log_demo_runtime(
+            demo_streaming_log.StreamingLogDemoRuntimeOptions(
+                nats=demo_streaming_log.DemoNatsOptions(
+                    nats_url="nats://localhost:4222"
+                ),
+                suffix="abc123",
+            )
+        ) as session:
+            assert session.runtime.config.events_stream == (
+                "DRLLM_DEMO_EVENTS_ABC123"
+            )
+            assert session.runtime.status.events_subjects == [
+                "drllm.demo.abc123.events.>"
+            ]
+            assert session.event_log.config is session.runtime.config
+            assert session.work_queue.config is session.runtime.config
+            return session
+
+    session = asyncio.run(run_runtime())
+
+    assert wait_calls == ["nats://localhost:4222"]
+    assert bootstrap_calls == ["nats://localhost:4222"]
+    assert connect_calls == ["nats://localhost:4222"]
+    assert close_calls == ["nats://localhost:4222"]
+    assert cleanup_leases == [
+        demo_streaming_log.DemoNatsLease(nats_url="nats://localhost:4222")
+    ]
+    assert session.runtime.cleanup_command is None
+
+
+def test_streaming_log_demo_runtime_cleans_up_after_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lease = demo_streaming_log.DemoNatsLease(
+        nats_url="nats://127.0.0.1:45555",
+        container_name="demo_nats",
+        should_destroy_container=True,
+    )
+    cleanup_leases: list[demo_streaming_log.DemoNatsLease] = []
+    close_calls: list[str] = []
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "prepare_demo_nats",
+        lambda *, nats_url, keep_nats, container_prefix: lease,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "wait_for_nats",
+        lambda nats_url: _async_noop(nats_url),
+    )
+
+    async def fake_bootstrap(config) -> StreamingLogStatus:
+        return StreamingLogStatus(
+            nats_url=config.nats_url,
+            events_stream=config.events_stream,
+            work_stream=config.work_stream,
+            payload_bucket=config.payload_bucket,
+            events_subjects=[config.events_subject],
+            work_subjects=[config.work_subject],
+            payload_objects=0,
+        )
+
+    async def fake_connect(connection) -> None:
+        _ = connection
+
+    async def fake_close(connection) -> None:
+        close_calls.append(connection.config.nats_url)
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "bootstrap_streaming_log",
+        fake_bootstrap,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log.StreamingLogConnection,
+        "connect",
+        fake_connect,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log.StreamingLogConnection,
+        "close",
+        fake_close,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "cleanup_demo_nats",
+        cleanup_leases.append,
+    )
+
+    async def fail_inside_runtime() -> None:
+        async with demo_streaming_log.open_streaming_log_demo_runtime():
+            raise ValueError("boom")
+
+    with pytest.raises(ValueError, match="boom"):
+        asyncio.run(fail_inside_runtime())
+
+    assert close_calls == ["nats://127.0.0.1:45555"]
+    assert cleanup_leases == [lease]
+
+
+def test_streaming_log_demo_runtime_exposes_kept_container_cleanup_command() -> (
+    None
+):
+    lease = demo_streaming_log.DemoNatsLease(
+        nats_url="nats://127.0.0.1:45555",
+        container_name="demo_nats",
+        should_destroy_container=False,
+    )
+    config = demo_streaming_log.demo_streaming_log_config(
+        nats_url=lease.nats_url,
+        suffix="abc123",
+    )
+    runtime = demo_streaming_log.StreamingLogDemoRuntime(
+        lease=lease,
+        config=config,
+        status=StreamingLogStatus(
+            nats_url=config.nats_url,
+            events_stream=config.events_stream,
+            work_stream=config.work_stream,
+            payload_bucket=config.payload_bucket,
+            events_subjects=[config.events_subject],
+            work_subjects=[config.work_subject],
+            payload_objects=0,
+        ),
+    )
+
+    assert runtime.cleanup_command == "docker rm -f demo_nats"
+
+
+async def _async_noop(*args: object) -> None:
+    _ = args
+
+
+class _FakePayloadStore:
+    def __init__(self, payloads: dict[str, bytes]) -> None:
+        self.payloads = payloads
+
+    async def read_payload_ref(self, payload_ref: PayloadRef) -> bytes:
+        return self.payloads[payload_ref.object_key]
+
+
+def _successful_demo_events(
+    *,
+    include_producer: bool = False,
+    response_ref: PayloadRef | None = None,
+) -> list[EventEnvelope]:
+    events = [
+        _demo_event(
+            StreamingLogEventType.work_submitted,
+            WorkSubmittedPayload(work_id="work-1", max_retries=0),
+        ),
+        _demo_event(
+            StreamingLogEventType.attempt_started,
+            AttemptStartedPayload(worker_id="worker-1", attempt=1),
+        ),
+        _demo_event(
+            StreamingLogEventType.provider_request_prepared,
+            ProviderRequestPreparedPayload(
+                provider="openai", model="gpt-test", mode="api"
+            ),
+        ),
+        _demo_event(
+            StreamingLogEventType.provider_response_received,
+            ProviderResponseReceivedPayload(
+                provider="openai", model="gpt-test", mode="api"
+            ),
+            payload_refs=[response_ref] if response_ref is not None else [],
+        ),
+        _demo_event(
+            StreamingLogEventType.attempt_succeeded,
+            AttemptSucceededPayload(attempt=1),
+        ),
+        _demo_event(
+            StreamingLogEventType.work_completed,
+            WorkCompletedPayload(status="succeeded", attempt=1),
+        ),
+    ]
+    if not include_producer:
+        return events
+    return [
+        _producer_demo_event(StreamingLogEventType.producer_started),
+        *events,
+        _producer_demo_event(StreamingLogEventType.producer_stopped),
+    ]
+
+
+def _failed_demo_events() -> list[EventEnvelope]:
+    return [
+        _demo_event(
+            StreamingLogEventType.work_submitted,
+            WorkSubmittedPayload(work_id="work-1", max_retries=0),
+        ),
+        _demo_event(
+            StreamingLogEventType.attempt_started,
+            AttemptStartedPayload(worker_id="worker-1", attempt=1),
+        ),
+        _demo_event(
+            StreamingLogEventType.provider_request_prepared,
+            ProviderRequestPreparedPayload(
+                provider="anthropic", model="claude-test", mode="api"
+            ),
+        ),
+        _demo_event(
+            StreamingLogEventType.attempt_failed,
+            AttemptFailedPayload(
+                error_type="BillingError",
+                message="billing disabled",
+                attempt=1,
+            ),
+        ),
+        _demo_event(
+            StreamingLogEventType.work_completed,
+            WorkCompletedPayload(
+                status="failed",
+                attempt=1,
+                error_type="BillingError",
+                message="billing disabled",
+            ),
+        ),
+    ]
+
+
+def _demo_event(
+    event_type: StreamingLogEventType,
+    payload: Any,
+    *,
+    payload_refs: list[PayloadRef] | None = None,
+) -> EventEnvelope:
+    return EventEnvelope(
+        event_type=event_type,
+        producer=ProducerInfo(name="test"),
+        idempotency_key=f"{event_type}-idem",
+        payload=payload,
+        work_id="work-1",
+        attempt_id="attempt-1",
+        payload_refs=payload_refs or [],
+    )
+
+
+def _producer_demo_event(event_type: StreamingLogEventType) -> EventEnvelope:
+    return EventEnvelope(
+        event_type=event_type,
+        producer=ProducerInfo(name="test"),
+        idempotency_key=f"{event_type}-idem",
+        payload=ProducerLifecyclePayload(worker_id="worker-1"),
+    )
+
+
+def test_summarize_events_counts_event_types() -> None:
+    events = [
+        EventEnvelope(
+            event_type=StreamingLogEventType.work_submitted,
+            producer=ProducerInfo(name="test"),
+            idempotency_key="one",
+            payload=WorkSubmittedPayload(work_id="work-1", max_retries=0),
+        ),
+        EventEnvelope(
+            event_type=StreamingLogEventType.work_submitted,
+            producer=ProducerInfo(name="test"),
+            idempotency_key="two",
+            payload=WorkSubmittedPayload(work_id="work-2", max_retries=0),
+        ),
+        EventEnvelope(
+            event_type=StreamingLogEventType.work_completed,
+            producer=ProducerInfo(name="test"),
+            idempotency_key="three",
+            payload=WorkCompletedPayload(status="succeeded", attempt=1),
+        ),
+    ]
+
+    counts = demo_streaming_log.summarize_events(events)
+
+    assert counts["work_submitted"] == 2
+    assert counts["work_completed"] == 1
+
+
+def test_available_demo_providers_warns_for_unavailable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    available = demo_streaming_log.available_demo_providers_or_raise(
+        [
+            ProviderAvailabilityStatus(provider="openai", available=True),
+            ProviderAvailabilityStatus(
+                provider="anthropic",
+                available=False,
+                missing_env_vars=("ANTHROPIC_API_KEY",),
+                missing_executables=("claude",),
+            ),
+        ]
+    )
+
+    assert [status.provider for status in available] == ["openai"]
+    output = capsys.readouterr().out
+    assert "anthropic" in output
+    assert "ANTHROPIC_API_KEY not set" in output
+    assert "'claude' CLI not found" in output
+
+
+def test_demo_provider_names_prefers_demo_order() -> None:
+    statuses = [
+        ProviderAvailabilityStatus(provider="openrouter", available=True),
+        ProviderAvailabilityStatus(provider="openai", available=True),
+        ProviderAvailabilityStatus(provider="custom", available=True),
+    ]
+
+    names = demo_streaming_log.demo_provider_names(
+        statuses,
+        requested_provider=None,
+    )
+
+    assert names == ["openai", "openrouter", "custom"]
+
+
+def test_demo_provider_names_rejects_unavailable_requested_provider() -> None:
+    statuses = [ProviderAvailabilityStatus(provider="openai", available=True)]
+
+    with pytest.raises(RuntimeError, match="Requested provider 'anthropic'"):
+        demo_streaming_log.demo_provider_names(
+            statuses,
+            requested_provider=ProviderName.ANTHROPIC,
+        )
+
+
+def test_resolve_demo_model_uses_default_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sync_calls: list[str] = []
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "sync_models_json",
+        lambda provider: sync_calls.append(str(provider)),
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "list_models_json",
+        lambda provider: [
+            {"model": "gpt-other"},
+            {"model": "gpt-4o-mini"},
+        ],
+    )
+
+    model = demo_streaming_log.resolve_demo_model("openai")
+
+    assert model == "gpt-4o-mini"
+    assert sync_calls == ["openai"]
+
+
+def test_resolve_demo_model_falls_back_to_first_listed_model(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(demo_streaming_log, "sync_models_json", lambda _: None)
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "list_models_json",
+        lambda provider: [{"model": "gpt-fallback"}],
+    )
+
+    model = demo_streaming_log.resolve_demo_model("openai")
+
+    assert model == "gpt-fallback"
+    assert "default model 'gpt-4o-mini' not found" in capsys.readouterr().out
+
+
+def test_verify_successful_work_lifecycle_accepts_successful_work() -> None:
+    demo_streaming_log.verify_successful_work_lifecycle(
+        _successful_demo_events(), work_id="work-1"
+    )
+
+
+def test_verify_successful_work_lifecycle_can_require_producer_events() -> (
+    None
+):
+    demo_streaming_log.verify_successful_work_lifecycle(
+        _successful_demo_events(include_producer=True),
+        work_id="work-1",
+        require_producer_lifecycle=True,
+    )
+
+
+def test_verify_successful_work_lifecycle_rejects_missing_producer_events() -> (
+    None
+):
+    with pytest.raises(RuntimeError, match="producer_started"):
+        demo_streaming_log.verify_successful_work_lifecycle(
+            _successful_demo_events(),
+            work_id="work-1",
+            require_producer_lifecycle=True,
+        )
+
+
+def test_verify_successful_work_lifecycle_rejects_clean_failure() -> None:
+    with pytest.raises(
+        demo_streaming_log.DemoProviderWorkFailedError,
+        match="BillingError",
+    ):
+        demo_streaming_log.verify_successful_work_lifecycle(
+            _failed_demo_events(), work_id="work-1"
+        )
+
+
+def test_verify_successful_work_lifecycle_rejects_failed_completion() -> None:
+    events = _successful_demo_events()
+    events[-1] = _demo_event(
+        StreamingLogEventType.work_completed,
+        WorkCompletedPayload(status="failed", attempt=1),
+    )
+
+    with pytest.raises(
+        demo_streaming_log.DemoProviderWorkFailedError,
+        match="work_completed status is 'failed'",
+    ):
+        demo_streaming_log.verify_successful_work_lifecycle(
+            events, work_id="work-1"
+        )
+
+
+def test_verify_response_payload_requires_non_empty_text() -> None:
+    payload = prepare_json_payload("response_json", {"text": "OK."})
+    events = _successful_demo_events(response_ref=payload.ref())
+
+    response = asyncio.run(
+        demo_streaming_log.verify_response_payload(
+            _FakePayloadStore({payload.object_key: payload.data}),
+            events,
+            work_id="work-1",
+        )
+    )
+
+    assert response == demo_streaming_log.DemoResponsePayloadVerification(
+        text_preview="OK."
+    )
+
+
+def test_verify_response_payload_rejects_empty_text() -> None:
+    payload = prepare_json_payload("response_json", {"text": ""})
+    events = _successful_demo_events(response_ref=payload.ref())
+
+    with pytest.raises(RuntimeError, match="non-empty text"):
+        asyncio.run(
+            demo_streaming_log.verify_response_payload(
+                _FakePayloadStore({payload.object_key: payload.data}),
+                events,
+                work_id="work-1",
+            )
+        )
+
+
+def test_verify_payload_refs_detects_hash_mismatch() -> None:
+    class FakeClient:
+        async def read_payload_ref(self, payload_ref: PayloadRef) -> bytes:
+            _ = payload_ref
+            return b"wrong"
+
+    event = EventEnvelope(
+        event_type=StreamingLogEventType.work_submitted,
+        producer=ProducerInfo(name="test"),
+        idempotency_key="one",
+        payload=WorkSubmittedPayload(work_id="work-1", max_retries=0),
+        payload_refs=[
+            PayloadRef(
+                role="request_json",
+                object_key="sha256/00/test",
+                sha256="0" * 64,
+                size_bytes=5,
+                content_type="application/json",
+                encoding="utf-8",
+            )
+        ],
+    )
+
+    import asyncio
+
+    with pytest.raises(RuntimeError, match="Payload hash mismatch"):
+        asyncio.run(
+            demo_streaming_log.verify_payload_refs(FakeClient(), [event])
+        )
 
 
 def test_prepare_demo_dsn_creates_disposable_project(

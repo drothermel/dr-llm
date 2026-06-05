@@ -9,10 +9,12 @@ from dr_llm.project.models import (
     ProjectDeletionResult,
     ProjectDeletionStatus,
     ProjectDeletionViolation,
+    ProjectPostgresSyncResult,
     ProjectPoolInspection,
     ProjectPoolInspectionReason,
     ProjectPoolInspectionStatus,
     ProjectInspectionSummary,
+    ProjectSyncValidation,
 )
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import (
@@ -30,6 +32,10 @@ from dr_llm.project.project_service import (
     start_project,
     stop_project,
 )
+from dr_llm.project.postgres_sync import (
+    sync_project_to_postgres,
+    validate_project_database_copy,
+)
 
 __all__ = [
     "CreateProjectRequest",
@@ -42,11 +48,13 @@ __all__ = [
     "ProjectDeletionResult",
     "ProjectDeletionStatus",
     "ProjectDeletionViolation",
+    "ProjectPostgresSyncResult",
     "ProjectPoolInspection",
     "ProjectPoolInspectionReason",
     "ProjectPoolInspectionStatus",
     "ProjectInfo",
     "ProjectInspectionSummary",
+    "ProjectSyncValidation",
     "assess_project_creation",
     "assess_project_deletion",
     "backup_project",
@@ -60,4 +68,6 @@ __all__ = [
     "restore_project",
     "start_project",
     "stop_project",
+    "sync_project_to_postgres",
+    "validate_project_database_copy",
 ]
