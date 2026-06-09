@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,7 +18,7 @@ from dr_llm.backends.pool import PoolBackend
 from dr_llm.llm import CallMode, LlmResponse, ProviderName, TokenUsage
 from dr_llm.pool.backend import LlmPoolBackendState
 from dr_llm.pool.pool_sample import PoolSample
-from dr_llm.sampling.acquisition import AcquireResult
+from dr_llm.sampling.acquisition import AcquireQuery, AcquireResult
 from dr_llm.workers.models import WorkerSnapshot, WorkerStatCounts
 from tests.backends._helpers import make_backend_request
 
@@ -86,9 +88,47 @@ def test_pool_backend_complete_generates_on_cache_miss() -> None:
 
     direct.complete.assert_called_once()
     store.insert_sample.assert_called_once()
+    inserted_sample = store.insert_sample.call_args.args[0]
+    assert "source" not in inserted_sample.response
+    assert "sample_id" not in inserted_sample.response
+    assert "request_fingerprint" not in inserted_sample.response
     assert response.text == "fresh"
     assert response.source == "generated"
     assert response.sample_id is not None
+
+
+def test_pool_backend_acquire_generator_uses_direct_backend() -> None:
+    backend, _, service, direct = _pool_backend()
+    direct.complete.return_value = llm_response_to_backend_response(
+        _llm_response("generated-via-direct"),
+        source="direct",
+        fingerprint="fp",
+    )
+    captured: list[PoolSample] = []
+
+    def invoke_generator(
+        query: AcquireQuery,
+        *,
+        consumer_id: str,
+        generator_fn: Callable[[dict[str, Any], int], list[PoolSample]],
+    ) -> AcquireResult:
+        samples = generator_fn(query.key_values, query.n)
+        captured.extend(samples)
+        return AcquireResult(samples=samples)
+
+    service.acquire_or_generate.side_effect = invoke_generator
+
+    result = backend.acquire(make_backend_request(), "s1", n=1)
+
+    direct.complete.assert_called_once()
+    assert result.generated == 1
+    assert result.responses[0].text == "generated-via-direct"
+    assert captured
+    stored_response = captured[0].response
+    assert stored_response is not None
+    assert "source" not in stored_response
+    assert "sample_id" not in stored_response
+    assert "request_fingerprint" not in stored_response
 
 
 def test_pool_backend_acquire_delegates_to_service() -> None:

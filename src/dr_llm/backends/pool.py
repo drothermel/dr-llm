@@ -102,14 +102,10 @@ class PoolBackend:
             )
 
         generated = self._direct.complete(request)
-        sample = PoolSample(
-            key_values={BACKENDS_KEY_COLUMN: fingerprint},
-            request=backend_request_payload(request),
-            response=generated.model_dump(
-                mode="json",
-                exclude={"source", "sample_id", "request_fingerprint"},
-            ),
-            finish_reason=generated.finish_reason,
+        sample = self._backend_response_to_pool_sample(
+            generated,
+            request,
+            {BACKENDS_KEY_COLUMN: fingerprint},
         )
         self._store.insert_sample(sample)
         return generated.model_copy(
@@ -319,23 +315,36 @@ class PoolBackend:
             return None
         return min(samples, key=lambda sample: sample.sample_idx or 0)
 
+    def _backend_response_to_pool_sample(
+        self,
+        response: BackendResponse,
+        request: BackendRequest,
+        key_values: dict[str, Any],
+    ) -> PoolSample:
+        return PoolSample(
+            key_values=key_values,
+            request=backend_request_payload(request),
+            response=response.model_dump(
+                mode="json",
+                exclude={"source", "sample_id", "request_fingerprint"},
+            ),
+            finish_reason=response.finish_reason,
+        )
+
     def _generate_completed_samples(
         self,
         request: BackendRequest,
         key_values: dict[str, Any],
         count: int,
     ) -> list[PoolSample]:
-        orchestrator = self._registry.get(request.provider)
-        llm_request = request.to_llm_request()
         samples: list[PoolSample] = []
         for _ in range(count):
-            llm_response = orchestrator.generate(llm_request)
+            response = self._direct.complete(request)
             samples.append(
-                PoolSample(
-                    key_values=key_values,
-                    request=backend_request_payload(request),
-                    response=llm_response.model_dump(mode="json"),
-                    finish_reason=llm_response.finish_reason,
+                self._backend_response_to_pool_sample(
+                    response,
+                    request,
+                    key_values,
                 )
             )
         return samples
