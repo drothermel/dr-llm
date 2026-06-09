@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -8,6 +9,7 @@ import pytest
 
 from dr_llm.backends.converters import llm_response_to_backend_response
 from dr_llm.backends.errors import (
+    BackendAcquireTimeoutError,
     BackendDrainTimeoutError,
     BackendGenerationError,
     BackendUnsupportedFeatureError,
@@ -34,10 +36,23 @@ def _llm_response(text: str = "ok") -> LlmResponse:
     )
 
 
+def _complete_sample(text: str = "ok") -> PoolSample:
+    return PoolSample(
+        key_values={"request_fingerprint": "fp"},
+        request={
+            "backend_request": make_backend_request().model_dump(mode="json"),
+        },
+        response=_llm_response(text).model_dump(mode="json"),
+        finish_reason="stop",
+        sample_idx=0,
+    )
+
+
 def _pool_backend() -> tuple[PoolBackend, MagicMock, MagicMock, MagicMock]:
     store = MagicMock()
     store.bulk_load.return_value = []
     store.insert_sample.return_value = True
+    store.complete_count.return_value = 0
     service = MagicMock()
     sampling = MagicMock()
     runtime = MagicMock()
@@ -98,7 +113,8 @@ def test_pool_backend_complete_generates_on_cache_miss() -> None:
 
 
 def test_pool_backend_acquire_generator_uses_direct_backend() -> None:
-    backend, _, service, direct = _pool_backend()
+    backend, store, service, direct = _pool_backend()
+    store.complete_count.side_effect = [0, 1]
     direct.complete.return_value = llm_response_to_backend_response(
         _llm_response("generated-via-direct"),
         source="direct",
@@ -160,6 +176,90 @@ def test_pool_backend_acquire_maps_pool_topup_error() -> None:
         backend.acquire(make_backend_request(), "s1", n=1)
 
     assert isinstance(exc_info.value.__cause__, PoolTopupError)
+
+
+def test_pool_backend_acquire_raises_timeout_during_generation() -> None:
+    backend, store, service, direct = _pool_backend()
+    backend._config = PoolBackendConfig(
+        pool_name="test_pool",
+        acquire_timeout_seconds=0.05,
+    )
+
+    def slow_complete(_request: object) -> object:
+        time.sleep(0.2)
+        return llm_response_to_backend_response(
+            _llm_response("slow"),
+            source="direct",
+            fingerprint="fp",
+        )
+
+    direct.complete.side_effect = slow_complete
+
+    def invoke_generator(
+        query: AcquireQuery,
+        *,
+        consumer_id: str,
+        generator_fn: Callable[[dict[str, Any], int], list[PoolSample]],
+    ) -> AcquireResult:
+        return AcquireResult(samples=generator_fn(query.key_values, query.n))
+
+    service.acquire_or_generate.side_effect = invoke_generator
+    store.complete_count.side_effect = [0, 0]
+
+    with pytest.raises(BackendAcquireTimeoutError):
+        backend.acquire(make_backend_request(), "s1", n=1)
+
+
+def test_pool_backend_acquire_hybrid_cache_and_generated_accounting() -> None:
+    backend, store, service, direct = _pool_backend()
+    cached_samples = [_complete_sample(f"cache-{index}") for index in range(2)]
+    direct.complete.return_value = llm_response_to_backend_response(
+        _llm_response("fresh"),
+        source="direct",
+        fingerprint="fp",
+    )
+    iteration = 0
+
+    def side_effect(
+        query: AcquireQuery,
+        *,
+        consumer_id: str,
+        generator_fn: Callable[[dict[str, Any], int], list[PoolSample]],
+    ) -> AcquireResult:
+        nonlocal iteration
+        iteration += 1
+        if iteration == 1:
+            return AcquireResult(samples=cached_samples)
+        samples = generator_fn(query.key_values, query.n)
+        return AcquireResult(samples=samples)
+
+    service.acquire_or_generate.side_effect = side_effect
+    store.complete_count.side_effect = [10, 10, 10, 11]
+
+    result = backend.acquire(make_backend_request(), "s1", n=3)
+
+    assert result.claimed_from_cache == 2
+    assert result.generated == 1
+    assert [response.source for response in result.responses] == [
+        "pool_cache",
+        "pool_cache",
+        "generated",
+    ]
+
+
+def test_pool_backend_acquire_accounting_when_insert_under_delivers() -> None:
+    backend, store, service, _ = _pool_backend()
+    samples = [_complete_sample(f"sample-{index}") for index in range(3)]
+    service.acquire_or_generate.return_value = AcquireResult(samples=samples)
+    store.complete_count.side_effect = [5, 7]
+
+    result = backend.acquire(make_backend_request(), "s1", n=3)
+
+    assert result.claimed_from_cache == 1
+    assert result.generated == 2
+    assert result.responses[0].source == "pool_cache"
+    assert result.responses[1].source == "generated"
+    assert result.responses[2].source == "generated"
 
 
 def test_pool_backend_acquire_rejects_unsupported_extensions() -> None:

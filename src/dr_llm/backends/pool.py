@@ -145,20 +145,19 @@ class PoolBackend:
                 )
 
             remaining = n - len(responses)
-            generated_before = generated
+            key_filter = PoolKeyFilter.eq(**{BACKENDS_KEY_COLUMN: fingerprint})
+            pre_complete = self._store.complete_count(key_filter=key_filter)
 
             def generator_fn(
                 cell_key_values: dict[str, Any],
                 deficit: int,
             ) -> list[PoolSample]:
-                nonlocal generated
-                created = self._generate_completed_samples(
+                return self._generate_completed_samples(
                     request,
                     cell_key_values,
                     deficit,
+                    deadline=deadline,
                 )
-                generated += len(created)
-                return created
 
             query = AcquireQuery(
                 run_id=session_id,
@@ -173,12 +172,16 @@ class PoolBackend:
                     generator_fn=generator_fn,
                 )
             except PoolTopupError as exc:
+                if isinstance(exc.__cause__, BackendAcquireTimeoutError):
+                    raise exc.__cause__ from exc
                 raise BackendGenerationError(
                     f"failed to generate samples for session {session_id!r}"
                 ) from exc
-            newly_generated = generated - generated_before
-            cache_count = result.claimed - newly_generated
+            post_complete = self._store.complete_count(key_filter=key_filter)
+            inserted_this_round = post_complete - pre_complete
+            cache_count = result.claimed - inserted_this_round
             claimed_from_cache += cache_count
+            generated += inserted_this_round
 
             for idx, sample in enumerate(result.samples):
                 source = "pool_cache" if idx < cache_count else "generated"
@@ -336,10 +339,22 @@ class PoolBackend:
         request: BackendRequest,
         key_values: dict[str, Any],
         count: int,
+        *,
+        deadline: float,
     ) -> list[PoolSample]:
         samples: list[PoolSample] = []
         for _ in range(count):
+            if time.monotonic() >= deadline:
+                raise BackendAcquireTimeoutError(
+                    f"acquire generation timed out after producing "
+                    f"{len(samples)} of {count} samples"
+                )
             response = self._direct.complete(request)
+            if time.monotonic() >= deadline:
+                raise BackendAcquireTimeoutError(
+                    f"acquire generation timed out after producing "
+                    f"{len(samples)} of {count} samples"
+                )
             samples.append(
                 self._backend_response_to_pool_sample(
                     response,
