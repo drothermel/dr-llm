@@ -5,8 +5,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from dr_llm.backends.converters import llm_response_to_backend_response
-from dr_llm.backends.errors import BackendUnsupportedFeatureError
-from dr_llm.backends.errors import BackendDrainTimeoutError
+from dr_llm.backends.errors import (
+    BackendDrainTimeoutError,
+    BackendGenerationError,
+    BackendUnsupportedFeatureError,
+)
+from dr_llm.sampling.errors import PoolTopupError
 from dr_llm.backends.models import PoolBackendConfig
 from dr_llm.backends.pool import PoolBackend
 from dr_llm.llm import CallMode, LlmResponse, ProviderName, TokenUsage
@@ -106,6 +110,18 @@ def test_pool_backend_acquire_delegates_to_service() -> None:
     service.acquire_or_generate.assert_called_once()
 
 
+def test_pool_backend_acquire_maps_pool_topup_error() -> None:
+    backend, _, service, _ = _pool_backend()
+    service.acquire_or_generate.side_effect = PoolTopupError("top-up failed")
+
+    with pytest.raises(
+        BackendGenerationError, match="failed to generate samples"
+    ) as exc_info:
+        backend.acquire(make_backend_request(), "s1", n=1)
+
+    assert isinstance(exc_info.value.__cause__, PoolTopupError)
+
+
 def test_pool_backend_acquire_rejects_unsupported_extensions() -> None:
     backend, _, _, _ = _pool_backend()
     with pytest.raises(BackendUnsupportedFeatureError):
@@ -121,7 +137,7 @@ def test_pool_backend_acquire_rejects_unsupported_extensions() -> None:
 @patch("dr_llm.backends.pool.SamplingStore")
 @patch("dr_llm.backends.pool.DbRuntime")
 def test_pool_backend_init_sets_up_consumer(
-    mock_runtime: MagicMock,
+    _mock_runtime: MagicMock,
     mock_sampling_store: MagicMock,
     mock_pool_store: MagicMock,
     _mock_load_schema: MagicMock,

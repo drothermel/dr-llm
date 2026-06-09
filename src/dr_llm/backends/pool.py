@@ -17,6 +17,7 @@ from dr_llm.backends.direct import DirectBackend
 from dr_llm.backends.errors import (
     BackendAcquireTimeoutError,
     BackendDrainTimeoutError,
+    BackendGenerationError,
     BackendSchemaError,
 )
 from dr_llm.backends.process_fn import make_backend_process_fn
@@ -43,6 +44,7 @@ from dr_llm.pool.progress import pool_is_idle
 from dr_llm.workers import WorkerConfig, start_workers
 from dr_llm.workers.worker_controller import WorkerController
 from dr_llm.sampling.acquisition import AcquireQuery
+from dr_llm.sampling.errors import PoolTopupError
 from dr_llm.sampling.pool_service import PoolService
 from dr_llm.sampling.sampling_store import SamplingStore
 
@@ -168,11 +170,16 @@ class PoolBackend:
                 key_values=key_values,
                 n=remaining,
             )
-            result = self._service.acquire_or_generate(
-                query,
-                consumer_id=self._consumer_id,
-                generator_fn=generator_fn,
-            )
+            try:
+                result = self._service.acquire_or_generate(
+                    query,
+                    consumer_id=self._consumer_id,
+                    generator_fn=generator_fn,
+                )
+            except PoolTopupError as exc:
+                raise BackendGenerationError(
+                    f"failed to generate samples for session {session_id!r}"
+                ) from exc
             newly_generated = generated - generated_before
             cache_count = result.claimed - newly_generated
             claimed_from_cache += cache_count
