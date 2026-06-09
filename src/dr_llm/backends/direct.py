@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-
+from dr_llm.backends.async_bridge import run_in_thread
 from dr_llm.backends.converters import (
     capabilities_from_controls,
     llm_response_to_backend_response,
@@ -36,7 +35,7 @@ class DirectBackend:
         )
 
     async def acomplete(self, request: BackendRequest) -> BackendResponse:
-        return await asyncio.to_thread(self.complete, request)
+        return await run_in_thread(lambda: self.complete(request))
 
     def capabilities(self, request: BackendRequest) -> BackendCapabilities:
         orchestrator = self._registry.get(request.provider)

@@ -8,6 +8,7 @@ from os import getenv
 from typing import Any
 from uuid import uuid4
 
+from dr_llm.backends.async_bridge import run_in_thread
 from dr_llm.backends.converters import (
     backend_request_payload,
     pool_sample_to_backend_response,
@@ -194,6 +195,29 @@ class PoolBackend:
             claimed_from_cache=claimed_from_cache,
             generated=generated,
         )
+
+    async def acomplete(self, request: BackendRequest) -> BackendResponse:
+        return await run_in_thread(lambda: self.complete(request))
+
+    async def aacquire(
+        self,
+        request: BackendRequest,
+        session_id: str,
+        n: int,
+        *,
+        request_id: str | None = None,
+    ) -> AcquireResult:
+        return await run_in_thread(
+            lambda: self.acquire(
+                request,
+                session_id,
+                n,
+                request_id=request_id,
+            )
+        )
+
+    async def adrain(self, timeout: float | None = None) -> DrainResult:
+        return await run_in_thread(lambda: self.await_drain(timeout))
 
     def submit_batch(self, requests: list[BackendRequest]) -> SubmitResult:
         seeded = 0
