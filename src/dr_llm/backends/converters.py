@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
+from dr_llm.backends.errors import BackendValidationError
 from dr_llm.backends.models import (
     BackendCapabilities,
     BackendRequest,
@@ -65,20 +66,26 @@ def capabilities_from_controls(
         supported_thinking_levels=tuple(
             str(level) for level in controls.supported_thinking_levels
         ),
-        default_thinking_level=str(controls.default_thinking_level),
+        default_thinking_level=(
+            None
+            if controls.default_thinking_level is None
+            else str(controls.default_thinking_level)
+        ),
         supported_effort_levels=tuple(
             str(level) for level in controls.supported_effort_levels
         ),
-        default_effort=str(controls.default_effort),
+        default_effort=(
+            None
+            if controls.default_effort is None
+            else str(controls.default_effort)
+        ),
         default_reasoning=(
             default_reasoning.model_dump(mode="json")
             if default_reasoning is not None
             else None
         ),
-        request_defaults=dict(
-            controls.request_defaults().model_dump(mode="json")
-        ),
-        catalog_metadata=dict(controls.catalog_metadata),
+        request_defaults=controls.request_defaults().model_dump(mode="json"),
+        catalog_metadata=controls.catalog_metadata,
     )
 
 
@@ -96,4 +103,8 @@ def backend_request_from_sample(sample: PoolSample) -> BackendRequest:
     if raw is None:
         msg = f"Pool sample {sample.sample_id} is missing request['backend_request']"
         raise KeyError(msg)
-    return BackendRequest.model_validate(raw)
+    try:
+        return BackendRequest(**raw)
+    except ValidationError as exc:
+        msg = f"Pool sample {sample.sample_id} has invalid request['backend_request']"
+        raise BackendValidationError(msg) from exc

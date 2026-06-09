@@ -22,7 +22,7 @@ def fingerprint_request(request: BackendRequest) -> str:
 
 
 def _canonical_payload(request: BackendRequest) -> dict[str, Any]:
-    payload = request.model_dump(
+    return request.model_dump(
         mode="json",
         include={
             "provider",
@@ -36,4 +36,3 @@ def _canonical_payload(request: BackendRequest) -> dict[str, Any]:
         },
         exclude_none=False,
     )
-    return payload
