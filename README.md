@@ -60,6 +60,80 @@ Human-readable and JSON model listings also include the repo's curated blacklist
 and provider orchestrators own any provider-specific catalog policy, such as
 OpenRouter's reasoning-policy allowlist.
 
+## Backends API
+
+Programmatic integration surface for callers such as DSPy adapters. v1 supports
+text-only requests; `extensions` must not include tools, structured output, or
+multimodal payloads.
+
+### DirectBackend (no database)
+
+```python
+import asyncio
+
+from dr_llm.backends import BackendRequest, DirectBackend
+from dr_llm.llm import CallMode, Message, ProviderName
+
+backend = DirectBackend()
+request = BackendRequest(
+    provider=ProviderName.OPENAI,
+    model="gpt-4.1-mini",
+    mode=CallMode.api,
+    messages=[Message(role="user", content="Hello")],
+)
+
+response = backend.complete(request)
+async_response = asyncio.run(backend.acomplete(request))
+```
+
+### PoolBackend (cache, sessions, batch fill)
+
+```python
+from dr_llm.backends import BackendRequest, PoolBackend, PoolBackendConfig
+from dr_llm.llm import CallMode, Message, ProviderName
+
+pool = PoolBackend(
+    PoolBackendConfig(
+        pool_name="my_experiment",
+        database_url="postgresql://localhost/dr_llm",
+    )
+)
+request = BackendRequest(
+    provider=ProviderName.OPENAI,
+    model="gpt-4.1-mini",
+    mode=CallMode.api,
+    messages=[Message(role="user", content="Hello")],
+)
+
+cached = pool.complete(request)
+session = pool.acquire(request, session_id="s1", n=10)
+pool.submit_batch([request])
+drain = pool.await_drain(timeout=60)
+pool.close()
+```
+
+Async wrappers: `acomplete`, `aacquire`, and `adrain` delegate to the sync
+implementations via `asyncio.to_thread`.
+
+### Fingerprinting
+
+`fingerprint_request()` hashes a canonical JSON payload built from:
+`provider`, `model`, `mode`, `messages`, `max_tokens`, `effort`, `reasoning`,
+and `sampling`. `metadata` and `extensions` are excluded, so requests that
+differ only in tracing metadata or unsupported extension payloads share pool
+cache keys and session claims.
+
+### submit_batch
+
+`submit_batch()` seeds incomplete pool rows only for fingerprints that have no
+complete samples and no pending incomplete samples for the same fingerprint.
+
+### await_drain
+
+`await_drain()` is single-flight per `PoolBackend` instance. Concurrent drain
+calls on the same instance serialize on an internal lock rather than starting
+overlapping worker fleets.
+
 ## Demo Scripts
 
 The README gives the mental model and short commands. The demo scripts are the
