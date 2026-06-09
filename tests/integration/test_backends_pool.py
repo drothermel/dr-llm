@@ -96,7 +96,7 @@ def _mock_registry() -> MagicMock:
     return registry
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def pool_backend() -> Generator[PoolBackend, None, None]:
     dsn = _get_dsn()
     if not dsn:

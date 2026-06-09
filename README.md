@@ -115,6 +115,25 @@ pool.close()
 Async wrappers: `acomplete`, `aacquire`, and `adrain` delegate to the sync
 implementations via `asyncio.to_thread`.
 
+### Fingerprinting
+
+`fingerprint_request()` hashes a canonical JSON payload built from:
+`provider`, `model`, `mode`, `messages`, `max_tokens`, `effort`, `reasoning`,
+and `sampling`. `metadata` and `extensions` are excluded, so requests that
+differ only in tracing metadata or unsupported extension payloads share pool
+cache keys and session claims.
+
+### submit_batch
+
+`submit_batch()` seeds incomplete pool rows only for fingerprints that have no
+complete samples and no pending incomplete samples for the same fingerprint.
+
+### await_drain
+
+`await_drain()` is single-flight per `PoolBackend` instance. Concurrent drain
+calls on the same instance serialize on an internal lock rather than starting
+overlapping worker fleets.
+
 ## Demo Scripts
 
 The README gives the mental model and short commands. The demo scripts are the

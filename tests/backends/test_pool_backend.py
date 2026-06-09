@@ -13,6 +13,7 @@ from dr_llm.backends.errors import (
     BackendAcquireTimeoutError,
     BackendDrainTimeoutError,
     BackendGenerationError,
+    BackendSchemaError,
     BackendUnsupportedFeatureError,
 )
 from dr_llm.sampling.errors import PoolTopupError
@@ -271,6 +272,29 @@ def test_pool_backend_acquire_rejects_unsupported_extensions() -> None:
             make_backend_request(extensions={"tools": []}),
             "s1",
             n=1,
+        )
+
+
+@patch("dr_llm.backends.pool.catalog.load_schema")
+@patch("dr_llm.backends.pool.PoolStore")
+@patch("dr_llm.backends.pool.SamplingStore")
+@patch("dr_llm.backends.pool.DbRuntime")
+def test_pool_backend_init_raises_schema_error_on_mismatched_keys(
+    _mock_runtime: MagicMock,
+    mock_sampling_store: MagicMock,
+    mock_pool_store: MagicMock,
+    mock_load_schema: MagicMock,
+) -> None:
+    existing_schema = MagicMock()
+    existing_schema.key_column_names = ["legacy_key"]
+    mock_load_schema.return_value = existing_schema
+
+    with pytest.raises(BackendSchemaError, match="expected"):
+        PoolBackend(
+            PoolBackendConfig(
+                pool_name="itest_backends", database_url="postgresql://x"
+            ),
+            registry=MagicMock(),
         )
 
 
