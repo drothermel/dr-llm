@@ -24,5 +24,7 @@ def test_fingerprint_excludes_metadata_and_extensions() -> None:
 
 def test_fingerprint_changes_when_generation_fields_change() -> None:
     base = fingerprint_request(make_backend_request())
-    different_model = fingerprint_request(make_backend_request(model="gpt-4.1"))
+    different_model = fingerprint_request(
+        make_backend_request(model="gpt-4.1")
+    )
     assert base != different_model

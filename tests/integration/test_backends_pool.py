@@ -17,7 +17,6 @@ from dr_llm.backends.pool import PoolBackend
 from dr_llm.backends.schema import BACKENDS_KEY_COLUMN, backends_pool_schema
 from dr_llm.errors import TransientPersistenceError
 from dr_llm.llm import CallMode, LlmResponse, Message, ProviderName, TokenUsage
-from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
 from dr_llm.sampling.db.names import claims_table_name
@@ -47,9 +46,10 @@ def _drop_tables(dsn: str) -> None:
                 sql.Identifier("public", claims_tbl)
             )
         )
-        catalog_exists = conn.execute(
+        catalog_row = conn.execute(
             "SELECT to_regclass('public.pool_catalog') IS NOT NULL"
-        ).fetchone()[0]
+        ).fetchone()
+        catalog_exists = bool(catalog_row and catalog_row[0])
         if catalog_exists:
             conn.execute(
                 "DELETE FROM pool_catalog WHERE pool_name = %s",
@@ -117,7 +117,9 @@ def pool_backend() -> Generator[PoolBackend, None, None]:
             registry=_mock_registry(),
         )
     except (psycopg.OperationalError, TransientPersistenceError) as exc:
-        pytest.skip(f"Postgres unavailable for backends integration tests: {exc}")
+        pytest.skip(
+            f"Postgres unavailable for backends integration tests: {exc}"
+        )
     yield backend
     backend.close()
     dsn_val = _get_dsn()
