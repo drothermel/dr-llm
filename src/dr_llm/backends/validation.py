@@ -10,12 +10,19 @@ from dr_llm.backends.models import BackendRequest
 
 _UNSUPPORTED_TOP_LEVEL_KEYS = frozenset(
     {
+        "cache_control",
         "tools",
         "tool_choice",
+        "logprobs",
         "response_format",
+        "prompt_cache",
+        "prompt_cache_key",
         "images",
         "image",
         "multimodal",
+        "stop",
+        "stop_sequences",
+        "top_logprobs",
     }
 )
 

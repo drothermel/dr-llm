@@ -136,6 +136,36 @@ Acceptance checks:
 - Add a small parity test or fixture comparing `nl_latents` catalog request construction with direct `dr-llm` request construction for the five default T1 configs.
 - If you cannot add the parity test inside `dr-llm` because it would depend on `nl_latents`, document the exact external parity command and expected payload fields.
 
+Fallback parity check:
+
+The `nl_latents` catalog lives in the sibling repo, so this branch does not add
+an in-repo test dependency on `nl_latents`. From `../nl_latents`, run:
+
+```bash
+uv run python - <<'PY'
+from nl_latents.sampling.llm.catalog import get_llm_configs
+
+ids = [
+    "openrouter/xiaomi/mimo-v2-flash/off/v1",
+    "openrouter/nvidia/llama-3.3-nemotron-super-49b-v1.5/off/v1",
+    "openrouter/openai/gpt-5-nano/low/v1",
+    "openrouter/openai/gpt-oss-20b/low/v1",
+    "openai/gpt-5-nano/minimal/v1",
+]
+configs = get_llm_configs()
+for config_id in ids:
+    print(config_id, configs[config_id].model_dump(mode="json"))
+PY
+```
+
+Expected fields:
+
+- MiMo off: `provider=openrouter`, `model=xiaomi/mimo-v2-flash`, `reasoning={"kind":"openrouter","enabled":false}`, `sampling={"temperature":0.7,"top_p":0.95}`.
+- Nemotron off: `provider=openrouter`, `model=nvidia/llama-3.3-nemotron-super-49b-v1.5`, `reasoning={"kind":"openrouter","enabled":false}`, `sampling={"temperature":0.7,"top_p":0.95}`.
+- GPT-5 nano low through OpenRouter: `provider=openrouter`, `model=openai/gpt-5-nano`, `reasoning={"kind":"openrouter","effort":"low"}`, `sampling={"temperature":0.7,"top_p":0.95}`.
+- GPT-OSS low: `provider=openrouter`, `model=openai/gpt-oss-20b`, `reasoning={"kind":"openrouter","effort":"low"}`, `sampling={"temperature":0.7,"top_p":0.95}`.
+- GPT-5 nano minimal through OpenAI: `provider=openai`, `model=gpt-5-nano`, `reasoning={"kind":"openai","thinking_level":"minimal"}`, `sampling=None`.
+
 ## Phase 3: Make Pool Acquisition Semantics Hard to Misuse
 
 Status: `done`
@@ -279,6 +309,7 @@ Before declaring this done, write a short note for the `dr-dspy` implementer tha
 - OpenAI minimal thinking: set `provider=ProviderName.OPENAI`, `model="gpt-5-nano"`, `reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL)`, and `sampling=None`.
 - Google thinking-off: set `provider=ProviderName.GOOGLE`, `model="gemini-2.5-flash-lite"`, `reasoning=GoogleReasoning(thinking_level=ThinkingLevel.OFF)`, and explicit experiment sampling when needed.
 - No sampling override is represented on the resolved request as `sampling=None`. Explicit sampling uses `SamplingControls(temperature=..., top_p=...)`. Empty authoring controls such as `SamplingControls(temperature=None, top_p=None)` resolve to `sampling=None`.
+- `EffortSpec.MAX` is intentionally supported only as generic `BackendRequest.effort` for provider/model families whose capabilities include `"max"` in `supported_effort_levels`, such as Anthropic or MiniMax effort-capable models. Do not map it to OpenRouter provider-native reasoning; `OpenRouterReasoning(effort=...)` supports OpenRouter's `low`, `medium`, and `high` enum only.
 - Pool fingerprints include `provider`, `model`, `mode`, `messages`, `max_tokens`, `effort`, `reasoning`, and `sampling`; they exclude `metadata` and `extensions`.
 - `DrLlmPoolLM` should pass an experiment-stable non-empty `session_id` to `PoolBackend.aacquire()`, for example `experiment-name:split:seed` or a caller-owned run ID. Metadata does not isolate claims.
 - Builtin safe-load class paths are `dspy.clients.dr_llm.direct.DrLlmDirectLM` and `dspy.clients.dr_llm.pool.DrLlmPoolLM`.
@@ -296,6 +327,7 @@ Append short entries as you work:
 | Date | Agent | Change | Verification |
 | --- | --- | --- | --- |
 | 2026-06-09 | Codex | Added dr-dspy backend contract tests, idempotent `PoolBackend.close()`, blank session ID rejection, live OpenRouter smoke test, and README/readiness docs. | `ruff format`, `ruff check --fix .`, `ty check`, focused provider/pool tests, 540-test non-integration suite, 62-test Docker integration suite, and non-skipped live OpenRouter smoke passed. |
+| 2026-06-09 | Codex | Tightened v1 unsupported extension validation and completed `EffortSpec.MAX` plus external `nl_latents` parity handoff docs. | Focused backend tests, `ruff format`, `ruff check --fix .`, `ty check`, 547-test non-integration suite, 62-test Docker integration suite, and explicit live OpenRouter smoke passed. |
 
 ## Original Review Findings Incorporated
 

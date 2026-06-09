@@ -173,6 +173,13 @@ authoring configs accept `SamplingControls(temperature=None, top_p=None)` to
 suppress provider defaults; that should resolve to `sampling=None` before the
 request is sent or fingerprinted.
 
+`EffortSpec.MAX` is intentionally a generic `BackendRequest.effort` value for
+provider/model families whose capabilities include `"max"` in
+`supported_effort_levels`, such as Anthropic or MiniMax effort-capable models.
+Do not map it to OpenRouter provider-native reasoning: OpenRouter effort
+controls use `OpenRouterReasoning(effort=OpenRouterEffortLevel.*)`, whose
+supported values are `low`, `medium`, and `high`.
+
 `AcquireResult(responses, claimed_from_cache, generated)` is stable public
 provenance. Each returned `BackendResponse` also carries `source`, `sample_id`,
 and `request_fingerprint` when available.
@@ -205,6 +212,29 @@ single-user-message `nl_latents` plus `dr-llm` pool harness. DSPy
 `Predict(TaskSpec)` rendering adds adapter prompt structure and should be
 treated as a new prompt condition unless a raw request path is implemented and
 verified separately.
+
+The `nl_latents` parity check remains external to this repository to avoid a
+cross-repo test dependency. From the sibling `../nl_latents` checkout, inspect:
+
+```bash
+uv run python - <<'PY'
+from nl_latents.sampling.llm.catalog import get_llm_configs
+
+ids = [
+    "openrouter/xiaomi/mimo-v2-flash/off/v1",
+    "openrouter/nvidia/llama-3.3-nemotron-super-49b-v1.5/off/v1",
+    "openrouter/openai/gpt-5-nano/low/v1",
+    "openrouter/openai/gpt-oss-20b/low/v1",
+    "openai/gpt-5-nano/minimal/v1",
+]
+configs = get_llm_configs()
+for config_id in ids:
+    print(config_id, configs[config_id].model_dump(mode="json"))
+PY
+```
+
+The printed provider, model, reasoning, and sampling fields should match the
+table above, with `sampling=None` only for direct OpenAI GPT-5 nano minimal.
 
 The v1 backend surface is text-only. Supported usage is plain text direct and
 pool requests. Unsupported features should be rejected before provider calls:
