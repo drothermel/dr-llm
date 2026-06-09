@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable
 from os import getenv
@@ -81,6 +82,7 @@ class PoolBackend:
         self._sampling = SamplingStore.from_pool_store(self._store)
         self._sampling.setup_consumer(self._consumer_id)
         self._service = PoolService(self._store, sampling_store=self._sampling)
+        self._drain_lock = threading.Lock()
 
     @property
     def store(self) -> PoolStore:
@@ -231,14 +233,11 @@ class PoolBackend:
         for request in requests:
             validate_v1_request(request)
             fingerprint = fingerprint_request(request)
-            if (
-                self._store.complete_count(
-                    key_filter=PoolKeyFilter.eq(
-                        **{BACKENDS_KEY_COLUMN: fingerprint}
-                    )
-                )
-                > 0
-            ):
+            key_filter = PoolKeyFilter.eq(**{BACKENDS_KEY_COLUMN: fingerprint})
+            if self._store.complete_count(key_filter=key_filter) > 0:
+                skipped += 1
+                continue
+            if self._store.incomplete_count(key_filter=key_filter) > 0:
                 skipped += 1
                 continue
             sample = PoolSample(
@@ -251,6 +250,10 @@ class PoolBackend:
         return SubmitResult(seeded=seeded, skipped=skipped)
 
     def await_drain(self, timeout: float | None = None) -> DrainResult:
+        with self._drain_lock:
+            return self._await_drain_locked(timeout)
+
+    def _await_drain_locked(self, timeout: float | None) -> DrainResult:
         controller = start_workers(
             LlmPoolBackend(
                 self._store,

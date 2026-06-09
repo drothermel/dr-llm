@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
@@ -67,6 +68,7 @@ def _pool_backend() -> tuple[PoolBackend, MagicMock, MagicMock, MagicMock]:
     backend._store = store
     backend._sampling = sampling
     backend._service = service
+    backend._drain_lock = threading.Lock()
     return backend, store, service, backend._direct
 
 
@@ -301,6 +303,7 @@ def test_pool_backend_init_sets_up_consumer(
 def test_pool_backend_submit_batch_seeds_only_missing_fingerprints() -> None:
     backend, store, _, _ = _pool_backend()
     store.complete_count.return_value = 0
+    store.incomplete_count.return_value = 0
     store.insert_sample.return_value = True
 
     result = backend.submit_batch(
@@ -315,6 +318,7 @@ def test_pool_backend_submit_batch_seeds_only_missing_fingerprints() -> None:
 def test_pool_backend_submit_batch_skips_existing_complete_cells() -> None:
     backend, store, _, _ = _pool_backend()
     store.complete_count.side_effect = [1, 0]
+    store.incomplete_count.return_value = 0
     store.insert_sample.return_value = True
 
     result = backend.submit_batch(
@@ -324,6 +328,73 @@ def test_pool_backend_submit_batch_skips_existing_complete_cells() -> None:
     assert result.seeded == 1
     assert result.skipped == 1
     store.insert_sample.assert_called_once()
+
+
+def test_pool_backend_submit_batch_skips_pending_incomplete_cells() -> None:
+    backend, store, _, _ = _pool_backend()
+    store.complete_count.return_value = 0
+    store.incomplete_count.return_value = 1
+
+    result = backend.submit_batch([make_backend_request()])
+
+    assert result.seeded == 0
+    assert result.skipped == 1
+    store.insert_sample.assert_not_called()
+
+
+@patch("dr_llm.backends.pool.start_workers")
+def test_pool_backend_await_drain_is_single_flight(
+    mock_start_workers: MagicMock,
+) -> None:
+    backend, _, _, _ = _pool_backend()
+    backend._drain_lock = threading.Lock()
+    started = threading.Event()
+    release = threading.Event()
+    active_drains = 0
+    max_active_drains = 0
+    counter_lock = threading.Lock()
+
+    def slow_start(*_args: object, **_kwargs: object) -> MagicMock:
+        nonlocal active_drains, max_active_drains
+        with counter_lock:
+            active_drains += 1
+            max_active_drains = max(max_active_drains, active_drains)
+        started.set()
+        release.wait(timeout=2)
+        controller = MagicMock()
+        snapshot = WorkerSnapshot(
+            worker_count=1,
+            counts=WorkerStatCounts(completed=1),
+            backend_state=LlmPoolBackendState(incomplete=0, complete=1),
+        )
+        controller.snapshot.return_value = snapshot
+        controller.join.return_value = snapshot
+        with counter_lock:
+            active_drains -= 1
+        return controller
+
+    mock_start_workers.side_effect = slow_start
+
+    errors: list[Exception] = []
+
+    def run_drain() -> None:
+        try:
+            backend.await_drain(timeout=5)
+        except Exception as exc:
+            errors.append(exc)
+
+    thread_a = threading.Thread(target=run_drain)
+    thread_b = threading.Thread(target=run_drain)
+    thread_a.start()
+    started.wait(timeout=2)
+    thread_b.start()
+    time.sleep(0.05)
+    assert max_active_drains == 1
+    release.set()
+    thread_a.join()
+    thread_b.join()
+    assert not errors
+    assert mock_start_workers.call_count == 2
 
 
 @patch("dr_llm.backends.pool.start_workers")
