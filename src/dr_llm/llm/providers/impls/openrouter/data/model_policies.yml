@@ -59,6 +59,34 @@ deepseek/deepseek-chat:
   default_enabled: false
   verified: true
   notes: 'Live-tested: reasoning params are effectively ignored; no tracked reasoning channel is exposed.'
+google/gemini-2.5-flash:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+  verified: true
+  notes: 'Live-tested: accepts reasoning.enabled=false.'
+google/gemini-2.5-flash-lite:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+  verified: true
+  notes: 'Live-tested: accepts reasoning.enabled=false.'
+google/gemini-3-flash-preview:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+  verified: true
+  notes: 'Live-tested: accepts reasoning.enabled=false.'
+google/gemini-3.1-flash-lite:
+  request_style: enabled_flag
+  supports_disable: true
+  allowed_efforts: []
+  default_enabled: null
+  verified: true
+  notes: 'Live-tested: accepts reasoning.enabled=false.'
 deepseek/deepseek-r1-distill-llama-70b:
   request_style: enabled_flag
   supports_disable: true

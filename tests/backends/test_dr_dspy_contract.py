@@ -50,6 +50,10 @@ def test_dr_dspy_openrouter_toggle_requests_use_native_reasoning() -> None:
     for model in (
         "xiaomi/mimo-v2-flash",
         "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        "google/gemini-2.5-flash",
+        "google/gemini-3-flash-preview",
+        "google/gemini-3.1-flash-lite",
+        "google/gemini-2.5-flash-lite",
     ):
         config = OpenRouterToggleConfig(
             model=model,
