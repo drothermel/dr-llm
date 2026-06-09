@@ -1,0 +1,231 @@
+"""Pool-backed backend with cache, session acquire, and batch fill."""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Callable
+from os import getenv
+from typing import Any
+from uuid import uuid4
+
+from dr_llm.backends.converters import (
+    backend_request_payload,
+    pool_sample_to_backend_response,
+)
+from dr_llm.backends.direct import DirectBackend
+from dr_llm.backends.errors import (
+    BackendAcquireTimeoutError,
+    BackendSchemaError,
+)
+from dr_llm.backends.fingerprint import fingerprint_request
+from dr_llm.backends.models import (
+    AcquireResult,
+    BackendRequest,
+    BackendResponse,
+    PoolBackendConfig,
+)
+from dr_llm.backends.schema import BACKENDS_KEY_COLUMN, backends_pool_schema
+from dr_llm.backends.validation import validate_v1_request
+from dr_llm.llm.providers.core.registry import ProviderRegistry
+from dr_llm.llm.providers.default_registry import build_default_registry
+from dr_llm.pool.db import catalog
+from dr_llm.pool.db.key_filter import PoolKeyFilter
+from dr_llm.pool.db.runtime import DbConfig, DbRuntime
+from dr_llm.pool.pool_sample import PoolSample
+from dr_llm.pool.pool_store import PoolStore
+from dr_llm.sampling.acquisition import AcquireQuery
+from dr_llm.sampling.pool_service import PoolService
+from dr_llm.sampling.sampling_store import SamplingStore
+
+_GENERATOR_FN = Callable[[dict[str, Any], int], list[PoolSample]]
+
+
+class PoolBackend:
+    """Fingerprint-keyed pool backend with cache and session acquire."""
+
+    def __init__(
+        self,
+        config: PoolBackendConfig,
+        *,
+        registry: ProviderRegistry | None = None,
+    ) -> None:
+        self._config = config
+        self._consumer_id = config.consumer_id or config.pool_name
+        self._registry = registry or build_default_registry()
+        self._direct = DirectBackend(self._registry)
+
+        database_url = config.database_url or getenv(
+            "DR_LLM_DATABASE_URL", "postgresql://localhost/dr_llm"
+        )
+        self._runtime = DbRuntime(
+            DbConfig(
+                dsn=database_url,
+                application_name=f"dr_llm_backends_{config.pool_name}",
+            )
+        )
+        self._schema = backends_pool_schema(config.pool_name)
+        self._validate_existing_schema()
+        self._store = PoolStore(self._schema, self._runtime)
+        self._store.ensure_schema()
+        self._sampling = SamplingStore.from_pool_store(self._store)
+        self._sampling.setup_consumer(self._consumer_id)
+        self._service = PoolService(self._store, sampling_store=self._sampling)
+
+    @property
+    def store(self) -> PoolStore:
+        return self._store
+
+    def close(self) -> None:
+        self._sampling.teardown_consumer(self._consumer_id)
+        self._store.close()
+
+    def complete(self, request: BackendRequest) -> BackendResponse:
+        validate_v1_request(request)
+        fingerprint = fingerprint_request(request)
+        cached = self._first_complete_sample(fingerprint)
+        if cached is not None:
+            return pool_sample_to_backend_response(
+                cached,
+                source="pool_cache",
+                fingerprint=fingerprint,
+            )
+
+        generated = self._direct.complete(request)
+        sample = PoolSample(
+            key_values={BACKENDS_KEY_COLUMN: fingerprint},
+            request=backend_request_payload(request),
+            response=generated.model_dump(
+                mode="json",
+                exclude={"source", "sample_id", "request_fingerprint"},
+            ),
+            finish_reason=generated.finish_reason,
+        )
+        self._store.insert_sample(sample)
+        return generated.model_copy(
+            update={
+                "source": "generated",
+                "sample_id": sample.sample_id,
+                "request_fingerprint": fingerprint,
+            }
+        )
+
+    def acquire(
+        self,
+        request: BackendRequest,
+        session_id: str,
+        n: int,
+        *,
+        request_id: str | None = None,
+    ) -> AcquireResult:
+        validate_v1_request(request)
+        if n < 0:
+            msg = f"acquire count must be non-negative, got {n}"
+            raise ValueError(msg)
+
+        fingerprint = fingerprint_request(request)
+        key_values = {BACKENDS_KEY_COLUMN: fingerprint}
+        responses: list[BackendResponse] = []
+        claimed_from_cache = 0
+        generated = 0
+        deadline = time.monotonic() + self._config.acquire_timeout_seconds
+        resolved_request_id = request_id or uuid4().hex
+
+        while len(responses) < n:
+            if time.monotonic() >= deadline:
+                raise BackendAcquireTimeoutError(
+                    f"acquired {len(responses)} of {n} samples for session "
+                    f"{session_id!r} before timeout"
+                )
+
+            remaining = n - len(responses)
+            generated_before = generated
+
+            def generator_fn(
+                cell_key_values: dict[str, Any],
+                deficit: int,
+            ) -> list[PoolSample]:
+                nonlocal generated
+                created = self._generate_completed_samples(
+                    request,
+                    cell_key_values,
+                    deficit,
+                )
+                generated += len(created)
+                return created
+
+            query = AcquireQuery(
+                run_id=session_id,
+                request_id=resolved_request_id,
+                key_values=key_values,
+                n=remaining,
+            )
+            result = self._service.acquire_or_generate(
+                query,
+                consumer_id=self._consumer_id,
+                generator_fn=generator_fn,
+            )
+            newly_generated = generated - generated_before
+            cache_count = result.claimed - newly_generated
+            claimed_from_cache += cache_count
+
+            for idx, sample in enumerate(result.samples):
+                source = "pool_cache" if idx < cache_count else "generated"
+                responses.append(
+                    pool_sample_to_backend_response(
+                        sample,
+                        source=source,
+                        fingerprint=fingerprint,
+                    )
+                )
+
+            if result.deficit(remaining) > 0:
+                time.sleep(0.05)
+
+        return AcquireResult(
+            responses=responses[:n],
+            claimed_from_cache=claimed_from_cache,
+            generated=generated,
+        )
+
+    def _validate_existing_schema(self) -> None:
+        existing = catalog.load_schema(self._runtime, self._config.pool_name)
+        if existing is None:
+            return
+        expected = [BACKENDS_KEY_COLUMN]
+        if existing.key_column_names != expected:
+            raise BackendSchemaError(
+                f"pool {self._config.pool_name!r} uses key columns "
+                f"{existing.key_column_names!r}; expected {expected!r}"
+            )
+
+    def _first_complete_sample(self, fingerprint: str) -> PoolSample | None:
+        samples = self._store.bulk_load(
+            key_filter=PoolKeyFilter.eq(
+                **{BACKENDS_KEY_COLUMN: fingerprint}
+            ),
+            completion="complete",
+        )
+        if not samples:
+            return None
+        return min(samples, key=lambda sample: sample.sample_idx or 0)
+
+    def _generate_completed_samples(
+        self,
+        request: BackendRequest,
+        key_values: dict[str, Any],
+        count: int,
+    ) -> list[PoolSample]:
+        orchestrator = self._registry.get(request.provider)
+        llm_request = request.to_llm_request()
+        samples: list[PoolSample] = []
+        for _ in range(count):
+            llm_response = orchestrator.generate(llm_request)
+            samples.append(
+                PoolSample(
+                    key_values=key_values,
+                    request=backend_request_payload(request),
+                    response=llm_response.model_dump(mode="json"),
+                    finish_reason=llm_response.finish_reason,
+                )
+            )
+        return samples
