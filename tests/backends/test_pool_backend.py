@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -70,6 +70,7 @@ def _pool_backend() -> tuple[PoolBackend, MagicMock, MagicMock, MagicMock]:
     backend._sampling = sampling
     backend._service = service
     backend._drain_lock = threading.Lock()
+    backend._closed = False
     return backend, store, service, backend._direct
 
 
@@ -167,6 +168,26 @@ def test_pool_backend_acquire_delegates_to_service() -> None:
     assert result.claimed_from_cache == 1
     assert result.generated == 0
     service.acquire_or_generate.assert_called_once()
+
+
+def test_pool_backend_acquire_rejects_blank_session_id() -> None:
+    backend, _, service, _ = _pool_backend()
+
+    with pytest.raises(ValueError, match="session_id"):
+        backend.acquire(make_backend_request(), "  ", n=1)
+
+    service.acquire_or_generate.assert_not_called()
+
+
+def test_pool_backend_close_is_idempotent() -> None:
+    backend, store, _, _ = _pool_backend()
+
+    backend.close()
+    backend.close()
+
+    sampling = cast(MagicMock, backend._sampling)
+    sampling.teardown_consumer.assert_called_once_with("test_pool")
+    store.close.assert_called_once()
 
 
 def test_pool_backend_acquire_maps_pool_topup_error() -> None:

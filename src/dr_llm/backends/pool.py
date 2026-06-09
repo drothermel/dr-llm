@@ -83,14 +83,20 @@ class PoolBackend:
         self._sampling.setup_consumer(self._consumer_id)
         self._service = PoolService(self._store, sampling_store=self._sampling)
         self._drain_lock = threading.Lock()
+        self._closed = False
 
     @property
     def store(self) -> PoolStore:
         return self._store
 
     def close(self) -> None:
-        self._sampling.teardown_consumer(self._consumer_id)
-        self._store.close()
+        if self._closed:
+            return
+        try:
+            self._sampling.teardown_consumer(self._consumer_id)
+        finally:
+            self._store.close()
+            self._closed = True
 
     def complete(self, request: BackendRequest) -> BackendResponse:
         validate_v1_request(request)
@@ -127,6 +133,7 @@ class PoolBackend:
         request_id: str | None = None,
     ) -> AcquireResult:
         validate_v1_request(request)
+        _validate_session_id(session_id)
         if n < 0:
             msg = f"acquire count must be non-negative, got {n}"
             raise ValueError(msg)
@@ -366,3 +373,8 @@ class PoolBackend:
                 )
             )
         return samples
+
+
+def _validate_session_id(session_id: str) -> None:
+    if not session_id.strip():
+        raise ValueError("acquire session_id must be a non-empty string")
