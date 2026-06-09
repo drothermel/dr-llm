@@ -15,24 +15,32 @@ from dr_llm.backends.converters import (
 from dr_llm.backends.direct import DirectBackend
 from dr_llm.backends.errors import (
     BackendAcquireTimeoutError,
+    BackendDrainTimeoutError,
     BackendSchemaError,
 )
+from dr_llm.backends.process_fn import make_backend_process_fn
 from dr_llm.backends.fingerprint import fingerprint_request
 from dr_llm.backends.models import (
     AcquireResult,
     BackendRequest,
     BackendResponse,
+    DrainResult,
     PoolBackendConfig,
+    SubmitResult,
 )
 from dr_llm.backends.schema import BACKENDS_KEY_COLUMN, backends_pool_schema
 from dr_llm.backends.validation import validate_v1_request
 from dr_llm.llm.providers.core.registry import ProviderRegistry
 from dr_llm.llm.providers.default_registry import build_default_registry
 from dr_llm.pool.db import catalog
+from dr_llm.pool.backend import LlmPoolBackend, LlmPoolBackendConfig
 from dr_llm.pool.db.key_filter import PoolKeyFilter
 from dr_llm.pool.db.runtime import DbConfig, DbRuntime
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.pool.pool_store import PoolStore
+from dr_llm.pool.progress import pool_is_idle
+from dr_llm.workers import WorkerConfig, start_workers
+from dr_llm.workers.worker_controller import WorkerController
 from dr_llm.sampling.acquisition import AcquireQuery
 from dr_llm.sampling.pool_service import PoolService
 from dr_llm.sampling.sampling_store import SamplingStore
@@ -187,6 +195,79 @@ class PoolBackend:
             generated=generated,
         )
 
+    def submit_batch(self, requests: list[BackendRequest]) -> SubmitResult:
+        seeded = 0
+        skipped = 0
+        for request in requests:
+            validate_v1_request(request)
+            fingerprint = fingerprint_request(request)
+            if (
+                self._store.complete_count(
+                    key_filter=PoolKeyFilter.eq(
+                        **{BACKENDS_KEY_COLUMN: fingerprint}
+                    )
+                )
+                > 0
+            ):
+                skipped += 1
+                continue
+            sample = PoolSample(
+                key_values={BACKENDS_KEY_COLUMN: fingerprint},
+                request=backend_request_payload(request),
+                response=None,
+            )
+            if self._store.insert_sample(sample):
+                seeded += 1
+        return SubmitResult(seeded=seeded, skipped=skipped)
+
+    def await_drain(self, timeout: float | None = None) -> DrainResult:
+        controller = start_workers(
+            LlmPoolBackend(
+                self._store,
+                config=LlmPoolBackendConfig(max_retries=1),
+            ),
+            process_fn=make_backend_process_fn(self._registry),
+            config=WorkerConfig(
+                num_workers=self._config.num_workers,
+                lease_seconds=self._config.lease_seconds,
+            ),
+        )
+        snapshot = self._drain_with_timeout(controller, timeout=timeout)
+        backend_state = snapshot.backend_state
+        incomplete = 0
+        complete = 0
+        if backend_state is not None:
+            incomplete = int(backend_state.incomplete)
+            complete = int(backend_state.complete)
+        return DrainResult(
+            incomplete=incomplete,
+            complete=complete,
+            worker_counts=snapshot.counts,
+        )
+
+    def _drain_with_timeout(
+        self,
+        controller: WorkerController[Any],
+        *,
+        timeout: float | None,
+    ) -> Any:
+        deadline = None if timeout is None else time.monotonic() + timeout
+        poll_interval_s = 0.5
+        while True:
+            snapshot = controller.snapshot()
+            if pool_is_idle(snapshot):
+                controller.stop()
+                return controller.join()
+            if deadline is not None and time.monotonic() >= deadline:
+                controller.stop()
+                joined = controller.join()
+                if not pool_is_idle(joined):
+                    raise BackendDrainTimeoutError(
+                        "pool drain did not finish before timeout"
+                    )
+                return joined
+            time.sleep(poll_interval_s)
+
     def _validate_existing_schema(self) -> None:
         existing = catalog.load_schema(self._runtime, self._config.pool_name)
         if existing is None:
@@ -200,9 +281,7 @@ class PoolBackend:
 
     def _first_complete_sample(self, fingerprint: str) -> PoolSample | None:
         samples = self._store.bulk_load(
-            key_filter=PoolKeyFilter.eq(
-                **{BACKENDS_KEY_COLUMN: fingerprint}
-            ),
+            key_filter=PoolKeyFilter.eq(**{BACKENDS_KEY_COLUMN: fingerprint}),
             completion="complete",
         )
         if not samples:

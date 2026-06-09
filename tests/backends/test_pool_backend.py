@@ -6,11 +6,14 @@ import pytest
 
 from dr_llm.backends.converters import llm_response_to_backend_response
 from dr_llm.backends.errors import BackendUnsupportedFeatureError
+from dr_llm.backends.errors import BackendDrainTimeoutError
 from dr_llm.backends.models import PoolBackendConfig
 from dr_llm.backends.pool import PoolBackend
 from dr_llm.llm import CallMode, LlmResponse, ProviderName, TokenUsage
+from dr_llm.pool.backend import LlmPoolBackendState
 from dr_llm.pool.pool_sample import PoolSample
 from dr_llm.sampling.acquisition import AcquireResult
+from dr_llm.workers.models import WorkerSnapshot, WorkerStatCounts
 from tests.backends._helpers import make_backend_request
 
 
@@ -137,3 +140,72 @@ def test_pool_backend_init_sets_up_consumer(
     mock_pool_store.return_value.ensure_schema.assert_called_once()
     backend.close()
     sampling.teardown_consumer.assert_called_once_with("itest_backends")
+
+
+def test_pool_backend_submit_batch_seeds_only_missing_fingerprints() -> None:
+    backend, store, _, _ = _pool_backend()
+    store.complete_count.return_value = 0
+    store.insert_sample.return_value = True
+
+    result = backend.submit_batch(
+        [make_backend_request(), make_backend_request(model="gpt-4.1")]
+    )
+
+    assert result.seeded == 2
+    assert result.skipped == 0
+    assert store.insert_sample.call_count == 2
+
+
+def test_pool_backend_submit_batch_skips_existing_complete_cells() -> None:
+    backend, store, _, _ = _pool_backend()
+    store.complete_count.side_effect = [1, 0]
+    store.insert_sample.return_value = True
+
+    result = backend.submit_batch(
+        [make_backend_request(), make_backend_request(model="gpt-4.1")]
+    )
+
+    assert result.seeded == 1
+    assert result.skipped == 1
+    store.insert_sample.assert_called_once()
+
+
+@patch("dr_llm.backends.pool.start_workers")
+def test_pool_backend_await_drain_returns_counts(
+    mock_start_workers: MagicMock,
+) -> None:
+    backend, _, _, _ = _pool_backend()
+    controller = MagicMock()
+    snapshot = WorkerSnapshot(
+        worker_count=1,
+        counts=WorkerStatCounts(claimed=2, completed=2),
+        backend_state=LlmPoolBackendState(incomplete=0, complete=2),
+    )
+    controller.snapshot.return_value = snapshot
+    controller.join.return_value = snapshot
+    mock_start_workers.return_value = controller
+
+    result = backend.await_drain(timeout=5)
+
+    assert result.incomplete == 0
+    assert result.complete == 2
+    assert result.worker_counts.completed == 2
+    controller.stop.assert_called_once()
+
+
+@patch("dr_llm.backends.pool.start_workers")
+def test_pool_backend_await_drain_raises_on_timeout(
+    mock_start_workers: MagicMock,
+) -> None:
+    backend, _, _, _ = _pool_backend()
+    controller = MagicMock()
+    busy_snapshot = WorkerSnapshot(
+        worker_count=1,
+        backend_state=LlmPoolBackendState(incomplete=3, complete=1),
+    )
+    controller.snapshot.return_value = busy_snapshot
+    controller.join.return_value = busy_snapshot
+    mock_start_workers.return_value = controller
+
+    with pytest.raises(BackendDrainTimeoutError):
+        backend.await_drain(timeout=0)
