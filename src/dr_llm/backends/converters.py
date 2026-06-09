@@ -75,7 +75,9 @@ def capabilities_from_controls(
             if default_reasoning is not None
             else None
         ),
-        request_defaults=controls.request_defaults().model_dump(mode="json"),
+        request_defaults=dict(
+            controls.request_defaults().model_dump(mode="json")
+        ),
         catalog_metadata=dict(controls.catalog_metadata),
     )
 
