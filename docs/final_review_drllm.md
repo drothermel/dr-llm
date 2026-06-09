@@ -29,20 +29,20 @@ Update these rows as you go. Use one of: `todo`, `in_progress`, `blocked`, `done
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Read `../dr-dspy/docs/final_review_dspy.md` and this prompt | todo |  |
-| Inspect current `dr-llm` backend, pool, fingerprint, provider-control, and docs code | todo |  |
-| Provider-specific reasoning/config bridge supports dr-dspy experiment parity needs | todo |  |
-| Pool acquisition session identity is explicit and documented for direct `dr-llm` users | todo |  |
-| Pool batch-fill workflow docs are clear and still dr-llm-native | todo |  |
-| Pool fingerprint and metadata behavior are tested or documented | todo |  |
-| `PoolBackend.close()` is idempotent, or current idempotency is verified and documented | todo |  |
-| Acquire provenance remains stable for wrappers and direct backend users | todo |  |
-| dr-llm v1 unsupported feature scope is documented for DSPy callers | todo |  |
-| Exact `nl_latents` reproduction path remains dr-llm/native unless prompt parity is added elsewhere | todo |  |
-| Direct backend smoke checks pass | todo |  |
-| Pool backend smoke/integration checks pass or are blocked only by missing DSN | todo |  |
-| Live OpenRouter `gpt-5-nano` endpoint test passes | todo | Required for the plan to be considered fully tested; use the local OpenRouter API key environment variable. |
-| Cross-repo readiness note for dr-dspy is written | todo |  |
+| Read `../dr-dspy/docs/final_review_dspy.md` and this prompt | done | 2026-06-09: Read before implementation planning. |
+| Inspect current `dr-llm` backend, pool, fingerprint, provider-control, and docs code | done | 2026-06-09: Inspected backend models, pool, fingerprinting, provider controls, README, and cross-repo callers. |
+| Provider-specific reasoning/config bridge supports dr-dspy experiment parity needs | done | 2026-06-09: Existing public reasoning models cover the needed shapes; added contract tests for the six experiment families. |
+| Pool acquisition session identity is explicit and documented for direct `dr-llm` users | done | 2026-06-09: README documents stable non-empty session IDs; `PoolBackend.acquire()` rejects blank IDs. |
+| Pool batch-fill workflow docs are clear and still dr-llm-native | done | 2026-06-09: README contrasts native `submit_batch`/`await_drain`/`acquire` with wrapper cache-first calls. |
+| Pool fingerprint and metadata behavior are tested or documented | done | 2026-06-09: Existing fingerprint tests plus new dr-dspy contract test cover metadata/extensions exclusion and reasoning/sampling inclusion. |
+| `PoolBackend.close()` is idempotent, or current idempotency is verified and documented | done | 2026-06-09: `PoolBackend.close()` is now idempotent and unit-tested. |
+| Acquire provenance remains stable for wrappers and direct backend users | done | 2026-06-09: `AcquireResult` fields and per-response provenance are unchanged and documented. |
+| dr-llm v1 unsupported feature scope is documented for DSPy callers | done | 2026-06-09: README lists text-only scope and unsupported features to reject before provider calls. |
+| Exact `nl_latents` reproduction path remains dr-llm/native unless prompt parity is added elsewhere | done | 2026-06-09: README states exact replay remains raw `nl_latents` plus native `dr-llm`. |
+| Direct backend smoke checks pass | done | 2026-06-09: Backend focused command and full non-integration suite passed; full non-integration run passed 540 tests. |
+| Pool backend smoke/integration checks pass or are blocked only by missing DSN | done | 2026-06-09: `./scripts/run-tests-local.sh` passed with temporary Docker Postgres. |
+| Live OpenRouter `gpt-5-nano` endpoint test passes | done | 2026-06-09: Checked-in live test passed with `OPENROUTER_API_KEY`; confirmed non-skipped in dedicated and full integration runs. |
+| Cross-repo readiness note for dr-dspy is written | done | 2026-06-09: See checklist answers below and README dr-dspy experiment contract. |
 
 ## Target Outcome
 
@@ -92,7 +92,7 @@ Also inspect these cross-repo callers and fixtures when validating compatibility
 
 ## Phase 1: Establish the Cross-Repo Contract
 
-Status: `todo`
+Status: `done`
 
 Write down, in code comments, docs, or tests as appropriate, the contract between `dr-llm` and `dr-dspy`:
 
@@ -109,7 +109,7 @@ Acceptance checks:
 
 ## Phase 2: Preserve and Expose Provider-Specific Controls
 
-Status: `todo`
+Status: `done`
 
 The reviewed compression experiments used these request controls:
 
@@ -138,7 +138,7 @@ Acceptance checks:
 
 ## Phase 3: Make Pool Acquisition Semantics Hard to Misuse
 
-Status: `todo`
+Status: `done`
 
 `PoolBackend.aacquire(request, session_id, n)` implements no-replacement sampling by session. The unsafe behavior happens when callers accidentally reuse a session across independent experiments or accidentally generate a new session for repeated calls in one experiment.
 
@@ -158,7 +158,7 @@ Acceptance checks:
 
 ## Phase 4: Clarify Pool Batch Fill Versus Cache-First Calls
 
-Status: `todo`
+Status: `done`
 
 `PoolBackend` supports a native batch-fill workflow with `submit_batch`, drain, and then acquire. `DrLlmPoolLM.aforward` is cache-first single-completion behavior; on a miss it generates and inserts one response. These are different experiment workflows.
 
@@ -175,7 +175,7 @@ Acceptance checks:
 
 ## Phase 5: Stabilize Pool Lifecycle and Provenance
 
-Status: `todo`
+Status: `done`
 
 The DSPy review found that shallow-copied `DrLlmPoolLM` wrappers can share a backend while each wrapper tracks its own `_closed` flag. `dr-dspy` should guard against use-after-close, but `dr-llm` can reduce blast radius by making backend teardown robust.
 
@@ -194,7 +194,7 @@ Acceptance checks:
 
 ## Phase 6: Fingerprint and Metadata Contract
 
-Status: `todo`
+Status: `done`
 
 The current desired behavior is that generation-relevant request fields define `request_fingerprint`, while metadata and extensions do not. This lets run-specific tags avoid fragmenting the cache.
 
@@ -212,7 +212,7 @@ Acceptance checks:
 
 ## Phase 7: Document dr-llm v1 Scope for DSPy Callers
 
-Status: `todo`
+Status: `done`
 
 The first stable `dr-dspy` bridge should target text-only programs:
 
@@ -232,7 +232,7 @@ Acceptance checks:
 
 ## Phase 8: Experiment Parity Guidance
 
-Status: `todo`
+Status: `done`
 
 Do not collapse the two reviewed experiment families:
 
@@ -252,17 +252,17 @@ Acceptance checks:
 
 ## Phase 9: Verification Commands
 
-Status: `todo`
+Status: `done`
 
 Run the relevant checks in `dr-llm`. Update the command, result, and notes columns.
 
 | Command | Result | Notes |
 | --- | --- | --- |
-| `uv run pytest tests/backends/test_direct_backend.py tests/backends/test_pool_backend.py tests/backends/test_converters.py tests/backends/test_fingerprint.py tests/backends/test_validation.py tests/backends/test_async_bridge.py -q` | todo |  |
-| Provider-control unit tests you added or updated | todo |  |
-| Pool lifecycle/provenance tests you added or updated | todo |  |
-| Postgres pool integration test with `DR_LLM_TEST_DATABASE_URL` or `DR_LLM_DATABASE_URL` | todo |  |
-| Live OpenRouter smoke test against `openrouter/openai/gpt-5-nano` | todo | Required before marking the plan fully tested. Use the repo's local OpenRouter API key environment variable, expected to be `OPENROUTER_API_KEY`, verify the call actually reaches OpenRouter, returns nonempty text, and records OpenRouter/provider provenance. Also document the exact command or test that `dr-dspy` should run for its `V-2` integration check. |
+| `uv run pytest tests/backends/test_direct_backend.py tests/backends/test_pool_backend.py tests/backends/test_converters.py tests/backends/test_fingerprint.py tests/backends/test_validation.py tests/backends/test_async_bridge.py -q` | pass | Passed 39 tests on 2026-06-09. |
+| Provider-control unit tests you added or updated | pass | `uv run pytest tests/backends/test_dr_dspy_contract.py tests/backends/test_pool_backend.py tests/backends/test_fingerprint.py tests/llm/providers/test_reasoning.py tests/llm/providers/test_llm_config.py -q` passed 101 tests on 2026-06-09. |
+| Pool lifecycle/provenance tests you added or updated | pass | Same focused run passed; includes blank session ID and idempotent close tests. |
+| Postgres pool integration test with `DR_LLM_TEST_DATABASE_URL` or `DR_LLM_DATABASE_URL` | pass | `./scripts/run-tests-local.sh` created temporary Docker Postgres and passed 62 integration tests on 2026-06-09. |
+| Live OpenRouter smoke test against `openrouter/openai/gpt-5-nano` | pass | `uv run pytest tests/integration/test_live_openrouter.py -q -rs` passed 1 non-skipped live test, and `./scripts/run-tests-local.sh` also passed the checked-in live test with `OPENROUTER_API_KEY`. The paired dr-dspy `V-2` check should hit `DrLlmDirectLM("openrouter/openai/gpt-5-nano", ...)` and assert nonempty text plus OpenRouter provider/provenance metadata. |
 
 If Postgres credentials are unavailable, mark only the Postgres row `blocked` and include the missing environment variable or service. The OpenRouter `gpt-5-nano` live test is part of the full acceptance bar; if `OPENROUTER_API_KEY` is unexpectedly unavailable, mark the row `blocked`, explain the missing environment variable, and do not describe the plan as fully tested.
 
@@ -270,19 +270,24 @@ For the live OpenRouter test, add or run a checked-in live test when possible. A
 
 ## Cross-Repo Readiness Checklist for dr-dspy
 
-Status: `todo`
+Status: `done`
 
 Before declaring this done, write a short note for the `dr-dspy` implementer that answers:
 
-- What exact `BackendRequest` fields should `dr-dspy` set for OpenRouter reasoning-off?
-- What exact fields should it set for OpenRouter provider-specific effort?
-- What exact fields should it set for OpenAI minimal thinking and Google thinking-off?
-- How should it represent "no sampling override" versus explicit `temperature`/`top_p`?
-- Which fields affect the pool fingerprint?
-- What does `dr-dspy` need to pass as stable `session_id` for no-replacement pool acquisition?
-- Is `PoolBackend.close()` idempotent?
-- Are aggregate acquire provenance fields stable?
-- Which backend features remain unsupported and should be rejected in `dr-dspy` before provider calls?
+- OpenRouter reasoning-off: set `provider=ProviderName.OPENROUTER`, the provider model string such as `xiaomi/mimo-v2-flash`, `reasoning=OpenRouterReasoning(enabled=False)`, and explicit experiment sampling when needed.
+- OpenRouter provider-specific effort: set `reasoning=OpenRouterReasoning(effort=OpenRouterEffortLevel.LOW)` or another OpenRouter-supported effort. Do not rely on generic `BackendRequest.effort` as a substitute for the provider payload.
+- OpenAI minimal thinking: set `provider=ProviderName.OPENAI`, `model="gpt-5-nano"`, `reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL)`, and `sampling=None`.
+- Google thinking-off: set `provider=ProviderName.GOOGLE`, `model="gemini-2.5-flash-lite"`, `reasoning=GoogleReasoning(thinking_level=ThinkingLevel.OFF)`, and explicit experiment sampling when needed.
+- No sampling override is represented on the resolved request as `sampling=None`. Explicit sampling uses `SamplingControls(temperature=..., top_p=...)`. Empty authoring controls such as `SamplingControls(temperature=None, top_p=None)` resolve to `sampling=None`.
+- Pool fingerprints include `provider`, `model`, `mode`, `messages`, `max_tokens`, `effort`, `reasoning`, and `sampling`; they exclude `metadata` and `extensions`.
+- `DrLlmPoolLM` should pass an experiment-stable non-empty `session_id` to `PoolBackend.aacquire()`, for example `experiment-name:split:seed` or a caller-owned run ID. Metadata does not isolate claims.
+- Builtin safe-load class paths are `dspy.clients.dr_llm.direct.DrLlmDirectLM` and `dspy.clients.dr_llm.pool.DrLlmPoolLM`.
+- Builtin serialized dr-llm LM state fields are the base LM fields `_dspy_lm_class`, `model`, `model_type`, `num_retries`, `_dspy_provider_options`, optional `temperature`, optional `max_tokens`, plus `dr_llm_mode` and optional `dr_llm_provider_controls`.
+- Pool LM state additionally stores `dr_llm_pool_config` as `PoolBackendConfig.model_dump(mode="json")` and optional `dr_llm_session_id`. Custom `registry` instances and pool `session_id_resolver` callables are not serialized; restored LMs rebuild the default registry and only restore an explicit session ID.
+- Single-completion backend calls have no `n` field. For dr-dspy, unset `n` and `n=1` are equivalent for direct or cache-first completion. Native multi-completion is not supported on `DirectBackend.complete()` or `PoolBackend.complete()`; use `PoolBackend.acquire(..., n=...)` only for explicit no-replacement pool acquisition, otherwise reject or intentionally emulate `n>1` in dr-dspy.
+- `PoolBackend.close()` is idempotent as of this change.
+- Aggregate `AcquireResult(responses, claimed_from_cache, generated)` fields are stable; per-response `source`, `sample_id`, and `request_fingerprint` remain available when present.
+- v1 remains text-only. Reject tools, tool history, multimodal parts, structured response formats, stop sequences, logprobs, prompt-cache controls, and unsupported reasoning shapes before provider calls.
 
 ## Implementation Log
 
@@ -290,7 +295,7 @@ Append short entries as you work:
 
 | Date | Agent | Change | Verification |
 | --- | --- | --- | --- |
-|  |  |  |  |
+| 2026-06-09 | Codex | Added dr-dspy backend contract tests, idempotent `PoolBackend.close()`, blank session ID rejection, live OpenRouter smoke test, and README/readiness docs. | `ruff format`, `ruff check --fix .`, `ty check`, focused provider/pool tests, 540-test non-integration suite, 62-test Docker integration suite, and non-skipped live OpenRouter smoke passed. |
 
 ## Original Review Findings Incorporated
 
@@ -311,5 +316,5 @@ This prompt incorporates the following review findings from the prior `dr-llm` f
 - Batch-fill remains a native `dr-llm` workflow.
 - Pool fingerprints exclude metadata and extensions by design, but provider-output-affecting controls must be included.
 - `dr-llm` v1 is intentionally text-only for the DSPy bridge.
-- `LMConfig(n=1)` and multi-completion proposal behavior are primarily `dr-dspy` contract issues unless `dr-llm` adds native or emulated multi-completion support.
+- `LMConfig(n=1)` should map to ordinary single-completion behavior. `n>1` remains unsupported on direct/cache-first backend calls unless `dr-dspy` deliberately emulates it or uses explicit pool acquisition.
 - `AcquireResult` aggregate provenance is already present in `dr-llm`; preserve it for future wrapper exposure.

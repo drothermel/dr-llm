@@ -115,13 +115,27 @@ pool.close()
 Async wrappers: `acomplete`, `aacquire`, and `adrain` delegate to the sync
 implementations via `asyncio.to_thread`.
 
+`PoolBackend.acquire()` and `PoolBackend.aacquire()` require a stable,
+non-empty `session_id`. The session ID controls no-replacement acquisition:
+repeat calls with the same `session_id` continue claiming from the same
+session, while different session IDs start independent claim groups. Use an
+experiment-stable value such as `experiment-name:split:seed` or a caller-owned
+run ID. Do not derive acquisition session IDs from low-resolution timestamps.
+
 ### Fingerprinting
 
 `fingerprint_request()` hashes a canonical JSON payload built from:
 `provider`, `model`, `mode`, `messages`, `max_tokens`, `effort`, `reasoning`,
 and `sampling`. `metadata` and `extensions` are excluded, so requests that
 differ only in tracing metadata or unsupported extension payloads share pool
-cache keys and session claims.
+cache keys and session claims. Metadata is useful for audit context, but it is
+not cache isolation and it is not acquisition session isolation.
+
+Provider-output-affecting controls must be represented on the resolved
+`BackendRequest` before fingerprinting. In particular, provider-native
+reasoning belongs in `BackendRequest.reasoning`; top-level
+`BackendRequest.effort` is not a substitute for OpenRouter's provider-specific
+reasoning payload.
 
 ### submit_batch
 
@@ -133,6 +147,70 @@ complete samples and no pending incomplete samples for the same fingerprint.
 `await_drain()` is single-flight per `PoolBackend` instance. Concurrent drain
 calls on the same instance serialize on an internal lock rather than starting
 overlapping worker fleets.
+
+### dr-dspy experiment contract
+
+The backend API is the integration surface for callers such as `dr-dspy`.
+`dr-llm` owns provider/model routing, provider-native reasoning and sampling
+controls, backend validation, fingerprinting, pool acquisition semantics, and
+aggregate acquire provenance. `dr-dspy` owns TaskSpec/adapter prompt rendering,
+DSPy LM request mapping, RunContext, transparency logs, and optimizer behavior.
+
+For the reviewed compression experiments, resolved `BackendRequest` values
+should use these provider-native fields:
+
+| Experiment family | `provider` / `model` | Required fields |
+|---|---|---|
+| MiMo off | `openrouter` / `xiaomi/mimo-v2-flash` | `reasoning=OpenRouterReasoning(enabled=False)`, `sampling=SamplingControls(temperature=0.7, top_p=0.95)` |
+| Nemotron off | `openrouter` / `nvidia/llama-3.3-nemotron-super-49b-v1.5` | `reasoning=OpenRouterReasoning(enabled=False)`, `sampling=SamplingControls(temperature=0.7, top_p=0.95)` |
+| GPT-OSS low | `openrouter` / `openai/gpt-oss-20b` | `reasoning=OpenRouterReasoning(effort=OpenRouterEffortLevel.LOW)`, `sampling=SamplingControls(temperature=0.7, top_p=0.95)` |
+| GPT-5 nano low | `openrouter` / `openai/gpt-5-nano` | `reasoning=OpenRouterReasoning(effort=OpenRouterEffortLevel.LOW)`, `sampling=SamplingControls(temperature=0.7, top_p=0.95)` |
+| GPT-5 nano minimal | `openai` / `gpt-5-nano` | `reasoning=OpenAIReasoning(thinking_level=ThinkingLevel.MINIMAL)`, `sampling=None` |
+| Gemini Flash Lite off | `google` / `gemini-2.5-flash-lite` | `reasoning=GoogleReasoning(thinking_level=ThinkingLevel.OFF)`, `sampling=SamplingControls(temperature=0.7, top_p=0.95)` |
+
+`sampling=None` means no sampling override on the resolved request. Some
+authoring configs accept `SamplingControls(temperature=None, top_p=None)` to
+suppress provider defaults; that should resolve to `sampling=None` before the
+request is sent or fingerprinted.
+
+`AcquireResult(responses, claimed_from_cache, generated)` is stable public
+provenance. Each returned `BackendResponse` also carries `source`, `sample_id`,
+and `request_fingerprint` when available.
+
+Single-completion backend calls do not carry an `n` field. For DSPy wrappers,
+unset `n` and `n=1` are equivalent for direct or cache-first single completion.
+Native multi-completion is not supported on `DirectBackend.complete()` or
+`PoolBackend.complete()`; use `PoolBackend.acquire(..., n=...)` only when
+explicit no-replacement pool acquisition is intended.
+
+Built-in dr-dspy LM state loading should allow these class paths:
+`dspy.clients.dr_llm.direct.DrLlmDirectLM` and
+`dspy.clients.dr_llm.pool.DrLlmPoolLM`. Shared serialized fields are
+`_dspy_lm_class`, `model`, `model_type`, `num_retries`,
+`_dspy_provider_options`, optional `temperature`, optional `max_tokens`,
+`dr_llm_mode`, and optional `dr_llm_provider_controls`. Pool state also stores
+`dr_llm_pool_config` as `PoolBackendConfig.model_dump(mode="json")` and
+optional `dr_llm_session_id`. Custom `registry` instances and pool
+`session_id_resolver` callables are not serialized; restored LMs rebuild the
+default provider registry and only restore an explicit session ID.
+
+`PoolBackend` supports a native batch-fill workflow: build a request grid,
+`submit_batch()`, `await_drain()`, then `acquire()` with a stable session ID.
+Wrapper-level cache-first single completions are a different workflow. They do
+not reproduce `nl_latents` grid axes, encoder-to-decoder lineage, prompt
+bindings, compression baselines, or curve aggregation.
+
+For exact `nl_latents` compression-curve replay, keep using the raw
+single-user-message `nl_latents` plus `dr-llm` pool harness. DSPy
+`Predict(TaskSpec)` rendering adds adapter prompt structure and should be
+treated as a new prompt condition unless a raw request path is implemented and
+verified separately.
+
+The v1 backend surface is text-only. Supported usage is plain text direct and
+pool requests. Unsupported features should be rejected before provider calls:
+tools and tool-call history, multimodal parts, native structured response
+formats, stop sequences, logprobs, prompt-cache controls, and unsupported
+reasoning shapes.
 
 ## Demo Scripts
 
@@ -290,6 +368,8 @@ dr-llm query --provider openai --model gpt-5-mini --reasoning-json '{"kind":"ope
 dr-llm query --provider codex --model gpt-5.1-codex-mini --reasoning-json '{"kind":"codex","thinking_level":"xhigh"}' --message TEXT
 dr-llm query --provider google --model gemini-2.5-flash --reasoning-json '{"kind":"google","thinking_level":"budget","budget_tokens":512}' --message TEXT
 dr-llm query --provider openrouter --model openai/gpt-oss-20b --reasoning-json '{"kind":"openrouter","effort":"high"}' --message TEXT
+OPENROUTER_API_KEY=... uv run pytest tests/integration/test_live_openrouter.py -q
+# Full acceptance requires this live test to pass, not skip.
 
 # Sampling / token controls
 # Generic sampling API providers default omitted sampling controls to temperature=1.0 and top_p=0.95.
