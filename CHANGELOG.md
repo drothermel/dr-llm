@@ -1,5 +1,23 @@
 # Changelog
 
+## 4.3.0 - 2026-06-08
+
+### Added
+
+- `dr_llm.backends` public API: `DirectBackend`, `PoolBackend`, `BackendRequest`,
+  `BackendResponse`, `fingerprint_request`, and related result/error types.
+- `DirectBackend` for provider-only generation with async `acomplete` bridge.
+- `PoolBackend` for fingerprint-keyed cache lookup, session acquire, batch
+  submit, and worker drain.
+- Unit and integration tests for fingerprinting, v1 validation, async bridge,
+  session semantics (12/10/3), and submit/drain.
+- README **Backends API** section with usage examples.
+
+### Changed
+
+- Upgraded `marimo` to 0.23.9 and refreshed `marimo[recommended]` transitive
+  deps (altair, polars, duckdb, sqlglot, pydantic-ai-slim).
+
 ## 4.2.0 - 2026-05-11
 
 ### Added
