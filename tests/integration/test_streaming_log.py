@@ -15,8 +15,10 @@ from dr_llm.streaming_log.client import (
     StreamingWorkQueue,
 )
 from dr_llm.streaming_log.config import StreamingLogConfig
+from dr_llm.streaming_log.event_builders import StreamingEventPublishSpec
 from dr_llm.streaming_log.events import (
     ProducerInfo,
+    ProducerLifecyclePayload,
     StreamingLogEventType,
     build_event,
 )
@@ -89,7 +91,7 @@ async def _test_bootstrap_is_idempotent_and_event_replay_works() -> None:
             StreamingLogEventType.producer_started,
             producer=event_log.producer,
             idempotency_key="event-1",
-            payload={"ok": True},
+            payload=ProducerLifecyclePayload(worker_id="worker-1"),
         )
         await event_log.publish_event(event)
         events = [
@@ -113,11 +115,13 @@ async def _test_payload_is_written_before_event_publish() -> None:
     async with StreamingLogConnection(config) as connection:
         payload_store, event_log, _ = _clients(connection)
         payload = prepare_text_payload("stdout", "hello")
-        event = await event_log.publish_event_with_payloads(
-            StreamingLogEventType.producer_started,
-            idempotency_key="payload-event-1",
-            payload={"ok": True},
-            payloads=[payload],
+        event = await event_log.publish_event_spec(
+            StreamingEventPublishSpec(
+                event_type=StreamingLogEventType.producer_started,
+                idempotency_key="payload-event-1",
+                payload=ProducerLifecyclePayload(worker_id="worker-1"),
+                payloads=[payload],
+            )
         )
         stored = await payload_store.read_payload_ref(event.payload_refs[0])
 

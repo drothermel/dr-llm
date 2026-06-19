@@ -39,8 +39,10 @@ Core implementation lives under
 
 Shared live-demo helpers live in
 [`src/dr_llm/demo/streaming_log.py`](src/dr_llm/demo/streaming_log.py). They
-create temporary NATS containers when needed, isolate demo stream names, replay
-events, and verify payload hashes and sizes.
+create temporary NATS containers when needed, isolate demo stream names,
+bootstrap resources, expose connected event/payload/work clients through
+`open_streaming_log_demo_runtime(...)`, replay events, and verify payload
+hashes and sizes.
 
 ## Publishing Events
 
@@ -58,16 +60,18 @@ async with StreamingLogConnection(config) as connection:
     context = EventContext.from_work_attempt(work, attempt_id=attempt_id)
     publisher = event_log.with_event_context(context)
 
-    await publisher.publish_event_with_payloads(
-        StreamingLogEventType.attempt_started,
-        idempotency_key=idempotency_key(
-            "attempt_started", work.work_id, attempt
-        ),
-        payload={"worker_id": worker_id, "attempt": attempt},
+    await publisher.publish_event_spec(
+        StreamingEventPublishSpec(
+            event_type=StreamingLogEventType.attempt_started,
+            idempotency_key=idempotency_key(
+                "attempt_started", work.work_id, attempt
+            ),
+            payload={"worker_id": worker_id, "attempt": attempt},
+        )
     )
 ```
 
-Use `event_log.publish_event_with_payloads(...)` directly for context-free
+Use `event_log.publish_event_spec(...)` directly for context-free
 operational events such as producer startup/shutdown. The event wire shape is
 unchanged: `EventContext` is only the construction primitive for shared
 envelope identity.
@@ -166,6 +170,8 @@ database, and reads the synced pool back:
 uv run python scripts/demo-project-sync-postgres.py
 ```
 
+Prerequisites: Docker must be running and `psql` must be available on `PATH`.
+
 Useful options:
 
 ```bash
@@ -251,6 +257,27 @@ uv run python scripts/demo-streaming-log-worker.py --nats-url nats://127.0.0.1:4
 Fallback only applies to auto-selected providers. If you pass `--provider` or
 `--model`, that explicit choice is tested directly and failures are reported
 with the replayed `attempt_failed` details.
+
+### Project Artifacts From The Streaming Log
+
+```bash
+uv run python scripts/demo-artifact-projection.py
+```
+
+What it verifies:
+
+- isolated streaming-log resources bootstrap successfully
+- one event with duplicate artifact payload refs projects to one artifact
+- the artifact sidecar records no open references after finalization
+- the finalized artifact can be read back from the Zarr shard
+
+Useful options:
+
+```bash
+uv run python scripts/demo-artifact-projection.py --help
+uv run python scripts/demo-artifact-projection.py --keep-nats
+uv run python scripts/demo-artifact-projection.py --artifact-root /tmp/dr-llm-artifacts
+```
 
 ## Local Project And Pool Discovery
 

@@ -5,18 +5,25 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections import Counter
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import nats
 from nats.errors import TimeoutError as NatsTimeoutError
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.demo.requirements import ensure_docker_available
 from dr_llm.project.docker_runner import call_docker
 from dr_llm.streaming_log import (
     EventEnvelope,
     StreamingEventLog,
+    StreamingLogConnection,
+    StreamingLogStatus,
     StreamingPayloadReader,
+    StreamingPayloadStore,
+    StreamingWorkQueue,
+    bootstrap_streaming_log,
 )
 from dr_llm.streaming_log.config import StreamingLogConfig
 
@@ -36,6 +43,49 @@ class DemoNatsLease(BaseModel):
     nats_url: str
     container_name: str | None = None
     should_destroy_container: bool = False
+
+
+class DemoNatsOptions(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    nats_url: str | None = None
+    keep_nats: bool = False
+    container_prefix: str = "dr_llm_demo_nats"
+
+
+class StreamingLogDemoRuntimeOptions(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    nats: DemoNatsOptions = Field(default_factory=DemoNatsOptions)
+    suffix: str | None = None
+
+
+class StreamingLogDemoRuntime(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    lease: DemoNatsLease
+    config: StreamingLogConfig
+    status: StreamingLogStatus
+
+    @property
+    def cleanup_command(self) -> str | None:
+        if self.lease.container_name is None:
+            return None
+        return f"docker rm -f {self.lease.container_name}"
+
+
+class StreamingLogDemoSession(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        arbitrary_types_allowed=True,
+    )
+
+    runtime: StreamingLogDemoRuntime
+    connection: StreamingLogConnection
+    payload_store: StreamingPayloadStore
+    event_log: StreamingEventLog
+    work_queue: StreamingWorkQueue
 
 
 class PayloadVerification(BaseModel):
@@ -104,6 +154,46 @@ def cleanup_demo_nats(lease: DemoNatsLease) -> None:
     if lease.container_name is None or not lease.should_destroy_container:
         return
     call_docker("rm", "-f", lease.container_name, check=False)
+
+
+@asynccontextmanager
+async def open_streaming_log_demo_runtime(
+    options: StreamingLogDemoRuntimeOptions | None = None,
+) -> AsyncIterator[StreamingLogDemoSession]:
+    resolved_options = options or StreamingLogDemoRuntimeOptions()
+    lease = prepare_demo_nats(
+        nats_url=resolved_options.nats.nats_url,
+        keep_nats=resolved_options.nats.keep_nats,
+        container_prefix=resolved_options.nats.container_prefix,
+    )
+    connection: StreamingLogConnection | None = None
+    try:
+        await wait_for_nats(lease.nats_url)
+        config = demo_streaming_log_config(
+            nats_url=lease.nats_url,
+            suffix=resolved_options.suffix,
+        )
+        status = await bootstrap_streaming_log(config)
+        connection = StreamingLogConnection(config)
+        await connection.connect()
+        payload_store = StreamingPayloadStore(connection)
+        event_log = StreamingEventLog(connection, payload_store)
+        work_queue = StreamingWorkQueue(connection, event_log)
+        yield StreamingLogDemoSession(
+            runtime=StreamingLogDemoRuntime(
+                lease=lease,
+                config=config,
+                status=status,
+            ),
+            connection=connection,
+            payload_store=payload_store,
+            event_log=event_log,
+            work_queue=work_queue,
+        )
+    finally:
+        if connection is not None:
+            await connection.close()
+        cleanup_demo_nats(lease)
 
 
 async def wait_for_nats(
@@ -198,10 +288,15 @@ def summarize_events(events: list[EventEnvelope]) -> Counter[str]:
 
 __all__ = [
     "DemoNatsLease",
+    "DemoNatsOptions",
     "PayloadVerification",
+    "StreamingLogDemoRuntime",
+    "StreamingLogDemoRuntimeOptions",
+    "StreamingLogDemoSession",
     "cleanup_demo_nats",
     "collect_streaming_log_events",
     "demo_streaming_log_config",
+    "open_streaming_log_demo_runtime",
     "prepare_demo_nats",
     "summarize_events",
     "verify_payload_refs",

@@ -23,89 +23,86 @@ import asyncio
 from collections import Counter
 from typing import Annotated
 
+from pydantic import BaseModel, ConfigDict, Field
 import typer
 
 from dr_llm.demo import (
-    cleanup_demo_nats,
     collect_streaming_log_events,
     command_hint,
-    demo_streaming_log_config,
+    DemoNatsOptions,
     fail,
     ok,
-    prepare_demo_nats,
+    open_streaming_log_demo_runtime,
     step,
     summarize_events,
+    StreamingLogDemoRuntime,
+    StreamingLogDemoRuntimeOptions,
     verify_payload_refs,
-    wait_for_nats,
 )
 from dr_llm.pool import DbConfig, DbRuntime, PoolReader
-from dr_llm.streaming_log import (
-    EventEnvelope,
-    StreamingEventLog,
-    StreamingLogConnection,
-    StreamingPayloadStore,
-)
-from dr_llm.streaming_log.bootstrap import bootstrap_streaming_log
+from dr_llm.streaming_log import EventEnvelope
 from dr_llm.streaming_log.ingest_pools import ingest_pool
 
 app = typer.Typer()
 
 
-async def _run_import_demo(
-    *,
-    dsn: str,
-    pool_name: str,
-    nats_url: str | None,
-    keep_nats: bool,
-    source_id: str | None,
-    sample_limit: int | None,
-    event_sample_limit: int,
-) -> None:
+class PoolImportDemoOptions(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    dsn: str
+    pool_name: str
+    nats: DemoNatsOptions = Field(default_factory=DemoNatsOptions)
+    source_id: str | None = None
+    sample_limit: int | None = None
+    event_sample_limit: int = 5
+
+
+PoolImportDemoOptions.model_rebuild(
+    _types_namespace={"DemoNatsOptions": DemoNatsOptions}
+)
+
+
+async def _run_import_demo(options: PoolImportDemoOptions) -> None:
     step("1. Inspecting source pool")
-    source_total = _print_source_pool_summary(dsn=dsn, pool_name=pool_name)
+    source_total = _print_source_pool_summary(
+        dsn=options.dsn,
+        pool_name=options.pool_name,
+    )
     expected_import_count = (
-        min(source_total, sample_limit)
-        if sample_limit is not None
+        min(source_total, options.sample_limit)
+        if options.sample_limit is not None
         else source_total
     )
-    if sample_limit is not None:
-        ok(f"Limiting import to {sample_limit} source samples")
+    if options.sample_limit is not None:
+        ok(f"Limiting import to {options.sample_limit} source samples")
 
-    step("2. Preparing NATS")
-    lease = prepare_demo_nats(nats_url=nats_url, keep_nats=keep_nats)
-    ok(f"NATS ready at {lease.nats_url}")
-    await wait_for_nats(lease.nats_url)
-    config = demo_streaming_log_config(nats_url=lease.nats_url)
-    ok(f"Using event stream {config.events_stream}")
-    ok(f"Using work stream {config.work_stream}")
-    ok(f"Using payload bucket {config.payload_bucket}")
-
+    runtime: StreamingLogDemoRuntime | None = None
+    events: list[EventEnvelope] = []
+    verified_payloads = []
     try:
-        step("3. Bootstrapping streaming-log resources")
-        status = await bootstrap_streaming_log(config)
-        ok(f"Events subjects: {', '.join(status.events_subjects)}")
-        ok(f"Work subjects: {', '.join(status.work_subjects)}")
+        step("2. Preparing streaming-log runtime")
+        async with open_streaming_log_demo_runtime(
+            StreamingLogDemoRuntimeOptions(nats=options.nats)
+        ) as session:
+            runtime = session.runtime
+            _print_runtime_summary(runtime)
 
-        step("4. Importing pool")
-        async with StreamingLogConnection(config) as connection:
-            payload_store = StreamingPayloadStore(connection)
-            event_log = StreamingEventLog(connection, payload_store)
-
+            step("3. Importing pool")
             result = await ingest_pool(
-                event_log=event_log,
-                dsn=dsn,
-                pool_name=pool_name,
-                source_id=source_id,
-                sample_limit=sample_limit,
+                event_log=session.event_log,
+                dsn=options.dsn,
+                pool_name=options.pool_name,
+                source_id=options.source_id,
+                sample_limit=options.sample_limit,
             )
             ok(
                 f"Imported {result.imported_count} samples "
                 f"with {len(result.event_ids)} emitted events"
             )
 
-            step("5. Replaying and verifying events")
+            step("4. Replaying and verifying events")
             events = await collect_streaming_log_events(
-                event_log,
+                session.event_log,
                 expected_min_events=result.imported_count + 2,
             )
             counts = summarize_events(events)
@@ -115,22 +112,31 @@ async def _run_import_demo(
                 counts=counts,
             )
             verified_payloads = await verify_payload_refs(
-                payload_store, events
+                session.payload_store, events
             )
 
         ok(f"Verified {len(events)} replayed events")
         ok(f"Verified {len(verified_payloads)} payload references")
-        _print_event_sample(events, event_sample_limit)
+        _print_event_sample(events, options.event_sample_limit)
         ok("Streaming-log pool import demo verified live data")
     finally:
-        if lease.should_destroy_container and lease.container_name is not None:
-            step("Destroying temporary NATS")
-            cleanup_demo_nats(lease)
-        elif lease.container_name is not None:
-            command_hint(
-                "Destroy NATS",
-                f"docker rm -f {lease.container_name}",
-            )
+        _print_cleanup_hint(runtime)
+
+
+def _print_runtime_summary(runtime: StreamingLogDemoRuntime) -> None:
+    ok(f"NATS ready at {runtime.lease.nats_url}")
+    ok(f"Using event stream {runtime.config.events_stream}")
+    ok(f"Using work stream {runtime.config.work_stream}")
+    ok(f"Using payload bucket {runtime.config.payload_bucket}")
+    ok(f"Events subjects: {', '.join(runtime.status.events_subjects)}")
+    ok(f"Work subjects: {', '.join(runtime.status.work_subjects)}")
+
+
+def _print_cleanup_hint(runtime: StreamingLogDemoRuntime | None) -> None:
+    if runtime is None or runtime.lease.should_destroy_container:
+        return
+    if runtime.cleanup_command is not None:
+        command_hint("Destroy NATS", runtime.cleanup_command)
 
 
 def _print_source_pool_summary(*, dsn: str, pool_name: str) -> int:
@@ -232,13 +238,17 @@ def main(
     try:
         asyncio.run(
             _run_import_demo(
-                dsn=dsn,
-                pool_name=pool_name,
-                nats_url=nats_url,
-                keep_nats=keep_nats,
-                source_id=source_id,
-                sample_limit=sample_limit,
-                event_sample_limit=event_sample_limit,
+                PoolImportDemoOptions(
+                    dsn=dsn,
+                    pool_name=pool_name,
+                    nats=DemoNatsOptions(
+                        nats_url=nats_url,
+                        keep_nats=keep_nats,
+                    ),
+                    source_id=source_id,
+                    sample_limit=sample_limit,
+                    event_sample_limit=event_sample_limit,
+                )
             )
         )
     except Exception as exc:

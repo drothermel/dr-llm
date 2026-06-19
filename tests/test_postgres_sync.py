@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+from typing import BinaryIO, cast
 
 import pytest
 from pydantic import BaseModel, ConfigDict, Field
@@ -289,3 +291,344 @@ def test_pgpass_line_escapes_colons_and_backslashes() -> None:
     )
 
     assert line == r"db\:host:5432:db\\name:user\:name:pa\:ss\\word" + "\n"
+
+
+def test_parse_restore_target_reads_required_dsn_fields() -> None:
+    target = postgres_sync_module._parse_restore_target(
+        "postgresql://alice:secret@example.com:6543/demo?sslmode=require"
+    )
+
+    assert target.dbname == "demo"
+    assert target.user == "alice"
+    assert target.password == "secret"
+    assert target.host == "example.com"
+    assert target.port == "6543"
+    assert target.sslmode == "require"
+
+
+@pytest.mark.parametrize(
+    "conninfo",
+    [
+        {"user": "alice"},
+        {"dbname": "demo"},
+    ],
+)
+def test_parse_restore_target_requires_database_and_user(
+    monkeypatch: pytest.MonkeyPatch,
+    conninfo: dict[str, str],
+) -> None:
+    monkeypatch.setattr(
+        postgres_sync_module,
+        "conninfo_to_dict",
+        lambda _target_dsn: conninfo,
+    )
+
+    with pytest.raises(ProjectError, match="database and user"):
+        postgres_sync_module._parse_restore_target("postgresql://example")
+
+
+def test_restore_sql_file_builds_psql_command_env_and_removes_pgpass(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    dump_path = tmp_path / "dump.sql"
+    dump_path.write_bytes(b"select 1;\n")
+    captured: dict[str, object] = {}
+
+    def fake_run(
+        command: list[str],
+        *,
+        stdin: BinaryIO,
+        env: dict[str, str],
+        capture_output: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[bytes]:
+        pgpass_path = Path(env["PGPASSFILE"])
+        captured["command"] = command
+        captured["stdin"] = stdin.read()
+        captured["env"] = env
+        captured["pgpass_path"] = pgpass_path
+        captured["pgpass"] = pgpass_path.read_text()
+        captured["capture_output"] = capture_output
+        captured["check"] = check
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    monkeypatch.setattr(postgres_sync_module.subprocess, "run", fake_run)
+
+    postgres_sync_module._restore_sql_file(
+        "postgresql://alice:secret@example.com:6543/demo?sslmode=require",
+        dump_path,
+    )
+
+    assert captured["command"] == [
+        "psql",
+        "-h",
+        "example.com",
+        "-p",
+        "6543",
+        "-U",
+        "alice",
+        "-d",
+        "demo",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-q",
+    ]
+    assert captured["stdin"] == b"select 1;\n"
+    env = cast(dict[str, str], captured["env"])
+    assert env["PGSSLMODE"] == "require"
+    assert captured["pgpass"] == "example.com:6543:demo:alice:secret\n"
+    pgpass_path = captured["pgpass_path"]
+    assert isinstance(pgpass_path, Path)
+    assert not pgpass_path.exists()
+    assert captured["capture_output"] is True
+    assert captured["check"] is False
+
+
+def test_restore_sql_file_removes_pgpass_when_psql_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    dump_path = tmp_path / "dump.sql"
+    dump_path.write_bytes(b"select 1;\n")
+    pgpass_paths: list[Path] = []
+
+    def fake_run(
+        command: list[str],
+        *,
+        stdin: BinaryIO,
+        env: dict[str, str],
+        capture_output: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[bytes]:
+        _ = (stdin, capture_output, check)
+        pgpass_paths.append(Path(env["PGPASSFILE"]))
+        return subprocess.CompletedProcess(command, 1, b"", b"syntax error")
+
+    monkeypatch.setattr(postgres_sync_module.subprocess, "run", fake_run)
+
+    with pytest.raises(
+        ProjectError, match="psql restore failed: syntax error"
+    ):
+        postgres_sync_module._restore_sql_file(
+            "postgresql://alice:secret@example.com/demo",
+            dump_path,
+        )
+
+    assert len(pgpass_paths) == 1
+    assert not pgpass_paths[0].exists()
+
+
+def test_restore_sql_file_translates_missing_psql(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    dump_path = tmp_path / "dump.sql"
+    dump_path.write_bytes(b"select 1;\n")
+
+    def fake_run(*_args: object, **_kwargs: object) -> None:
+        raise FileNotFoundError("psql")
+
+    monkeypatch.setattr(postgres_sync_module.subprocess, "run", fake_run)
+
+    with pytest.raises(ProjectError, match="psql is required"):
+        postgres_sync_module._restore_sql_file(
+            "postgresql://alice:secret@example.com/demo",
+            dump_path,
+        )
+
+
+def test_raise_for_psql_restore_failure_uses_unknown_error() -> None:
+    result = subprocess.CompletedProcess(["psql"], 1, b"", b"")
+
+    with pytest.raises(ProjectError, match="unknown error"):
+        postgres_sync_module._raise_for_psql_restore_failure(result)
+
+
+class FakeCursor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    existing_databases: set[str] = Field(default_factory=set)
+    operations: list[tuple[str, str]] = Field(default_factory=list)
+
+    def __enter__(self) -> FakeCursor:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def execute(self, query: object, params: list[str] | None = None) -> None:
+        _ = query
+        if params is not None:
+            self.operations.append(("terminate", params[0]))
+
+    def fetchone(self) -> tuple[int] | None:
+        return None
+
+
+class FakeConnection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cursor_value: FakeCursor
+
+    def __enter__(self) -> FakeConnection:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def cursor(self) -> FakeCursor:
+        return self.cursor_value
+
+
+def _install_fake_admin_connection(
+    monkeypatch: pytest.MonkeyPatch,
+    cursor: FakeCursor,
+) -> None:
+    monkeypatch.setattr(
+        postgres_sync_module,
+        "_connect_admin",
+        lambda _admin_url: FakeConnection(cursor_value=cursor),
+    )
+
+
+def _install_fake_rename_database(
+    monkeypatch: pytest.MonkeyPatch,
+    cursor: FakeCursor,
+    *,
+    fail_renames: set[tuple[str, str]] | None = None,
+) -> None:
+    failed = fail_renames or set()
+
+    def fake_rename_database(
+        _cur: FakeCursor,
+        source_database: str,
+        target_database: str,
+    ) -> None:
+        if (source_database, target_database) in failed:
+            raise RuntimeError(
+                f"rename {source_database} to {target_database} failed"
+            )
+        cursor.operations.append(
+            ("rename", f"{source_database}->{target_database}")
+        )
+
+    monkeypatch.setattr(
+        postgres_sync_module, "_rename_database", fake_rename_database
+    )
+
+
+def test_replace_database_renames_temporary_when_target_is_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cursor = FakeCursor()
+    _install_fake_admin_connection(monkeypatch, cursor)
+    _install_fake_rename_database(monkeypatch, cursor)
+    monkeypatch.setattr(
+        postgres_sync_module,
+        "_database_exists",
+        lambda _cur, _database_name: False,
+    )
+
+    replaced_existing = postgres_sync_module._replace_database(
+        admin_url="postgresql://example/postgres",
+        temporary_database="demo_sync",
+        target_database="demo",
+        previous_database="demo_prev",
+    )
+
+    assert replaced_existing is False
+    assert cursor.operations == [("rename", "demo_sync->demo")]
+
+
+def test_replace_database_moves_existing_target_before_swap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cursor = FakeCursor()
+    _install_fake_admin_connection(monkeypatch, cursor)
+    _install_fake_rename_database(monkeypatch, cursor)
+    monkeypatch.setattr(
+        postgres_sync_module,
+        "_database_exists",
+        lambda _cur, _database_name: True,
+    )
+
+    replaced_existing = postgres_sync_module._replace_database(
+        admin_url="postgresql://example/postgres",
+        temporary_database="demo_sync",
+        target_database="demo",
+        previous_database="demo_prev",
+    )
+
+    assert replaced_existing is True
+    assert cursor.operations == [
+        ("terminate", "demo"),
+        ("rename", "demo->demo_prev"),
+        ("rename", "demo_sync->demo"),
+    ]
+
+
+def test_replace_database_restores_previous_when_swap_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cursor = FakeCursor()
+    _install_fake_admin_connection(monkeypatch, cursor)
+    _install_fake_rename_database(
+        monkeypatch,
+        cursor,
+        fail_renames={("demo_sync", "demo")},
+    )
+    monkeypatch.setattr(
+        postgres_sync_module,
+        "_database_exists",
+        lambda _cur, _database_name: True,
+    )
+
+    with pytest.raises(RuntimeError, match="rename demo_sync to demo failed"):
+        postgres_sync_module._replace_database(
+            admin_url="postgresql://example/postgres",
+            temporary_database="demo_sync",
+            target_database="demo",
+            previous_database="demo_prev",
+        )
+
+    assert cursor.operations == [
+        ("terminate", "demo"),
+        ("rename", "demo->demo_prev"),
+        ("terminate", "demo_prev"),
+        ("rename", "demo_prev->demo"),
+    ]
+
+
+def test_replace_database_translates_failed_rollback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cursor = FakeCursor()
+    _install_fake_admin_connection(monkeypatch, cursor)
+    _install_fake_rename_database(
+        monkeypatch,
+        cursor,
+        fail_renames={
+            ("demo_sync", "demo"),
+            ("demo_prev", "demo"),
+        },
+    )
+    monkeypatch.setattr(
+        postgres_sync_module,
+        "_database_exists",
+        lambda _cur, _database_name: True,
+    )
+
+    with pytest.raises(ProjectError, match="rollback also failed"):
+        postgres_sync_module._replace_database(
+            admin_url="postgresql://example/postgres",
+            temporary_database="demo_sync",
+            target_database="demo",
+            previous_database="demo_prev",
+        )
+
+    assert cursor.operations == [
+        ("terminate", "demo"),
+        ("rename", "demo->demo_prev"),
+        ("terminate", "demo_prev"),
+    ]

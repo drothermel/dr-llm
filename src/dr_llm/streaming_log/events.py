@@ -3,10 +3,16 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from dr_llm.streaming_log.payloads import PayloadRef
 from dr_llm.streaming_log.serialization import canonical_json_bytes
@@ -74,6 +80,186 @@ class EventContext(BaseModel):
         )
 
 
+class EmptyEventPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class PoolImportStartedPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    pool_name: str
+    source_id: str
+
+
+class PoolSampleImportedPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    pool_name: str
+    source_id: str
+    sample_id: str
+    sample_idx: int | None = None
+    run_id: str | None = None
+    key_values: dict[str, Any] = Field(default_factory=dict)
+    finish_reason: str | None = None
+    attempt_count: int = Field(ge=0)
+    created_at: str | None = None
+    completion_state: str
+    reconstructed: bool
+    row_state_hash: str
+
+
+class PoolImportCompletedPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    pool_name: str
+    source_id: str
+    imported_count: int = Field(ge=0)
+    reconstructed: bool
+
+
+class PoolImportFailedPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    pool_name: str
+    source_id: str
+    error_type: str
+    message: str
+
+
+class WorkSubmittedPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    work_id: str
+    run_id: str | None = None
+    max_retries: int = Field(ge=0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AttemptStartedPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    worker_id: str
+    attempt: int = Field(ge=1)
+
+
+class ProviderRequestPreparedPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: str
+    model: str
+    mode: str
+
+
+class ProviderResponseReceivedPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: str
+    model: str
+    mode: str
+    finish_reason: str | None = None
+
+
+class AttemptSucceededPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    attempt: int = Field(ge=1)
+
+
+class AttemptFailedPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    error_type: str
+    message: str
+    attempt: int = Field(ge=1)
+
+
+class WorkRetryScheduledPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    attempt: int = Field(ge=1)
+    next_attempt: int = Field(ge=2)
+
+
+class WorkCompletedPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: str
+    attempt: int = Field(ge=1)
+    error_type: str | None = None
+    message: str | None = None
+
+
+class WorkCancelledPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    work_id: str
+    reason: str | None = None
+
+
+class ProducerLifecyclePayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    worker_id: str
+
+
+class StreamingLogErrorPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    error_type: str
+    message: str
+
+
+type EventPayload = (
+    EmptyEventPayload
+    | PoolImportStartedPayload
+    | PoolSampleImportedPayload
+    | PoolImportCompletedPayload
+    | PoolImportFailedPayload
+    | WorkSubmittedPayload
+    | AttemptStartedPayload
+    | ProviderRequestPreparedPayload
+    | ProviderResponseReceivedPayload
+    | AttemptSucceededPayload
+    | AttemptFailedPayload
+    | WorkRetryScheduledPayload
+    | WorkCompletedPayload
+    | WorkCancelledPayload
+    | ProducerLifecyclePayload
+    | StreamingLogErrorPayload
+)
+type EventPayloadModel = type[EventPayload]
+
+
+EVENT_PAYLOAD_MODELS: dict[StreamingLogEventType, EventPayloadModel] = {
+    StreamingLogEventType.pool_import_started: PoolImportStartedPayload,
+    StreamingLogEventType.pool_sample_imported: PoolSampleImportedPayload,
+    StreamingLogEventType.pool_import_completed: PoolImportCompletedPayload,
+    StreamingLogEventType.pool_import_failed: PoolImportFailedPayload,
+    StreamingLogEventType.work_submitted: WorkSubmittedPayload,
+    StreamingLogEventType.attempt_started: AttemptStartedPayload,
+    StreamingLogEventType.provider_request_prepared: (
+        ProviderRequestPreparedPayload
+    ),
+    StreamingLogEventType.provider_response_received: (
+        ProviderResponseReceivedPayload
+    ),
+    StreamingLogEventType.attempt_succeeded: AttemptSucceededPayload,
+    StreamingLogEventType.attempt_failed: AttemptFailedPayload,
+    StreamingLogEventType.work_retry_scheduled: WorkRetryScheduledPayload,
+    StreamingLogEventType.work_completed: WorkCompletedPayload,
+    StreamingLogEventType.work_cancelled: WorkCancelledPayload,
+    StreamingLogEventType.producer_started: ProducerLifecyclePayload,
+    StreamingLogEventType.producer_stopped: ProducerLifecyclePayload,
+    StreamingLogEventType.streaming_log_error: StreamingLogErrorPayload,
+}
+
+
+def payload_model_for_event_type(
+    event_type: StreamingLogEventType,
+) -> EventPayloadModel:
+    return EVENT_PAYLOAD_MODELS[event_type]
+
+
 class EventEnvelope(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -83,7 +269,7 @@ class EventEnvelope(BaseModel):
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     producer: ProducerInfo = Field(default_factory=ProducerInfo)
     idempotency_key: str
-    payload: dict[str, Any] = Field(default_factory=dict)
+    payload: EventPayload = Field(default_factory=EmptyEventPayload)
     payload_refs: list[PayloadRef] = Field(default_factory=list)
     run_id: str | None = None
     work_id: str | None = None
@@ -92,6 +278,32 @@ class EventEnvelope(BaseModel):
     correlation_id: str | None = None
     source: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _build_typed_payload(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        raw_value = cast("dict[str, Any]", value)
+        raw_event_type = raw_value.get("event_type")
+        if raw_event_type is None:
+            return value
+        event_type = StreamingLogEventType(raw_event_type)
+        payload_model = payload_model_for_event_type(event_type)
+        payload = raw_value.get("payload", {})
+        if isinstance(payload, dict):
+            raw_value = dict(raw_value)
+            raw_value["payload"] = payload_model(**payload)
+        return raw_value
+
+    @model_validator(mode="after")
+    def _require_matching_payload_model(self) -> EventEnvelope:
+        expected_model = payload_model_for_event_type(self.event_type)
+        if not isinstance(self.payload, expected_model):
+            raise ValueError(
+                f"{self.event_type} payload must be {expected_model.__name__}"
+            )
+        return self
 
     @field_validator("occurred_at")
     @classmethod
@@ -120,7 +332,7 @@ def build_event(
     *,
     producer: ProducerInfo,
     idempotency_key: str,
-    payload: dict[str, Any] | None = None,
+    payload: EventPayload,
     payload_refs: list[PayloadRef] | None = None,
     context: EventContext | None = None,
     metadata: dict[str, Any] | None = None,
@@ -130,7 +342,7 @@ def build_event(
         event_type=event_type,
         producer=producer,
         idempotency_key=idempotency_key,
-        payload=payload or {},
+        payload=payload,
         payload_refs=payload_refs or [],
         run_id=context.run_id,
         work_id=context.work_id,
@@ -143,11 +355,29 @@ def build_event(
 
 
 __all__ = [
+    "AttemptFailedPayload",
+    "AttemptStartedPayload",
+    "AttemptSucceededPayload",
+    "EmptyEventPayload",
     "EventContext",
     "EventEnvelope",
+    "EventPayload",
+    "PoolImportCompletedPayload",
+    "PoolImportFailedPayload",
+    "PoolImportStartedPayload",
+    "PoolSampleImportedPayload",
     "ProducerInfo",
+    "ProducerLifecyclePayload",
+    "ProviderRequestPreparedPayload",
+    "ProviderResponseReceivedPayload",
+    "StreamingLogErrorPayload",
     "StreamingLogEventType",
+    "WorkCancelledPayload",
+    "WorkCompletedPayload",
+    "WorkRetryScheduledPayload",
+    "WorkSubmittedPayload",
     "build_event",
     "idempotency_key",
+    "payload_model_for_event_type",
     "stable_hash",
 ]

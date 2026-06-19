@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from typing import Any
 
@@ -15,7 +16,13 @@ import dr_llm.demo.streaming_log as demo_streaming_log
 from dr_llm.pool import LlmPoolBackendState
 from dr_llm.project import CreateProjectRequest, ProjectInfo
 from dr_llm.project.errors import DockerUnavailableError
-from dr_llm.streaming_log import EventEnvelope, ProducerInfo
+from dr_llm.streaming_log import (
+    EventEnvelope,
+    ProducerInfo,
+    StreamingLogStatus,
+    WorkCompletedPayload,
+    WorkSubmittedPayload,
+)
 from dr_llm.streaming_log.events import StreamingLogEventType
 from dr_llm.streaming_log.payloads import PayloadRef
 from dr_llm.workers import WorkerSnapshot, WorkerStatCounts
@@ -317,22 +324,216 @@ def test_prepare_demo_nats_starts_disposable_container(
     assert calls[1] == ("port", "dr_llm_demo_nats_abcdef12", "4222/tcp")
 
 
+def test_streaming_log_demo_runtime_uses_existing_nats_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    wait_calls: list[str] = []
+    bootstrap_calls: list[str] = []
+    connect_calls: list[str] = []
+    close_calls: list[str] = []
+    cleanup_leases: list[demo_streaming_log.DemoNatsLease] = []
+
+    async def fake_wait_for_nats(nats_url: str) -> None:
+        wait_calls.append(nats_url)
+
+    async def fake_bootstrap(config) -> StreamingLogStatus:
+        bootstrap_calls.append(config.nats_url)
+        return StreamingLogStatus(
+            nats_url=config.nats_url,
+            events_stream=config.events_stream,
+            work_stream=config.work_stream,
+            payload_bucket=config.payload_bucket,
+            events_subjects=[config.events_subject],
+            work_subjects=[config.work_subject],
+            payload_objects=0,
+        )
+
+    async def fake_connect(connection) -> None:
+        connect_calls.append(connection.config.nats_url)
+
+    async def fake_close(connection) -> None:
+        close_calls.append(connection.config.nats_url)
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "wait_for_nats",
+        fake_wait_for_nats,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "bootstrap_streaming_log",
+        fake_bootstrap,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log.StreamingLogConnection,
+        "connect",
+        fake_connect,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log.StreamingLogConnection,
+        "close",
+        fake_close,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "cleanup_demo_nats",
+        cleanup_leases.append,
+    )
+
+    async def run_runtime() -> demo_streaming_log.StreamingLogDemoSession:
+        async with demo_streaming_log.open_streaming_log_demo_runtime(
+            demo_streaming_log.StreamingLogDemoRuntimeOptions(
+                nats=demo_streaming_log.DemoNatsOptions(
+                    nats_url="nats://localhost:4222"
+                ),
+                suffix="abc123",
+            )
+        ) as session:
+            assert session.runtime.config.events_stream == (
+                "DRLLM_DEMO_EVENTS_ABC123"
+            )
+            assert session.runtime.status.events_subjects == [
+                "drllm.demo.abc123.events.>"
+            ]
+            assert session.event_log.config is session.runtime.config
+            assert session.work_queue.config is session.runtime.config
+            return session
+
+    session = asyncio.run(run_runtime())
+
+    assert wait_calls == ["nats://localhost:4222"]
+    assert bootstrap_calls == ["nats://localhost:4222"]
+    assert connect_calls == ["nats://localhost:4222"]
+    assert close_calls == ["nats://localhost:4222"]
+    assert cleanup_leases == [
+        demo_streaming_log.DemoNatsLease(nats_url="nats://localhost:4222")
+    ]
+    assert session.runtime.cleanup_command is None
+
+
+def test_streaming_log_demo_runtime_cleans_up_after_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lease = demo_streaming_log.DemoNatsLease(
+        nats_url="nats://127.0.0.1:45555",
+        container_name="demo_nats",
+        should_destroy_container=True,
+    )
+    cleanup_leases: list[demo_streaming_log.DemoNatsLease] = []
+    close_calls: list[str] = []
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "prepare_demo_nats",
+        lambda *, nats_url, keep_nats, container_prefix: lease,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "wait_for_nats",
+        lambda nats_url: _async_noop(nats_url),
+    )
+
+    async def fake_bootstrap(config) -> StreamingLogStatus:
+        return StreamingLogStatus(
+            nats_url=config.nats_url,
+            events_stream=config.events_stream,
+            work_stream=config.work_stream,
+            payload_bucket=config.payload_bucket,
+            events_subjects=[config.events_subject],
+            work_subjects=[config.work_subject],
+            payload_objects=0,
+        )
+
+    async def fake_connect(connection) -> None:
+        _ = connection
+
+    async def fake_close(connection) -> None:
+        close_calls.append(connection.config.nats_url)
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "bootstrap_streaming_log",
+        fake_bootstrap,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log.StreamingLogConnection,
+        "connect",
+        fake_connect,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log.StreamingLogConnection,
+        "close",
+        fake_close,
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "cleanup_demo_nats",
+        cleanup_leases.append,
+    )
+
+    async def fail_inside_runtime() -> None:
+        async with demo_streaming_log.open_streaming_log_demo_runtime():
+            raise ValueError("boom")
+
+    with pytest.raises(ValueError, match="boom"):
+        asyncio.run(fail_inside_runtime())
+
+    assert close_calls == ["nats://127.0.0.1:45555"]
+    assert cleanup_leases == [lease]
+
+
+def test_streaming_log_demo_runtime_exposes_kept_container_cleanup_command() -> (
+    None
+):
+    lease = demo_streaming_log.DemoNatsLease(
+        nats_url="nats://127.0.0.1:45555",
+        container_name="demo_nats",
+        should_destroy_container=False,
+    )
+    config = demo_streaming_log.demo_streaming_log_config(
+        nats_url=lease.nats_url,
+        suffix="abc123",
+    )
+    runtime = demo_streaming_log.StreamingLogDemoRuntime(
+        lease=lease,
+        config=config,
+        status=StreamingLogStatus(
+            nats_url=config.nats_url,
+            events_stream=config.events_stream,
+            work_stream=config.work_stream,
+            payload_bucket=config.payload_bucket,
+            events_subjects=[config.events_subject],
+            work_subjects=[config.work_subject],
+            payload_objects=0,
+        ),
+    )
+
+    assert runtime.cleanup_command == "docker rm -f demo_nats"
+
+
+async def _async_noop(*args: object) -> None:
+    _ = args
+
+
 def test_summarize_events_counts_event_types() -> None:
     events = [
         EventEnvelope(
             event_type=StreamingLogEventType.work_submitted,
             producer=ProducerInfo(name="test"),
             idempotency_key="one",
+            payload=WorkSubmittedPayload(work_id="work-1", max_retries=0),
         ),
         EventEnvelope(
             event_type=StreamingLogEventType.work_submitted,
             producer=ProducerInfo(name="test"),
             idempotency_key="two",
+            payload=WorkSubmittedPayload(work_id="work-2", max_retries=0),
         ),
         EventEnvelope(
             event_type=StreamingLogEventType.work_completed,
             producer=ProducerInfo(name="test"),
             idempotency_key="three",
+            payload=WorkCompletedPayload(status="succeeded", attempt=1),
         ),
     ]
 
@@ -352,6 +553,7 @@ def test_verify_payload_refs_detects_hash_mismatch() -> None:
         event_type=StreamingLogEventType.work_submitted,
         producer=ProducerInfo(name="test"),
         idempotency_key="one",
+        payload=WorkSubmittedPayload(work_id="work-1", max_retries=0),
         payload_refs=[
             PayloadRef(
                 role="request_json",

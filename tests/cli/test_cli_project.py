@@ -196,6 +196,7 @@ def test_project_create_reports_typed_project_errors(
     result = runner.invoke(app, ["project", "create", "demo"])
 
     assert result.exit_code == 1
+    assert "typed project failure" in result.output
 
 
 def test_project_list_reports_typed_project_errors(
@@ -209,6 +210,7 @@ def test_project_list_reports_typed_project_errors(
     result = runner.invoke(app, ["project", "list"])
 
     assert result.exit_code == 1
+    assert "docker unavailable" in result.output
 
 
 def test_project_backup_reports_file_not_found_errors(
@@ -230,6 +232,7 @@ def test_project_backup_reports_file_not_found_errors(
     )
 
     assert result.exit_code == 1
+    assert "missing backup dir" in result.output
 
 
 def test_project_sync_postgres_invokes_service(

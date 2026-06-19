@@ -7,13 +7,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.streaming_log.client import StreamingLogConnection
 from dr_llm.streaming_log.config import StreamingLogConfig
+from dr_llm.streaming_log.event_builders import StreamingEventPublishSpec
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
+    EventPayload,
     ProducerInfo,
     StreamingLogEventType,
 )
-from dr_llm.streaming_log.payloads import PreparedPayload
 
 
 class PublishCall(BaseModel):
@@ -21,7 +22,7 @@ class PublishCall(BaseModel):
 
     event_type: StreamingLogEventType
     idempotency_key: str
-    payload: dict[str, Any] = Field(default_factory=dict)
+    payload: EventPayload
     payload_roles: list[str] = Field(default_factory=list)
     context: EventContext | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -93,52 +94,33 @@ class SpyEventPublisher:
     def events(self) -> list[EventEnvelope]:
         return [call.event for call in self.published]
 
-    async def publish_event_with_payloads(
-        self,
-        event_type: StreamingLogEventType,
-        *,
-        idempotency_key: str,
-        payload: dict[str, Any] | None = None,
-        payloads: list[PreparedPayload] | None = None,
-        metadata: dict[str, Any] | None = None,
+    async def publish_event_spec(
+        self, spec: StreamingEventPublishSpec
     ) -> EventEnvelope:
+        if self.context is None:
+            return self.record_publish(spec)
         return self.record_publish(
-            event_type,
-            idempotency_key=idempotency_key,
-            payload=payload,
-            payloads=payloads,
-            context=self.context,
-            metadata=metadata,
+            spec.model_copy(update={"context": self.context})
         )
 
-    def record_publish(
-        self,
-        event_type: StreamingLogEventType,
-        *,
-        idempotency_key: str,
-        payload: dict[str, Any] | None = None,
-        payloads: list[PreparedPayload] | None = None,
-        context: EventContext | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> EventEnvelope:
-        payload = payload or {}
-        metadata = metadata or {}
-        payloads = payloads or []
+    def record_publish(self, spec: StreamingEventPublishSpec) -> EventEnvelope:
         event = minimal_event(
-            event_type,
-            idempotency_key=idempotency_key,
-            payload=payload,
-            context=context,
-            metadata=metadata,
+            spec.event_type,
+            idempotency_key=spec.idempotency_key,
+            payload=spec.payload,
+            context=spec.context,
+            metadata=spec.metadata,
         )
         self.published.append(
             PublishCall(
-                event_type=event_type,
-                idempotency_key=idempotency_key,
-                payload=payload,
-                payload_roles=[payload_item.role for payload_item in payloads],
-                context=context,
-                metadata=metadata,
+                event_type=spec.event_type,
+                idempotency_key=spec.idempotency_key,
+                payload=spec.payload,
+                payload_roles=[
+                    payload_item.role for payload_item in spec.payloads
+                ],
+                context=spec.context,
+                metadata=spec.metadata,
                 event=event,
             )
         )
@@ -162,26 +144,12 @@ class SpyStreamingEventLog:
     def events(self) -> list[EventEnvelope]:
         return [call.event for call in self.published]
 
-    async def publish_event_with_payloads(
-        self,
-        event_type: StreamingLogEventType,
-        *,
-        idempotency_key: str,
-        payload: dict[str, Any] | None = None,
-        payloads: list[PreparedPayload] | None = None,
-        context: EventContext | None = None,
-        metadata: dict[str, Any] | None = None,
+    async def publish_event_spec(
+        self, spec: StreamingEventPublishSpec
     ) -> EventEnvelope:
-        if event_type == self.fail_on:
-            raise RuntimeError(f"failed to publish {event_type}")
-        return self.publisher.record_publish(
-            event_type,
-            idempotency_key=idempotency_key,
-            payload=payload,
-            payloads=payloads,
-            context=context,
-            metadata=metadata,
-        )
+        if spec.event_type == self.fail_on:
+            raise RuntimeError(f"failed to publish {spec.event_type}")
+        return self.publisher.record_publish(spec)
 
     def with_event_context(self, context: EventContext) -> SpyEventPublisher:
         publisher = SpyEventPublisher(context)
@@ -193,7 +161,7 @@ def minimal_event(
     event_type: StreamingLogEventType,
     *,
     idempotency_key: str,
-    payload: dict[str, Any] | None = None,
+    payload: EventPayload,
     context: EventContext | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> EventEnvelope:
@@ -202,7 +170,7 @@ def minimal_event(
         event_type=event_type,
         producer=ProducerInfo(name="test"),
         idempotency_key=idempotency_key,
-        payload=payload or {},
+        payload=payload,
         run_id=context.run_id,
         work_id=context.work_id,
         attempt_id=context.attempt_id,

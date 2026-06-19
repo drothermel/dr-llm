@@ -7,10 +7,13 @@ from pydantic import ValidationError
 
 from dr_llm.llm import CallMode, LlmRequest, Message, ProviderName
 from dr_llm.streaming_log.events import (
+    AttemptStartedPayload,
     EventContext,
     EventEnvelope,
     ProducerInfo,
+    ProducerLifecyclePayload,
     StreamingLogEventType,
+    WorkSubmittedPayload,
     build_event,
     idempotency_key,
     stable_hash,
@@ -35,11 +38,16 @@ def _request() -> LlmRequest:
     )
 
 
+def _work_submitted_payload() -> WorkSubmittedPayload:
+    return WorkSubmittedPayload(work_id="work-1", max_retries=0)
+
+
 def test_event_envelope_requires_strict_event_type() -> None:
     event = EventEnvelope(
         event_type=StreamingLogEventType.work_submitted,
         producer=ProducerInfo(name="test", version="1"),
         idempotency_key="same",
+        payload=_work_submitted_payload(),
     )
 
     assert event.event_type is StreamingLogEventType.work_submitted
@@ -52,6 +60,7 @@ def test_event_envelope_rejects_naive_timestamp() -> None:
             event_type=StreamingLogEventType.work_submitted,
             producer=ProducerInfo(),
             idempotency_key="same",
+            payload=_work_submitted_payload(),
             occurred_at=datetime(2026, 1, 1),
         )
 
@@ -107,6 +116,7 @@ def test_event_envelope_validates_payload_refs() -> None:
                 "event_type": StreamingLogEventType.work_submitted,
                 "producer": ProducerInfo(name="test"),
                 "idempotency_key": "same",
+                "payload": _work_submitted_payload(),
                 "payload_refs": [{"role": "request_json"}],
             }
         )
@@ -125,13 +135,25 @@ def test_event_envelope_restores_typed_payload_refs_from_json() -> None:
         event_type=StreamingLogEventType.work_submitted,
         producer=ProducerInfo(name="test"),
         idempotency_key="same",
+        payload=_work_submitted_payload(),
         payload_refs=[ref],
     )
 
     restored = EventEnvelope.model_validate_json(event.json_bytes())
 
+    assert restored.payload == _work_submitted_payload()
     assert restored.payload_refs == [ref]
     assert isinstance(restored.payload_refs[0], PayloadRef)
+
+
+def test_event_envelope_rejects_mismatched_payload_model() -> None:
+    with pytest.raises(ValueError, match="WorkSubmittedPayload"):
+        EventEnvelope(
+            event_type=StreamingLogEventType.work_submitted,
+            producer=ProducerInfo(name="test"),
+            idempotency_key="same",
+            payload=ProducerLifecyclePayload(worker_id="worker-1"),
+        )
 
 
 def test_build_event_accepts_typed_payload_refs() -> None:
@@ -148,6 +170,7 @@ def test_build_event_accepts_typed_payload_refs() -> None:
         StreamingLogEventType.work_submitted,
         producer=ProducerInfo(name="test"),
         idempotency_key="same",
+        payload=_work_submitted_payload(),
         payload_refs=[ref],
     )
 
@@ -164,6 +187,7 @@ def test_timestamp_is_normalized_to_utc() -> None:
         event_type=StreamingLogEventType.producer_started,
         producer=ProducerInfo(),
         idempotency_key="same",
+        payload=ProducerLifecyclePayload(worker_id="worker-1"),
         occurred_at=datetime.now(UTC),
     )
 
@@ -209,7 +233,7 @@ def test_build_event_applies_context_to_envelope() -> None:
         StreamingLogEventType.attempt_started,
         producer=ProducerInfo(name="test"),
         idempotency_key="same",
-        payload={"ok": True},
+        payload=AttemptStartedPayload(worker_id="worker-1", attempt=1),
         context=EventContext(
             run_id="run-1",
             work_id="work-1",

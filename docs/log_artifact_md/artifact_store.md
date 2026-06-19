@@ -16,6 +16,22 @@ referenced from the metadata projection. Since the shards are immutable, the
 system avoids many multi-writer mutable blob-store problems. If the physical
 layout changes, the artifact projection can be rebuilt from the log.
 
+The SQLite sidecar is the projection's idempotency authority during normal
+writes. It records open references as soon as the store accepts an artifact, then
+promotes those references when the shard finalizes. Readers still consume only
+finalized shard references. Finalized manifests remain the rebuild source of
+truth, so a missing or stale sidecar can be reconstructed from finalized marker
+files.
+
+The shard layer separates domain state from publishing mechanics. `OpenShard`
+tracks in-memory lane buffers and artifact references, then produces an
+immutable `ShardContents` snapshot. `ShardWriter` owns rotation and finalization
+orchestration, while a `ShardStorageBackend` publishes finalized shard contents,
+loads finalized manifests for rebuild, and reads finalized bytes. The current
+backend is `LocalShardStorage`, which implements the local Zarr v3 layout,
+writer-owned staging directories, manifest JSONL files, finalized marker JSON,
+and atomic replacement of finalized paths.
+
 Zarr is attractive because it supports chunked storage, compression,
 structured grouping, and efficient partial reads. It is also better aligned
 with a local-to-object-store path than traditional HDF5, which is strongest in

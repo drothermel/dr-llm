@@ -2,10 +2,10 @@
 
 ## Purpose
 
-This document plans the investigation needed to design the blob-storage portion
-of the artifact projection. It is preparation for a design discussion, not a
-final storage specification and not an implementation plan for the streaming log
-or metadata graph.
+This document records the v1 implementation plan for the blob-storage portion
+of the artifact projection. The first implementation step is to update this
+document to match the concrete v1 design, then pause for review before adding
+dependencies or code.
 
 The working assumption is that the streaming log and metadata projection have
 their own concrete designs. This plan focuses on the artifact-store questions
@@ -175,21 +175,22 @@ that were previously reserved for later design work.
 These answers are now strong enough for implementation and for the metadata
 projection to design against.
 
-- **Artifact categories from streaming refs:** project all event `payload_refs`
-  with large/raw roles into artifact storage in v1. This includes
-  `request_json`, `response_json`, `stdout`, `stderr`, `generated_code`,
-  `validation_report`, `metrics`-like payloads, and `error_detail` when those
-  payloads are externalized by the streaming log. Oversized metadata remains an
-  additional artifact candidate when it appears in imported pool facts or later
-  event schemas.
+- **Artifact categories from streaming refs:** project selected large/raw
+  payload roles into artifact storage in v1. Always project `request_json`,
+  `response_json`, `stdout`, `stderr`, `generated_code`, `validation_report`,
+  `metrics_payload`, `metrics`, and `error_detail`. Project `metadata_json`
+  only when the source payload is at least the configured metadata spill
+  threshold. Do not project `pool_schema` in v1.
 - **Inline event payloads:** keep ordinary inline event payload fields in the
   metadata projection. The artifact projector should not extract small inline
   facts by default. It may spill inline metadata-like blobs above a configured
   threshold once the metadata projection defines which summaries stay queryable.
 - **Artifact identity:** use a logical artifact identity that includes source
-  event identity, payload role, object key, and content hash. Content hash alone
-  is not enough because the same bytes may play different semantic roles or
-  appear in different provenance contexts.
+  logical fact identity, payload role, object key, and content hash. Content
+  hash alone is not enough because the same bytes may play different semantic
+  roles or appear in different provenance contexts. Preserve
+  `source_ref.event_id` as provenance, not as the primary artifact identity
+  input.
 - **Pointer metadata:** artifact references emitted to or consumed by metadata
   should include source fields from the payload ref, source event provenance,
   logical artifact ID, projection/layout version, shard identifier, shard
@@ -207,8 +208,9 @@ projection to design against.
   artifact write, manifest/pointer update, and any needed projection checkpoint
   are durable enough for replay to be idempotent.
 - **Lifecycle:** readers should only consume finalized immutable shards and their
-  committed pointer/manifest data. In-progress shards are writer-owned and
-  recoverable by replay.
+  committed pointer/manifest data. In-progress shard bytes are writer-owned, but
+  accepted open references are durable in the sidecar so duplicate detection does
+  not depend on shard finalization timing.
 
 ## Metadata-Facing Artifact Contract
 
@@ -222,19 +224,26 @@ The v1 metadata-facing reference is `ArtifactReference` with these fields:
 - `artifact_id`: stable logical artifact identifier with an `art_` prefix.
 - `projection_version`: artifact projection version, starting at
   `artifact-v1`.
-- `source_event_id`: event that introduced the payload reference.
-- `source_idempotency_key`: logical fact key from the source event.
-- `payload_role`: source semantic role, such as `request_json`,
-  `response_json`, `stdout`, `stderr`, `generated_code`,
-  `validation_report`, `metrics_payload`, or `error_detail`.
-- `source_object_key`: immutable object key in `DRLLM_PAYLOADS`.
-- `source_sha256`: SHA-256 of the exact bytes in `DRLLM_PAYLOADS`.
+- `source_ref`: durable source event and payload-reference identity:
+  - `event_id`: event that introduced the payload reference.
+  - `event_type`: source event type.
+  - `schema_version`: source event schema version.
+  - `idempotency_key`: logical fact key from the source event.
+  - `payload_role`: source semantic role, such as `request_json`,
+    `response_json`, `stdout`, `stderr`, `generated_code`,
+    `validation_report`, `metrics_payload`, or `error_detail`.
+  - `object_key`: immutable object key in `DRLLM_PAYLOADS`.
+  - `sha256`: SHA-256 of the exact bytes in `DRLLM_PAYLOADS`.
+  - `size_bytes`: byte length recorded on the source payload reference.
+  - `content_type`: media type from the source payload reference.
+  - `encoding`: text encoding, usually `utf-8`, or `binary` for non-text
+    bytes.
+  - `compression`: compression recorded on the source payload reference.
+- `event_context`: optional run/work/attempt/causation/correlation/source,
+  producer, and event metadata context copied from the source event.
 - `logical_sha256`: SHA-256 of the bytes exposed by the artifact projection
   after any supported source decompression.
 - `size_bytes`: logical byte length exposed to artifact readers.
-- `content_type`: media type from the source payload reference.
-- `encoding`: text encoding, usually `utf-8`, or `binary` for non-text bytes.
-- `source_compression`: compression recorded on the source payload reference.
 - `lane`: one of `json`, `text`, or `binary`.
 - `shard_id`: finalized shard identifier.
 - `shard_uri`: object-store-compatible relative path to the finalized shard.
@@ -243,16 +252,37 @@ The v1 metadata-facing reference is `ArtifactReference` with these fields:
 - `created_at`: artifact projection write timestamp.
 - `schema_version`: artifact reference schema version.
 
-`artifact_id` is derived from source provenance plus content, not from content
-alone:
+`artifact_id` is derived from source logical provenance plus content, not from
+content alone. Use canonical JSON for the hash input so part boundaries are
+unambiguous:
 
 ```text
-art_<sha256("drllm-artifact-v1" + idempotency_key + role + object_key + source_sha256)>
+art_<sha256(canonical_json({
+  "projection_version": "artifact-v1",
+  "source_idempotency_key": source_ref.idempotency_key,
+  "payload_role": source_ref.payload_role,
+  "source_object_key": source_ref.object_key,
+  "source_sha256": source_ref.sha256
+}))>
 ```
 
 The same bytes can therefore appear as distinct artifacts when they have
 different semantic roles or provenance. Physical deduplication is not required
 for v1.
+
+## V1 Role Policy
+
+The v1 projector uses a small explicit policy instead of projecting every
+payload reference.
+
+- Always project raw or low-contact payload roles: `request_json`,
+  `response_json`, `stdout`, `stderr`, `generated_code`, `validation_report`,
+  `metrics_payload`, `metrics`, and `error_detail`.
+- Project `metadata_json` only when `size_bytes >= 16384`.
+- Ignore `pool_schema`; schema facts belong in metadata and are often repeated
+  during pool imports.
+- Ignore events with no artifact-bearing payload refs, but checkpoint and
+  acknowledge them so replay progress is explicit.
 
 ## Concrete Implementation Plan
 
@@ -264,32 +294,41 @@ are the streaming-log event envelope and payload-reference shape.
 Implementation steps:
 
 1. **Update this plan document first.** Keep this metadata-facing contract
-   current so the metadata projection can be designed against stable artifact
-   references in the same way this plan was designed against the streaming-log
-   contract.
-2. **Add storage dependencies.** Add Zarr v3 support for immutable shard stores.
-   Use the standard-library `sqlite3` module for the local mutable sidecar
-   index. Do not add a Postgres dependency for artifact projection state.
+   current, including the concrete role policy, artifact identity formula,
+   storage layout, index tables, ack/error behavior, CLI surface, test plan, and
+   quality gate. Pause for review after this documentation change before adding
+   dependencies or code.
+2. **Add storage dependencies.** Add `zarr>=3,<4` and `numpy>=2,<3` for
+   immutable Zarr v3 shard stores. Use the standard-library `sqlite3` module for
+   the local mutable sidecar index. Do not add a Postgres dependency for
+   artifact projection state.
 3. **Create Pydantic models.** Define `ArtifactProjectionConfig`,
-   `PayloadArtifactSource`, `ArtifactReference`, `ShardManifest`,
-   `ProjectionCheckpoint`, and `ProjectionError`. Use `extra="forbid"` for
-   manifest and reference models so schema drift fails fast.
-4. **Create the sidecar index.** Store artifact references, finalized shard
-   records, open shard state, projection checkpoints, and projection errors in
-   `index/artifacts.sqlite3`. Treat this index as rebuildable from manifests,
-   not as the source of truth.
-5. **Create the shard writer.** Stage payload bytes into writer-owned staging
-   directories, append them into lane-specific buffers, finalize shards into
-   Zarr v3 stores, write manifest JSONL files, then atomically mark shards
-   finalized. Readers must never read staging shards.
+   `ArtifactSourceRef`, `ArtifactEventContext`, `PayloadArtifactSource`,
+   `ArtifactReference`, `ShardManifest`, `ProjectionCheckpoint`, and
+   `ProjectionError`. Use `extra="forbid"` for manifest and reference models so
+   schema drift fails fast.
+4. **Create the sidecar index.** Store finalized artifact references, open
+   artifact references, finalized shard records, open shard state, projection
+   checkpoints, and projection errors in `index/artifacts.sqlite3`. Treat this
+   index as the normal-write idempotency authority and as rebuildable from
+   finalized manifests, not as the permanent source of artifact bytes.
+5. **Create the shard writer and storage backend.** Append payload bytes into
+   lane-specific open-shard buffers, snapshot open shards into immutable
+   contents at finalization, and delegate durable publishing to a
+   `ShardStorageBackend`. The local backend stages Zarr v3 stores in
+   writer-owned directories, writes manifest JSONL files plus finalized marker
+   JSON, then atomically moves finalized outputs into place. Readers must never
+   read staging shards.
 6. **Create the reader.** Support `read_artifact`, `read_artifacts`,
    `read_text`, `read_json`, and `read_bytes` by looking up references in the
    sidecar index and reading finalized Zarr lane arrays by offset and length.
-7. **Create the projector.** Consume `DRLLM_EVENTS`, ignore events without
-   artifact-bearing `payload_refs`, fetch referenced bytes from
-   `DRLLM_PAYLOADS`, verify source hashes, write artifacts, update manifests and
-   the sidecar index, and acknowledge only after the durable projection outcome
-   is recorded.
+7. **Create the projector.** Consume `DRLLM_EVENTS` with explicit JetStream
+   message acknowledgment control, ignore events without artifact-bearing
+   `payload_refs`, fetch referenced bytes from `DRLLM_PAYLOADS`, verify source
+   hashes and sizes, write artifacts, update manifests and the sidecar index,
+   and acknowledge only after the durable projection outcome is recorded. Do not
+   use the current `replay_events()` helper for projector delivery because it
+   auto-acknowledges messages.
 8. **Create CLI commands.** Add `dr-llm artifact-projection init`, `run`,
    `flush`, `inspect`, `rebuild-index`, `verify`, and `read`.
 9. **Test the layer.** Add unit and storage tests first, then integration tests
@@ -302,12 +341,14 @@ Default storage layout:
   layouts/artifact-v1/
     shards/<shard_id>.zarr/
     manifests/<shard_id>.jsonl
+    manifests/<shard_id>.finalized.json
     index/artifacts.sqlite3
     staging/<writer_session>/<shard_id>/
 ```
 
-Each finalized shard stores one one-dimensional `uint8` Zarr array per used
-lane: `json`, `text`, and `binary`. Text-like artifacts are UTF-8 bytes unless
+Default artifact root is `.dr_llm/artifacts`. Each finalized shard stores one
+one-dimensional `uint8` Zarr array per used lane under `lanes/json`,
+`lanes/text`, and `lanes/binary`. Text-like artifacts are UTF-8 bytes unless
 their source reference states another encoding. JSON artifacts are stored as
 bytes and decoded by readers, not queried inside Zarr.
 
@@ -320,6 +361,28 @@ Default physical parameters:
   compression
 - source compression support: `none` only in v1; unsupported source compression
   is recorded as a durable projection error
+- default durable consumer: `drllm_artifact_projection_v1`
+- default environment prefix: `DR_LLM_ARTIFACT_PROJECTION_`
+
+SQLite sidecar tables:
+
+- `artifact_references`: one row per finalized logical artifact reference,
+  unique by `artifact_id`.
+- `open_artifact_references`: one row per accepted but not yet finalized
+  logical artifact reference, unique by `artifact_id`.
+- `shards`: finalized shard metadata and finalized marker state.
+- `open_shards`: open shard state used to group accepted open references.
+- `projection_checkpoints`: projection progress keyed by projection version and
+  durable consumer.
+- `projection_errors`: durable recoverable projection errors, including source
+  event/ref identity, error type, message, and timestamp.
+
+The sidecar uses WAL mode, foreign keys, and explicit transactions. Duplicate
+identical `artifact_id` references are no-ops across both open and finalized
+references. A duplicate `artifact_id` with conflicting source or physical fields
+is a durable projection error. The sidecar may store selected `source_ref`
+values in flat SQL columns for indexing, but the durable JSON contract remains
+the nested `ArtifactReference` and `ProjectionError` model shape.
 
 Checkpoint and recovery rules:
 
@@ -328,8 +391,11 @@ Checkpoint and recovery rules:
   is a no-op.
 - A duplicate `artifact_id` with conflicting source fields is a hard projection
   error.
-- Event acknowledgments happen only after artifact writes, manifest/index
-  updates, and checkpoint/error records are durable.
+- Event acknowledgments happen only after artifact writes, open/finalized
+  reference updates, and checkpoint/error records are durable.
+- Missing source objects, hash mismatches, size mismatches, and unsupported
+  source compression are recorded as `ProjectionError` rows, checkpointed,
+  acknowledged, and reported by `verify` instead of blocking later events.
 - On restart, remove partial finalized outputs without finalized markers, resume
   open staging state when safe, and rebuild missing index rows from finalized
   manifests.
@@ -416,6 +482,76 @@ streaming-log and metadata schemas are fixed.
   source and possible backfill source, not as the long-term storage model.
   Existing rows show why the artifact projection should also consider oversized
   metadata, not just response blobs.
+
+## Clean-Code Implementation Constraints
+
+- Keep responsibilities narrow: `ArtifactRolePolicy` decides whether a ref is an
+  artifact, `ArtifactProjector` orchestrates event processing, `ArtifactStore`
+  owns logical artifact acceptance and reference promotion, `OpenShard` builds
+  in-memory shard contents, `ShardWriter` orchestrates rotation and
+  finalization, `ShardStorageBackend` owns durable publishing and finalized
+  reads, and `ArtifactIndex` persists sidecar state.
+- Use intention-revealing names. Avoid vague manager-style classes and avoid
+  abbreviations in public model fields.
+- Keep projector flow top-down and delegate low-level hashing, lane selection,
+  SQLite persistence, and Zarr writes to named helpers.
+- Prefer exceptions for invalid or corrupt internal states. Convert recoverable
+  source/projection failures into durable `ProjectionError` rows at the
+  projector boundary.
+- Use Pydantic `BaseModel` with `extra="forbid"` for durable reference,
+  manifest, checkpoint, and error models.
+- Write focused tests before each major behavior slice where practical:
+  identity, role policy, index idempotency, shard read/write, and projector ack
+  behavior.
+
+## CLI Surface
+
+Add a new Typer sub-app registered as `dr-llm artifact-projection`:
+
+- `init`: create directories and SQLite schema.
+- `run`: consume `DRLLM_EVENTS`; include `--batch-size`, `--flush-on-exit`, and
+  `--max-messages` options.
+- `flush`: finalize the current staged shard.
+- `inspect`: print root, version, shard counts, artifact counts, checkpoint, and
+  error counts.
+- `rebuild-index`: rebuild SQLite from finalized manifests.
+- `verify`: verify manifests, index consistency, source/logical hashes, shard
+  presence, and durable projection errors.
+- `read`: read one artifact by ID as bytes, text, or JSON.
+
+## Test Plan
+
+Unit tests:
+
+- Artifact ID is stable and changes on role, object key, source hash, or source
+  idempotency key changes.
+- Role policy projects selected roles, thresholds `metadata_json`, and ignores
+  `pool_schema`.
+- Lane selection maps JSON, text, and binary payloads correctly.
+- SQLite index handles open/finalized insert, duplicate no-op, conflict error,
+  checkpoint update, and rebuild from finalized manifests.
+- Open-shard snapshots do not perform filesystem publishing, local shard storage
+  writes finalized Zarr arrays, and reader returns bytes, text, and JSON.
+- Projector with fake message and payload store acknowledges only after durable
+  success or durable error.
+
+Integration tests:
+
+- With Docker NATS, publish an event with `response_json`, run the projector, and
+  read the artifact back.
+- Redelivered duplicate event/ref is idempotent.
+- Missing payload ref records a projection error and does not block later
+  events.
+- `rebuild-index` restores readable artifacts from finalized manifests.
+
+Quality gate for library-code implementation:
+
+1. `uv run ruff format`
+2. `uv run ruff check --fix .`
+3. Manually fix any remaining lint issues in the repository.
+4. `uv run ty check`
+5. `uv run pytest tests/ -v -m "not integration"`
+6. `./scripts/run-tests-local.sh`
 
 ## Mostly-Independent Defaults To Sketch
 

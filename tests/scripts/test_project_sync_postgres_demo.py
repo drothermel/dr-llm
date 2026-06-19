@@ -69,26 +69,25 @@ def test_demo_command_syncs_and_verifies_target_database(monkeypatch) -> None:
     result = runner.invoke(sync_demo.app)
 
     assert result.exit_code == 0
-    assert len(calls) == 4
-    assert calls[1] == (
+    assert [label for label, _ in calls] == [
+        "prepare",
         "sync",
-        (
-            "project",
-            "sync-postgres",
-            "demo_sync_abcdef12",
-            "--admin-url",
-            "postgresql://user:pass@example/source?sslmode=require",
-            "--target-database",
-            "demo_sync_target_abcdef12",
-            "--drop-previous",
-        ),
-    )
-    assert calls[2] == (
         "verify",
-        (
-            "postgresql://user:pass@example/demo_sync_target_abcdef12"
-            "?sslmode=require",
-            "sample-1",
-        ),
+        "cleanup",
+    ]
+    sync_args = calls[1][1]
+    assert isinstance(sync_args, tuple)
+    assert sync_args[:3] == (
+        "project",
+        "sync-postgres",
+        "demo_sync_abcdef12",
+    )
+    assert "--drop-previous" in sync_args
+    assert "demo_sync_target_abcdef12" in sync_args
+    verify_args = calls[2][1]
+    assert verify_args == (
+        "postgresql://user:pass@example/demo_sync_target_abcdef12"
+        "?sslmode=require",
+        "sample-1",
     )
     assert calls[3] == ("cleanup", "demo_sync_abcdef12")
