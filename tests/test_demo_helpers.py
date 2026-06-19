@@ -13,18 +13,25 @@ import dr_llm.demo.counts as demo_counts
 import dr_llm.demo.projects as demo_projects
 import dr_llm.demo.requirements as demo_requirements
 import dr_llm.demo.streaming_log as demo_streaming_log
+from dr_llm.llm import ProviderAvailabilityStatus, ProviderName
 from dr_llm.pool import LlmPoolBackendState
 from dr_llm.project import CreateProjectRequest, ProjectInfo
 from dr_llm.project.errors import DockerUnavailableError
 from dr_llm.streaming_log import (
+    AttemptFailedPayload,
+    AttemptStartedPayload,
+    AttemptSucceededPayload,
     EventEnvelope,
     ProducerInfo,
+    ProducerLifecyclePayload,
+    ProviderRequestPreparedPayload,
+    ProviderResponseReceivedPayload,
     StreamingLogStatus,
     WorkCompletedPayload,
     WorkSubmittedPayload,
 )
 from dr_llm.streaming_log.events import StreamingLogEventType
-from dr_llm.streaming_log.payloads import PayloadRef
+from dr_llm.streaming_log.payloads import PayloadRef, prepare_json_payload
 from dr_llm.workers import WorkerSnapshot, WorkerStatCounts
 
 
@@ -515,6 +522,121 @@ async def _async_noop(*args: object) -> None:
     _ = args
 
 
+class _FakePayloadStore:
+    def __init__(self, payloads: dict[str, bytes]) -> None:
+        self.payloads = payloads
+
+    async def read_payload_ref(self, payload_ref: PayloadRef) -> bytes:
+        return self.payloads[payload_ref.object_key]
+
+
+def _successful_demo_events(
+    *,
+    include_producer: bool = False,
+    response_ref: PayloadRef | None = None,
+) -> list[EventEnvelope]:
+    events = [
+        _demo_event(
+            StreamingLogEventType.work_submitted,
+            WorkSubmittedPayload(work_id="work-1", max_retries=0),
+        ),
+        _demo_event(
+            StreamingLogEventType.attempt_started,
+            AttemptStartedPayload(worker_id="worker-1", attempt=1),
+        ),
+        _demo_event(
+            StreamingLogEventType.provider_request_prepared,
+            ProviderRequestPreparedPayload(
+                provider="openai", model="gpt-test", mode="api"
+            ),
+        ),
+        _demo_event(
+            StreamingLogEventType.provider_response_received,
+            ProviderResponseReceivedPayload(
+                provider="openai", model="gpt-test", mode="api"
+            ),
+            payload_refs=[response_ref] if response_ref is not None else [],
+        ),
+        _demo_event(
+            StreamingLogEventType.attempt_succeeded,
+            AttemptSucceededPayload(attempt=1),
+        ),
+        _demo_event(
+            StreamingLogEventType.work_completed,
+            WorkCompletedPayload(status="succeeded", attempt=1),
+        ),
+    ]
+    if not include_producer:
+        return events
+    return [
+        _producer_demo_event(StreamingLogEventType.producer_started),
+        *events,
+        _producer_demo_event(StreamingLogEventType.producer_stopped),
+    ]
+
+
+def _failed_demo_events() -> list[EventEnvelope]:
+    return [
+        _demo_event(
+            StreamingLogEventType.work_submitted,
+            WorkSubmittedPayload(work_id="work-1", max_retries=0),
+        ),
+        _demo_event(
+            StreamingLogEventType.attempt_started,
+            AttemptStartedPayload(worker_id="worker-1", attempt=1),
+        ),
+        _demo_event(
+            StreamingLogEventType.provider_request_prepared,
+            ProviderRequestPreparedPayload(
+                provider="anthropic", model="claude-test", mode="api"
+            ),
+        ),
+        _demo_event(
+            StreamingLogEventType.attempt_failed,
+            AttemptFailedPayload(
+                error_type="BillingError",
+                message="billing disabled",
+                attempt=1,
+            ),
+        ),
+        _demo_event(
+            StreamingLogEventType.work_completed,
+            WorkCompletedPayload(
+                status="failed",
+                attempt=1,
+                error_type="BillingError",
+                message="billing disabled",
+            ),
+        ),
+    ]
+
+
+def _demo_event(
+    event_type: StreamingLogEventType,
+    payload: Any,
+    *,
+    payload_refs: list[PayloadRef] | None = None,
+) -> EventEnvelope:
+    return EventEnvelope(
+        event_type=event_type,
+        producer=ProducerInfo(name="test"),
+        idempotency_key=f"{event_type}-idem",
+        payload=payload,
+        work_id="work-1",
+        attempt_id="attempt-1",
+        payload_refs=payload_refs or [],
+    )
+
+
+def _producer_demo_event(event_type: StreamingLogEventType) -> EventEnvelope:
+    return EventEnvelope(
+        event_type=event_type,
+        producer=ProducerInfo(name="test"),
+        idempotency_key=f"{event_type}-idem",
+        payload=ProducerLifecyclePayload(worker_id="worker-1"),
+    )
+
+
 def test_summarize_events_counts_event_types() -> None:
     events = [
         EventEnvelope(
@@ -541,6 +663,179 @@ def test_summarize_events_counts_event_types() -> None:
 
     assert counts["work_submitted"] == 2
     assert counts["work_completed"] == 1
+
+
+def test_available_demo_providers_warns_for_unavailable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    available = demo_streaming_log.available_demo_providers_or_raise(
+        [
+            ProviderAvailabilityStatus(provider="openai", available=True),
+            ProviderAvailabilityStatus(
+                provider="anthropic",
+                available=False,
+                missing_env_vars=("ANTHROPIC_API_KEY",),
+                missing_executables=("claude",),
+            ),
+        ]
+    )
+
+    assert [status.provider for status in available] == ["openai"]
+    output = capsys.readouterr().out
+    assert "anthropic" in output
+    assert "ANTHROPIC_API_KEY not set" in output
+    assert "'claude' CLI not found" in output
+
+
+def test_demo_provider_names_prefers_demo_order() -> None:
+    statuses = [
+        ProviderAvailabilityStatus(provider="openrouter", available=True),
+        ProviderAvailabilityStatus(provider="openai", available=True),
+        ProviderAvailabilityStatus(provider="custom", available=True),
+    ]
+
+    names = demo_streaming_log.demo_provider_names(
+        statuses,
+        requested_provider=None,
+    )
+
+    assert names == ["openai", "openrouter", "custom"]
+
+
+def test_demo_provider_names_rejects_unavailable_requested_provider() -> None:
+    statuses = [ProviderAvailabilityStatus(provider="openai", available=True)]
+
+    with pytest.raises(RuntimeError, match="Requested provider 'anthropic'"):
+        demo_streaming_log.demo_provider_names(
+            statuses,
+            requested_provider=ProviderName.ANTHROPIC,
+        )
+
+
+def test_resolve_demo_model_uses_default_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sync_calls: list[str] = []
+
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "sync_models_json",
+        lambda provider: sync_calls.append(str(provider)),
+    )
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "list_models_json",
+        lambda provider: [
+            {"model": "gpt-other"},
+            {"model": "gpt-4o-mini"},
+        ],
+    )
+
+    model = demo_streaming_log.resolve_demo_model("openai")
+
+    assert model == "gpt-4o-mini"
+    assert sync_calls == ["openai"]
+
+
+def test_resolve_demo_model_falls_back_to_first_listed_model(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(demo_streaming_log, "sync_models_json", lambda _: None)
+    monkeypatch.setattr(
+        demo_streaming_log,
+        "list_models_json",
+        lambda provider: [{"model": "gpt-fallback"}],
+    )
+
+    model = demo_streaming_log.resolve_demo_model("openai")
+
+    assert model == "gpt-fallback"
+    assert "default model 'gpt-4o-mini' not found" in capsys.readouterr().out
+
+
+def test_verify_successful_work_lifecycle_accepts_successful_work() -> None:
+    demo_streaming_log.verify_successful_work_lifecycle(
+        _successful_demo_events(), work_id="work-1"
+    )
+
+
+def test_verify_successful_work_lifecycle_can_require_producer_events() -> (
+    None
+):
+    demo_streaming_log.verify_successful_work_lifecycle(
+        _successful_demo_events(include_producer=True),
+        work_id="work-1",
+        require_producer_lifecycle=True,
+    )
+
+
+def test_verify_successful_work_lifecycle_rejects_missing_producer_events() -> (
+    None
+):
+    with pytest.raises(RuntimeError, match="producer_started"):
+        demo_streaming_log.verify_successful_work_lifecycle(
+            _successful_demo_events(),
+            work_id="work-1",
+            require_producer_lifecycle=True,
+        )
+
+
+def test_verify_successful_work_lifecycle_rejects_clean_failure() -> None:
+    with pytest.raises(
+        demo_streaming_log.DemoProviderWorkFailedError,
+        match="BillingError",
+    ):
+        demo_streaming_log.verify_successful_work_lifecycle(
+            _failed_demo_events(), work_id="work-1"
+        )
+
+
+def test_verify_successful_work_lifecycle_rejects_failed_completion() -> None:
+    events = _successful_demo_events()
+    events[-1] = _demo_event(
+        StreamingLogEventType.work_completed,
+        WorkCompletedPayload(status="failed", attempt=1),
+    )
+
+    with pytest.raises(
+        demo_streaming_log.DemoProviderWorkFailedError,
+        match="work_completed status is 'failed'",
+    ):
+        demo_streaming_log.verify_successful_work_lifecycle(
+            events, work_id="work-1"
+        )
+
+
+def test_verify_response_payload_requires_non_empty_text() -> None:
+    payload = prepare_json_payload("response_json", {"text": "OK."})
+    events = _successful_demo_events(response_ref=payload.ref())
+
+    response = asyncio.run(
+        demo_streaming_log.verify_response_payload(
+            _FakePayloadStore({payload.object_key: payload.data}),
+            events,
+            work_id="work-1",
+        )
+    )
+
+    assert response == demo_streaming_log.DemoResponsePayloadVerification(
+        text_preview="OK."
+    )
+
+
+def test_verify_response_payload_rejects_empty_text() -> None:
+    payload = prepare_json_payload("response_json", {"text": ""})
+    events = _successful_demo_events(response_ref=payload.ref())
+
+    with pytest.raises(RuntimeError, match="non-empty text"):
+        asyncio.run(
+            demo_streaming_log.verify_response_payload(
+                _FakePayloadStore({payload.object_key: payload.data}),
+                events,
+                work_id="work-1",
+            )
+        )
 
 
 def test_verify_payload_refs_detects_hash_mismatch() -> None:

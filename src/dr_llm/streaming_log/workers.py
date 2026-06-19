@@ -25,6 +25,7 @@ from dr_llm.streaming_log.config import StreamingLogConfig
 from dr_llm.streaming_log.event_builders import (
     StreamingEventPublishSpec,
     attempt_succeeded_event,
+    provider_request_prepared_event,
     provider_response_received_event,
     work_completed_succeeded_event,
 )
@@ -33,7 +34,6 @@ from dr_llm.streaming_log.events import (
     AttemptStartedPayload,
     EventContext,
     ProducerLifecyclePayload,
-    ProviderRequestPreparedPayload,
     StreamingLogEventType,
     WorkCompletedPayload,
     WorkRetryScheduledPayload,
@@ -228,26 +228,11 @@ class StreamingWorkLifecycleReporter:
         )
 
     async def record_provider_request_prepared(self) -> None:
-        request = self.attempt.work.request
-        request_payload = request.model_dump(
-            mode="json",
-            exclude_none=True,
-            exclude_computed_fields=True,
-        )
         await self.publisher.publish_event_spec(
-            StreamingEventPublishSpec(
-                event_type=StreamingLogEventType.provider_request_prepared,
-                idempotency_key=self.idempotency_key_for(
-                    "provider_request_prepared"
-                ),
-                payload=ProviderRequestPreparedPayload(
-                    provider=str(request.provider),
-                    model=request.model,
-                    mode=str(request.mode),
-                ),
-                payloads=[
-                    prepare_json_payload("request_json", request_payload)
-                ],
+            provider_request_prepared_event(
+                work_id=self.attempt.work.work_id,
+                attempt=self.attempt.attempt,
+                request=self.attempt.work.request,
             )
         )
 

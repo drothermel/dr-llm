@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 import zarr
 
 from dr_llm.artifact_projection.config import ArtifactProjectionConfig
-from dr_llm.artifact_projection.index import (
+from dr_llm.artifact_projection._manifest_io import (
     dump_json_line,
     load_manifest_references,
     load_shard_manifest,

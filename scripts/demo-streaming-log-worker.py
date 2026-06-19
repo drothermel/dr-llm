@@ -21,64 +21,43 @@ The demo:
 from __future__ import annotations
 
 import asyncio
-import json
-from collections import Counter
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 import typer
 
 from dr_llm.demo import (
-    DEMO_QUERY_DEFAULT_MODELS,
     DemoPrompts,
+    DemoProviderWorkFailedError,
     collect_streaming_log_events,
     command_hint,
+    build_live_demo_request,
     DemoNatsOptions,
     fail,
-    list_models_json,
     ok,
     open_streaming_log_demo_runtime,
-    show_model_json,
+    payload_attempt_failure_details,
     step,
-    summarize_events,
     StreamingLogDemoRuntime,
     StreamingLogDemoRuntimeOptions,
-    sync_models_json,
+    demo_provider_candidates,
     verify_payload_refs,
+    verify_response_payload,
+    verify_successful_work_lifecycle,
     warn,
 )
 from dr_llm.llm import (
     LlmRequest,
-    Message,
-    ProviderAvailabilityStatus,
     ProviderName,
-    build_default_registry,
 )
 from dr_llm.streaming_log import (
     EventEnvelope,
     QueuedWorkMessage,
-    StreamingPayloadStore,
     StreamingWorkerConfig,
     run_streaming_worker,
 )
 
 app = typer.Typer()
-
-PROVIDER_PREFERENCE = [
-    ProviderName.OPENAI,
-    ProviderName.GOOGLE,
-    ProviderName.GLM,
-    ProviderName.OPENROUTER,
-    ProviderName.MINIMAX,
-    ProviderName.KIMI_CODE,
-    ProviderName.CODEX,
-    ProviderName.CLAUDE_CODE,
-    ProviderName.ANTHROPIC,
-]
-
-
-class ProviderWorkFailedError(RuntimeError):
-    pass
 
 
 class WorkerDemoOptions(BaseModel):
@@ -119,38 +98,31 @@ WorkerAttemptOptions.model_rebuild(
 
 async def _run_worker_demo(options: WorkerDemoOptions) -> None:
     step("1. Detecting live provider")
-    registry = build_default_registry()
-    try:
-        statuses = registry.availability_statuses()
-        available = _available_providers_or_exit(statuses)
-        candidate_providers = _candidate_providers(
-            available,
-            requested_provider=options.provider,
-        )
-    finally:
-        registry.close()
-
+    candidates = demo_provider_candidates(
+        requested_provider=options.provider,
+        requested_model=options.model,
+    )
     allow_fallback = options.provider is None and options.model is None
     if not allow_fallback:
-        candidate_providers = candidate_providers[:1]
+        candidates = candidates[:1]
     failures: list[str] = []
-    for index, candidate_provider in enumerate(candidate_providers, start=1):
-        provider_name, model_name, request = _build_live_request(
+    for index, candidate in enumerate(candidates, start=1):
+        request = build_live_demo_request(
             prompt=options.prompt,
-            provider=candidate_provider,
-            requested_model=options.model,
+            provider=candidate.provider,
+            model=candidate.model,
         )
-        ok(f"Using {provider_name}/{model_name}")
+        ok(f"Using {candidate.provider}/{candidate.model}")
         try:
             await _run_worker_attempt(
                 WorkerAttemptOptions(
                     nats=options.nats,
                     max_retries=options.max_retries,
-                    provider=provider_name,
-                    model=model_name,
+                    provider=candidate.provider,
+                    model=candidate.model,
                     request=request,
                     attempt_index=index,
-                    attempt_count=len(candidate_providers),
+                    attempt_count=len(candidates),
                 )
             )
             if failures:
@@ -159,12 +131,12 @@ async def _run_worker_demo(options: WorkerDemoOptions) -> None:
                     + "; ".join(failures)
                 )
             return
-        except ProviderWorkFailedError as exc:
-            failures.append(f"{provider_name}/{model_name}: {exc}")
-            if not allow_fallback or index == len(candidate_providers):
+        except DemoProviderWorkFailedError as exc:
+            failures.append(f"{candidate.provider}/{candidate.model}: {exc}")
+            if not allow_fallback or index == len(candidates):
                 raise
             warn(
-                f"{provider_name}/{model_name} failed during live execution; "
+                f"{candidate.provider}/{candidate.model} failed during live execution; "
                 "trying the next available provider"
             )
     raise RuntimeError("No live provider attempt completed successfully")
@@ -217,13 +189,26 @@ async def _run_worker_attempt(options: WorkerAttemptOptions) -> None:
                 session.event_log,
                 expected_min_events=1,
             )
-            counts = summarize_events(events)
             verified_payloads = await verify_payload_refs(
                 session.payload_store, events
             )
             _print_worker_event_summary(events)
-            await _print_failure_details(session.payload_store, events)
-            _verify_worker_lifecycle(counts)
+            await payload_attempt_failure_details(
+                session.payload_store, events
+            )
+            verify_successful_work_lifecycle(
+                events,
+                work_id=work.work_id,
+                require_producer_lifecycle=True,
+                reject_attempt_failed=options.max_retries == 0,
+            )
+            response = await verify_response_payload(
+                session.payload_store, events, work_id=work.work_id
+            )
+            ok(
+                "Response payload verified: "
+                f"text_preview={response.text_preview!r}"
+            )
 
         ok(f"Verified {len(events)} replayed events")
         ok(f"Verified {len(verified_payloads)} payload references")
@@ -244,140 +229,6 @@ def _print_cleanup_hint(runtime: StreamingLogDemoRuntime | None) -> None:
         return
     if runtime.cleanup_command is not None:
         command_hint("Destroy NATS", runtime.cleanup_command)
-
-
-def _build_live_request(
-    *, prompt: str, provider: str, requested_model: str | None
-) -> tuple[str, str, LlmRequest]:
-    registry = build_default_registry()
-    try:
-        model = _resolve_model(
-            provider,
-            requested_model=requested_model,
-        )
-        info = show_model_json(provider, model)
-        display = info.get("display_name", model)
-        ok(f"Model info: {display}")
-        orchestrator = registry.get(provider)
-        defaults = orchestrator.request_defaults(model)
-        request = orchestrator.build_request(
-            model=model,
-            messages=[Message(role="user", content=prompt)],
-            max_tokens=defaults.max_tokens,
-            effort=defaults.effort,
-            reasoning=defaults.reasoning,
-        )
-        return provider, model, request
-    finally:
-        registry.close()
-
-
-def _candidate_providers(
-    available: list[ProviderAvailabilityStatus],
-    *,
-    requested_provider: ProviderName | None,
-) -> list[str]:
-    available_by_name = {status.provider: status for status in available}
-    if requested_provider is not None:
-        provider = str(requested_provider)
-        if provider not in available_by_name:
-            raise RuntimeError(
-                f"Requested provider {provider!r} is not available"
-            )
-        return [provider]
-
-    providers: list[str] = []
-    for provider in PROVIDER_PREFERENCE:
-        if str(provider) in available_by_name:
-            providers.append(str(provider))
-    providers.extend(
-        status.provider
-        for status in available
-        if status.provider not in providers
-    )
-    return providers
-
-
-def _available_providers_or_exit(
-    statuses: list[ProviderAvailabilityStatus],
-) -> list[ProviderAvailabilityStatus]:
-    available: list[ProviderAvailabilityStatus] = []
-    for status in statuses:
-        if status.available:
-            available.append(status)
-            continue
-        reasons = [f"{env_var} not set" for env_var in status.missing_env_vars]
-        reasons.extend(
-            f"'{executable}' CLI not found"
-            for executable in status.missing_executables
-        )
-        warn(f"{status.provider}: {', '.join(reasons)}")
-    if not available:
-        raise RuntimeError("No live providers available")
-    return available
-
-
-def _resolve_model(provider: str, *, requested_model: str | None) -> str:
-    sync_models_json(provider)
-    if requested_model is not None:
-        return requested_model
-
-    models = list_models_json(provider)
-    if not models:
-        raise RuntimeError(f"No models found for {provider}")
-    model_ids = [str(model["model"]) for model in models]
-    default_model = DEMO_QUERY_DEFAULT_MODELS.get(ProviderName(provider))
-    if default_model is not None and default_model in model_ids:
-        return default_model
-    if default_model is not None:
-        warn(
-            f"default model {default_model!r} not found; using {model_ids[0]!r}"
-        )
-    return model_ids[0]
-
-
-async def _print_failure_details(
-    payload_store: StreamingPayloadStore,
-    events: list[EventEnvelope],
-) -> list[str]:
-    details: list[str] = []
-    for event in events:
-        if str(event.event_type) != "attempt_failed":
-            continue
-        for ref in event.payload_refs:
-            if ref.role != "error_detail":
-                continue
-            data = await payload_store.read_payload_ref(ref)
-            detail = json.loads(data)
-            summary = f"{detail.get('error_type')}: {detail.get('message')}"
-            details.append(summary)
-            warn("Provider attempt failed: " + summary)
-    return details
-
-
-def _verify_worker_lifecycle(counts: Counter[str]) -> None:
-    expected = [
-        "work_submitted",
-        "producer_started",
-        "attempt_started",
-        "provider_request_prepared",
-        "provider_response_received",
-        "attempt_succeeded",
-        "work_completed",
-        "producer_stopped",
-    ]
-    missing = [event_type for event_type in expected if counts[event_type] < 1]
-    if missing:
-        if counts["attempt_failed"] > 0:
-            raise ProviderWorkFailedError(
-                "Provider work failed before a successful response; "
-                "see attempt_failed details above. Missing lifecycle events: "
-                + ", ".join(missing)
-            )
-        raise RuntimeError(
-            "Missing expected lifecycle events: " + ", ".join(missing)
-        )
-    ok("Lifecycle events verified: " + ", ".join(expected))
 
 
 def _print_worker_event_summary(events: list[EventEnvelope]) -> None:

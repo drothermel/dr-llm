@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,6 +32,14 @@ from dr_llm.streaming_log.errors import (
     PayloadReadError,
 )
 from dr_llm.streaming_log.payloads import PayloadRef
+from dr_llm.streaming_log.projection_runtime import (
+    ProjectionEventDelivery,
+    ProjectionMessageHandler,
+    consume_projection_events,
+    delivery_from_message as projection_delivery_from_message,
+    process_delivery_with_ack,
+    stream_sequence_for_message,
+)
 
 
 class ArtifactProjectionOutcomeType(StrEnum):
@@ -55,15 +62,8 @@ class ArtifactProjectionResult(BaseModel):
     error_count: int = Field(ge=0)
 
 
-class ArtifactEventDelivery(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
-
-    event: EventEnvelope
-    stream_sequence: int = Field(ge=0)
-    message: Any
-
-    async def ack(self) -> None:
-        await self.message.ack()
+class ArtifactEventDelivery(ProjectionEventDelivery):
+    pass
 
 
 class ArtifactProjector:
@@ -83,11 +83,17 @@ class ArtifactProjector:
     async def process_delivery(
         self, delivery: ArtifactEventDelivery
     ) -> ArtifactProjectionResult:
+        return await process_delivery_with_ack(
+            delivery, self._process_delivery
+        )
+
+    async def _process_delivery(
+        self, delivery: ArtifactEventDelivery
+    ) -> ArtifactProjectionResult:
         result = await self.process_event(
             delivery.event, stream_sequence=delivery.stream_sequence
         )
         self._record_checkpoint(delivery)
-        await delivery.ack()
         return result
 
     async def process_event(
@@ -301,38 +307,20 @@ async def _consume_events(
     max_messages: int | None,
     batch_size: int,
 ) -> int:
-    sub = await connection.js.pull_subscribe(
-        connection.config.events_subject,
-        durable=config.durable_consumer,
-        stream=connection.config.events_stream,
-    )
-    processed = 0
-    while max_messages is None or processed < max_messages:
-        messages = await sub.fetch(batch_size, timeout=1)
-        for message in messages:
-            delivery = delivery_from_message(message)
-            await projector.process_delivery(delivery)
-            processed += 1
-            if max_messages is not None and processed >= max_messages:
-                break
-    return processed
-
-
-def delivery_from_message(message: Any) -> ArtifactEventDelivery:
-    return ArtifactEventDelivery(
-        event=EventEnvelope.model_validate_json(message.data),
-        stream_sequence=stream_sequence_for_message(message),
-        message=message,
+    return await consume_projection_events(
+        connection=connection,
+        durable_consumer=config.durable_consumer,
+        handler=ProjectionMessageHandler(
+            delivery_type=ArtifactEventDelivery,
+            process_delivery=projector.process_delivery,
+        ),
+        max_messages=max_messages,
+        batch_size=batch_size,
     )
 
 
-def stream_sequence_for_message(message: Any) -> int:
-    metadata = getattr(message, "metadata", None)
-    sequence = getattr(metadata, "sequence", None)
-    stream_sequence = getattr(sequence, "stream", None)
-    if stream_sequence is None:
-        raise ValueError("message metadata is missing stream sequence")
-    return int(stream_sequence)
+def delivery_from_message(message: object) -> ArtifactEventDelivery:
+    return projection_delivery_from_message(message, ArtifactEventDelivery)
 
 
 __all__ = [

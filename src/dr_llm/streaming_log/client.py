@@ -19,20 +19,20 @@ from dr_llm.streaming_log.errors import (
     PayloadReadError,
     StreamingLogError,
 )
-from dr_llm.streaming_log.event_builders import StreamingEventPublishSpec
+from dr_llm.streaming_log.event_builders import (
+    StreamingEventPublishSpec,
+    work_submitted_event,
+)
 from dr_llm.streaming_log.events import (
     EventContext,
     EventEnvelope,
     ProducerInfo,
     StreamingLogEventType,
-    WorkSubmittedPayload,
     build_event,
-    idempotency_key,
 )
 from dr_llm.streaming_log.payloads import (
     PayloadRef,
     PreparedPayload,
-    prepare_json_payload,
     sha256_bytes,
 )
 from dr_llm.streaming_log.work import QueuedWorkMessage
@@ -262,29 +262,8 @@ class StreamingWorkQueue:
                 "work.max_retries must be less than the streaming-log "
                 f"max_deliver setting ({self.config.max_deliver})"
             )
-        request_payload = prepare_json_payload(
-            "request_json",
-            work.request.model_dump(
-                mode="json",
-                exclude_none=True,
-                exclude_computed_fields=True,
-            ),
-        )
         event = await self.event_log.publish_event_spec(
-            StreamingEventPublishSpec(
-                event_type=StreamingLogEventType.work_submitted,
-                idempotency_key=idempotency_key(
-                    "work_submitted", work.work_id
-                ),
-                payload=WorkSubmittedPayload(
-                    work_id=work.work_id,
-                    run_id=work.run_id,
-                    max_retries=work.max_retries,
-                    metadata=work.metadata,
-                ),
-                payloads=[request_payload],
-                context=EventContext.from_work(work),
-            )
+            work_submitted_event(work)
         )
         await self.connection.js.publish(
             self.config.llm_work_subject,

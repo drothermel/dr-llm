@@ -9,6 +9,7 @@ from rich.console import Console
 
 from dr_llm.artifact_projection.config import ArtifactProjectionConfig
 from dr_llm.artifact_projection.index import ArtifactIndex
+from dr_llm.artifact_projection.projector import run_artifact_projector
 from dr_llm.artifact_projection.storage import ArtifactReader
 from dr_llm.artifact_projection.store import ArtifactStore
 from dr_llm.streaming_log.client import StreamingLogConnection
@@ -127,6 +128,8 @@ def read(
     ] = "text",
 ) -> None:
     """Read one finalized artifact."""
+    if output not in {"bytes", "text", "json"}:
+        raise typer.BadParameter("output must be bytes, text, or json")
     config = ArtifactProjectionConfig()
     with ArtifactIndex(config.index_path) as index:
         reference = index.get_finalized_reference(artifact_id)
@@ -139,8 +142,6 @@ def read(
     if output == "json":
         console.print_json(data=reader.read_json(reference))
         return
-    if output != "text":
-        raise typer.BadParameter("output must be bytes, text, or json")
     console.print(reader.read_text(reference))
 
 
@@ -151,10 +152,6 @@ async def _run_projector(
     flush_on_exit: bool,
 ) -> int:
     async with StreamingLogConnection(StreamingLogConfig()) as connection:
-        from dr_llm.artifact_projection.projector import (
-            run_artifact_projector,
-        )
-
         return await run_artifact_projector(
             connection=connection,
             config=ArtifactProjectionConfig(),
