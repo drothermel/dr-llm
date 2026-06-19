@@ -84,6 +84,12 @@ Before adding a test, ask: would this fail for a meaningful product regression,
 or mostly because someone reorganized code, renamed an internal field, changed a
 demo list, or removed an already-deprecated path? Prefer the former.
 
+## Visual Preferences
+
+When generating HTML pages, web UIs, dashboards, review tools, or any visual
+artifact that has a color scheme, default to light mode. Use dark mode only
+when explicitly requested.
+
 ## Modeling Standard
 
 Always use Pydantic models instead of Python `dataclass` definitions.

@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Iterator
+from contextlib import suppress
 from uuid import uuid4
 
+import nats
 import pytest
+from nats.js.errors import NotFoundError
 
 from dr_llm.llm import CallMode, LlmRequest, Message, ProviderName
 from dr_llm.streaming_log.bootstrap import bootstrap_streaming_log
@@ -48,6 +52,31 @@ def _config() -> StreamingLogConfig:
     )
 
 
+@pytest.fixture
+def streaming_log_config() -> Iterator[StreamingLogConfig]:
+    config = _config()
+    try:
+        yield config
+    finally:
+        asyncio.run(_delete_streaming_log_resources(config))
+
+
+async def _delete_streaming_log_resources(
+    config: StreamingLogConfig,
+) -> None:
+    nc = await nats.connect(config.nats_url)
+    try:
+        js = nc.jetstream()
+        with suppress(NotFoundError):
+            await js.delete_stream(config.events_stream)
+        with suppress(NotFoundError):
+            await js.delete_stream(config.work_stream)
+        with suppress(NotFoundError):
+            await js.delete_object_store(config.payload_bucket)
+    finally:
+        await nc.close()
+
+
 def _request() -> LlmRequest:
     return LlmRequest(
         provider=ProviderName.OPENAI,
@@ -68,13 +97,19 @@ def _clients(
     return payload_store, event_log, work_queue
 
 
-def test_bootstrap_is_idempotent_and_event_replay_works() -> None:
-    asyncio.run(_test_bootstrap_is_idempotent_and_event_replay_works())
+def test_bootstrap_is_idempotent_and_event_replay_works(
+    streaming_log_config: StreamingLogConfig,
+) -> None:
+    asyncio.run(
+        _test_bootstrap_is_idempotent_and_event_replay_works(
+            streaming_log_config
+        )
+    )
 
 
-async def _test_bootstrap_is_idempotent_and_event_replay_works() -> None:
-    config = _config()
-
+async def _test_bootstrap_is_idempotent_and_event_replay_works(
+    config: StreamingLogConfig,
+) -> None:
     first = await bootstrap_streaming_log(config)
     second = await bootstrap_streaming_log(config)
 
@@ -102,12 +137,17 @@ async def _test_bootstrap_is_idempotent_and_event_replay_works() -> None:
     assert event.event_id in {item.event_id for item in events}
 
 
-def test_payload_is_written_before_event_publish() -> None:
-    asyncio.run(_test_payload_is_written_before_event_publish())
+def test_payload_is_written_before_event_publish(
+    streaming_log_config: StreamingLogConfig,
+) -> None:
+    asyncio.run(
+        _test_payload_is_written_before_event_publish(streaming_log_config)
+    )
 
 
-async def _test_payload_is_written_before_event_publish() -> None:
-    config = _config()
+async def _test_payload_is_written_before_event_publish(
+    config: StreamingLogConfig,
+) -> None:
     await bootstrap_streaming_log(config)
 
     async with StreamingLogConnection(config) as connection:
@@ -124,12 +164,17 @@ async def _test_payload_is_written_before_event_publish() -> None:
     assert stored == b"hello"
 
 
-def test_work_messages_are_redelivered_when_unacked() -> None:
-    asyncio.run(_test_work_messages_are_redelivered_when_unacked())
+def test_work_messages_are_redelivered_when_unacked(
+    streaming_log_config: StreamingLogConfig,
+) -> None:
+    asyncio.run(
+        _test_work_messages_are_redelivered_when_unacked(streaming_log_config)
+    )
 
 
-async def _test_work_messages_are_redelivered_when_unacked() -> None:
-    config = _config()
+async def _test_work_messages_are_redelivered_when_unacked(
+    config: StreamingLogConfig,
+) -> None:
     await bootstrap_streaming_log(config)
 
     async with StreamingLogConnection(config) as connection:

@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 from urllib.parse import urlsplit, urlunsplit
+from uuid import uuid4
 
 import psycopg
 from pydantic import BaseModel, ConfigDict
@@ -97,7 +98,9 @@ def _build_sync_plan(
     target_name = validate_pg_identifier(
         target_database or name, "database name"
     )
-    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    timestamp = (
+        f"{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:6]}"
+    )
     temporary_database = _sync_database_name(target_name, "sync", timestamp)
     previous_database = _sync_database_name(target_name, "prev", timestamp)
     return SyncPlan(
@@ -107,7 +110,7 @@ def _build_sync_plan(
         target_database=target_name,
         temporary_database=temporary_database,
         previous_database=previous_database,
-        temporary_dsn=_url_for_database(admin_url, temporary_database),
+        temporary_dsn=url_for_database(admin_url, temporary_database),
         drop_previous=drop_previous,
     )
 
@@ -239,7 +242,7 @@ def _sync_database_name(
     )
 
 
-def _url_for_database(base_url: str, database_name: str) -> str:
+def url_for_database(base_url: str, database_name: str) -> str:
     parts = urlsplit(base_url)
     if not parts.scheme or not parts.netloc:
         raise ProjectError("Database URL must include a scheme and host.")
@@ -252,6 +255,10 @@ def _url_for_database(base_url: str, database_name: str) -> str:
             parts.fragment,
         )
     )
+
+
+def _url_for_database(base_url: str, database_name: str) -> str:
+    return url_for_database(base_url, database_name)
 
 
 def _dump_project_to_file(name: str, dump_path: Path) -> None:
@@ -393,7 +400,7 @@ def _replace_database(
                         sql.Identifier(target_database),
                     )
                 )
-            except Exception as exc:
+            except Exception:
                 if not target_exists:
                     raise
                 logger.exception(
@@ -425,7 +432,7 @@ def _replace_database(
                         "Postgres sync database swap failed and rollback "
                         "also failed."
                     ) from rollback_exc
-                raise exc
+                raise
     return target_exists
 
 

@@ -5,6 +5,11 @@ from pathlib import Path
 
 
 def load_dotenv(path: Path | None = None, *, override: bool = False) -> None:
+    """Load variables from a .env file into os.environ.
+
+    Uses path when provided, otherwise the nearest .env found by find_dotenv.
+    Existing environment variables are preserved unless override is true.
+    """
     env_path = path or find_dotenv()
     if env_path is None or not env_path.exists():
         return
@@ -20,6 +25,7 @@ def load_dotenv(path: Path | None = None, *, override: bool = False) -> None:
 
 
 def find_dotenv(start: Path | None = None) -> Path | None:
+    """Return the nearest .env path by walking upward from start or cwd."""
     current = (start or Path.cwd()).resolve()
     if current.is_file():
         current = current.parent

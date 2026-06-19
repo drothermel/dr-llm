@@ -18,7 +18,6 @@ Usage:
 
 from __future__ import annotations
 
-from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 import typer
@@ -41,6 +40,7 @@ from dr_llm.pool import (
     PoolSchema,
     PoolStore,
 )
+from dr_llm.project.postgres_sync import url_for_database
 
 app = typer.Typer()
 
@@ -49,19 +49,6 @@ POOL_SCHEMA = PoolSchema(
     name="sync_demo_pool",
     key_columns=[KeyColumn(name="case_id")],
 )
-
-
-def _database_url(base_url: str, database_name: str) -> str:
-    parts = urlsplit(base_url)
-    return urlunsplit(
-        (
-            parts.scheme,
-            parts.netloc,
-            f"/{database_name}",
-            parts.query,
-            parts.fragment,
-        )
-    )
 
 
 def _seed_source_pool(dsn: str) -> str:
@@ -142,7 +129,7 @@ def main(
         )
 
         step("Verify synced target database")
-        target_dsn = _database_url(source_lease.dsn, target_database)
+        target_dsn = url_for_database(source_lease.dsn, target_database)
         _verify_target_pool(target_dsn, sample_id)
         ok("target pool contains the synced sample")
 

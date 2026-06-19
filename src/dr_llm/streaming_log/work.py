@@ -24,11 +24,13 @@ class QueuedWorkMessage(BaseModel):
     def from_payload(cls, payload: bytes) -> QueuedWorkMessage:
         raw = json.loads(payload.decode("utf-8"))
         if not isinstance(raw, dict):
-            raise ValueError("queued work payload must be a JSON object")
+            raise TypeError("queued work payload must be a JSON object")
+        if "request" not in raw:
+            raise ValueError("missing 'request' field in stream payload")
         request = parse_llm_request(raw["request"])
         metadata = raw.get("metadata", {})
         if not isinstance(metadata, dict):
-            raise ValueError("queued work metadata must be a JSON object")
+            raise TypeError("queued work metadata must be a JSON object")
         kwargs: dict[str, Any] = {
             "request": request,
             "run_id": raw.get("run_id"),

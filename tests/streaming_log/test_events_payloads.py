@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
@@ -101,14 +102,14 @@ def test_json_payload_serialization_is_stable() -> None:
 
 
 def test_event_envelope_validates_payload_refs() -> None:
+    model = cast(Any, EventEnvelope)
+
     with pytest.raises(ValidationError):
-        EventEnvelope.model_validate(
-            {
-                "event_type": StreamingLogEventType.work_submitted,
-                "producer": ProducerInfo(name="test"),
-                "idempotency_key": "same",
-                "payload_refs": [{"role": "request_json"}],
-            }
+        model(
+            event_type=StreamingLogEventType.work_submitted,
+            producer=ProducerInfo(name="test"),
+            idempotency_key="same",
+            payload_refs=[{"role": "request_json"}],
         )
 
 
@@ -171,8 +172,10 @@ def test_timestamp_is_normalized_to_utc() -> None:
 
 
 def test_event_context_rejects_extra_fields() -> None:
+    model = cast(Any, EventContext)
+
     with pytest.raises(ValidationError):
-        EventContext.model_validate({"run_id": "run-1", "extra_field": "nope"})
+        model(run_id="run-1", extra_field="nope")
 
 
 def test_event_context_builds_from_work_and_attempt() -> None:
