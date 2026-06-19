@@ -13,12 +13,12 @@ about when there is one writer.
 ## One-Time Setup
 
 Create one Neon project and one database for each local `dr-llm` project. Use
-the direct Neon connection string for restore and sync operations.
+the direct Neon connection string for Postgres sync operations.
 
 Store the admin URL outside git:
 
 ```bash
-export DR_LLM_NEON_ADMIN_URL='postgresql://.../neondb?sslmode=require'
+export DR_LLM_POSTGRES_SYNC_ADMIN_URL='postgresql://.../neondb?sslmode=require'
 ```
 
 The admin URL can create, rename, and drop databases. Use a separate read-only
@@ -39,28 +39,38 @@ The backup is written under `~/.dr-llm/backups/PROJECT/`.
 Run sync from the machine that has the local Docker project:
 
 ```bash
-uv run python -m dr_llm project sync-neon PROJECT
+uv run python -m dr_llm project sync-postgres PROJECT
 ```
 
 The command:
 
-1. creates a temporary Neon database
-2. dumps the local Docker project with `pg_dump --no-owner --no-privileges`
-3. restores into the temporary database
-4. validates public table lists, `pool_catalog` count, and exact table row
+1. plans timestamped temporary and previous database names
+2. creates a temporary Neon database
+3. dumps the local Docker project with `pg_dump --no-owner --no-privileges`
+4. restores into the temporary database
+5. validates public table lists, `pool_catalog` count, and exact table row
    counts
-5. renames the old Neon database to a `_prev_...` name
-6. renames the validated temporary database to `PROJECT`
+6. renames the old Neon database to a `_prev_...` name
+7. renames the validated temporary database to `PROJECT`
 
 By default, the previous database is kept as a rollback point. Drop it after a
 successful sync with:
 
 ```bash
-uv run python -m dr_llm project sync-neon PROJECT --drop-previous
+uv run python -m dr_llm project sync-postgres PROJECT --drop-previous
 ```
 
 Use `--target-database NAME` when the remote database name differs from the
 local project name.
+
+The implementation is provider-neutral Postgres sync. Neon is one compatible
+target because its direct connection string supports the required database
+create, restore, rename, and drop operations. For a local repeatable check of
+the same primitive, run:
+
+```bash
+uv run python scripts/demo-project-sync-postgres.py
+```
 
 ## Read From Another Machine
 

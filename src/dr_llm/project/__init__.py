@@ -9,7 +9,7 @@ from dr_llm.project.models import (
     ProjectDeletionResult,
     ProjectDeletionStatus,
     ProjectDeletionViolation,
-    ProjectNeonSyncResult,
+    ProjectPostgresSyncResult,
     ProjectPoolInspection,
     ProjectPoolInspectionReason,
     ProjectPoolInspectionStatus,
@@ -31,7 +31,9 @@ from dr_llm.project.project_service import (
     restore_project,
     start_project,
     stop_project,
-    sync_project_to_neon,
+)
+from dr_llm.project.postgres_sync import (
+    sync_project_to_postgres,
     validate_project_database_copy,
 )
 
@@ -46,7 +48,7 @@ __all__ = [
     "ProjectDeletionResult",
     "ProjectDeletionStatus",
     "ProjectDeletionViolation",
-    "ProjectNeonSyncResult",
+    "ProjectPostgresSyncResult",
     "ProjectPoolInspection",
     "ProjectPoolInspectionReason",
     "ProjectPoolInspectionStatus",
@@ -66,6 +68,6 @@ __all__ = [
     "restore_project",
     "start_project",
     "stop_project",
-    "sync_project_to_neon",
+    "sync_project_to_postgres",
     "validate_project_database_copy",
 ]

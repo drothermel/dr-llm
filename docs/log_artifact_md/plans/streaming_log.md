@@ -69,7 +69,8 @@ Required envelope fields:
 - `producer`: producer identity and version metadata.
 - `idempotency_key`: deterministic key for safe duplicate handling.
 - `payload`: JSON object for inline facts.
-- `payload_refs`: list of object references for large or raw payloads.
+- `payload_refs`: list of validated object references for large or raw
+  payloads.
 
 Optional envelope fields:
 
@@ -90,6 +91,10 @@ defines idempotent behavior.
 
 Large raw payloads must be written to `DRLLM_PAYLOADS` before publishing the
 event that references them.
+
+In the Python implementation, every event envelope validates payload references
+as `PayloadRef` models at construction and replay time. Consumers should treat
+`event.payload_refs` as typed references, not unvalidated dictionaries.
 
 Each payload reference should include:
 
@@ -155,7 +160,9 @@ Recommended package layout:
 src/dr_llm/streaming_log/
   __init__.py
   config.py
+  serialization.py
   events.py
+  event_builders.py
   payloads.py
   client.py
   bootstrap.py
@@ -170,15 +177,20 @@ Core responsibilities:
   durable consumer names, ack wait, max delivery, fetch batch size, and inline
   payload threshold.
 - `events.py`: event type enum, producer model, event envelope model, and
-  idempotency helpers.
-- `payloads.py`: payload serialization, hashing, object key construction, and
-  payload reference model.
-- `client.py`: async connection manager, event publisher, payload writer, work
-  publisher, and replay consumer helpers.
+  idempotency helpers. Shared workflow identity is represented by
+  `EventContext`, which is copied into the envelope when the event is built.
+- `serialization.py`: canonical JSON byte serialization shared by event
+  publishing, idempotency hashing, and JSON payload storage.
+- `event_builders.py`: public event-specific publish specs and builders for
+  inline payloads, payload references, idempotency keys, context, and metadata.
+- `payloads.py`: payload hashing, object key construction, prepared payloads,
+  and payload reference model.
+- `client.py`: async connection manager, context-bound event publisher, payload
+  writer, work publisher, and replay consumer helpers.
 - `bootstrap.py`: idempotent creation or validation of JetStream streams,
   consumers, and object bucket.
 - `workers.py`: async worker runtime using JetStream pull consumers.
-- `ingest_pools.py`: pool snapshot import logic.
+- `ingest_pools.py`: pool snapshot source reading and import event recording.
 - `cli.py`: Typer commands for bootstrap, inspect, ingest-pool, and worker
   execution.
 
@@ -188,7 +200,8 @@ For events with object payloads:
 
 1. Serialize and hash payload bytes.
 2. Write missing payload objects to `DRLLM_PAYLOADS`.
-3. Build the event envelope with payload references.
+3. Build the event envelope with payload references and any shared
+   `EventContext`.
 4. Publish the event to `DRLLM_EVENTS`.
 5. Require JetStream publish acknowledgment.
 
@@ -226,6 +239,13 @@ behavior for long-running provider calls if supported by the client.
 
 The permanent event stream should record attempts. The work stream should only
 coordinate available work.
+
+Worker processing should be composed from public primitives rather than one
+large queue-draining function. The transport loop owns connection, subscription,
+fetching, and shutdown. The per-message handler decodes delivery metadata,
+invokes a work processor, and applies the ack/nak decision. Provider execution,
+retry policy, payload serialization, and lifecycle event emission are separate
+replaceable primitives.
 
 ## Pool Import Phase
 
@@ -275,6 +295,19 @@ Importer idempotency keys should be deterministic from:
 
 Repeated imports of unchanged rows should not create conflicting logical facts.
 
+The importer should be composed from public primitives rather than one full
+workflow function. The pool snapshot source owns Postgres runtime setup, catalog
+lookup, schema snapshotting, sample iteration, and cleanup. The import event
+recorder owns started, sample, completed, and failed event emission, while
+event builders own each event's payload shape and idempotency key.
+
+`pool_import_failed` represents source snapshot acquisition failures, such as
+opening the source pool or reading its samples. Event publication failures are
+streaming-log infrastructure failures and should not be reclassified as source
+pool import failures. If publishing `pool_import_failed` itself fails, the
+original source exception remains primary while the secondary publish failure is
+logged and attached to that exception for diagnosis.
+
 ## Projection-Facing Guarantees
 
 Metadata and artifact projectors should be able to rely on these guarantees:
@@ -322,6 +355,9 @@ Unit tests:
 - Deterministic idempotency key generation.
 - Payload hashing and object key construction.
 - Payload reference serialization.
+- Event builder specs for sample import and worker success lifecycle events.
+- Streaming worker attempt decoding, retry policy, lifecycle event reporting,
+  and ack/nak decisions.
 - Snapshot import event construction from `PoolSample`.
 
 Integration tests with Docker NATS:
