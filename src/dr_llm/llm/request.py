@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import (
     BaseModel,
@@ -10,7 +10,7 @@ from pydantic import (
 )
 
 from dr_llm.llm.config import SamplingControls
-from dr_llm.llm.names import EffortSpec, ProviderName
+from dr_llm.llm.names import EffortSpec, MessageRole, ProviderName
 from dr_llm.llm.providers.concepts.reasoning import ReasoningSpec
 from dr_llm.llm.response import CallMode
 
@@ -18,7 +18,7 @@ from dr_llm.llm.response import CallMode
 class Message(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    role: Literal["system", "user", "assistant"]
+    role: MessageRole
     content: str
 
 
