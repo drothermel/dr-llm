@@ -41,6 +41,12 @@ class OpenRouterEffortLevel(StrEnum):
     HIGH = "high"
 
 
+class MessageRole(StrEnum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
 class ControlMode(StrEnum):
     UNSUPPORTED = "unsupported"
     OPENAI_EFFORT = "openai_effort"
