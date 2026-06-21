@@ -208,6 +208,38 @@ class ProjectInspectionSummary(BaseModel):
         }
 
 
+class ProjectSyncValidation(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source_table_count: int
+    target_table_count: int
+    source_pool_count: int | None = None
+    target_pool_count: int | None = None
+    checked_table_count: int = 0
+    mismatches: list[str] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def passed(self) -> bool:
+        return not self.mismatches
+
+
+class ProjectNeonSyncResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    project_name: str
+    target_database: str
+    temporary_database: str
+    previous_database: str | None = None
+    previous_database_dropped: bool = False
+    validation: ProjectSyncValidation
+
+    @computed_field
+    @property
+    def success(self) -> bool:
+        return self.validation.passed
+
+
 _ProjectModelsProjectInfo = importlib.import_module(
     "dr_llm.project.project_info"
 ).ProjectInfo

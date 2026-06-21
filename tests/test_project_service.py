@@ -30,6 +30,7 @@ from dr_llm.project.models import (
     ProjectDeletionStatus,
     ProjectPoolInspectionReason,
     ProjectPoolInspectionStatus,
+    ProjectSyncValidation,
 )
 from dr_llm.pool.admin.deletion import PoolDeletionResult, PoolDeletionStatus
 from dr_llm.project.project_info import ProjectInfo
@@ -531,10 +532,12 @@ def test_backup_project_does_not_precheck_cached_running_status(
         db_user: str,
         db_name: str,
         output_stream: IO[bytes],
+        extra_args: tuple[str, ...] = (),
     ) -> None:
         assert container_name == "dr-llm-pg-demo"
         assert db_user == "postgres"
         assert db_name == "dr_llm"
+        assert extra_args == ()
         output_stream.write(b"select 1;\n")
 
     monkeypatch.setattr(
@@ -550,6 +553,35 @@ def test_backup_project_does_not_precheck_cached_running_status(
         assert f.read() == b"select 1;\n"
 
 
+def test_backup_project_portable_omits_owner_and_privileges(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    observed_extra_args: list[tuple[str, ...]] = []
+
+    def fake_pg_dump_stream(
+        *,
+        container_name: str,
+        db_user: str,
+        db_name: str,
+        output_stream: IO[bytes],
+        extra_args: tuple[str, ...] = (),
+    ) -> None:
+        _ = (container_name, db_user, db_name)
+        observed_extra_args.append(extra_args)
+        output_stream.write(b"select 1;\n")
+
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_pg_dump_stream",
+        fake_pg_dump_stream,
+    )
+
+    backup_project("demo", tmp_path, portable=True)
+
+    assert observed_extra_args == [("--no-owner", "--no-privileges")]
+
+
 def test_backup_project_translates_missing_container_to_project_not_found(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -560,8 +592,9 @@ def test_backup_project_translates_missing_container_to_project_not_found(
         db_user: str,
         db_name: str,
         output_stream: IO[bytes],
+        extra_args: tuple[str, ...] = (),
     ) -> None:
-        _ = (container_name, db_user, db_name, output_stream)
+        _ = (container_name, db_user, db_name, output_stream, extra_args)
         raise DockerContainerNotFoundError()
 
     monkeypatch.setattr(
@@ -584,8 +617,9 @@ def test_backup_project_translates_stopped_container_to_project_error(
         db_user: str,
         db_name: str,
         output_stream: IO[bytes],
+        extra_args: tuple[str, ...] = (),
     ) -> None:
-        _ = (container_name, db_user, db_name, output_stream)
+        _ = (container_name, db_user, db_name, output_stream, extra_args)
         raise DockerContainerNotRunningError()
 
     monkeypatch.setattr(
@@ -714,6 +748,136 @@ def test_restore_project_rejects_plain_sql_files(
         restore_project("demo", backup_file)
 
 
+def test_sync_project_to_neon_validates_and_swaps_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        project_service_module,
+        "get_project",
+        lambda name: ProjectInfo(
+            name=name, port=5500, status=ContainerStatus.RUNNING
+        ),
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_create_database",
+        lambda admin_url, database_name: events.append(
+            ("create", database_name)
+        ),
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_dump_project_to_file",
+        lambda name, dump_path, *, portable: (
+            events.append(("dump", (name, portable)))
+            or dump_path.write_text("select 1;\n")
+        ),
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_restore_sql_file",
+        lambda target_dsn, dump_path: events.append(("restore", target_dsn)),
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "validate_project_database_copy",
+        lambda *, source_dsn, target_dsn: (
+            events.append(("validate", (source_dsn, target_dsn)))
+            or ProjectSyncValidation(
+                source_table_count=1,
+                target_table_count=1,
+                checked_table_count=1,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_replace_database",
+        lambda **kwargs: (
+            events.append(("replace", kwargs["target_database"])) or True
+        ),
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_drop_database",
+        lambda admin_url, database_name: events.append(
+            ("drop", database_name)
+        ),
+    )
+
+    result = project_service_module.sync_project_to_neon(
+        "demo",
+        "postgresql://example/neondb?sslmode=require",
+        drop_previous=True,
+    )
+
+    assert result.success is True
+    assert result.target_database == "demo"
+    assert result.previous_database is not None
+    assert result.previous_database_dropped is True
+    assert [event[0] for event in events] == [
+        "create",
+        "dump",
+        "restore",
+        "validate",
+        "replace",
+        "drop",
+    ]
+    assert ("dump", ("demo", True)) in events
+
+
+def test_sync_project_to_neon_drops_temp_database_when_validation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dropped: list[str] = []
+
+    monkeypatch.setattr(
+        project_service_module,
+        "get_project",
+        lambda name: ProjectInfo(
+            name=name, port=5500, status=ContainerStatus.RUNNING
+        ),
+    )
+    monkeypatch.setattr(
+        project_service_module, "_create_database", lambda *args: None
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_dump_project_to_file",
+        lambda name, dump_path, *, portable: dump_path.write_text(
+            "select 1;\n"
+        ),
+    )
+    monkeypatch.setattr(
+        project_service_module, "_restore_sql_file", lambda *args: None
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "validate_project_database_copy",
+        lambda *, source_dsn, target_dsn: ProjectSyncValidation(
+            source_table_count=1,
+            target_table_count=1,
+            checked_table_count=1,
+            mismatches=["alpha row count mismatch: source=1 target=0"],
+        ),
+    )
+    monkeypatch.setattr(
+        project_service_module,
+        "_drop_database",
+        lambda admin_url, database_name: dropped.append(database_name),
+    )
+
+    with pytest.raises(ProjectError, match="validation failed"):
+        project_service_module.sync_project_to_neon(
+            "demo", "postgresql://example/neondb"
+        )
+
+    assert len(dropped) == 1
+    assert "_sync_" in dropped[0]
+
+
 def test_backup_project_removes_partial_file_when_streaming_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -724,10 +888,12 @@ def test_backup_project_removes_partial_file_when_streaming_fails(
         db_user: str,
         db_name: str,
         output_stream: IO[bytes],
+        extra_args: tuple[str, ...] = (),
     ) -> None:
         assert container_name == "dr-llm-pg-demo"
         assert db_user == "postgres"
         assert db_name == "dr_llm"
+        assert extra_args == ()
         output_stream.write(b"partial dump\n")
         raise RuntimeError("pg_dump failed")
 

@@ -137,6 +137,8 @@ def call_docker_pg_dump_stream(
     db_user: str,
     db_name: str,
     output_stream: BinaryStream,
+    *,
+    extra_args: tuple[str, ...] = (),
 ) -> None:
     args = (
         "exec",
@@ -144,6 +146,7 @@ def call_docker_pg_dump_stream(
         "pg_dump",
         "-U",
         db_user,
+        *extra_args,
         db_name,
     )
 
