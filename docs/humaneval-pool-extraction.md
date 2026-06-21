@@ -18,6 +18,8 @@ library API:
 3. Extract decoder/code-attempt rows into one Parquet table.
 4. Split that Parquet table into one Parquet file per HumanEval task id for
    targeted per-function analysis.
+5. Use the inspection notebook for task-local exact duplicate checks over raw
+   model outputs.
 
 ## Scripts
 
@@ -34,7 +36,15 @@ The implementation lives in `scripts/`:
   available, to backfill official prompt text for decoder rows whose pool
   payload does not store the prompt directly.
 - `split_humaneval_attempts_by_task.py` reads the unified Parquet file and
-  writes one `.parquet` file per `human_eval_task_id` under `per_elem/`.
+  writes one `.parquet` file per `human_eval_task_id` under `per_elem/`, plus
+  one deduplicated JSONL file per task for quick raw-output inspection.
+
+The interactive inspection notebook lives in `nbs/inspect/`:
+
+- `humaneval_exact_dedupe.py` provides a dropdown over the per-task Parquet
+  files, a run button to load one task, exact-match duplicate metrics for
+  `raw_code_output`, a top-100 repeat-count chart, and dataframes for the
+  loaded generations and repeated raw outputs.
 
 Parquet writing is intentionally handled with an ephemeral dependency:
 
@@ -89,10 +99,11 @@ Important files:
 - `humaneval_code_attempts.parquet`
 - `humaneval_code_attempts_preview.csv`
 - `per_elem/human_eval-<n>-decode.parquet`
+- `per_elem/human_eval-<n>-decode-dedup.jsonl`
 - `per_elem/manifest.json`
 
-The artifact directory is about 1.3 GB after the per-task split. The unified
-Parquet file is about 102 MB, and `per_elem/` is about 76 MB. These files are
+The artifact directory is about 1.4 GB after the per-task split. The unified
+Parquet file is about 102 MB, and `per_elem/` is about 224 MB. These files are
 analysis outputs and should not be committed.
 
 The `per_elem/` split uses the standard `.parquet` extension. Each file keeps
@@ -102,6 +113,20 @@ for one canonical HumanEval task id. For example:
 ```text
 per_elem/human_eval-0-decode.parquet
 ```
+
+Each per-task split also writes a deduplicated JSONL file for quick human
+inspection. Every line has the shape:
+
+```json
+{"out": "<raw model output>", "count": 1}
+```
+
+The JSONL preserves raw, unparsed generation text and sorts rows by descending
+exact-match count.
+
+The notebook uses the same raw, unparsed `raw_code_output` column. Its exact
+duplicate counts are therefore exact raw generation string matches, before any
+parsing to separate code from dialogue, Markdown fences, or explanatory text.
 
 ## Validation Results
 
@@ -115,6 +140,8 @@ The completed run produced:
 - 203,407 non-empty `decoder_input_description` values
 - zero extracted `HumanEvalPro`, `MbppPro`, `ClassEval`, or other dataset IDs
 - 163 per-task Parquet files in `per_elem/`
+- 163 per-task deduplicated JSONL files in `per_elem/`
+- 172,454 task-local unique raw outputs across the deduplicated JSONL files
 
 Description source counts:
 
@@ -174,6 +201,12 @@ Per-task split:
 ```bash
 uv run --with pyarrow python scripts/split_humaneval_attempts_by_task.py \
   /Users/daniellerothermel/drotherm/data/code-comp/dr-llm-humaneval-pool-dumps/20260621_manual/humaneval_code_attempts.parquet
+```
+
+Exact duplicate inspection notebook:
+
+```bash
+uv run marimo edit nbs/inspect/humaneval_exact_dedupe.py
 ```
 
 All scripts preserve the original running/stopped state of Docker-managed
