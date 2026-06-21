@@ -16,6 +16,8 @@ library API:
 1. Explore candidate pool schemas and row payloads.
 2. Dump candidate pool rows to per-pool JSONL gzip files.
 3. Extract decoder/code-attempt rows into one Parquet table.
+4. Split that Parquet table into one Parquet file per HumanEval task id for
+   targeted per-function analysis.
 
 ## Scripts
 
@@ -31,6 +33,8 @@ The implementation lives in `scripts/`:
   Parquet file. It uses the existing `nl-code` parsed HumanEval cache, when
   available, to backfill official prompt text for decoder rows whose pool
   payload does not store the prompt directly.
+- `split_humaneval_attempts_by_task.py` reads the unified Parquet file and
+  writes one `.parquet` file per `human_eval_task_id` under `per_elem/`.
 
 Parquet writing is intentionally handled with an ephemeral dependency:
 
@@ -84,9 +88,20 @@ Important files:
 - one `*.jsonl.gz` dump per selected pool
 - `humaneval_code_attempts.parquet`
 - `humaneval_code_attempts_preview.csv`
+- `per_elem/human_eval-<n>-decode.parquet`
+- `per_elem/manifest.json`
 
-The artifact directory is about 1.2 GB. The Parquet file is about 102 MB.
-These files are analysis outputs and should not be committed.
+The artifact directory is about 1.3 GB after the per-task split. The unified
+Parquet file is about 102 MB, and `per_elem/` is about 76 MB. These files are
+analysis outputs and should not be committed.
+
+The `per_elem/` split uses the standard `.parquet` extension. Each file keeps
+the same columns as `humaneval_code_attempts.parquet`, but contains only rows
+for one canonical HumanEval task id. For example:
+
+```text
+per_elem/human_eval-0-decode.parquet
+```
 
 ## Validation Results
 
@@ -99,6 +114,7 @@ The completed run produced:
 - 203,407 non-empty `raw_code_output` values
 - 203,407 non-empty `decoder_input_description` values
 - zero extracted `HumanEvalPro`, `MbppPro`, `ClassEval`, or other dataset IDs
+- 163 per-task Parquet files in `per_elem/`
 
 Description source counts:
 
@@ -151,6 +167,13 @@ Parquet extraction:
 ```bash
 uv run --with pyarrow python scripts/extract_humaneval_code_attempts.py \
   /Users/daniellerothermel/drotherm/data/code-comp/dr-llm-humaneval-pool-dumps/20260621_manual
+```
+
+Per-task split:
+
+```bash
+uv run --with pyarrow python scripts/split_humaneval_attempts_by_task.py \
+  /Users/daniellerothermel/drotherm/data/code-comp/dr-llm-humaneval-pool-dumps/20260621_manual/humaneval_code_attempts.parquet
 ```
 
 All scripts preserve the original running/stopped state of Docker-managed
