@@ -6,7 +6,7 @@ attempt extraction so the first-pass `humaneval_code_attempts.parquet` stays
 stable and easy to inspect.
 
 For the parallel DSPy HumanEval eval-attempt workflow, see
-`docs/dspy-rich-trace-extraction.md`.
+`dspy-rich-trace-extraction.md`.
 
 ## Goal
 

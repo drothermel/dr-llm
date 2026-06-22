@@ -22,7 +22,7 @@ library API:
    model outputs.
 
 For the richer encoder-decoder trace workflow over these same dumped pool
-artifacts, see `docs/rich-trace-extraction.md`.
+artifacts, see `rich-trace-extraction.md`.
 
 ## Scripts
 
