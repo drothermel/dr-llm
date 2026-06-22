@@ -21,6 +21,9 @@ library API:
 5. Use the inspection notebook for task-local exact duplicate checks over raw
    model outputs.
 
+For the richer encoder-decoder trace workflow over these same dumped pool
+artifacts, see `docs/rich-trace-extraction.md`.
+
 ## Scripts
 
 The implementation lives in `scripts/`:
