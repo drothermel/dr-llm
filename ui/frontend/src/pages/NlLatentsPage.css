@@ -1,5 +1,6 @@
-.nl-page {
-  max-width: 1280px;
+.page.nl-page {
+  max-width: none;
+  width: 100%;
 }
 
 .nl-page-header {

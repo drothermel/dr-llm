@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 
 from dr_llm.llm import ControlMode, ProviderName
 import pytest
@@ -17,6 +18,74 @@ from dr_llm.llm.providers.transports.openai_compat.config import (
 )
 from tests.conftest import FakeOrchestrator
 from ui.api import main as ui_api
+
+
+def test_connect_pool_database_loads_database_url_from_dotenv(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text(
+        "DR_LLM_DATABASE_URL=postgresql://dotenv/ui\n"
+        "DR_LLM_DATABASE_URL_EXISTING=from_file\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DR_LLM_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DR_LLM_DATABASE_BASE_URL", raising=False)
+    monkeypatch.delenv("DR_LLM_POSTGRES_SYNC_ADMIN_URL", raising=False)
+    monkeypatch.setenv("DR_LLM_DATABASE_URL_EXISTING", "from_env")
+    captured: dict[str, object] = {}
+
+    def fake_connect(
+        dsn: str,
+        *,
+        row_factory: object,
+    ) -> object:
+        captured["dsn"] = dsn
+        captured["row_factory"] = row_factory
+        return object()
+
+    monkeypatch.setattr(ui_api.psycopg, "connect", fake_connect)
+
+    ui_api._connect_pool_database()
+
+    assert captured["dsn"] == "postgresql://dotenv/ui"
+    assert captured["row_factory"] is ui_api.dict_row
+    assert os.environ["DR_LLM_DATABASE_URL_EXISTING"] == "from_env"
+
+
+def test_connect_pool_database_derives_url_from_sync_admin_dotenv(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text(
+        "DR_LLM_POSTGRES_SYNC_ADMIN_URL="
+        "postgresql://user:pass@example.test/neondb?sslmode=require\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DR_LLM_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DR_LLM_DATABASE_BASE_URL", raising=False)
+    monkeypatch.delenv("DR_LLM_POSTGRES_SYNC_ADMIN_URL", raising=False)
+    captured: dict[str, object] = {}
+
+    def fake_connect(
+        dsn: str,
+        *,
+        row_factory: object,
+    ) -> object:
+        captured["dsn"] = dsn
+        captured["row_factory"] = row_factory
+        return object()
+
+    monkeypatch.setattr(ui_api.psycopg, "connect", fake_connect)
+
+    ui_api._connect_pool_database()
+
+    assert captured["dsn"] == (
+        "postgresql://user:pass@example.test/nl_latents?sslmode=require"
+    )
+    assert captured["row_factory"] is ui_api.dict_row
 
 
 def test_providers_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -203,6 +272,23 @@ def test_nl_latents_samples_endpoint_forwards_filters(
     payload = response.json()
     assert payload["samples"][0]["sample_id"] == "sample-1"
     assert payload["samples"][0]["prompt_config_label"] == "Noop / High Level"
+
+
+def test_nl_latents_conditions_parameterizes_smoke_filter() -> None:
+    where, values = ui_api._nl_latents_conditions(
+        family=None,
+        split=None,
+        enc_model=None,
+        budget=None,
+        difficulty=None,
+        data_version=None,
+        result=None,
+        hide_pending=False,
+        hide_smoke=True,
+    )
+
+    assert "coalesce(run_id, '') NOT ILIKE %s" in where
+    assert "%smoke%" in values
 
 
 def test_nl_latents_sample_detail_endpoint_returns_404(

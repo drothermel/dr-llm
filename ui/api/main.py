@@ -6,7 +6,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 import os
 from typing import Any, cast
+from urllib.parse import urlsplit, urlunsplit
 
+from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg
@@ -23,8 +25,13 @@ from dr_llm.llm.providers.core.registry import ProviderRegistry
 # Response models
 # ---------------------------------------------------------------------------
 
+UI_DOTENV_FILENAME = ".env"
 DR_LLM_DATABASE_URL_ENV = "DR_LLM_DATABASE_URL"
+DR_LLM_DATABASE_BASE_URL_ENV = "DR_LLM_DATABASE_BASE_URL"
+POSTGRES_SYNC_ADMIN_URL_ENV = "DR_LLM_POSTGRES_SYNC_ADMIN_URL"
+NL_LATENTS_DATABASE = "nl_latents"
 NL_LATENTS_TABLE = "published_nl_latents_samples"
+SMOKE_RUN_ID_PATTERN = "%smoke%"
 DEFAULT_PAGE = 1
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
@@ -169,8 +176,19 @@ def _entry_to_response(entry: ModelCatalogEntry) -> ModelEntryResponse:
 # ---------------------------------------------------------------------------
 
 
+def _load_ui_dotenv() -> None:
+    dotenv_path = find_dotenv(UI_DOTENV_FILENAME, usecwd=True)
+    if dotenv_path:
+        load_dotenv(dotenv_path, override=False)
+
+
+_load_ui_dotenv()
+
+
 def _get_registry(app: FastAPI) -> ProviderRegistry:
-    registry = cast(ProviderRegistry | None, getattr(app.state, "registry", None))
+    registry = cast(
+        ProviderRegistry | None, getattr(app.state, "registry", None)
+    )
     if registry is None:
         raise HTTPException(
             status_code=503,
@@ -190,13 +208,45 @@ def _parse_positive_int(value: int, fallback: int) -> int:
     return value if value > 0 else fallback
 
 
-def _connect_pool_database() -> psycopg.Connection[dict[str, Any]]:
-    dsn = os.getenv(DR_LLM_DATABASE_URL_ENV)
-    if not dsn:
+def _database_url_for_database(database_name: str) -> str:
+    explicit_url = os.getenv(DR_LLM_DATABASE_URL_ENV)
+    if explicit_url:
+        return explicit_url
+    base_url = os.getenv(DR_LLM_DATABASE_BASE_URL_ENV) or os.getenv(
+        POSTGRES_SYNC_ADMIN_URL_ENV
+    )
+    if not base_url:
         raise HTTPException(
             status_code=503,
-            detail=f"{DR_LLM_DATABASE_URL_ENV} is not configured.",
+            detail=(
+                f"{DR_LLM_DATABASE_URL_ENV}, "
+                f"{DR_LLM_DATABASE_BASE_URL_ENV}, or "
+                f"{POSTGRES_SYNC_ADMIN_URL_ENV} is not configured."
+            ),
         )
+    parts = urlsplit(base_url)
+    if not parts.scheme or not parts.netloc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"{DR_LLM_DATABASE_BASE_URL_ENV} must include a scheme "
+                "and host."
+            ),
+        )
+    return urlunsplit(
+        (
+            parts.scheme,
+            parts.netloc,
+            f"/{database_name}",
+            parts.query,
+            parts.fragment,
+        )
+    )
+
+
+def _connect_pool_database() -> psycopg.Connection[dict[str, Any]]:
+    _load_ui_dotenv()
+    dsn = _database_url_for_database(NL_LATENTS_DATABASE)
     return psycopg.connect(dsn, row_factory=dict_row)
 
 
@@ -206,7 +256,9 @@ def _fetch_string_options(column_name: str) -> list[str]:
             f"SELECT DISTINCT {column_name} FROM {NL_LATENTS_TABLE} "
             f"ORDER BY {column_name}"
         ).fetchall()
-    return [str(row[column_name]) for row in rows if row[column_name] is not None]
+    return [
+        str(row[column_name]) for row in rows if row[column_name] is not None
+    ]
 
 
 def _fetch_nl_latents_filters() -> NlLatentsFiltersResponse:
@@ -249,7 +301,8 @@ def _nl_latents_conditions(
     if hide_pending:
         conditions.append("result_state <> 'pending'")
     if hide_smoke:
-        conditions.append("coalesce(run_id, '') NOT ILIKE '%smoke%'")
+        values.append(SMOKE_RUN_ID_PATTERN)
+        conditions.append("coalesce(run_id, '') NOT ILIKE %s")
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
     return where, values
 
@@ -383,8 +436,12 @@ def list_providers(request: Request) -> list[ProviderStatusResponse]:
     ]
 
 
-@app.get("/api/providers/{provider}/models", response_model=ProviderModelsResponse)
-def get_provider_models(provider: str, request: Request) -> ProviderModelsResponse:
+@app.get(
+    "/api/providers/{provider}/models", response_model=ProviderModelsResponse
+)
+def get_provider_models(
+    provider: str, request: Request
+) -> ProviderModelsResponse:
     """Get models for a provider.  Uses static data if the provider is unavailable."""
     registry = _get_registry(request.app)
     try:
@@ -424,7 +481,9 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
 
 
 @app.post("/api/providers/{provider}/sync", response_model=SyncResultResponse)
-def sync_provider_models(provider: str, request: Request) -> SyncResultResponse:
+def sync_provider_models(
+    provider: str, request: Request
+) -> SyncResultResponse:
     """Trigger a live model sync for a provider."""
     registry = _get_registry(request.app)
     try:

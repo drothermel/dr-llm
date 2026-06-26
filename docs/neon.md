@@ -163,10 +163,41 @@ database.
 Install the project and set a Neon reader DSN:
 
 ```bash
-export DR_LLM_DATABASE_URL='postgresql://.../PROJECT?sslmode=require'
 uv run python -m dr_llm pool list-dsn
 uv run python -m dr_llm pool inspect-dsn POOL_NAME
 ```
+
+For the UI, the API can derive the `nl_latents` reader DSN from the same base
+URL used for sync. This is enough if your `.env` already contains:
+
+```bash
+DR_LLM_POSTGRES_SYNC_ADMIN_URL='postgresql://USER:PASSWORD@HOST/neondb?sslmode=require'
+```
+
+The UI keeps the user/password/host/options and replaces the database path with
+`/nl_latents`. If you want to avoid using the admin URL for reading, set a
+reader-capable base URL instead:
+
+```bash
+DR_LLM_DATABASE_BASE_URL='postgresql://USER:PASSWORD@HOST/neondb?sslmode=require'
+```
+
+For a fully explicit override, set the exact DSN:
+
+```bash
+DR_LLM_DATABASE_URL='postgresql://USER:PASSWORD@HOST/nl_latents?sslmode=require'
+```
+
+Then start the API and frontend:
+
+```bash
+uv run uvicorn ui.api.main:app --reload --port 8000
+pnpm --dir ui/frontend dev
+```
+
+The API loads `.env` from the current working directory without overriding
+already exported values. Resolution order is `DR_LLM_DATABASE_URL`, then
+`DR_LLM_DATABASE_BASE_URL`, then `DR_LLM_POSTGRES_SYNC_ADMIN_URL`.
 
 Python code can use the same DSN with the normal pool readers:
 
