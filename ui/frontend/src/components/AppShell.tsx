@@ -79,19 +79,29 @@ export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname() ?? '/'
 
   return (
-    <div className="app">
-      <nav className="sidebar">
-        <div className="sidebar-header">
-          <h1 className="logo">dr-llm</h1>
-          <span className="logo-sub">ui tools</span>
+    <div className="min-h-screen md:flex">
+      <nav className="z-10 flex flex-col border-b border-[var(--border)] bg-[var(--bg-secondary)] py-5 md:fixed md:inset-y-0 md:left-0 md:w-60 md:border-r md:border-b-0">
+        <div className="mb-4 border-b border-[var(--border)] px-5 pb-5">
+          <h1 className="font-mono text-xl font-bold text-[var(--accent)]">
+            dr-llm
+          </h1>
+          <span className="ml-0.5 text-[11px] font-medium tracking-[1.5px] text-[var(--text-muted)] uppercase">
+            ui tools
+          </span>
         </div>
-        <div className="nav-section">
-          <span className="nav-section-label">Explore</span>
+        <div className="px-3">
+          <span className="mb-1.5 block px-2 text-[11px] font-semibold tracking-[1px] text-[var(--text-muted)] uppercase">
+            Explore
+          </span>
           {NAV_ITEMS.map(item => (
             <Link
               key={item.href}
               href={item.href}
-              className={`nav-link ${isActive(pathname, item) ? 'active' : ''}`}
+              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                isActive(pathname, item)
+                  ? 'bg-[var(--accent-bg)] text-[var(--accent)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+              }`}
             >
               {item.icon}
               {item.label}
@@ -99,7 +109,9 @@ export default function AppShell({ children }: AppShellProps) {
           ))}
         </div>
       </nav>
-      <main className="content">{children}</main>
+      <main className="min-h-screen flex-1 px-5 py-6 md:ml-60 md:px-10 md:py-8">
+        {children}
+      </main>
     </div>
   )
 }

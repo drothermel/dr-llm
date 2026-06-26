@@ -19,6 +19,15 @@ import type {
 
 const RESULT_OPTIONS = ['passed', 'failed', 'pending']
 const FILTERS_PATH = '/api/nl-latents/filters'
+const ERROR_STATE_CLASS =
+  'mb-5 flex items-start gap-4 rounded-[10px] border border-[rgba(220,38,38,0.15)] bg-[var(--red-bg)] p-6'
+const ERROR_ICON_CLASS =
+  'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--red)] text-sm font-bold text-white'
+const RESULT_CLASS_BY_STATE: Record<string, string> = {
+  passed: 'bg-[var(--green-bg)] text-[var(--green)]',
+  failed: 'bg-[var(--red-bg)] text-[var(--red)]',
+  pending: 'bg-[var(--yellow-bg)] text-[var(--yellow)]',
+}
 
 type CachedJson = NlLatentsFilters | NlLatentsSamplesResponse
 
@@ -71,11 +80,12 @@ function SelectFilter({
   onChange,
 }: SelectFilterProps) {
   return (
-    <label className="nl-filter">
+    <label className="flex flex-col gap-1 text-xs font-semibold text-[var(--text-secondary)]">
       <span>{label}</span>
       <select
         value={value}
         onChange={event => onChange(event.target.value)}
+        className="min-h-[34px] w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 font-medium text-[var(--text-primary)] [font:inherit]"
       >
         <option value={ALL}>All</option>
         {values.map(option => (
@@ -94,9 +104,10 @@ type ResultBadgeProps = {
 }
 
 function ResultBadge({ state, failureCategory }: ResultBadgeProps) {
-  const className = `nl-result nl-result-${state}`
   return (
-    <span className={className}>
+    <span
+      className={`inline-flex rounded-md px-[7px] py-[3px] text-xs leading-tight font-bold ${RESULT_CLASS_BY_STATE[state] ?? 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'}`}
+    >
       {state}
       {failureCategory ? ` · ${failureCategory}` : ''}
     </span>
@@ -244,18 +255,22 @@ export default function NlLatentsPage({
     : null
 
   return (
-    <div className="page nl-page">
-      <div className="page-header nl-page-header">
+    <div className="w-full max-w-none">
+      <div className="mb-8 flex items-start justify-between gap-6 max-md:block">
         <div>
-          <h2>nl-latents</h2>
-          <p className="page-description">
+          <h2 className="mb-1 text-2xl font-bold text-[var(--text-primary)]">
+            nl-latents
+          </h2>
+          <p className="text-sm text-[var(--text-secondary)]">
             Published sample summaries from published_nl_latents_samples
           </p>
         </div>
-        <span className="nl-table-pill">published_nl_latents_samples</span>
+        <span className="shrink-0 rounded-md border border-[var(--border)] px-2 py-1 font-mono text-xs text-[var(--text-secondary)] max-md:mt-3 max-md:inline-flex">
+          published_nl_latents_samples
+        </span>
       </div>
 
-      <div className="nl-filters">
+      <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
         <SelectFilter
           label="Family"
           value={family}
@@ -298,10 +313,11 @@ export default function NlLatentsPage({
           values={RESULT_OPTIONS}
           onChange={updateFilter('result')}
         />
-        <label className="nl-toggle">
+        <label className="flex min-h-14 items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
           <input
             type="checkbox"
             checked={hidePending}
+            className="h-4 w-4"
             onChange={event => {
               updateListState({
                 hidePending: event.target.checked,
@@ -311,10 +327,11 @@ export default function NlLatentsPage({
           />
           Hide pending
         </label>
-        <label className="nl-toggle">
+        <label className="flex min-h-14 items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
           <input
             type="checkbox"
             checked={hideSmoke}
+            className="h-4 w-4"
             onChange={event => {
               updateListState({
                 hideSmoke: event.target.checked,
@@ -327,17 +344,19 @@ export default function NlLatentsPage({
       </div>
 
       {error && (
-        <div className="error-state nl-error">
-          <span className="error-icon">!</span>
+        <div className={ERROR_STATE_CLASS}>
+          <span className={ERROR_ICON_CLASS}>!</span>
           <div>
-            <p className="error-title">Failed to load nl-latents data</p>
-            <p className="error-detail">{error}</p>
+            <p className="mb-1 font-semibold text-[var(--red)]">
+              Failed to load nl-latents data
+            </p>
+            <p className="text-[13px] text-[var(--text-secondary)]">{error}</p>
           </div>
         </div>
       )}
 
-      <div className="nl-table-wrap">
-        <div className="nl-table-meta">
+      <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)]">
           <span>
             {loading
               ? 'Loading...'
@@ -345,53 +364,77 @@ export default function NlLatentsPage({
           </span>
           {pageStatus && <span>{pageStatus}</span>}
         </div>
-        <table className="nl-table">
+        <table className="w-full min-w-[1120px] border-collapse">
           <thead>
             <tr>
-              <th>Sample</th>
-              <th>Family</th>
-              <th>Diff</th>
-              <th>Split</th>
-              <th>Model</th>
-              <th>Budget</th>
-              <th>Prompt config</th>
-              <th>Result</th>
-              <th>Created</th>
+              {[
+                'Sample',
+                'Family',
+                'Diff',
+                'Split',
+                'Model',
+                'Budget',
+                'Prompt config',
+                'Result',
+                'Created',
+              ].map(header => (
+                <th
+                  key={header}
+                  className="border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 py-2.5 text-left align-top text-[11px] font-bold tracking-[0.5px] text-[var(--text-secondary)] uppercase"
+                >
+                  {header}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {!loading && samples?.samples.length === 0 && (
               <tr>
-                <td colSpan={9} className="nl-empty">
+                <td
+                  colSpan={9}
+                  className="border-b border-[var(--border-subtle)] px-3 py-2.5 text-center align-top text-[13px] text-[var(--text-muted)]"
+                >
                   No samples match.
                 </td>
               </tr>
             )}
             {(samples?.samples ?? []).map(sample => (
-              <tr key={sample.sample_id}>
-                <td>
+              <tr key={sample.sample_id} className="last:[&>td]:border-b-0">
+                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
                   <Link
-                    className="nl-sample-link"
+                    className="font-mono"
                     href={`/nl-latents/samples/${sample.sample_id}${sampleSearchSuffix}`}
                   >
                     {sample.sample_id.slice(0, 12)}
                   </Link>
                 </td>
-                <td>{sample.family}</td>
-                <td>{sample.difficulty}</td>
-                <td>{sample.split}</td>
-                <td className="nl-mono">{sample.enc_model_label}</td>
-                <td className="nl-mono">{sample.budget}</td>
-                <td className="nl-config-cell">
+                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
+                  {sample.family}
+                </td>
+                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
+                  {sample.difficulty}
+                </td>
+                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
+                  {sample.split}
+                </td>
+                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top font-mono text-[13px]">
+                  {sample.enc_model_label}
+                </td>
+                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top font-mono text-[13px]">
+                  {sample.budget}
+                </td>
+                <td className="max-w-[220px] border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
                   {sample.prompt_config_label || '-'}
                 </td>
-                <td>
+                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
                   <ResultBadge
                     state={sample.result_state}
                     failureCategory={sample.failure_category_normalized}
                   />
                 </td>
-                <td>{new Date(sample.created_at).toLocaleDateString()}</td>
+                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
+                  {new Date(sample.created_at).toLocaleDateString()}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -399,11 +442,12 @@ export default function NlLatentsPage({
       </div>
 
       {samples && samples.total_pages > 1 && (
-        <div className="nl-pagination">
+        <div className="mt-4 flex items-center justify-end gap-3 max-md:justify-start">
           <button
             type="button"
             disabled={page <= 1}
             onClick={() => updateListState({ page: page - 1 })}
+            className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-1.5 text-[13px] text-[var(--text-primary)] disabled:cursor-not-allowed disabled:text-[var(--text-muted)]"
           >
             Previous
           </button>
@@ -414,6 +458,7 @@ export default function NlLatentsPage({
             type="button"
             disabled={page >= samples.total_pages}
             onClick={() => updateListState({ page: page + 1 })}
+            className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-1.5 text-[13px] text-[var(--text-primary)] disabled:cursor-not-allowed disabled:text-[var(--text-muted)]"
           >
             Next
           </button>
