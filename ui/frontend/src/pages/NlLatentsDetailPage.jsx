@@ -152,6 +152,19 @@ function BudgetMeter({ budget, actual, budgetOk }) {
   )
 }
 
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  return `${(bytes / 1024).toFixed(1)} KB`
+}
+
+function codeStats(value) {
+  return {
+    lines: value.split('\n').length,
+    chars: [...value].length,
+    bytes: new TextEncoder().encode(value).length,
+  }
+}
+
 function CodePane({ label, value, badge, area, language = 'python' }) {
   const html = useMemo(() => {
     if (!value) return ''
@@ -161,12 +174,24 @@ function CodePane({ label, value, badge, area, language = 'python' }) {
       return null
     }
   }, [value, language])
+  const stats = useMemo(() => (value ? codeStats(value) : null), [value])
   if (!value) return null
   return (
     <section className="nl-pane nl-pane-code" style={{ gridArea: area }}>
       <header className="nl-pane-head">
         <h3>{label}</h3>
-        {badge && <span className="nl-pane-badge">{badge}</span>}
+        <div className="nl-pane-meta">
+          <span className="nl-metric">
+            {stats.lines.toLocaleString()} lines
+          </span>
+          <span className="nl-metric">
+            {stats.chars.toLocaleString()} chars
+          </span>
+          <span className="nl-metric">{formatBytes(stats.bytes)}</span>
+          {badge && (
+            <span className="nl-metric nl-metric-lang">{badge}</span>
+          )}
+        </div>
       </header>
       <pre className="nl-code">
         {html === null ? (

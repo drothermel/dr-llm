@@ -532,6 +532,30 @@
   padding: 2px 7px;
 }
 
+.nl-pane-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.nl-metric {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.nl-metric-lang {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
 .nl-code,
 .nl-prose {
   color: var(--text-primary);
@@ -545,7 +569,6 @@
 
 .nl-code {
   background: oklch(0.99 0.002 270);
-  max-height: 560px;
   white-space: pre;
 }
 
