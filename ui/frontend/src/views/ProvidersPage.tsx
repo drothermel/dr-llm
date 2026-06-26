@@ -5,14 +5,15 @@ import type { ProviderStatus } from '@/lib/types'
 
 const PAGE_CLASS = 'max-w-[1100px]'
 const PAGE_HEADER_CLASS = 'mb-8'
-const PAGE_TITLE_CLASS = 'mb-1 text-2xl font-bold text-[var(--text-primary)]'
+const PAGE_TITLE_CLASS =
+  'mb-1 font-display text-[26px] font-bold leading-tight tracking-[-0.02em] text-[var(--text-primary)]'
 const PAGE_DESCRIPTION_CLASS = 'text-sm text-[var(--text-secondary)]'
 const ERROR_STATE_CLASS =
-  'flex items-start gap-4 rounded-[10px] border border-[rgba(220,38,38,0.15)] bg-[var(--red-bg)] p-6'
+  'flex items-start gap-4 rounded-xl border border-[var(--red-border)] bg-[var(--red-bg)] p-6'
 const ERROR_ICON_CLASS =
   'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--red)] text-sm font-bold text-white'
 const SECTION_TITLE_CLASS =
-  'mb-3.5 flex items-center gap-2 text-[13px] font-semibold tracking-[0.8px] text-[var(--text-secondary)] uppercase'
+  'mb-3 flex items-center gap-2 font-display text-[12px] font-semibold tracking-[0.08em] text-[var(--text-secondary)] uppercase'
 
 type ProvidersPageProps = {
   initialProviders: ProviderStatus[]

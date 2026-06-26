@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import ModelTable from './ModelTable'
+import { Tag } from './primitives'
 import useProviderModels from '@/hooks/useProviderModels'
 import type { ProviderStatus } from '@/lib/types'
 
@@ -47,13 +48,11 @@ export default function ProviderCard({ provider }: ProviderCardProps) {
     })),
   ]
   const cardClass = [
-    'overflow-hidden rounded-[10px] border bg-[var(--bg-primary)] transition-[border-color,box-shadow,opacity]',
+    'overflow-hidden rounded-xl border bg-[var(--bg-primary)] transition-colors',
     expanded
-      ? 'border-[rgba(91,99,211,0.25)] shadow-[0_2px_8px_rgba(0,0,0,0.05)]'
-      : 'border-[var(--border)] hover:border-[rgba(91,99,211,0.3)] hover:shadow-[0_1px_4px_rgba(0,0,0,0.04)]',
-    provider.available
-      ? ''
-      : 'opacity-70 hover:border-[var(--border)] hover:opacity-80 hover:shadow-none',
+      ? 'border-[color-mix(in_oklch,var(--accent)_45%,var(--border))]'
+      : 'border-[var(--border)] hover:border-[var(--border-strong)]',
+    provider.available ? '' : 'opacity-70',
   ].join(' ')
 
   return (
@@ -87,9 +86,9 @@ export default function ProviderCard({ provider }: ProviderCardProps) {
               </span>
               <div className="flex gap-1">
                 {provider.supports_structured_output && (
-                  <span className="rounded bg-[var(--blue-bg)] px-[7px] py-0.5 text-[10px] font-semibold tracking-[0.5px] text-[var(--blue)] uppercase">
+                  <Tag tone="blue" className="tracking-[0.04em] uppercase">
                     structured output
-                  </span>
+                  </Tag>
                 )}
               </div>
             </div>
