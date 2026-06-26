@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import typer
@@ -19,6 +20,10 @@ from dr_llm.project.project_service import (
     start_project,
     stop_project,
 )
+from dr_llm.project.neon_publish import publish_project_for_neon
+from dr_llm.project.postgres_sync import sync_project_to_postgres
+
+POSTGRES_SYNC_ADMIN_URL_ENV = "DR_LLM_POSTGRES_SYNC_ADMIN_URL"
 
 project_app = typer.Typer(help="Manage isolated dr-llm project databases")
 
@@ -140,8 +145,13 @@ def project_backup(
     output_dir: Path | None = typer.Option(
         None, help="Custom backup directory."
     ),
+    portable: bool = typer.Option(
+        False,
+        "--portable",
+        help="Omit local ownership and privilege statements for cloud restores.",
+    ),
 ) -> None:
-    path = backup_project(name, output_dir)
+    path = backup_project(name, output_dir, portable=portable)
     typer.secho(f"Backup saved to {path}", fg=typer.colors.GREEN)
 
 
@@ -155,3 +165,66 @@ def project_restore(
 ) -> None:
     restore_project(name, backup_file)
     typer.secho(f"Restored '{name}' from {backup_file}", fg=typer.colors.GREEN)
+
+
+@project_app.command("publish-neon")
+@handle_cli_errors(ProjectError, FileNotFoundError)
+def project_publish_neon(
+    name: str = typer.Argument(..., help="Local Docker project name"),
+) -> None:
+    result = publish_project_for_neon(name)
+    typer.echo(
+        json.dumps(
+            result.model_dump(mode="json", exclude_none=True),
+            indent=2,
+        )
+    )
+
+
+@project_app.command("sync-postgres")
+@handle_cli_errors(ProjectError, FileNotFoundError)
+def project_sync_postgres(
+    name: str = typer.Argument(..., help="Local Docker project name"),
+    admin_url: str | None = typer.Option(
+        None,
+        "--admin-url",
+        envvar=POSTGRES_SYNC_ADMIN_URL_ENV,
+        help=(
+            "Direct Postgres-compatible admin URL used to create and swap "
+            "databases."
+        ),
+    ),
+    target_database: str | None = typer.Option(
+        None,
+        "--target-database",
+        help="Remote database name. Defaults to the local project name.",
+    ),
+    drop_previous: bool = typer.Option(
+        False,
+        "--drop-previous",
+        help="Drop the replaced remote database after a successful swap.",
+    ),
+) -> None:
+    resolved_admin_url = admin_url or os.getenv(POSTGRES_SYNC_ADMIN_URL_ENV)
+    if not resolved_admin_url:
+        raise ProjectError(
+            f"Set {POSTGRES_SYNC_ADMIN_URL_ENV} or pass --admin-url."
+        )
+    result = sync_project_to_postgres(
+        name,
+        resolved_admin_url,
+        target_database=target_database,
+        drop_previous=drop_previous,
+    )
+    typer.echo(
+        json.dumps(
+            result.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_computed_fields=True,
+            ),
+            indent=2,
+        )
+    )
+    if not result.success:
+        raise typer.Exit(1)

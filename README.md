@@ -233,7 +233,9 @@ dr-llm pool destroy PROJECT_NAME POOL_NAME --yes-really-delete-everything
 dr-llm pool destroy-testish PROJECT_NAME --yes-really-delete-everything
 dr-llm pool destroy-testish PROJECT_NAME --dry-run
 dr-llm project backup NAME
+dr-llm project backup NAME --portable
 dr-llm project restore NAME BACKUP_PATH  # BACKUP_PATH must be .sql.gz
+dr-llm project sync-postgres NAME  # uses DR_LLM_POSTGRES_SYNC_ADMIN_URL
 dr-llm project destroy NAME --yes-really-delete-everything
 ```
 

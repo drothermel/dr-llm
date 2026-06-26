@@ -32,6 +32,7 @@ from dr_llm.llm import (
     EffortSpec,
     LlmRequest,
     Message,
+    MessageRole,
     OpenRouterReasoning,
     ProviderRegistry,
     ProviderName,
@@ -156,7 +157,7 @@ def make_request(
         reasoning = defaults.reasoning
     return orchestrator.build_request(
         model=model,
-        messages=[Message(role="user", content=PROMPT)],
+        messages=[Message(role=MessageRole.USER, content=PROMPT)],
         max_tokens=max_tokens,
         effort=effort,
         reasoning=reasoning,

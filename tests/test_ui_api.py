@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+import os
+
 from dr_llm.llm import ControlMode, ProviderName
 import pytest
 from fastapi.testclient import TestClient
@@ -15,6 +18,74 @@ from dr_llm.llm.providers.transports.openai_compat.config import (
 )
 from tests.conftest import FakeOrchestrator
 from ui.api import main as ui_api
+
+
+def test_connect_pool_database_loads_database_url_from_dotenv(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text(
+        "DR_LLM_DATABASE_URL=postgresql://dotenv/ui\n"
+        "DR_LLM_DATABASE_URL_EXISTING=from_file\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DR_LLM_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DR_LLM_DATABASE_BASE_URL", raising=False)
+    monkeypatch.delenv("DR_LLM_POSTGRES_SYNC_ADMIN_URL", raising=False)
+    monkeypatch.setenv("DR_LLM_DATABASE_URL_EXISTING", "from_env")
+    captured: dict[str, object] = {}
+
+    def fake_connect(
+        dsn: str,
+        *,
+        row_factory: object,
+    ) -> object:
+        captured["dsn"] = dsn
+        captured["row_factory"] = row_factory
+        return object()
+
+    monkeypatch.setattr(ui_api.psycopg, "connect", fake_connect)
+
+    ui_api._connect_pool_database()
+
+    assert captured["dsn"] == "postgresql://dotenv/ui"
+    assert captured["row_factory"] is ui_api.dict_row
+    assert os.environ["DR_LLM_DATABASE_URL_EXISTING"] == "from_env"
+
+
+def test_connect_pool_database_derives_url_from_sync_admin_dotenv(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text(
+        "DR_LLM_POSTGRES_SYNC_ADMIN_URL="
+        "postgresql://user:pass@example.test/neondb?sslmode=require\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DR_LLM_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DR_LLM_DATABASE_BASE_URL", raising=False)
+    monkeypatch.delenv("DR_LLM_POSTGRES_SYNC_ADMIN_URL", raising=False)
+    captured: dict[str, object] = {}
+
+    def fake_connect(
+        dsn: str,
+        *,
+        row_factory: object,
+    ) -> object:
+        captured["dsn"] = dsn
+        captured["row_factory"] = row_factory
+        return object()
+
+    monkeypatch.setattr(ui_api.psycopg, "connect", fake_connect)
+
+    ui_api._connect_pool_database()
+
+    assert captured["dsn"] == (
+        "postgresql://user:pass@example.test/nl_latents?sslmode=require"
+    )
+    assert captured["row_factory"] is ui_api.dict_row
 
 
 def test_providers_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,3 +192,111 @@ def test_openrouter_static_models_come_from_orchestrator_fallback(
         model["model"] == "deepseek/deepseek-chat-v3.1"
         for model in payload["models"]
     )
+
+
+def test_nl_latents_filters_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ui_api,
+        "_fetch_nl_latents_filters",
+        lambda: ui_api.NlLatentsFiltersResponse(
+            families=["stateful"],
+            splits=["train"],
+            enc_models=["openrouter:openai/gpt-5-nano"],
+            budgets=["100"],
+            difficulties=["3"],
+            data_versions=["tasks_v2"],
+        ),
+    )
+
+    with TestClient(ui_api.app) as client:
+        response = client.get("/api/nl-latents/filters")
+
+    assert response.status_code == 200
+    assert response.json()["families"] == ["stateful"]
+    assert response.json()["enc_models"] == ["openrouter:openai/gpt-5-nano"]
+
+
+def test_nl_latents_samples_endpoint_forwards_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_fetch(**kwargs: object) -> ui_api.NlLatentsSamplesResponse:
+        captured.update(kwargs)
+        return ui_api.NlLatentsSamplesResponse(
+            samples=[
+                ui_api.NlLatentsSampleListRow(
+                    sample_id="sample-1",
+                    family="stateful",
+                    difficulty="3",
+                    split="train",
+                    language="python",
+                    budget="100",
+                    enc_model="openrouter:openai/gpt-5-nano",
+                    dec_model="openrouter:openai/gpt-5-nano",
+                    enc_model_label="openai/gpt-5-nano",
+                    dec_model_label="openai/gpt-5-nano",
+                    status="active",
+                    attempt_count=1,
+                    created_at=datetime(2026, 2, 16, 22, 26),
+                    result_state="passed",
+                    prompt_config_label="Noop / High Level",
+                )
+            ],
+            total=1,
+            page=2,
+            limit=10,
+            total_pages=1,
+        )
+
+    monkeypatch.setattr(ui_api, "_fetch_nl_latents_samples", fake_fetch)
+
+    with TestClient(ui_api.app) as client:
+        response = client.get(
+            "/api/nl-latents/samples",
+            params={
+                "page": 2,
+                "limit": 10,
+                "family": "stateful",
+                "hide_pending": "true",
+            },
+        )
+
+    assert response.status_code == 200
+    assert captured["page"] == 2
+    assert captured["limit"] == 10
+    assert captured["family"] == "stateful"
+    assert captured["hide_pending"] is True
+    payload = response.json()
+    assert payload["samples"][0]["sample_id"] == "sample-1"
+    assert payload["samples"][0]["prompt_config_label"] == "Noop / High Level"
+
+
+def test_nl_latents_conditions_parameterizes_smoke_filter() -> None:
+    where, values = ui_api._nl_latents_conditions(
+        family=None,
+        split=None,
+        enc_model=None,
+        budget=None,
+        difficulty=None,
+        data_version=None,
+        result=None,
+        hide_pending=False,
+        hide_smoke=True,
+    )
+
+    assert "coalesce(run_id, '') NOT ILIKE %s" in where
+    assert "%smoke%" in values
+
+
+def test_nl_latents_sample_detail_endpoint_returns_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ui_api, "_fetch_nl_latents_sample", lambda _id: None)
+
+    with TestClient(ui_api.app) as client:
+        response = client.get("/api/nl-latents/samples/missing")
+
+    assert response.status_code == 404

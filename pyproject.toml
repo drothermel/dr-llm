@@ -33,6 +33,7 @@ dependencies = [
     "marimo[recommended]>=0.23.2",
     "pandas>=3.0.2",
     "marimo-utils==0.7.0",
+    "python-dotenv>=1.2.2",
 ]
 
 [project.optional-dependencies]

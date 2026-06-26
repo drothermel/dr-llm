@@ -29,6 +29,7 @@ from dr_llm.llm import (
     LlmConfig,
     LlmRequest,
     Message,
+    MessageRole,
     MiniMaxConfig,
     OpenAIGpt5Config,
     OpenAIGpt51Config,
@@ -112,8 +113,8 @@ def test_orchestrator_build_request_applies_normalized_config() -> None:
         sampling=SamplingControls(temperature=0.5),
     ).to_llm_config()
     messages = [
-        Message(role="system", content="You are helpful."),
-        Message(role="user", content="Hello"),
+        Message(role=MessageRole.SYSTEM, content="You are helpful."),
+        Message(role=MessageRole.USER, content="Hello"),
     ]
 
     registry = build_default_registry()
@@ -550,7 +551,7 @@ def test_openai_config_does_not_store_empty_sampling_default() -> None:
 
 def test_build_request_from_config_rejects_provider_mismatch() -> None:
     config = OpenAILegacyConfig(model="gpt-4.1-mini").to_llm_config()
-    messages = [Message(role="user", content="Hello")]
+    messages = [Message(role=MessageRole.USER, content="Hello")]
 
     registry = build_default_registry()
     try:
@@ -617,7 +618,7 @@ def test_build_request_from_config_rejects_provider_mismatch() -> None:
 def test_build_request_from_config_rejects_unsupported_stored_controls(
     provider: ProviderName, config: LlmConfig, match_pattern: str
 ) -> None:
-    messages = [Message(role="user", content="Hello")]
+    messages = [Message(role=MessageRole.USER, content="Hello")]
 
     registry = build_default_registry()
     try:
@@ -638,7 +639,7 @@ def test_build_request_from_config_accepts_supported_stored_sampling() -> None:
         mode=CallMode.api,
         sampling=SamplingControls(temperature=0.4, top_p=0.8),
     )
-    messages = [Message(role="user", content="Hello")]
+    messages = [Message(role=MessageRole.USER, content="Hello")]
 
     registry = build_default_registry()
     try:

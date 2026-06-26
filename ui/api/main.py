@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime
+import os
 from typing import Any, cast
+from urllib.parse import urlsplit, urlunsplit
 
+from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+import psycopg
+from psycopg.rows import dict_row
 from pydantic import BaseModel, ConfigDict, Field
 
 from dr_llm.llm.catalog.models import ModelCatalogEntry
@@ -18,6 +24,17 @@ from dr_llm.llm.providers.core.registry import ProviderRegistry
 # ---------------------------------------------------------------------------
 # Response models
 # ---------------------------------------------------------------------------
+
+UI_DOTENV_FILENAME = ".env"
+DR_LLM_DATABASE_URL_ENV = "DR_LLM_DATABASE_URL"
+DR_LLM_DATABASE_BASE_URL_ENV = "DR_LLM_DATABASE_BASE_URL"
+POSTGRES_SYNC_ADMIN_URL_ENV = "DR_LLM_POSTGRES_SYNC_ADMIN_URL"
+NL_LATENTS_DATABASE = "nl_latents"
+NL_LATENTS_TABLE = "published_nl_latents_samples"
+SMOKE_RUN_ID_PATTERN = "%smoke%"
+DEFAULT_PAGE = 1
+DEFAULT_LIMIT = 20
+MAX_LIMIT = 50
 
 
 class ProviderStatusResponse(BaseModel):
@@ -63,6 +80,84 @@ class SyncResultResponse(BaseModel):
     error: str | None = None
 
 
+class NlLatentsFiltersResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    families: list[str] = Field(default_factory=list)
+    splits: list[str] = Field(default_factory=list)
+    enc_models: list[str] = Field(default_factory=list)
+    budgets: list[str] = Field(default_factory=list)
+    difficulties: list[str] = Field(default_factory=list)
+    data_versions: list[str] = Field(default_factory=list)
+
+
+class NlLatentsSampleListRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    sample_id: str
+    family: str
+    difficulty: str
+    split: str
+    language: str
+    budget: str
+    enc_model: str
+    dec_model: str
+    enc_model_label: str
+    dec_model_label: str
+    status: str
+    attempt_count: int
+    created_at: datetime
+    result_state: str
+    failure_category_normalized: str | None = None
+    run_id: str | None = None
+    prompt_config_label: str | None = None
+
+
+class NlLatentsSamplesResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    samples: list[NlLatentsSampleListRow]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+class NlLatentsSampleDetailResponse(NlLatentsSampleListRow):
+    model_config = ConfigDict(frozen=True)
+
+    config_id: str
+    task_id: str
+    task_data_version: str
+    enc_reasoning_effort: str
+    dec_reasoning_effort: str
+    call_id: str
+    sample_idx: int
+    finish_reason: str | None = None
+    prompt_block_ids: list[str] = Field(default_factory=list)
+    prompt_block_names: list[str] = Field(default_factory=list)
+    prompt_config_json: dict[str, Any] | None = None
+    passed: bool | None = None
+    failure_category: str | None = None
+    model_provenance_source: str | None = None
+    budget_ok: bool | None = None
+    actual_chars: int | None = None
+    enc_time_s: float | None = None
+    dec_time_s: float | None = None
+    validation_compiles: bool | None = None
+    validation_pass_rate: float | None = None
+    validation_time_seconds: float | None = None
+    input_code: str | None = None
+    enc_prompt: str | None = None
+    enc_prompt_instructions: str | None = None
+    description: str | None = None
+    dec_system: str | None = None
+    dec_task: str | None = None
+    decoded_code: str | None = None
+    error_detail: str | None = None
+    validation_summary_json: dict[str, Any] | None = None
+
+
 def _entry_to_response(entry: ModelCatalogEntry) -> ModelEntryResponse:
     return ModelEntryResponse(
         provider=entry.provider,
@@ -81,8 +176,19 @@ def _entry_to_response(entry: ModelCatalogEntry) -> ModelEntryResponse:
 # ---------------------------------------------------------------------------
 
 
+def _load_ui_dotenv() -> None:
+    dotenv_path = find_dotenv(UI_DOTENV_FILENAME, usecwd=True)
+    if dotenv_path:
+        load_dotenv(dotenv_path, override=False)
+
+
+_load_ui_dotenv()
+
+
 def _get_registry(app: FastAPI) -> ProviderRegistry:
-    registry = cast(ProviderRegistry | None, getattr(app.state, "registry", None))
+    registry = cast(
+        ProviderRegistry | None, getattr(app.state, "registry", None)
+    )
     if registry is None:
         raise HTTPException(
             status_code=503,
@@ -96,6 +202,193 @@ def _fallback_model_responses(
 ) -> list[ModelEntryResponse]:
     entries, _raw = service.fallback_provider_models(provider)
     return [_entry_to_response(entry) for entry in entries]
+
+
+def _parse_positive_int(value: int, fallback: int) -> int:
+    return value if value > 0 else fallback
+
+
+def _database_url_for_database(database_name: str) -> str:
+    explicit_url = os.getenv(DR_LLM_DATABASE_URL_ENV)
+    if explicit_url:
+        return explicit_url
+    base_url = os.getenv(DR_LLM_DATABASE_BASE_URL_ENV) or os.getenv(
+        POSTGRES_SYNC_ADMIN_URL_ENV
+    )
+    if not base_url:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"{DR_LLM_DATABASE_URL_ENV}, "
+                f"{DR_LLM_DATABASE_BASE_URL_ENV}, or "
+                f"{POSTGRES_SYNC_ADMIN_URL_ENV} is not configured."
+            ),
+        )
+    parts = urlsplit(base_url)
+    if not parts.scheme or not parts.netloc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"{DR_LLM_DATABASE_BASE_URL_ENV} must include a scheme "
+                "and host."
+            ),
+        )
+    return urlunsplit(
+        (
+            parts.scheme,
+            parts.netloc,
+            f"/{database_name}",
+            parts.query,
+            parts.fragment,
+        )
+    )
+
+
+def _connect_pool_database() -> psycopg.Connection[dict[str, Any]]:
+    _load_ui_dotenv()
+    dsn = _database_url_for_database(NL_LATENTS_DATABASE)
+    return psycopg.connect(dsn, row_factory=dict_row)
+
+
+def _fetch_string_options(column_name: str) -> list[str]:
+    with _connect_pool_database() as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT {column_name} FROM {NL_LATENTS_TABLE} "
+            f"ORDER BY {column_name}"
+        ).fetchall()
+    return [
+        str(row[column_name]) for row in rows if row[column_name] is not None
+    ]
+
+
+def _fetch_nl_latents_filters() -> NlLatentsFiltersResponse:
+    return NlLatentsFiltersResponse(
+        families=_fetch_string_options("family"),
+        splits=_fetch_string_options("split"),
+        enc_models=_fetch_string_options("enc_model"),
+        budgets=_fetch_string_options("budget"),
+        difficulties=_fetch_string_options("difficulty"),
+        data_versions=_fetch_string_options("task_data_version"),
+    )
+
+
+def _nl_latents_conditions(
+    *,
+    family: str | None,
+    split: str | None,
+    enc_model: str | None,
+    budget: str | None,
+    difficulty: str | None,
+    data_version: str | None,
+    result: str | None,
+    hide_pending: bool,
+    hide_smoke: bool,
+) -> tuple[str, list[str]]:
+    conditions: list[str] = []
+    values: list[str] = []
+    for column_name, value in (
+        ("family", family),
+        ("split", split),
+        ("enc_model", enc_model),
+        ("budget", budget),
+        ("difficulty", difficulty),
+        ("task_data_version", data_version),
+        ("result_state", result),
+    ):
+        if value:
+            values.append(value)
+            conditions.append(f"{column_name} = %s")
+    if hide_pending:
+        conditions.append("result_state <> 'pending'")
+    if hide_smoke:
+        values.append(SMOKE_RUN_ID_PATTERN)
+        conditions.append("coalesce(run_id, '') NOT ILIKE %s")
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    return where, values
+
+
+def _fetch_nl_latents_samples(
+    *,
+    page: int,
+    limit: int,
+    family: str | None,
+    split: str | None,
+    enc_model: str | None,
+    budget: str | None,
+    difficulty: str | None,
+    data_version: str | None,
+    result: str | None,
+    hide_pending: bool,
+    hide_smoke: bool,
+) -> NlLatentsSamplesResponse:
+    page = _parse_positive_int(page, DEFAULT_PAGE)
+    limit = min(MAX_LIMIT, _parse_positive_int(limit, DEFAULT_LIMIT))
+    offset = (page - 1) * limit
+    where, values = _nl_latents_conditions(
+        family=family,
+        split=split,
+        enc_model=enc_model,
+        budget=budget,
+        difficulty=difficulty,
+        data_version=data_version,
+        result=result,
+        hide_pending=hide_pending,
+        hide_smoke=hide_smoke,
+    )
+    with _connect_pool_database() as conn:
+        count_row = conn.execute(
+            f"SELECT count(*) AS count FROM {NL_LATENTS_TABLE} {where}",
+            values,
+        ).fetchone()
+        total = int(count_row["count"]) if count_row is not None else 0
+        rows = conn.execute(
+            f"""
+            SELECT
+                sample_id,
+                family,
+                difficulty,
+                split,
+                language,
+                budget,
+                enc_model,
+                dec_model,
+                enc_model_label,
+                dec_model_label,
+                status,
+                attempt_count,
+                created_at,
+                result_state,
+                failure_category_normalized,
+                run_id,
+                prompt_config_label
+            FROM {NL_LATENTS_TABLE}
+            {where}
+            ORDER BY family, difficulty, split, enc_model, budget,
+                     created_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            [*values, limit, offset],
+        ).fetchall()
+    return NlLatentsSamplesResponse(
+        samples=[NlLatentsSampleListRow(**row) for row in rows],
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=(total + limit - 1) // limit if limit else 0,
+    )
+
+
+def _fetch_nl_latents_sample(
+    sample_id: str,
+) -> NlLatentsSampleDetailResponse | None:
+    with _connect_pool_database() as conn:
+        row = conn.execute(
+            f"SELECT * FROM {NL_LATENTS_TABLE} WHERE sample_id = %s",
+            [sample_id],
+        ).fetchone()
+    if row is None:
+        return None
+    return NlLatentsSampleDetailResponse(**row)
 
 
 @asynccontextmanager
@@ -143,8 +436,12 @@ def list_providers(request: Request) -> list[ProviderStatusResponse]:
     ]
 
 
-@app.get("/api/providers/{provider}/models", response_model=ProviderModelsResponse)
-def get_provider_models(provider: str, request: Request) -> ProviderModelsResponse:
+@app.get(
+    "/api/providers/{provider}/models", response_model=ProviderModelsResponse
+)
+def get_provider_models(
+    provider: str, request: Request
+) -> ProviderModelsResponse:
     """Get models for a provider.  Uses static data if the provider is unavailable."""
     registry = _get_registry(request.app)
     try:
@@ -184,7 +481,9 @@ def get_provider_models(provider: str, request: Request) -> ProviderModelsRespon
 
 
 @app.post("/api/providers/{provider}/sync", response_model=SyncResultResponse)
-def sync_provider_models(provider: str, request: Request) -> SyncResultResponse:
+def sync_provider_models(
+    provider: str, request: Request
+) -> SyncResultResponse:
     """Trigger a live model sync for a provider."""
     registry = _get_registry(request.app)
     try:
@@ -216,3 +515,54 @@ def sync_provider_models(provider: str, request: Request) -> SyncResultResponse:
         models=models,
         source="live",
     )
+
+
+@app.get(
+    "/api/nl-latents/filters",
+    response_model=NlLatentsFiltersResponse,
+)
+def get_nl_latents_filters() -> NlLatentsFiltersResponse:
+    return _fetch_nl_latents_filters()
+
+
+@app.get(
+    "/api/nl-latents/samples",
+    response_model=NlLatentsSamplesResponse,
+)
+def list_nl_latents_samples(
+    page: int = DEFAULT_PAGE,
+    limit: int = DEFAULT_LIMIT,
+    family: str | None = None,
+    split: str | None = None,
+    enc_model: str | None = None,
+    budget: str | None = None,
+    difficulty: str | None = None,
+    data_version: str | None = None,
+    result: str | None = None,
+    hide_pending: bool = False,
+    hide_smoke: bool = False,
+) -> NlLatentsSamplesResponse:
+    return _fetch_nl_latents_samples(
+        page=page,
+        limit=limit,
+        family=family,
+        split=split,
+        enc_model=enc_model,
+        budget=budget,
+        difficulty=difficulty,
+        data_version=data_version,
+        result=result,
+        hide_pending=hide_pending,
+        hide_smoke=hide_smoke,
+    )
+
+
+@app.get(
+    "/api/nl-latents/samples/{sample_id}",
+    response_model=NlLatentsSampleDetailResponse,
+)
+def get_nl_latents_sample(sample_id: str) -> NlLatentsSampleDetailResponse:
+    sample = _fetch_nl_latents_sample(sample_id)
+    if sample is None:
+        raise HTTPException(status_code=404, detail="Sample not found.")
+    return sample

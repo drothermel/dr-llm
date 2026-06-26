@@ -12,6 +12,7 @@ from dr_llm.llm import (
     GoogleReasoning,
     LlmRequest,
     Message,
+    MessageRole,
     ProviderName,
     ThinkingLevel,
 )
@@ -95,9 +96,9 @@ def test_payload_serializes_messages() -> None:
             "provider": ProviderName.GOOGLE,
             "model": "gemini-test",
             "messages": [
-                Message(role="system", content="Be concise."),
-                Message(role="user", content="find item"),
-                Message(role="assistant", content="previous answer"),
+                Message(role=MessageRole.SYSTEM, content="Be concise."),
+                Message(role=MessageRole.USER, content="find item"),
+                Message(role=MessageRole.ASSISTANT, content="previous answer"),
             ],
         }
     )
@@ -185,7 +186,7 @@ def test_invalid_json_raises_transport_error() -> None:
         {
             "provider": ProviderName.GOOGLE,
             "model": "gemini-test",
-            "messages": [Message(role="user", content="hi")],
+            "messages": [Message(role=MessageRole.USER, content="hi")],
         }
     )
     with pytest.raises(ProviderTransportError, match="invalid JSON response"):
@@ -215,7 +216,7 @@ def test_provider_rejects_headless_request_mode() -> None:
         provider=ProviderName.GOOGLE,
         model="gemini-test",
         mode=CallMode.headless,
-        messages=[Message(role="user", content="hi")],
+        messages=[Message(role=MessageRole.USER, content="hi")],
     )
     adapter = GoogleProvider(config=_GOOGLE_CONFIG)
 
