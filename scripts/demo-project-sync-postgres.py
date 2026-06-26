@@ -146,15 +146,16 @@ def main(
         _verify_target_pool(target_dsn, sample_id)
         ok("target pool contains the synced sample")
 
-        command_hint(
-            "inspect source",
-            f"uv run dr-llm project use {source_project}",
-        )
-        command_hint(
-            "inspect target",
-            f"DR_LLM_DATABASE_URL='{target_dsn}' uv run dr-llm pool inspect-dsn "
-            f"{POOL_SCHEMA.name}",
-        )
+        if keep_projects:
+            command_hint(
+                "inspect source",
+                f"uv run dr-llm project use {source_project}",
+            )
+            command_hint(
+                "inspect target",
+                f"DR_LLM_DATABASE_URL='{target_dsn}' uv run dr-llm pool inspect-dsn "
+                f"{POOL_SCHEMA.name}",
+            )
     finally:
         if keep_projects:
             ok("kept demo projects for inspection")

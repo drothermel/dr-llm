@@ -216,7 +216,7 @@ class ProjectSyncValidation(BaseModel):
     source_pool_count: int | None = None
     target_pool_count: int | None = None
     checked_table_count: int = 0
-    mismatches: list[str] = Field(default_factory=list)
+    mismatches: tuple[str, ...] = Field(default_factory=tuple)
 
     @computed_field
     @property

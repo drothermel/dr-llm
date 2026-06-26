@@ -161,8 +161,7 @@ def _sync_service(
 
 
 def _successful_sync_calls() -> SyncCallRecorder:
-    calls = SyncCallRecorder()
-    return calls
+    return SyncCallRecorder()
 
 
 def test_build_sync_plan_derives_temporary_database_target() -> None:
@@ -263,7 +262,7 @@ def test_sync_project_to_postgres_drops_temp_database_when_validation_fails() ->
             source_table_count=1,
             target_table_count=1,
             checked_table_count=1,
-            mismatches=["alpha row count mismatch: source=1 target=0"],
+            mismatches=("alpha row count mismatch: source=1 target=0",),
         ),
     )
     service = _sync_service(calls)
@@ -385,9 +384,9 @@ def test_validate_expected_table_copy_rejects_extra_target_tables(
 
     assert validation.passed is False
     assert validation.checked_table_count == 2
-    assert validation.mismatches == [
-        "extra target tables: pool_nl_latents_samples"
-    ]
+    assert validation.mismatches == (
+        "extra target tables: pool_nl_latents_samples",
+    )
 
 
 def test_parse_restore_target_reads_required_dsn_fields() -> None:
@@ -397,7 +396,10 @@ def test_parse_restore_target_reads_required_dsn_fields() -> None:
     )
     target = postgres_sync_module._parse_restore_target(target_dsn)
 
-    assert target.dsn == target_dsn
+    assert target.dsn == (
+        "postgresql://example.com:6543/demo"
+        "?sslmode=require&channel_binding=require"
+    )
     assert target.dbname == "demo"
     assert target.user == "alice"
     assert target.password == "secret"
@@ -426,7 +428,7 @@ def test_parse_restore_target_requires_database_and_user(
         postgres_sync_module._parse_restore_target("postgresql://example")
 
 
-def test_restore_sql_file_uses_full_dsn_and_removes_pgpass(
+def test_restore_sql_file_uses_passwordless_dsn_and_removes_pgpass(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -462,7 +464,8 @@ def test_restore_sql_file_uses_full_dsn_and_removes_pgpass(
 
     assert captured["command"] == [
         "psql",
-        target_dsn,
+        "postgresql://example.com:6543/demo"
+        "?sslmode=require&channel_binding=require",
         "-v",
         "ON_ERROR_STOP=1",
         "-q",
@@ -609,8 +612,12 @@ def _fake_admin_operations(
         _ = cur
         cursor.operations.append(("terminate", database_name))
 
+    def fake_connect_admin(admin_url: str) -> FakeConnection:
+        _ = admin_url
+        return FakeConnection(cursor_value=cursor)
+
     return postgres_sync_module.PsycopgPostgresAdminOperations(
-        connect_admin=lambda admin_url: FakeConnection(cursor_value=cursor),
+        connect_admin=fake_connect_admin,
         database_exists=fake_database_exists,
         rename_database=fake_rename_database,
         terminate_connections=fake_terminate_connections,

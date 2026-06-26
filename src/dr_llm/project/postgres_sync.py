@@ -539,7 +539,7 @@ def _validate_project_database_copy(
         source_pool_count=source_pool_count,
         target_pool_count=target_pool_count,
         checked_table_count=checked_table_count,
-        mismatches=mismatches,
+        mismatches=tuple(mismatches),
     )
 
 
@@ -585,7 +585,7 @@ def _validate_expected_table_copy(
         ),
         target_table_count=len(target_tables),
         checked_table_count=checked_table_count,
-        mismatches=mismatches,
+        mismatches=tuple(mismatches),
     )
 
 
@@ -608,6 +608,22 @@ def _url_for_database(base_url: str, database_name: str) -> str:
             parts.scheme,
             parts.netloc,
             f"/{database_name}",
+            parts.query,
+            parts.fragment,
+        )
+    )
+
+
+def _url_without_userinfo(database_url: str) -> str:
+    parts = urlsplit(database_url)
+    if not parts.scheme or not parts.netloc:
+        return database_url
+    netloc = parts.netloc.rsplit("@", 1)[-1]
+    return urlunsplit(
+        (
+            parts.scheme,
+            netloc,
+            parts.path,
             parts.query,
             parts.fragment,
         )
@@ -657,7 +673,7 @@ def _parse_restore_target(target_dsn: str) -> PsqlRestoreTarget:
     if dbname_value is None or user_value is None:
         raise ProjectError("Target DSN must include a database and user.")
     return PsqlRestoreTarget(
-        dsn=target_dsn,
+        dsn=_url_without_userinfo(target_dsn),
         dbname=str(dbname_value),
         user=str(user_value),
         password=str(conninfo.get("password", "")),
