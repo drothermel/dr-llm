@@ -75,9 +75,13 @@
 }
 
 .nl-table-meta {
+  align-items: center;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-secondary);
+  display: flex;
   font-size: 13px;
+  justify-content: space-between;
+  gap: 12px;
   padding: 10px 12px;
 }
 

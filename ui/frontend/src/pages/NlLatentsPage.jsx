@@ -1,9 +1,26 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import './NlLatentsPage.css'
 
 const ALL = '__all__'
 const RESULT_OPTIONS = ['passed', 'failed', 'pending']
+const DEFAULT_PAGE = 1
+const PAGE_SIZE = 20
+const FILTERS_PATH = '/api/nl-latents/filters'
+const FALSE_PARAM = 'false'
+const TRUE_PARAM = 'true'
+const QUERY_CONFIG = [
+  ['family', 'family'],
+  ['difficulty', 'difficulty'],
+  ['split', 'split'],
+  ['encModel', 'enc_model'],
+  ['budget', 'budget'],
+  ['dataVersion', 'data_version'],
+  ['result', 'result'],
+]
+
+const jsonCache = new Map()
+const jsonInFlight = new Map()
 
 async function fetchJson(path) {
   const response = await fetch(path)
@@ -11,6 +28,85 @@ async function fetchJson(path) {
     throw new Error(`HTTP ${response.status}`)
   }
   return response.json()
+}
+
+async function fetchCachedJson(path) {
+  if (jsonCache.has(path)) {
+    return jsonCache.get(path)
+  }
+  if (jsonInFlight.has(path)) {
+    return jsonInFlight.get(path)
+  }
+
+  const request = fetchJson(path)
+    .then(data => {
+      jsonCache.set(path, data)
+      jsonInFlight.delete(path)
+      return data
+    })
+    .catch(error => {
+      jsonInFlight.delete(path)
+      throw error
+    })
+
+  jsonInFlight.set(path, request)
+  return request
+}
+
+function parsePage(searchParams) {
+  const page = Number(searchParams.get('page'))
+  return Number.isInteger(page) && page > 0 ? page : DEFAULT_PAGE
+}
+
+function parseListState(searchParams) {
+  return {
+    page: parsePage(searchParams),
+    family: searchParams.get('family') || ALL,
+    difficulty: searchParams.get('difficulty') || ALL,
+    split: searchParams.get('split') || ALL,
+    encModel: searchParams.get('enc_model') || ALL,
+    budget: searchParams.get('budget') || ALL,
+    dataVersion: searchParams.get('data_version') || ALL,
+    result: searchParams.get('result') || ALL,
+    hidePending: searchParams.get('hide_pending') !== FALSE_PARAM,
+    hideSmoke: searchParams.get('hide_smoke') !== FALSE_PARAM,
+  }
+}
+
+function listStateToSearchParams(state) {
+  const params = new URLSearchParams()
+  if (state.page !== DEFAULT_PAGE) params.set('page', String(state.page))
+
+  for (const [stateKey, paramKey] of QUERY_CONFIG) {
+    if (state[stateKey] !== ALL) {
+      params.set(paramKey, state[stateKey])
+    }
+  }
+
+  if (!state.hidePending) params.set('hide_pending', FALSE_PARAM)
+  if (!state.hideSmoke) params.set('hide_smoke', FALSE_PARAM)
+  return params
+}
+
+function buildSamplesPath(state) {
+  const params = new URLSearchParams()
+  params.set('page', String(state.page))
+  params.set('limit', String(PAGE_SIZE))
+
+  for (const [stateKey, paramKey] of QUERY_CONFIG) {
+    if (state[stateKey] !== ALL) {
+      params.set(paramKey, state[stateKey])
+    }
+  }
+
+  if (state.hidePending) params.set('hide_pending', TRUE_PARAM)
+  if (state.hideSmoke) params.set('hide_smoke', TRUE_PARAM)
+  return `/api/nl-latents/samples?${params}`
+}
+
+function prefetchSamplesPage(state, page) {
+  if (page < DEFAULT_PAGE) return
+  fetchCachedJson(buildSamplesPath({ ...state, page })).catch(() => {})
 }
 
 function SelectFilter({ label, value, values, onChange }) {
@@ -40,29 +136,37 @@ function ResultBadge({ state, failureCategory }) {
 }
 
 export default function NlLatentsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [filters, setFilters] = useState(null)
-  const [samples, setSamples] = useState(null)
-  const [error, setError] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [page, setPage] = useState(1)
-  const [family, setFamily] = useState(ALL)
-  const [difficulty, setDifficulty] = useState(ALL)
-  const [split, setSplit] = useState(ALL)
-  const [encModel, setEncModel] = useState(ALL)
-  const [budget, setBudget] = useState(ALL)
-  const [dataVersion, setDataVersion] = useState(ALL)
-  const [result, setResult] = useState(ALL)
-  const [hidePending, setHidePending] = useState(true)
-  const [hideSmoke, setHideSmoke] = useState(true)
+  const [filtersError, setFiltersError] = useState(null)
+  const [samplesResult, setSamplesResult] = useState({
+    path: null,
+    data: null,
+    error: null,
+  })
+
+  const listState = useMemo(() => parseListState(searchParams), [searchParams])
+  const {
+    page,
+    family,
+    difficulty,
+    split,
+    encModel,
+    budget,
+    dataVersion,
+    result,
+    hidePending,
+    hideSmoke,
+  } = listState
 
   useEffect(() => {
     let active = true
-    fetchJson('/api/nl-latents/filters')
+    fetchCachedJson(FILTERS_PATH)
       .then(data => {
         if (active) setFilters(data)
       })
       .catch(err => {
-        if (active) setError(err.message)
+        if (active) setFiltersError(err.message)
       })
     return () => {
       active = false
@@ -70,55 +174,54 @@ export default function NlLatentsPage() {
   }, [])
 
   const queryPath = useMemo(() => {
-    const params = new URLSearchParams()
-    params.set('page', String(page))
-    params.set('limit', '20')
-    if (family !== ALL) params.set('family', family)
-    if (difficulty !== ALL) params.set('difficulty', difficulty)
-    if (split !== ALL) params.set('split', split)
-    if (encModel !== ALL) params.set('enc_model', encModel)
-    if (budget !== ALL) params.set('budget', budget)
-    if (dataVersion !== ALL) params.set('data_version', dataVersion)
-    if (result !== ALL) params.set('result', result)
-    if (hidePending) params.set('hide_pending', 'true')
-    if (hideSmoke) params.set('hide_smoke', 'true')
-    return `/api/nl-latents/samples?${params}`
-  }, [
-    budget,
-    dataVersion,
-    difficulty,
-    encModel,
-    family,
-    hidePending,
-    hideSmoke,
-    page,
-    result,
-    split,
-  ])
+    return buildSamplesPath(listState)
+  }, [listState])
 
   useEffect(() => {
     let active = true
-    fetchJson(queryPath)
+    fetchCachedJson(queryPath)
       .then(data => {
         if (!active) return
-        setSamples(data)
-        setError(null)
-        setLoading(false)
+        setSamplesResult({ path: queryPath, data, error: null })
       })
       .catch(err => {
         if (!active) return
-        setError(err.message)
-        setLoading(false)
+        setSamplesResult({ path: queryPath, data: null, error: err.message })
       })
     return () => {
       active = false
     }
   }, [queryPath])
 
-  const resetPage = setter => value => {
-    setter(value)
-    setPage(1)
+  useEffect(() => {
+    const samples = samplesResult.path === queryPath ? samplesResult.data : null
+    if (!samples) return
+
+    prefetchSamplesPage(listState, page - 1)
+    if (page < samples.total_pages) {
+      prefetchSamplesPage(listState, page + 1)
+    }
+  }, [listState, page, queryPath, samplesResult])
+
+  const updateListState = updates => {
+    setSearchParams(
+      listStateToSearchParams({ ...listState, ...updates }),
+    )
   }
+
+  const updateFilter = key => value => {
+    updateListState({ [key]: value, page: DEFAULT_PAGE })
+  }
+
+  const sampleSearch = searchParams.toString()
+  const sampleSearchSuffix = sampleSearch ? `?${sampleSearch}` : ''
+  const samples = samplesResult.path === queryPath ? samplesResult.data : null
+  const samplesError = samplesResult.path === queryPath ? samplesResult.error : null
+  const loading = samplesResult.path !== queryPath
+  const error = samplesError ?? filtersError
+  const pageStatus = samples
+    ? `Page ${samples.page} of ${samples.total_pages}`
+    : null
 
   return (
     <div className="page nl-page">
@@ -137,51 +240,53 @@ export default function NlLatentsPage() {
           label="Family"
           value={family}
           values={filters?.families ?? []}
-          onChange={resetPage(setFamily)}
+          onChange={updateFilter('family')}
         />
         <SelectFilter
           label="Difficulty"
           value={difficulty}
           values={filters?.difficulties ?? []}
-          onChange={resetPage(setDifficulty)}
+          onChange={updateFilter('difficulty')}
         />
         <SelectFilter
           label="Split"
           value={split}
           values={filters?.splits ?? []}
-          onChange={resetPage(setSplit)}
+          onChange={updateFilter('split')}
         />
         <SelectFilter
           label="Encoder"
           value={encModel}
           values={filters?.enc_models ?? []}
-          onChange={resetPage(setEncModel)}
+          onChange={updateFilter('encModel')}
         />
         <SelectFilter
           label="Budget"
           value={budget}
           values={filters?.budgets ?? []}
-          onChange={resetPage(setBudget)}
+          onChange={updateFilter('budget')}
         />
         <SelectFilter
           label="Data"
           value={dataVersion}
           values={filters?.data_versions ?? []}
-          onChange={resetPage(setDataVersion)}
+          onChange={updateFilter('dataVersion')}
         />
         <SelectFilter
           label="Result"
           value={result}
           values={RESULT_OPTIONS}
-          onChange={resetPage(setResult)}
+          onChange={updateFilter('result')}
         />
         <label className="nl-toggle">
           <input
             type="checkbox"
             checked={hidePending}
             onChange={event => {
-              setHidePending(event.target.checked)
-              setPage(1)
+              updateListState({
+                hidePending: event.target.checked,
+                page: DEFAULT_PAGE,
+              })
             }}
           />
           Hide pending
@@ -191,8 +296,10 @@ export default function NlLatentsPage() {
             type="checkbox"
             checked={hideSmoke}
             onChange={event => {
-              setHideSmoke(event.target.checked)
-              setPage(1)
+              updateListState({
+                hideSmoke: event.target.checked,
+                page: DEFAULT_PAGE,
+              })
             }}
           />
           Hide smoke
@@ -211,7 +318,10 @@ export default function NlLatentsPage() {
 
       <div className="nl-table-wrap">
         <div className="nl-table-meta">
-          {loading ? 'Loading...' : `${(samples?.total ?? 0).toLocaleString()} samples`}
+          <span>
+            {loading ? 'Loading...' : `${(samples?.total ?? 0).toLocaleString()} samples`}
+          </span>
+          {pageStatus && <span>{pageStatus}</span>}
         </div>
         <table className="nl-table">
           <thead>
@@ -238,7 +348,7 @@ export default function NlLatentsPage() {
                 <td>
                   <Link
                     className="nl-sample-link"
-                    to={`/nl-latents/samples/${sample.sample_id}`}
+                    to={`/nl-latents/samples/${sample.sample_id}${sampleSearchSuffix}`}
                   >
                     {sample.sample_id.slice(0, 12)}
                   </Link>
@@ -269,7 +379,7 @@ export default function NlLatentsPage() {
           <button
             type="button"
             disabled={page <= 1}
-            onClick={() => setPage(current => current - 1)}
+            onClick={() => updateListState({ page: page - 1 })}
           >
             Previous
           </button>
@@ -279,7 +389,7 @@ export default function NlLatentsPage() {
           <button
             type="button"
             disabled={page >= samples.total_pages}
-            onClick={() => setPage(current => current + 1)}
+            onClick={() => updateListState({ page: page + 1 })}
           >
             Next
           </button>

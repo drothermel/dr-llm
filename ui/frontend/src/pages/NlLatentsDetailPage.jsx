@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import hljs from 'highlight.js/lib/core'
 import python from 'highlight.js/lib/languages/python'
 import '../styles/code-theme.css'
@@ -222,6 +222,7 @@ function TextPane({ label, value, badge, variant, area }) {
 
 export default function NlLatentsDetailPage() {
   const { sampleId } = useParams()
+  const location = useLocation()
   const [resolved, setResolved] = useState({
     id: null,
     sample: null,
@@ -251,7 +252,7 @@ export default function NlLatentsDetailPage() {
   return (
     <div className="page nl-page nl-detail">
       <div className="nl-back-row">
-        <Link to="/nl-latents">← Back to samples</Link>
+        <Link to={`/nl-latents${location.search}`}>← Back to samples</Link>
       </div>
 
       {loading && (
