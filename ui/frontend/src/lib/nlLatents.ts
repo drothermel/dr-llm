@@ -17,6 +17,20 @@ export type NlLatentsListState = {
   hideSmoke: boolean
 }
 
+/** Default (unfiltered, page 1) state — matches `parseListState` of empty params. */
+export const DEFAULT_LIST_STATE: NlLatentsListState = {
+  page: DEFAULT_PAGE,
+  family: ALL,
+  difficulty: ALL,
+  split: ALL,
+  encModel: ALL,
+  budget: ALL,
+  dataVersion: ALL,
+  result: ALL,
+  hidePending: true,
+  hideSmoke: true,
+}
+
 type QueryEntry = [keyof NlLatentsListState, string]
 
 const QUERY_CONFIG: QueryEntry[] = [

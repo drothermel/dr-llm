@@ -7,26 +7,24 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useTransition } from 'react'
 import {
   ALL,
+  DEFAULT_LIST_STATE,
   DEFAULT_PAGE,
   buildSamplesPath,
   listStateToSearchParams,
   parseListState,
   type NlLatentsListState,
 } from '@/lib/nlLatents'
-import { fetchJson } from '@/lib/http'
+import {
+  filtersQueryOptions,
+  samplesQueryOptions,
+} from '@/lib/nlLatentsQueries'
 import { ResultBadge, SECTION_LABEL } from '@/components/primitives'
-import type {
-  NlLatentsFilters,
-  NlLatentsSamplesResponse,
-} from '@/lib/types'
 
 const RESULT_OPTIONS = ['passed', 'failed', 'pending']
-const FILTERS_PATH = '/api/nl-latents/filters'
 const ERROR_STATE_CLASS =
   'mb-5 flex items-start gap-4 rounded-xl border border-[var(--red-border)] bg-[var(--red-bg)] p-6'
 const ERROR_ICON_CLASS =
   'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--red)] text-sm font-bold text-white'
-const FILTERS_QUERY_KEY = ['nl-latents', 'filters'] as const
 const COLUMNS = [
   'Sample',
   'Family',
@@ -39,20 +37,6 @@ const COLUMNS = [
   'Created',
 ] as const
 
-function samplesQueryKey(
-  path: string,
-): readonly ['nl-latents', 'samples', string] {
-  return ['nl-latents', 'samples', path] as const
-}
-
-function fetchFilters(): Promise<NlLatentsFilters> {
-  return fetchJson<NlLatentsFilters>(FILTERS_PATH)
-}
-
-function fetchSamples(path: string): Promise<NlLatentsSamplesResponse> {
-  return fetchJson<NlLatentsSamplesResponse>(path)
-}
-
 function prefetchSamplesPage(
   queryClient: QueryClient,
   state: NlLatentsListState,
@@ -61,11 +45,7 @@ function prefetchSamplesPage(
   if (page < DEFAULT_PAGE) return
 
   const path = buildSamplesPath({ ...state, page })
-  void queryClient.prefetchQuery({
-    queryKey: samplesQueryKey(path),
-    queryFn: () => fetchSamples(path),
-    retry: false,
-  })
+  void queryClient.prefetchQuery(samplesQueryOptions(path))
 }
 
 function queryErrorMessage(error: Error | null): string | null {
@@ -124,33 +104,16 @@ function CheckboxFilter({ label, checked, onChange }: CheckboxFilterProps) {
   )
 }
 
-type NlLatentsPageProps = {
-  initialError: string | null
-  initialFilters: NlLatentsFilters | null
-  initialListState: NlLatentsListState
-  initialSamples: NlLatentsSamplesResponse | null
-  initialSamplesPath: string
-}
-
-export default function NlLatentsPage({
-  initialError,
-  initialFilters,
-  initialListState,
-  initialSamples,
-  initialSamplesPath,
-}: NlLatentsPageProps) {
+export default function NlLatentsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const [isPending, startTransition] = useTransition()
 
-  const listState = useMemo(() => {
-    if (!searchParams) {
-      return initialListState
-    }
-    const parsedState = parseListState(searchParams)
-    return searchParams.size === 0 ? initialListState : parsedState
-  }, [initialListState, searchParams])
+  const listState = useMemo(
+    () => (searchParams ? parseListState(searchParams) : DEFAULT_LIST_STATE),
+    [searchParams],
+  )
 
   const {
     page,
@@ -166,21 +129,8 @@ export default function NlLatentsPage({
   } = listState
 
   const queryPath = useMemo(() => buildSamplesPath(listState), [listState])
-  const filtersQuery = useQuery<NlLatentsFilters, Error>({
-    queryKey: FILTERS_QUERY_KEY,
-    queryFn: fetchFilters,
-    initialData: initialFilters ?? undefined,
-    retry: false,
-  })
-  const samplesQuery = useQuery<NlLatentsSamplesResponse, Error>({
-    queryKey: samplesQueryKey(queryPath),
-    queryFn: () => fetchSamples(queryPath),
-    initialData:
-      initialSamplesPath === queryPath
-        ? (initialSamples ?? undefined)
-        : undefined,
-    retry: false,
-  })
+  const filtersQuery = useQuery(filtersQueryOptions())
+  const samplesQuery = useQuery(samplesQueryOptions(queryPath))
   const filters = filtersQuery.data ?? null
   const samples = samplesQuery.data ?? null
 
@@ -211,7 +161,7 @@ export default function NlLatentsPage({
   const samplesError = queryErrorMessage(samplesQuery.error)
   const filtersError = queryErrorMessage(filtersQuery.error)
   const loading = isPending || samplesQuery.isLoading
-  const error = initialError ?? samplesError ?? filtersError
+  const error = samplesError ?? filtersError
   const pageStatus = samples
     ? `Page ${samples.page} of ${samples.total_pages}`
     : null
