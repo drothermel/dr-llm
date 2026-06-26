@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+@theme {
+  --font-display: var(--font-display-src), 'Space Grotesk', ui-sans-serif,
+    system-ui, sans-serif;
+  --font-sans: var(--font-sans-src), 'Hanken Grotesk', ui-sans-serif,
+    system-ui, sans-serif;
+  --font-mono: var(--font-mono-src), 'Fira Code', ui-monospace,
+    'SF Mono', 'JetBrains Mono', monospace;
+}
+
 :root {
   --bg-primary: oklch(1 0 0);
   --bg-secondary: oklch(0.984 0.003 270);
@@ -33,10 +42,6 @@
   --syntax-builtin: oklch(0.5 0.1 200);
   --syntax-comment: oklch(0.56 0.02 270);
   --syntax-punctuation: oklch(0.42 0.02 270);
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI',
-    sans-serif;
-  --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code',
-    'Consolas', monospace;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --dur-fast: 130ms;
   --dur-base: 190ms;
@@ -100,6 +105,13 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+code,
+pre,
+.hljs {
+  font-feature-settings: 'liga' 1, 'calt' 1;
+  font-variant-ligatures: contextual;
 }
 
 .hljs {
