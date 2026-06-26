@@ -1,44 +1,24 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
+'use client'
+
+import Link from 'next/link'
+import { useMemo, useState } from 'react'
 import hljs from 'highlight.js/lib/core'
 import python from 'highlight.js/lib/languages/python'
-import '../styles/code-theme.css'
-import './NlLatentsPage.css'
+import type { NlLatentsSampleDetail } from '@/lib/types'
 
 hljs.registerLanguage('python', python)
 
-async function fetchJson(path) {
-  const response = await fetch(path)
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-  return response.json()
-}
-
-function formatSeconds(value) {
+function formatSeconds(value: number | null | undefined): string | null {
   if (value === null || value === undefined) return null
   return `${Number(value).toFixed(2)}s`
 }
 
-function formatPercent(value) {
+function formatPercent(value: number | null | undefined): string {
   if (value === null || value === undefined) return '—'
   return `${(Number(value) * 100).toFixed(1)}%`
 }
 
-function formatDateTime(value) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function shortDate(value) {
+function shortDate(value: string | null | undefined): string | null {
   if (!value) return null
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
@@ -49,20 +29,20 @@ function shortDate(value) {
   })
 }
 
-function truncate(value, max) {
-  const str = String(value)
-  return str.length > max ? `${str.slice(0, max)}…` : str
+function truncate(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max)}...` : value
 }
 
 const EFFORT_HIDDEN = new Set(['', 'default', 'none', 'auto', 'na', 'n/a'])
-function effortLabel(value) {
+
+function effortLabel(value: string | null | undefined): string | null {
   if (!value || EFFORT_HIDDEN.has(String(value).toLowerCase())) return null
   return String(value)
 }
 
-function useCopy() {
-  const [copied, setCopied] = useState(null)
-  const copy = value => {
+function useCopy(): [string | null, (value: string | null | undefined) => void] {
+  const [copied, setCopied] = useState<string | null>(null)
+  const copy = (value: string | null | undefined) => {
     if (!value || !navigator.clipboard) return
     navigator.clipboard.writeText(String(value)).then(() => {
       setCopied(value)
@@ -72,27 +52,45 @@ function useCopy() {
   return [copied, copy]
 }
 
-/* Compact, copyable chip for values that don't need to stay open in the
-   foot: long versions, timestamps, and non-interpretable hash ids. */
-function MetaChip({ label, value, display, copied, onCopy }) {
+type MetaChipProps = {
+  label: string
+  value: string | number | null | undefined
+  display?: string | null
+  copied: string | null
+  onCopy: (value: string) => void
+}
+
+function MetaChip({
+  label,
+  value,
+  display,
+  copied,
+  onCopy,
+}: MetaChipProps) {
   if (value === null || value === undefined || value === '') return null
-  const isCopied = copied === value
+  const stringValue = String(value)
+  const isCopied = copied === stringValue
   return (
     <button
       type="button"
       className="nl-id-chip"
-      title={`${label}: ${value} (click to copy)`}
-      onClick={() => onCopy(value)}
+      title={`${label}: ${stringValue} (click to copy)`}
+      onClick={() => onCopy(stringValue)}
     >
       <span className="nl-id-chip-key">{label}</span>
       <span className="nl-id-chip-val">
-        {isCopied ? 'copied' : (display ?? truncate(value, 10))}
+        {isCopied ? 'copied' : (display ?? truncate(stringValue, 10))}
       </span>
     </button>
   )
 }
 
-function ResultBadge({ state, failure }) {
+type DetailResultBadgeProps = {
+  state: string
+  failure: string | null
+}
+
+function ResultBadge({ state, failure }: DetailResultBadgeProps) {
   return (
     <span className={`nl-badge nl-badge-${state}`}>
       <span className="nl-badge-dot" aria-hidden="true" />
@@ -104,7 +102,14 @@ function ResultBadge({ state, failure }) {
   )
 }
 
-function StatCell({ label, value, sub, mono }) {
+type StatCellProps = {
+  label: string
+  value: string | null
+  sub?: string | null
+  mono?: boolean
+}
+
+function StatCell({ label, value, sub, mono }: StatCellProps) {
   return (
     <div className="nl-stat">
       <span className="nl-stat-label">{label}</span>
@@ -116,7 +121,13 @@ function StatCell({ label, value, sub, mono }) {
   )
 }
 
-function BudgetMeter({ budget, actual, budgetOk }) {
+type BudgetMeterProps = {
+  budget: string | null
+  actual: number | null
+  budgetOk: boolean | null
+}
+
+function BudgetMeter({ budget, actual, budgetOk }: BudgetMeterProps) {
   const limit = Number(budget)
   const used = actual === null || actual === undefined ? null : Number(actual)
   const hasMeter = Number.isFinite(limit) && limit > 0 && used !== null
@@ -130,7 +141,7 @@ function BudgetMeter({ budget, actual, budgetOk }) {
       <span className="nl-budget-figures">
         <strong className="nl-budget-used">{used ?? '—'}</strong>
         <span className="nl-budget-limit">
-          / {Number.isFinite(limit) ? limit : budget ?? '—'} chars
+          / {Number.isFinite(limit) ? limit : (budget ?? '—')} chars
         </span>
       </span>
       {hasMeter && (
@@ -152,12 +163,12 @@ function BudgetMeter({ budget, actual, budgetOk }) {
   )
 }
 
-function formatBytes(bytes) {
+function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   return `${(bytes / 1024).toFixed(1)} KB`
 }
 
-function codeStats(value) {
+function codeStats(value: string): { lines: number; chars: number; bytes: number } {
   return {
     lines: value.split('\n').length,
     chars: [...value].length,
@@ -165,7 +176,24 @@ function codeStats(value) {
   }
 }
 
-function CodePane({ label, value, badge, area, language = 'python' }) {
+type PaneProps = {
+  label: string
+  value: string | null | undefined
+  badge?: string | null
+  area?: string
+}
+
+type CodePaneProps = PaneProps & {
+  language?: string
+}
+
+function CodePane({
+  label,
+  value,
+  badge,
+  area,
+  language = 'python',
+}: CodePaneProps) {
   const html = useMemo(() => {
     if (!value) return ''
     try {
@@ -175,7 +203,7 @@ function CodePane({ label, value, badge, area, language = 'python' }) {
     }
   }, [value, language])
   const stats = useMemo(() => (value ? codeStats(value) : null), [value])
-  if (!value) return null
+  if (!value || !stats) return null
   return (
     <section className="nl-pane nl-pane-code" style={{ gridArea: area }}>
       <header className="nl-pane-head">
@@ -188,9 +216,7 @@ function CodePane({ label, value, badge, area, language = 'python' }) {
             {stats.chars.toLocaleString()} chars
           </span>
           <span className="nl-metric">{formatBytes(stats.bytes)}</span>
-          {badge && (
-            <span className="nl-metric nl-metric-lang">{badge}</span>
-          )}
+          {badge && <span className="nl-metric nl-metric-lang">{badge}</span>}
         </div>
       </header>
       <pre className="nl-code">
@@ -204,7 +230,11 @@ function CodePane({ label, value, badge, area, language = 'python' }) {
   )
 }
 
-function TextPane({ label, value, badge, variant, area }) {
+type TextPaneProps = PaneProps & {
+  variant?: string
+}
+
+function TextPane({ label, value, badge, variant, area }: TextPaneProps) {
   if (!value) return null
   return (
     <section
@@ -220,58 +250,37 @@ function TextPane({ label, value, badge, variant, area }) {
   )
 }
 
-export default function NlLatentsDetailPage() {
-  const { sampleId } = useParams()
-  const location = useLocation()
-  const [resolved, setResolved] = useState({
-    id: null,
-    sample: null,
-    error: null,
-  })
+type NlLatentsDetailPageProps = {
+  backSearch: string
+  initialError: string | null
+  sample: NlLatentsSampleDetail | null
+}
+
+export default function NlLatentsDetailPage({
+  backSearch,
+  initialError,
+  sample,
+}: NlLatentsDetailPageProps) {
   const [copied, copy] = useCopy()
-
-  useEffect(() => {
-    let active = true
-    fetchJson(`/api/nl-latents/samples/${sampleId}`)
-      .then(data => {
-        if (active) setResolved({ id: sampleId, sample: data, error: null })
-      })
-      .catch(err => {
-        if (active)
-          setResolved({ id: sampleId, sample: null, error: err.message })
-      })
-    return () => {
-      active = false
-    }
-  }, [sampleId])
-
-  const loading = resolved.id !== sampleId
-  const sample = loading ? null : resolved.sample
-  const error = loading ? null : resolved.error
+  const backHref = backSearch ? `/nl-latents?${backSearch}` : '/nl-latents'
 
   return (
     <div className="page nl-page nl-detail">
       <div className="nl-back-row">
-        <Link to={`/nl-latents${location.search}`}>← Back to samples</Link>
+        <Link href={backHref}>← Back to samples</Link>
       </div>
 
-      {loading && (
-        <div className="loading-state">
-          <span className="spinner" /> Loading sample…
-        </div>
-      )}
-
-      {error && (
+      {initialError && (
         <div className="error-state nl-error">
           <span className="error-icon">!</span>
           <div>
             <p className="error-title">Failed to load sample</p>
-            <p className="error-detail">{error}</p>
+            <p className="error-detail">{initialError}</p>
           </div>
         </div>
       )}
 
-      {sample && !loading && (
+      {sample && (
         <>
           <header className="nl-head">
             <div className="nl-head-main">
@@ -341,11 +350,10 @@ export default function NlLatentsDetailPage() {
 
             <div className="nl-meta-config">
               <span className="nl-stat-label">Prompt config</span>
-              {sample.prompt_block_names &&
-              sample.prompt_block_names.length > 0 ? (
+              {sample.prompt_block_names.length > 0 ? (
                 <div className="nl-chips">
-                  {sample.prompt_block_names.map((name, i) => (
-                    <span className="nl-chip" key={`${name}-${i}`}>
+                  {sample.prompt_block_names.map((name, index) => (
+                    <span className="nl-chip" key={`${name}-${index}`}>
                       {name}
                     </span>
                   ))}
@@ -358,50 +366,54 @@ export default function NlLatentsDetailPage() {
             </div>
 
             <div className="nl-meta-foot">
-              <span className="nl-foot-item nl-foot-run">
-                <span className="nl-foot-key">run</span>
-                <span className="nl-foot-run-val">{sample.run_id ?? '—'}</span>
-              </span>
-              {sample.finish_reason && (
-                <span className="nl-foot-item">
-                  <span className="nl-foot-key">finish</span>
-                  {sample.finish_reason}
-                </span>
-              )}
-              <span className="nl-foot-ids">
-                <MetaChip
-                  label="data"
-                  value={sample.task_data_version}
-                  display={truncate(sample.task_data_version ?? '', 18)}
-                  copied={copied}
-                  onCopy={copy}
-                />
-                <MetaChip
-                  label="created"
-                  value={formatDateTime(sample.created_at)}
-                  display={shortDate(sample.created_at)}
-                  copied={copied}
-                  onCopy={copy}
-                />
-                <MetaChip
-                  label="sample"
-                  value={sample.sample_id}
-                  copied={copied}
-                  onCopy={copy}
-                />
-                <MetaChip
-                  label="call"
-                  value={sample.call_id}
-                  copied={copied}
-                  onCopy={copy}
-                />
-              </span>
+              <MetaChip
+                label="sample"
+                value={sample.sample_id}
+                copied={copied}
+                onCopy={copy}
+              />
+              <MetaChip
+                label="config"
+                value={sample.config_id}
+                copied={copied}
+                onCopy={copy}
+              />
+              <MetaChip
+                label="call"
+                value={sample.call_id}
+                copied={copied}
+                onCopy={copy}
+              />
+              <MetaChip
+                label="run"
+                value={sample.run_id}
+                copied={copied}
+                onCopy={copy}
+              />
+              <MetaChip
+                label="created"
+                value={sample.created_at}
+                display={shortDate(sample.created_at)}
+                copied={copied}
+                onCopy={copy}
+              />
+              <MetaChip
+                label="finish"
+                value={sample.finish_reason}
+                display={sample.finish_reason}
+                copied={copied}
+                onCopy={copy}
+              />
+              <MetaChip
+                label="version"
+                value={sample.task_data_version}
+                display={sample.task_data_version}
+                copied={copied}
+                onCopy={copy}
+              />
             </div>
           </section>
 
-          {/* Grid areas keep the two code blocks on a shared row track so they
-              align vertically regardless of prompt length, and keep the most
-              relevant outputs (encoded latent, error) pinned to the top. */}
           <div className="nl-panes">
             <TextPane
               label="Encoded output"

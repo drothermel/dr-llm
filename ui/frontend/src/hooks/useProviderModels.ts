@@ -1,20 +1,38 @@
-import { useEffect, useRef, useState } from 'react'
+'use client'
 
-async function parseJsonResponse(response) {
+import { useEffect, useRef, useState } from 'react'
+import type { ModelEntry, SyncResultResponse } from '@/lib/types'
+
+type ProviderModelsPayload = {
+  models: ModelEntry[]
+  source: string
+  success?: boolean
+  error?: string | null
+}
+
+type RequestKind = 'load' | 'sync'
+
+type RunRequestInput = {
+  path: string
+  method: 'GET' | 'POST'
+  kind: RequestKind
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
   }
-  return response.json()
+  return response.json() as Promise<T>
 }
 
-export default function useProviderModels(providerName) {
-  const [models, setModels] = useState(null)
+export default function useProviderModels(providerName: string) {
+  const [models, setModels] = useState<ModelEntry[] | null>(null)
   const [modelsLoading, setModelsLoading] = useState(false)
-  const [modelsError, setModelsError] = useState(null)
-  const [modelSource, setModelSource] = useState(null)
+  const [modelsError, setModelsError] = useState<string | null>(null)
+  const [modelSource, setModelSource] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const requestSeqRef = useRef(0)
-  const activeControllerRef = useRef(null)
+  const activeControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     return () => {
@@ -23,7 +41,7 @@ export default function useProviderModels(providerName) {
     }
   }, [])
 
-  const runRequest = async ({ path, method, kind }) => {
+  const runRequest = async ({ path, method, kind }: RunRequestInput) => {
     activeControllerRef.current?.abort()
 
     const controller = new AbortController()
@@ -44,7 +62,11 @@ export default function useProviderModels(providerName) {
       const data = await fetch(path, {
         method,
         signal: controller.signal,
-      }).then(parseJsonResponse)
+      }).then(response =>
+        parseJsonResponse<ProviderModelsPayload | SyncResultResponse>(
+          response,
+        ),
+      )
 
       if (requestSeq !== requestSeqRef.current) {
         return
@@ -52,18 +74,23 @@ export default function useProviderModels(providerName) {
 
       setModels(data.models)
       setModelSource(data.source)
-      if (!data.success && data.error) {
+      if ('success' in data && !data.success && data.error) {
         setModelsError(`Sync failed: ${data.error}`)
       }
     } catch (error) {
-      if (error.name === 'AbortError' || requestSeq !== requestSeqRef.current) {
+      if (
+        error instanceof DOMException &&
+        error.name === 'AbortError'
+      ) {
+        return
+      }
+      if (requestSeq !== requestSeqRef.current) {
         return
       }
 
-      const message = kind === 'sync'
-        ? `Sync error: ${error.message}`
-        : error.message
-      setModelsError(message)
+      const message =
+        error instanceof Error ? error.message : String(error)
+      setModelsError(kind === 'sync' ? `Sync error: ${message}` : message)
     } finally {
       if (requestSeq === requestSeqRef.current) {
         activeControllerRef.current = null

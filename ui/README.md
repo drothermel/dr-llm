@@ -5,7 +5,7 @@ Standalone web UI for inspecting and interacting with dr-llm subsystems.
 ## Architecture
 
 - **Backend**: FastAPI app (`ui/api/`) that wraps the `dr_llm` library
-- **Frontend**: React + Vite app (`ui/frontend/`) with React Router for multi-page navigation
+- **Frontend**: Next.js app (`ui/frontend/`) with App Router navigation
 
 ## Quick Start
 
@@ -24,7 +24,7 @@ pnpm install
 pnpm dev
 ```
 
-The frontend dev server runs on `http://localhost:5173` and proxies API calls to `http://localhost:8000`.
+The frontend dev server runs on `http://localhost:3000` and proxies API calls to `http://localhost:8000`.
 
 ## Available Tools
 

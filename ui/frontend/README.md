@@ -1,6 +1,6 @@
 # dr-llm UI Frontend
 
-React + Vite frontend for the `dr-llm` provider explorer.
+Next.js frontend for the `dr-llm` provider explorer.
 
 ## Commands
 
@@ -11,7 +11,7 @@ pnpm lint
 pnpm build
 ```
 
-The dev server runs on `http://localhost:5173` and proxies `/api` requests to the backend at `http://localhost:8000`.
+The dev server runs on `http://localhost:3000` and proxies `/api` requests to the backend at `http://localhost:8000`.
 
 ## Backend
 

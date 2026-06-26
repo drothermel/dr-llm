@@ -1,9 +1,15 @@
-import { useState } from 'react'
-import ModelTable from './ModelTable.jsx'
-import useProviderModels from '../hooks/useProviderModels.js'
-import './ProviderCard.css'
+'use client'
 
-export default function ProviderCard({ provider }) {
+import { useState } from 'react'
+import ModelTable from './ModelTable'
+import useProviderModels from '@/hooks/useProviderModels'
+import type { ProviderStatus } from '@/lib/types'
+
+type ProviderCardProps = {
+  provider: ProviderStatus
+}
+
+export default function ProviderCard({ provider }: ProviderCardProps) {
   const [expanded, setExpanded] = useState(false)
   const {
     models,
@@ -31,12 +37,20 @@ export default function ProviderCard({ provider }) {
   }
 
   const missingItems = [
-    ...provider.missing_env_vars.map(v => ({ type: 'env', name: v })),
-    ...provider.missing_executables.map(v => ({ type: 'exe', name: v })),
+    ...provider.missing_env_vars.map(value => ({
+      type: 'env',
+      name: value,
+    })),
+    ...provider.missing_executables.map(value => ({
+      type: 'exe',
+      name: value,
+    })),
   ]
 
   return (
-    <div className={`provider-card ${expanded ? 'expanded' : ''} ${!provider.available ? 'unavailable' : ''}`}>
+    <div
+      className={`provider-card ${expanded ? 'expanded' : ''} ${!provider.available ? 'unavailable' : ''}`}
+    >
       <div className="provider-card-header">
         <h3 className="provider-card-heading">
           <button
@@ -50,9 +64,14 @@ export default function ProviderCard({ provider }) {
             <div className="provider-card-left">
               <svg
                 className={`chevron ${expanded ? 'open' : ''}`}
-                width="14" height="14" viewBox="0 0 14 14"
-                fill="none" stroke="currentColor" strokeWidth="2"
-                strokeLinecap="round" strokeLinejoin="round"
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
                 <polyline points="4,2 9,7 4,12" />
               </svg>
@@ -84,9 +103,14 @@ export default function ProviderCard({ provider }) {
             >
               <svg
                 className={`sync-icon ${syncing ? 'spinning' : ''}`}
-                width="14" height="14" viewBox="0 0 14 14"
-                fill="none" stroke="currentColor" strokeWidth="1.5"
-                strokeLinecap="round" strokeLinejoin="round"
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
                 <path d="M1 7a6 6 0 0 1 10.2-4.2M13 7a6 6 0 0 1-10.2 4.2" />
                 <polyline points="1,2.5 1,5 3.5,5" />
@@ -99,7 +123,12 @@ export default function ProviderCard({ provider }) {
       </div>
 
       {expanded && (
-        <div className="provider-card-body" id={bodyId} role="region" aria-labelledby={toggleId}>
+        <div
+          className="provider-card-body"
+          id={bodyId}
+          role="region"
+          aria-labelledby={toggleId}
+        >
           {missingItems.length > 0 && (
             <div className="missing-reqs">
               {missingItems.map(item => (
@@ -118,11 +147,7 @@ export default function ProviderCard({ provider }) {
             </div>
           )}
 
-          {modelsError && (
-            <div className="models-error">
-              {modelsError}
-            </div>
-          )}
+          {modelsError && <div className="models-error">{modelsError}</div>}
 
           {models !== null && models.length > 0 && (
             <>

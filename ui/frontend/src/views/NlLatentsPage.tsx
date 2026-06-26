@@ -1,50 +1,47 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import './NlLatentsPage.css'
+'use client'
 
-const ALL = '__all__'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useEffect, useMemo, useState, useTransition } from 'react'
+import {
+  ALL,
+  DEFAULT_PAGE,
+  buildSamplesPath,
+  listStateToSearchParams,
+  parseListState,
+  type NlLatentsListState,
+} from '@/lib/nlLatents'
+import { fetchJson } from '@/lib/http'
+import type {
+  NlLatentsFilters,
+  NlLatentsSamplesResponse,
+} from '@/lib/types'
+
 const RESULT_OPTIONS = ['passed', 'failed', 'pending']
-const DEFAULT_PAGE = 1
-const PAGE_SIZE = 20
 const FILTERS_PATH = '/api/nl-latents/filters'
-const FALSE_PARAM = 'false'
-const TRUE_PARAM = 'true'
-const QUERY_CONFIG = [
-  ['family', 'family'],
-  ['difficulty', 'difficulty'],
-  ['split', 'split'],
-  ['encModel', 'enc_model'],
-  ['budget', 'budget'],
-  ['dataVersion', 'data_version'],
-  ['result', 'result'],
-]
 
-const jsonCache = new Map()
-const jsonInFlight = new Map()
+type CachedJson = NlLatentsFilters | NlLatentsSamplesResponse
 
-async function fetchJson(path) {
-  const response = await fetch(path)
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-  return response.json()
-}
+const jsonCache = new Map<string, CachedJson>()
+const jsonInFlight = new Map<string, Promise<CachedJson>>()
 
-async function fetchCachedJson(path) {
+async function fetchCachedJson<T extends CachedJson>(
+  path: string,
+): Promise<T> {
   if (jsonCache.has(path)) {
-    return jsonCache.get(path)
+    return jsonCache.get(path) as T
   }
   if (jsonInFlight.has(path)) {
-    return jsonInFlight.get(path)
+    return jsonInFlight.get(path) as Promise<T>
   }
 
-  const request = fetchJson(path)
+  const request = fetchJson<T>(path)
     .then(data => {
       jsonCache.set(path, data)
       jsonInFlight.delete(path)
       return data
     })
-    .catch(error => {
+    .catch((error: unknown) => {
       jsonInFlight.delete(path)
       throw error
     })
@@ -53,67 +50,33 @@ async function fetchCachedJson(path) {
   return request
 }
 
-function parsePage(searchParams) {
-  const page = Number(searchParams.get('page'))
-  return Number.isInteger(page) && page > 0 ? page : DEFAULT_PAGE
-}
-
-function parseListState(searchParams) {
-  return {
-    page: parsePage(searchParams),
-    family: searchParams.get('family') || ALL,
-    difficulty: searchParams.get('difficulty') || ALL,
-    split: searchParams.get('split') || ALL,
-    encModel: searchParams.get('enc_model') || ALL,
-    budget: searchParams.get('budget') || ALL,
-    dataVersion: searchParams.get('data_version') || ALL,
-    result: searchParams.get('result') || ALL,
-    hidePending: searchParams.get('hide_pending') !== FALSE_PARAM,
-    hideSmoke: searchParams.get('hide_smoke') !== FALSE_PARAM,
-  }
-}
-
-function listStateToSearchParams(state) {
-  const params = new URLSearchParams()
-  if (state.page !== DEFAULT_PAGE) params.set('page', String(state.page))
-
-  for (const [stateKey, paramKey] of QUERY_CONFIG) {
-    if (state[stateKey] !== ALL) {
-      params.set(paramKey, state[stateKey])
-    }
-  }
-
-  if (!state.hidePending) params.set('hide_pending', FALSE_PARAM)
-  if (!state.hideSmoke) params.set('hide_smoke', FALSE_PARAM)
-  return params
-}
-
-function buildSamplesPath(state) {
-  const params = new URLSearchParams()
-  params.set('page', String(state.page))
-  params.set('limit', String(PAGE_SIZE))
-
-  for (const [stateKey, paramKey] of QUERY_CONFIG) {
-    if (state[stateKey] !== ALL) {
-      params.set(paramKey, state[stateKey])
-    }
-  }
-
-  if (state.hidePending) params.set('hide_pending', TRUE_PARAM)
-  if (state.hideSmoke) params.set('hide_smoke', TRUE_PARAM)
-  return `/api/nl-latents/samples?${params}`
-}
-
-function prefetchSamplesPage(state, page) {
+function prefetchSamplesPage(state: NlLatentsListState, page: number) {
   if (page < DEFAULT_PAGE) return
-  fetchCachedJson(buildSamplesPath({ ...state, page })).catch(() => {})
+  fetchCachedJson<NlLatentsSamplesResponse>(
+    buildSamplesPath({ ...state, page }),
+  ).catch(() => {})
 }
 
-function SelectFilter({ label, value, values, onChange }) {
+type SelectFilterProps = {
+  label: string
+  value: string
+  values: string[]
+  onChange: (value: string) => void
+}
+
+function SelectFilter({
+  label,
+  value,
+  values,
+  onChange,
+}: SelectFilterProps) {
   return (
     <label className="nl-filter">
       <span>{label}</span>
-      <select value={value} onChange={event => onChange(event.target.value)}>
+      <select
+        value={value}
+        onChange={event => onChange(event.target.value)}
+      >
         <option value={ALL}>All</option>
         {values.map(option => (
           <option key={option} value={option}>
@@ -125,7 +88,12 @@ function SelectFilter({ label, value, values, onChange }) {
   )
 }
 
-function ResultBadge({ state, failureCategory }) {
+type ResultBadgeProps = {
+  state: string
+  failureCategory: string | null
+}
+
+function ResultBadge({ state, failureCategory }: ResultBadgeProps) {
   const className = `nl-result nl-result-${state}`
   return (
     <span className={className}>
@@ -135,17 +103,55 @@ function ResultBadge({ state, failureCategory }) {
   )
 }
 
-export default function NlLatentsPage() {
-  const [searchParams, setSearchParams] = useSearchParams()
-  const [filters, setFilters] = useState(null)
-  const [filtersError, setFiltersError] = useState(null)
-  const [samplesResult, setSamplesResult] = useState({
-    path: null,
-    data: null,
+type NlLatentsPageProps = {
+  initialError: string | null
+  initialFilters: NlLatentsFilters | null
+  initialListState: NlLatentsListState
+  initialSamples: NlLatentsSamplesResponse | null
+  initialSamplesPath: string
+}
+
+export default function NlLatentsPage({
+  initialError,
+  initialFilters,
+  initialListState,
+  initialSamples,
+  initialSamplesPath,
+}: NlLatentsPageProps) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [isPending, startTransition] = useTransition()
+  const [filters, setFilters] = useState<NlLatentsFilters | null>(
+    initialFilters,
+  )
+  const [filtersError, setFiltersError] = useState<string | null>(null)
+  const [samplesResult, setSamplesResult] = useState<{
+    path: string | null
+    data: NlLatentsSamplesResponse | null
+    error: string | null
+  }>({
+    path: initialSamplesPath,
+    data: initialSamples,
     error: null,
   })
 
-  const listState = useMemo(() => parseListState(searchParams), [searchParams])
+  useEffect(() => {
+    if (initialFilters) {
+      jsonCache.set(FILTERS_PATH, initialFilters)
+    }
+    if (initialSamples) {
+      jsonCache.set(initialSamplesPath, initialSamples)
+    }
+  }, [initialFilters, initialSamples, initialSamplesPath])
+
+  const listState = useMemo(() => {
+    if (!searchParams) {
+      return initialListState
+    }
+    const parsedState = parseListState(searchParams)
+    return searchParams.size === 0 ? initialListState : parsedState
+  }, [initialListState, searchParams])
+
   const {
     page,
     family,
@@ -160,41 +166,50 @@ export default function NlLatentsPage() {
   } = listState
 
   useEffect(() => {
+    if (filters) {
+      return
+    }
+
     let active = true
-    fetchCachedJson(FILTERS_PATH)
+    fetchCachedJson<NlLatentsFilters>(FILTERS_PATH)
       .then(data => {
         if (active) setFilters(data)
       })
-      .catch(err => {
-        if (active) setFiltersError(err.message)
+      .catch((error: unknown) => {
+        if (!active) return
+        setFiltersError(error instanceof Error ? error.message : String(error))
       })
     return () => {
       active = false
     }
-  }, [])
+  }, [filters])
 
-  const queryPath = useMemo(() => {
-    return buildSamplesPath(listState)
-  }, [listState])
+  const queryPath = useMemo(() => buildSamplesPath(listState), [listState])
 
   useEffect(() => {
+    if (samplesResult.path === queryPath) {
+      return
+    }
+
     let active = true
-    fetchCachedJson(queryPath)
+    fetchCachedJson<NlLatentsSamplesResponse>(queryPath)
       .then(data => {
         if (!active) return
         setSamplesResult({ path: queryPath, data, error: null })
       })
-      .catch(err => {
+      .catch((error: unknown) => {
         if (!active) return
-        setSamplesResult({ path: queryPath, data: null, error: err.message })
+        const message = error instanceof Error ? error.message : String(error)
+        setSamplesResult({ path: queryPath, data: null, error: message })
       })
     return () => {
       active = false
     }
-  }, [queryPath])
+  }, [queryPath, samplesResult.path])
 
   useEffect(() => {
-    const samples = samplesResult.path === queryPath ? samplesResult.data : null
+    const samples =
+      samplesResult.path === queryPath ? samplesResult.data : null
     if (!samples) return
 
     prefetchSamplesPage(listState, page - 1)
@@ -203,22 +218,27 @@ export default function NlLatentsPage() {
     }
   }, [listState, page, queryPath, samplesResult])
 
-  const updateListState = updates => {
-    setSearchParams(
-      listStateToSearchParams({ ...listState, ...updates }),
-    )
+  const updateListState = (updates: Partial<NlLatentsListState>) => {
+    const params = listStateToSearchParams({ ...listState, ...updates })
+    const suffix = params.toString()
+    startTransition(() => {
+      router.push(suffix ? `/nl-latents?${suffix}` : '/nl-latents')
+    })
   }
 
-  const updateFilter = key => value => {
-    updateListState({ [key]: value, page: DEFAULT_PAGE })
-  }
+  const updateFilter =
+    (key: keyof NlLatentsListState) => (value: string) => {
+      updateListState({ [key]: value, page: DEFAULT_PAGE })
+    }
 
-  const sampleSearch = searchParams.toString()
+  const sampleSearch = searchParams?.toString() ?? ''
   const sampleSearchSuffix = sampleSearch ? `?${sampleSearch}` : ''
-  const samples = samplesResult.path === queryPath ? samplesResult.data : null
-  const samplesError = samplesResult.path === queryPath ? samplesResult.error : null
-  const loading = samplesResult.path !== queryPath
-  const error = samplesError ?? filtersError
+  const samples =
+    samplesResult.path === queryPath ? samplesResult.data : null
+  const samplesError =
+    samplesResult.path === queryPath ? samplesResult.error : null
+  const loading = isPending || samplesResult.path !== queryPath
+  const error = initialError ?? samplesError ?? filtersError
   const pageStatus = samples
     ? `Page ${samples.page} of ${samples.total_pages}`
     : null
@@ -319,7 +339,9 @@ export default function NlLatentsPage() {
       <div className="nl-table-wrap">
         <div className="nl-table-meta">
           <span>
-            {loading ? 'Loading...' : `${(samples?.total ?? 0).toLocaleString()} samples`}
+            {loading
+              ? 'Loading...'
+              : `${(samples?.total ?? 0).toLocaleString()} samples`}
           </span>
           {pageStatus && <span>{pageStatus}</span>}
         </div>
@@ -338,9 +360,11 @@ export default function NlLatentsPage() {
             </tr>
           </thead>
           <tbody>
-            {!loading && samples?.samples?.length === 0 && (
+            {!loading && samples?.samples.length === 0 && (
               <tr>
-                <td colSpan="9" className="nl-empty">No samples match.</td>
+                <td colSpan={9} className="nl-empty">
+                  No samples match.
+                </td>
               </tr>
             )}
             {(samples?.samples ?? []).map(sample => (
@@ -348,7 +372,7 @@ export default function NlLatentsPage() {
                 <td>
                   <Link
                     className="nl-sample-link"
-                    to={`/nl-latents/samples/${sample.sample_id}${sampleSearchSuffix}`}
+                    href={`/nl-latents/samples/${sample.sample_id}${sampleSearchSuffix}`}
                   >
                     {sample.sample_id.slice(0, 12)}
                   </Link>

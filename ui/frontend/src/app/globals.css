@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@import "../index.css";
+@import "../App.css";
+@import "../components/ModelTable.css";
+@import "../components/ProviderCard.css";
+@import "../views/NlLatentsPage.css";
+@import "../views/ProvidersPage.css";
+@import "../styles/code-theme.css";
