@@ -17,9 +17,8 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   {
-    href: '/',
+    href: '/providers',
     label: 'Providers & Models',
-    exact: true,
     icon: (
       <svg
         aria-hidden="true"
@@ -82,15 +81,17 @@ export default function AppShell({ children }: AppShellProps) {
     <div className="min-h-screen md:flex">
       <nav className="z-10 flex flex-col border-b border-[var(--border)] bg-[var(--bg-secondary)] py-5 md:fixed md:inset-y-0 md:left-0 md:w-60 md:border-r md:border-b-0">
         <div className="mb-4 border-b border-[var(--border)] px-5 pb-5">
-          <h1 className="font-mono text-xl font-bold text-[var(--accent)]">
-            dr-llm
-          </h1>
-          <span className="ml-0.5 text-[11px] font-medium tracking-[1.5px] text-[var(--text-muted)] uppercase">
-            ui tools
-          </span>
+          <Link href="/" className="inline-block">
+            <h1 className="font-display text-xl font-bold tracking-[-0.02em] text-[var(--accent)]">
+              dr-llm
+            </h1>
+            <span className="ml-0.5 font-display text-[11px] font-medium tracking-[0.12em] text-[var(--text-muted)] uppercase">
+              ui tools
+            </span>
+          </Link>
         </div>
         <div className="px-3">
-          <span className="mb-1.5 block px-2 text-[11px] font-semibold tracking-[1px] text-[var(--text-muted)] uppercase">
+          <span className="mb-1.5 block px-2 font-display text-[11px] font-semibold tracking-[0.08em] text-[var(--text-muted)] uppercase">
             Explore
           </span>
           {NAV_ITEMS.map(item => (
