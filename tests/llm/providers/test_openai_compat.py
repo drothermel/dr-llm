@@ -12,6 +12,7 @@ from dr_llm.llm import (
     GlmReasoning,
     LlmRequest,
     Message,
+    MessageRole,
     OpenAIReasoning,
     OpenRouterEffortLevel,
     OpenRouterReasoning,
@@ -152,7 +153,7 @@ def test_request_builds_endpoint_and_headers() -> None:
         {
             "provider": ProviderName.OPENROUTER,
             "model": "deepseek/deepseek-chat",
-            "messages": [Message(role="user", content="hi")],
+            "messages": [Message(role=MessageRole.USER, content="hi")],
             "metadata": {"idempotency_key": "fixed-key"},
         }
     )
@@ -421,7 +422,7 @@ def test_provider_rejects_headless_request_mode() -> None:
         provider=ProviderName.OPENAI,
         model="gpt-5.4",
         mode=CallMode.headless,
-        messages=[Message(role="user", content="hi")],
+        messages=[Message(role=MessageRole.USER, content="hi")],
     )
     adapter = OpenAIProvider(
         config=OpenAICompatConfig(

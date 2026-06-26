@@ -13,6 +13,7 @@ from dr_llm.llm import (
     LlmRequest,
     LlmResponse,
     Message,
+    MessageRole,
     ProviderConfig,
     ProviderRequestDefaults,
     SamplingControls,
@@ -288,7 +289,7 @@ def make_request(**overrides: Any) -> LlmRequest:
         "provider": ProviderName.OPENAI,
         "model": "gpt-4.1-mini",
         "mode": CallMode.api,
-        "messages": [Message(role="user", content="hello")],
+        "messages": [Message(role=MessageRole.USER, content="hello")],
     }
     defaults.update(overrides)
     if "mode" not in overrides and defaults["provider"] in {

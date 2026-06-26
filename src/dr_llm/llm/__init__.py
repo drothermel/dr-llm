@@ -7,6 +7,7 @@ from dr_llm.llm.config import (
 from dr_llm.llm.names import (
     ControlMode,
     EffortSpec,
+    MessageRole,
     OpenRouterEffortLevel,
     ProviderName,
     ThinkingLevel,
@@ -126,6 +127,7 @@ __all__ = [
     "LlmRequest",
     "LlmResponse",
     "Message",
+    "MessageRole",
     "MiniMaxConfig",
     "OpenAIGpt5Config",
     "OpenAIGpt51Config",

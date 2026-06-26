@@ -13,7 +13,7 @@ from rich.table import Table
 
 from dr_llm.llm.catalog.model_blacklist import BlacklistedModel
 from dr_llm.llm.catalog.models import ModelCatalogEntry, ModelCatalogSyncResult
-from dr_llm.llm import Message, ProviderAvailabilityStatus
+from dr_llm.llm import Message, MessageRole, ProviderAvailabilityStatus
 
 
 def _emit(payload: Any) -> None:
@@ -244,7 +244,7 @@ def _load_messages(
                 ) from exc
 
     result.extend(
-        Message(role="user", content=content) for content in messages
+        Message(role=MessageRole.USER, content=content) for content in messages
     )
     if require_nonempty and not result:
         raise typer.BadParameter(

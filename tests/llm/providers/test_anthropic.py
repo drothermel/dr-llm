@@ -11,6 +11,7 @@ from dr_llm.llm import (
     EffortSpec,
     LlmRequest,
     Message,
+    MessageRole,
     ProviderName,
     ThinkingLevel,
 )
@@ -48,9 +49,9 @@ def test_payload_serializes_messages() -> None:
         model="claude-3-5-haiku-20241022",
         max_tokens=256,
         messages=[
-            Message(role="system", content="You are helpful."),
-            Message(role="user", content="hello"),
-            Message(role="assistant", content="hi there"),
+            Message(role=MessageRole.SYSTEM, content="You are helpful."),
+            Message(role=MessageRole.USER, content="hello"),
+            Message(role=MessageRole.ASSISTANT, content="hi there"),
         ],
     )
     result = adapter.generate(request)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dr_llm.llm import (
     CallMode,
     Message,
+    MessageRole,
     ProviderName,
     parse_llm_config,
     parse_llm_request,
@@ -27,7 +28,7 @@ def test_provider_name_discriminators_accept_raw_strings() -> None:
             "provider": str(ProviderName.OPENAI),
             "model": "gpt-4.1-mini",
             "mode": CallMode.api,
-            "messages": [Message(role="user", content="hi")],
+            "messages": [Message(role=MessageRole.USER, content="hi")],
         }
     )
 

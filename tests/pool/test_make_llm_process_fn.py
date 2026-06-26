@@ -14,6 +14,7 @@ from dr_llm.llm import (
     LlmRequest,
     LlmResponse,
     Message,
+    MessageRole,
     ProviderName,
     SamplingControls,
     ThinkingLevel,
@@ -104,7 +105,7 @@ def _sample_request() -> dict[str, Any]:
         mode=CallMode.api,
         sampling=SamplingControls(temperature=0.5),
     )
-    messages = [Message(role="user", content="Say hello")]
+    messages = [Message(role=MessageRole.USER, content="Say hello")]
     return {
         "llm_config": config.model_dump(),
         "prompt": [m.model_dump() for m in messages],
@@ -270,7 +271,7 @@ def test_custom_key_names() -> None:
         model="gpt-4.1-mini",
         mode=CallMode.api,
     )
-    messages = [Message(role="user", content="custom")]
+    messages = [Message(role=MessageRole.USER, content="custom")]
     process_fn = pool_backend.make_llm_process_fn(
         registry, llm_config_key="model_cfg", prompt_key="msgs"
     )
@@ -314,7 +315,7 @@ def test_seed_llm_grid_round_trips_with_make_llm_process_fn() -> None:
         mode=CallMode.api,
         sampling=SamplingControls(temperature=0.5),
     )
-    msgs = [Message(role="user", content="round trip")]
+    msgs = [Message(role=MessageRole.USER, content="round trip")]
 
     def _build_request(cell: GridCell) -> tuple[list[Message], LlmConfig]:
         assert cell.values["llm_config"] == cfg
@@ -369,7 +370,7 @@ def test_seed_llm_grid_round_trips_headless_config() -> None:
         mode=CallMode.headless,
         reasoning=CodexReasoning(thinking_level=ThinkingLevel.XHIGH),
     )
-    msgs = [Message(role="user", content="headless round trip")]
+    msgs = [Message(role=MessageRole.USER, content="headless round trip")]
 
     def _build_request(
         cell: GridCell,
@@ -421,7 +422,7 @@ def test_seed_llm_grid_honors_custom_request_keys() -> None:
         model="gpt-4.1-mini",
         mode=CallMode.api,
     )
-    msgs = [Message(role="user", content="hi")]
+    msgs = [Message(role=MessageRole.USER, content="hi")]
 
     seed_llm_grid(
         store,

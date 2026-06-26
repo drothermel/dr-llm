@@ -41,6 +41,7 @@ from dr_llm.demo import (
 from dr_llm.llm import (
     LlmConfig,
     Message,
+    MessageRole,
     build_default_registry,
 )
 from dr_llm.pool import (
@@ -67,8 +68,10 @@ from dr_llm.workers import (
 app = typer.Typer()
 
 PROMPTS: dict[str, list[Message]] = {
-    "haiku": [Message(role="user", content=DemoPrompts.PROGRAMMING_HAIKU)],
-    "math": [Message(role="user", content=DemoPrompts.TWO_PLUS_TWO)],
+    "haiku": [
+        Message(role=MessageRole.USER, content=DemoPrompts.PROGRAMMING_HAIKU)
+    ],
+    "math": [Message(role=MessageRole.USER, content=DemoPrompts.TWO_PLUS_TWO)],
 }
 
 LLM_CONFIG_AXIS: Axis[LlmConfig] = Axis(

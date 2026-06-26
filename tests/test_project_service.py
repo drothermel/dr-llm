@@ -531,10 +531,12 @@ def test_backup_project_does_not_precheck_cached_running_status(
         db_user: str,
         db_name: str,
         output_stream: IO[bytes],
+        extra_args: tuple[str, ...] = (),
     ) -> None:
         assert container_name == "dr-llm-pg-demo"
         assert db_user == "postgres"
         assert db_name == "dr_llm"
+        assert extra_args == ()
         output_stream.write(b"select 1;\n")
 
     monkeypatch.setattr(
@@ -550,6 +552,37 @@ def test_backup_project_does_not_precheck_cached_running_status(
         assert f.read() == b"select 1;\n"
 
 
+def test_backup_project_portable_omits_owner_and_privileges(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    observed_extra_args: list[tuple[str, ...]] = []
+
+    def fake_pg_dump_stream(
+        *,
+        container_name: str,
+        db_user: str,
+        db_name: str,
+        output_stream: IO[bytes],
+        extra_args: tuple[str, ...] = (),
+    ) -> None:
+        assert container_name == "dr-llm-pg-demo"
+        assert db_user == "postgres"
+        assert db_name == "dr_llm"
+        observed_extra_args.append(extra_args)
+        output_stream.write(b"select 1;\n")
+
+    monkeypatch.setattr(
+        project_service_module,
+        "call_docker_pg_dump_stream",
+        fake_pg_dump_stream,
+    )
+
+    backup_project("demo", tmp_path, portable=True)
+
+    assert observed_extra_args == [("--no-owner", "--no-privileges")]
+
+
 def test_backup_project_translates_missing_container_to_project_not_found(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -560,8 +593,9 @@ def test_backup_project_translates_missing_container_to_project_not_found(
         db_user: str,
         db_name: str,
         output_stream: IO[bytes],
+        extra_args: tuple[str, ...] = (),
     ) -> None:
-        _ = (container_name, db_user, db_name, output_stream)
+        _ = (container_name, db_user, db_name, output_stream, extra_args)
         raise DockerContainerNotFoundError()
 
     monkeypatch.setattr(
@@ -584,8 +618,9 @@ def test_backup_project_translates_stopped_container_to_project_error(
         db_user: str,
         db_name: str,
         output_stream: IO[bytes],
+        extra_args: tuple[str, ...] = (),
     ) -> None:
-        _ = (container_name, db_user, db_name, output_stream)
+        _ = (container_name, db_user, db_name, output_stream, extra_args)
         raise DockerContainerNotRunningError()
 
     monkeypatch.setattr(
@@ -724,10 +759,12 @@ def test_backup_project_removes_partial_file_when_streaming_fails(
         db_user: str,
         db_name: str,
         output_stream: IO[bytes],
+        extra_args: tuple[str, ...] = (),
     ) -> None:
         assert container_name == "dr-llm-pg-demo"
         assert db_user == "postgres"
         assert db_name == "dr_llm"
+        assert extra_args == ()
         output_stream.write(b"partial dump\n")
         raise RuntimeError("pg_dump failed")
 
