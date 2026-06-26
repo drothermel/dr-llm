@@ -1,4 +1,5 @@
-import { Tag } from './primitives'
+import { cn } from '@/lib/cn'
+import { Tag } from '@/components/primitives'
 import type { ModelEntry } from '@/lib/types'
 
 const HEADER_CLASS =
@@ -60,12 +61,12 @@ export default function ModelTable({ models }: ModelTableProps) {
       <table className="w-full border-collapse text-[13px]">
         <thead>
           <tr>
-            <th className={`${HEADER_CLASS} text-left`}>Model</th>
-            <th className={`${HEADER_CLASS} text-left`}>Display name</th>
-            <th className={`${HEADER_CLASS} w-24 text-center`}>Control mode</th>
-            <th className={`${HEADER_CLASS} w-16 text-center`}>Vision</th>
-            <th className={`${HEADER_CLASS} w-16 text-center`}>Context</th>
-            <th className={`${HEADER_CLASS} w-20 text-center`}>Source</th>
+            <th className={cn(HEADER_CLASS, 'text-left')}>Model</th>
+            <th className={cn(HEADER_CLASS, 'text-left')}>Display name</th>
+            <th className={cn(HEADER_CLASS, 'w-24 text-center')}>Control mode</th>
+            <th className={cn(HEADER_CLASS, 'w-16 text-center')}>Vision</th>
+            <th className={cn(HEADER_CLASS, 'w-16 text-center')}>Context</th>
+            <th className={cn(HEADER_CLASS, 'w-20 text-center')}>Source</th>
           </tr>
         </thead>
         <tbody>
@@ -79,21 +80,24 @@ export default function ModelTable({ models }: ModelTableProps) {
                   {model.model}
                 </span>
               </td>
-              <td className={`${CELL_CLASS} text-[var(--text-secondary)]`}>
+              <td className={cn(CELL_CLASS, 'text-[var(--text-secondary)]')}>
                 {model.display_name && model.display_name !== model.model ? (
                   model.display_name
                 ) : (
                   <span className="text-[var(--text-muted)]">&mdash;</span>
                 )}
               </td>
-              <td className={`${CELL_CLASS} w-24 text-center`}>
+              <td className={cn(CELL_CLASS, 'w-24 text-center')}>
                 <ControlMode value={model.control_mode} />
               </td>
-              <td className={`${CELL_CLASS} w-16 text-center`}>
+              <td className={cn(CELL_CLASS, 'w-16 text-center')}>
                 <CapIcon value={model.supports_vision} label="Vision" />
               </td>
               <td
-                className={`${CELL_CLASS} w-16 text-center font-mono text-xs text-[var(--text-secondary)]`}
+                className={cn(
+                  CELL_CLASS,
+                  'w-16 text-center font-mono text-xs text-[var(--text-secondary)]',
+                )}
               >
                 {model.context_window ? (
                   `${(model.context_window / 1000).toFixed(0)}k`
@@ -101,7 +105,7 @@ export default function ModelTable({ models }: ModelTableProps) {
                   <span className="text-[var(--text-muted)]">&mdash;</span>
                 )}
               </td>
-              <td className={`${CELL_CLASS} w-20 text-center`}>
+              <td className={cn(CELL_CLASS, 'w-20 text-center')}>
                 <Tag
                   tone={model.source_quality === 'live' ? 'green' : 'yellow'}
                   className="tracking-[0.04em] uppercase"

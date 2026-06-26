@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { cn } from '@/lib/cn'
 
 /** Space Grotesk uppercase micro-label used across every surface. */
 export const SECTION_LABEL =
@@ -34,9 +35,12 @@ export function ResultBadge({ state, failure, size = 'md' }: ResultBadgeProps) {
       : 'gap-2 px-3 py-1.5 text-[13px]'
   return (
     <span
-      className={`inline-flex shrink-0 items-center rounded-md leading-none font-semibold ${sized} ${
-        STATE_BADGE[state] ?? 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'
-      }`}
+      className={cn(
+        'inline-flex shrink-0 items-center rounded-md leading-none font-semibold',
+        sized,
+        STATE_BADGE[state] ??
+          'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]',
+      )}
     >
       <span
         className="h-[6px] w-[6px] shrink-0 rounded-full bg-current"
@@ -80,9 +84,12 @@ export function Tag({
 }: TagProps) {
   return (
     <span
-      className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${
-        mono ? 'font-mono' : ''
-      } ${TAG_TONE[tone]} ${className}`}
+      className={cn(
+        'inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium whitespace-nowrap',
+        mono && 'font-mono',
+        TAG_TONE[tone],
+        className,
+      )}
     >
       {children}
     </span>

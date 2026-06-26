@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import ModelTable from './ModelTable'
-import { Tag } from './primitives'
+import { cn } from '@/lib/cn'
+import ModelTable from '@/components/ModelTable'
+import { Tag } from '@/components/primitives'
 import useProviderModels from '@/hooks/useProviderModels'
 import type { ProviderStatus } from '@/lib/types'
 
@@ -47,13 +48,13 @@ export default function ProviderCard({ provider }: ProviderCardProps) {
       name: value,
     })),
   ]
-  const cardClass = [
+  const cardClass = cn(
     'overflow-hidden rounded-xl border bg-[var(--bg-primary)] transition-colors',
     expanded
       ? 'border-[color-mix(in_oklch,var(--accent)_45%,var(--border))]'
       : 'border-[var(--border)] hover:border-[var(--border-strong)]',
-    provider.available ? '' : 'opacity-70',
-  ].join(' ')
+    !provider.available && 'opacity-70',
+  )
 
   return (
     <div className={cardClass}>
@@ -69,7 +70,10 @@ export default function ProviderCard({ provider }: ProviderCardProps) {
           >
             <div className="flex min-w-0 items-center gap-2.5">
               <svg
-                className={`shrink-0 text-[var(--text-muted)] transition-transform ${expanded ? 'rotate-90' : ''}`}
+                className={cn(
+                  'shrink-0 text-[var(--text-muted)] transition-transform',
+                  expanded && 'rotate-90',
+                )}
                 width="14"
                 height="14"
                 viewBox="0 0 14 14"
@@ -112,7 +116,7 @@ export default function ProviderCard({ provider }: ProviderCardProps) {
               aria-label={`Sync models for ${provider.provider}`}
             >
               <svg
-                className={syncing ? 'animate-spin' : ''}
+                className={cn(syncing && 'animate-spin')}
                 width="14"
                 height="14"
                 viewBox="0 0 14 14"
