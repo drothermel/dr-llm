@@ -12,6 +12,7 @@ import {
   type NlLatentsListState,
 } from '@/lib/nlLatents'
 import { fetchJson } from '@/lib/http'
+import { ResultBadge, SECTION_LABEL } from '@/components/primitives'
 import type {
   NlLatentsFilters,
   NlLatentsSamplesResponse,
@@ -20,14 +21,9 @@ import type {
 const RESULT_OPTIONS = ['passed', 'failed', 'pending']
 const FILTERS_PATH = '/api/nl-latents/filters'
 const ERROR_STATE_CLASS =
-  'mb-5 flex items-start gap-4 rounded-[10px] border border-[rgba(220,38,38,0.15)] bg-[var(--red-bg)] p-6'
+  'mb-5 flex items-start gap-4 rounded-xl border border-[var(--red-border)] bg-[var(--red-bg)] p-6'
 const ERROR_ICON_CLASS =
   'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--red)] text-sm font-bold text-white'
-const RESULT_CLASS_BY_STATE: Record<string, string> = {
-  passed: 'bg-[var(--green-bg)] text-[var(--green)]',
-  failed: 'bg-[var(--red-bg)] text-[var(--red)]',
-  pending: 'bg-[var(--yellow-bg)] text-[var(--yellow)]',
-}
 
 type CachedJson = NlLatentsFilters | NlLatentsSamplesResponse
 
@@ -80,12 +76,12 @@ function SelectFilter({
   onChange,
 }: SelectFilterProps) {
   return (
-    <label className="flex flex-col gap-1 text-xs font-semibold text-[var(--text-secondary)]">
-      <span>{label}</span>
+    <label className="flex flex-col gap-1.5">
+      <span className={SECTION_LABEL}>{label}</span>
       <select
         value={value}
         onChange={event => onChange(event.target.value)}
-        className="min-h-[34px] w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 font-medium text-[var(--text-primary)] [font:inherit]"
+        className="min-h-[34px] w-full cursor-pointer rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-1.5 text-[13px] font-medium text-[var(--text-primary)] transition-colors hover:border-[var(--border-strong)] focus:border-[var(--accent)]"
       >
         <option value={ALL}>All</option>
         {values.map(option => (
@@ -98,19 +94,23 @@ function SelectFilter({
   )
 }
 
-type ResultBadgeProps = {
-  state: string
-  failureCategory: string | null
+type CheckboxFilterProps = {
+  label: string
+  checked: boolean
+  onChange: (checked: boolean) => void
 }
 
-function ResultBadge({ state, failureCategory }: ResultBadgeProps) {
+function CheckboxFilter({ label, checked, onChange }: CheckboxFilterProps) {
   return (
-    <span
-      className={`inline-flex rounded-md px-[7px] py-[3px] text-xs leading-tight font-bold ${RESULT_CLASS_BY_STATE[state] ?? 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'}`}
-    >
-      {state}
-      {failureCategory ? ` · ${failureCategory}` : ''}
-    </span>
+    <label className="flex cursor-pointer items-center gap-2 self-end py-1.5 text-[13px] font-medium text-[var(--text-secondary)]">
+      <input
+        type="checkbox"
+        checked={checked}
+        className="h-4 w-4 accent-[var(--accent)]"
+        onChange={event => onChange(event.target.checked)}
+      />
+      {label}
+    </label>
   )
 }
 
@@ -254,23 +254,35 @@ export default function NlLatentsPage({
     ? `Page ${samples.page} of ${samples.total_pages}`
     : null
 
+  const columns = [
+    'Sample',
+    'Family',
+    'Diff',
+    'Split',
+    'Model',
+    'Budget',
+    'Prompt config',
+    'Result',
+    'Created',
+  ]
+
   return (
-    <div className="w-full max-w-none">
-      <div className="mb-8 flex items-start justify-between gap-6 max-md:block">
+    <div className="w-full">
+      <div className="mb-7 flex items-start justify-between gap-6 max-md:block">
         <div>
-          <h2 className="mb-1 text-2xl font-bold text-[var(--text-primary)]">
+          <h1 className="font-display text-[26px] leading-tight font-bold tracking-[-0.02em] text-[var(--text-primary)]">
             nl-latents
-          </h2>
-          <p className="text-sm text-[var(--text-secondary)]">
-            Published sample summaries from published_nl_latents_samples
+          </h1>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">
+            Published sample summaries from{' '}
+            <span className="font-mono text-[var(--text-primary)]">
+              published_nl_latents_samples
+            </span>
           </p>
         </div>
-        <span className="shrink-0 rounded-md border border-[var(--border)] px-2 py-1 font-mono text-xs text-[var(--text-secondary)] max-md:mt-3 max-md:inline-flex">
-          published_nl_latents_samples
-        </span>
       </div>
 
-      <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+      <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] items-end gap-3">
         <SelectFilter
           label="Family"
           value={family}
@@ -313,34 +325,20 @@ export default function NlLatentsPage({
           values={RESULT_OPTIONS}
           onChange={updateFilter('result')}
         />
-        <label className="flex min-h-14 items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
-          <input
-            type="checkbox"
-            checked={hidePending}
-            className="h-4 w-4"
-            onChange={event => {
-              updateListState({
-                hidePending: event.target.checked,
-                page: DEFAULT_PAGE,
-              })
-            }}
-          />
-          Hide pending
-        </label>
-        <label className="flex min-h-14 items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
-          <input
-            type="checkbox"
-            checked={hideSmoke}
-            className="h-4 w-4"
-            onChange={event => {
-              updateListState({
-                hideSmoke: event.target.checked,
-                page: DEFAULT_PAGE,
-              })
-            }}
-          />
-          Hide smoke
-        </label>
+        <CheckboxFilter
+          label="Hide pending"
+          checked={hidePending}
+          onChange={checked =>
+            updateListState({ hidePending: checked, page: DEFAULT_PAGE })
+          }
+        />
+        <CheckboxFilter
+          label="Hide smoke"
+          checked={hideSmoke}
+          onChange={checked =>
+            updateListState({ hideSmoke: checked, page: DEFAULT_PAGE })
+          }
+        />
       </div>
 
       {error && (
@@ -355,32 +353,36 @@ export default function NlLatentsPage({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)]">
-          <span>
-            {loading
-              ? 'Loading...'
-              : `${(samples?.total ?? 0).toLocaleString()} samples`}
+      <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-4 py-2.5 text-[13px]">
+          <span className="font-medium text-[var(--text-secondary)]">
+            {loading ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--accent)]" />
+                Loading…
+              </span>
+            ) : (
+              <>
+                <span className="font-mono text-[var(--text-primary)]">
+                  {(samples?.total ?? 0).toLocaleString()}
+                </span>{' '}
+                samples
+              </>
+            )}
           </span>
-          {pageStatus && <span>{pageStatus}</span>}
+          {pageStatus && (
+            <span className="font-mono text-[12px] text-[var(--text-muted)]">
+              {pageStatus}
+            </span>
+          )}
         </div>
         <table className="w-full min-w-[1120px] border-collapse">
           <thead>
             <tr>
-              {[
-                'Sample',
-                'Family',
-                'Diff',
-                'Split',
-                'Model',
-                'Budget',
-                'Prompt config',
-                'Result',
-                'Created',
-              ].map(header => (
+              {columns.map(header => (
                 <th
                   key={header}
-                  className="border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 py-2.5 text-left align-top text-[11px] font-bold tracking-[0.5px] text-[var(--text-secondary)] uppercase"
+                  className="sticky top-0 z-[1] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-4 py-2.5 text-left align-middle font-display text-[11px] font-semibold tracking-[0.06em] text-[var(--text-muted)] uppercase"
                 >
                   {header}
                 </th>
@@ -391,48 +393,58 @@ export default function NlLatentsPage({
             {!loading && samples?.samples.length === 0 && (
               <tr>
                 <td
-                  colSpan={9}
-                  className="border-b border-[var(--border-subtle)] px-3 py-2.5 text-center align-top text-[13px] text-[var(--text-muted)]"
+                  colSpan={columns.length}
+                  className="px-4 py-12 text-center align-middle"
                 >
-                  No samples match.
+                  <p className="text-sm font-medium text-[var(--text-secondary)]">
+                    No samples match these filters
+                  </p>
+                  <p className="mt-1 text-[13px] text-[var(--text-muted)]">
+                    Try widening Result or clearing the Hide pending / Hide smoke
+                    toggles.
+                  </p>
                 </td>
               </tr>
             )}
             {(samples?.samples ?? []).map(sample => (
-              <tr key={sample.sample_id} className="last:[&>td]:border-b-0">
-                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
+              <tr
+                key={sample.sample_id}
+                className="transition-colors last:[&>td]:border-b-0 hover:bg-[var(--bg-hover)]"
+              >
+                <td className="border-b border-[var(--border-subtle)] px-4 py-2.5 align-middle text-[13px]">
                   <Link
-                    className="font-mono"
+                    className="font-mono text-[var(--accent)] hover:text-[var(--accent-hover)]"
                     href={`/nl-latents/samples/${sample.sample_id}${sampleSearchSuffix}`}
                   >
                     {sample.sample_id.slice(0, 12)}
                   </Link>
                 </td>
-                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
+                <td className="border-b border-[var(--border-subtle)] px-4 py-2.5 align-middle text-[13px] text-[var(--text-secondary)]">
                   {sample.family}
                 </td>
-                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
+                <td className="border-b border-[var(--border-subtle)] px-4 py-2.5 align-middle font-mono text-[13px] text-[var(--text-secondary)]">
                   {sample.difficulty}
                 </td>
-                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
+                <td className="border-b border-[var(--border-subtle)] px-4 py-2.5 align-middle text-[13px] text-[var(--text-secondary)]">
                   {sample.split}
                 </td>
-                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top font-mono text-[13px]">
+                <td className="border-b border-[var(--border-subtle)] px-4 py-2.5 align-middle font-mono text-[13px] text-[var(--text-primary)]">
                   {sample.enc_model_label}
                 </td>
-                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top font-mono text-[13px]">
+                <td className="border-b border-[var(--border-subtle)] px-4 py-2.5 align-middle font-mono text-[13px] text-[var(--text-secondary)]">
                   {sample.budget}
                 </td>
-                <td className="max-w-[220px] border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
-                  {sample.prompt_config_label || '-'}
+                <td className="max-w-[240px] truncate border-b border-[var(--border-subtle)] px-4 py-2.5 align-middle text-[13px] text-[var(--text-secondary)]">
+                  {sample.prompt_config_label || '—'}
                 </td>
-                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
+                <td className="border-b border-[var(--border-subtle)] px-4 py-2.5 align-middle text-[13px]">
                   <ResultBadge
                     state={sample.result_state}
-                    failureCategory={sample.failure_category_normalized}
+                    failure={sample.failure_category_normalized}
+                    size="sm"
                   />
                 </td>
-                <td className="border-b border-[var(--border-subtle)] px-3 py-2.5 align-top text-[13px]">
+                <td className="border-b border-[var(--border-subtle)] px-4 py-2.5 align-middle font-mono text-[12px] whitespace-nowrap text-[var(--text-muted)]">
                   {new Date(sample.created_at).toLocaleDateString()}
                 </td>
               </tr>
@@ -442,23 +454,23 @@ export default function NlLatentsPage({
       </div>
 
       {samples && samples.total_pages > 1 && (
-        <div className="mt-4 flex items-center justify-end gap-3 max-md:justify-start">
+        <div className="mt-4 flex items-center justify-end gap-3 text-[13px] max-md:justify-between">
           <button
             type="button"
             disabled={page <= 1}
             onClick={() => updateListState({ page: page - 1 })}
-            className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-1.5 text-[13px] text-[var(--text-primary)] disabled:cursor-not-allowed disabled:text-[var(--text-muted)]"
+            className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-1.5 font-medium text-[var(--text-primary)] transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--border)] disabled:hover:bg-[var(--bg-primary)]"
           >
             Previous
           </button>
-          <span>
-            Page {samples.page} of {samples.total_pages}
+          <span className="font-mono text-[12px] text-[var(--text-muted)]">
+            {samples.page} / {samples.total_pages}
           </span>
           <button
             type="button"
             disabled={page >= samples.total_pages}
             onClick={() => updateListState({ page: page + 1 })}
-            className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-1.5 text-[13px] text-[var(--text-primary)] disabled:cursor-not-allowed disabled:text-[var(--text-muted)]"
+            className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-1.5 font-medium text-[var(--text-primary)] transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--border)] disabled:hover:bg-[var(--bg-primary)]"
           >
             Next
           </button>
