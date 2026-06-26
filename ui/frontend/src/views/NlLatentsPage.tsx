@@ -1,8 +1,10 @@
 'use client'
 
+import type { QueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useTransition } from 'react'
 import {
   ALL,
   DEFAULT_PAGE,
@@ -24,42 +26,50 @@ const ERROR_STATE_CLASS =
   'mb-5 flex items-start gap-4 rounded-xl border border-[var(--red-border)] bg-[var(--red-bg)] p-6'
 const ERROR_ICON_CLASS =
   'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--red)] text-sm font-bold text-white'
+const FILTERS_QUERY_KEY = ['nl-latents', 'filters'] as const
+const COLUMNS = [
+  'Sample',
+  'Family',
+  'Diff',
+  'Split',
+  'Model',
+  'Budget',
+  'Prompt config',
+  'Result',
+  'Created',
+] as const
 
-type CachedJson = NlLatentsFilters | NlLatentsSamplesResponse
-
-const jsonCache = new Map<string, CachedJson>()
-const jsonInFlight = new Map<string, Promise<CachedJson>>()
-
-async function fetchCachedJson<T extends CachedJson>(
+function samplesQueryKey(
   path: string,
-): Promise<T> {
-  if (jsonCache.has(path)) {
-    return jsonCache.get(path) as T
-  }
-  if (jsonInFlight.has(path)) {
-    return jsonInFlight.get(path) as Promise<T>
-  }
-
-  const request = fetchJson<T>(path)
-    .then(data => {
-      jsonCache.set(path, data)
-      jsonInFlight.delete(path)
-      return data
-    })
-    .catch((error: unknown) => {
-      jsonInFlight.delete(path)
-      throw error
-    })
-
-  jsonInFlight.set(path, request)
-  return request
+): readonly ['nl-latents', 'samples', string] {
+  return ['nl-latents', 'samples', path] as const
 }
 
-function prefetchSamplesPage(state: NlLatentsListState, page: number) {
+function fetchFilters(): Promise<NlLatentsFilters> {
+  return fetchJson<NlLatentsFilters>(FILTERS_PATH)
+}
+
+function fetchSamples(path: string): Promise<NlLatentsSamplesResponse> {
+  return fetchJson<NlLatentsSamplesResponse>(path)
+}
+
+function prefetchSamplesPage(
+  queryClient: QueryClient,
+  state: NlLatentsListState,
+  page: number,
+): void {
   if (page < DEFAULT_PAGE) return
-  fetchCachedJson<NlLatentsSamplesResponse>(
-    buildSamplesPath({ ...state, page }),
-  ).catch(() => {})
+
+  const path = buildSamplesPath({ ...state, page })
+  void queryClient.prefetchQuery({
+    queryKey: samplesQueryKey(path),
+    queryFn: () => fetchSamples(path),
+    retry: false,
+  })
+}
+
+function queryErrorMessage(error: Error | null): string | null {
+  return error ? error.message : null
 }
 
 type SelectFilterProps = {
@@ -131,29 +141,8 @@ export default function NlLatentsPage({
 }: NlLatentsPageProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
   const [isPending, startTransition] = useTransition()
-  const [filters, setFilters] = useState<NlLatentsFilters | null>(
-    initialFilters,
-  )
-  const [filtersError, setFiltersError] = useState<string | null>(null)
-  const [samplesResult, setSamplesResult] = useState<{
-    path: string | null
-    data: NlLatentsSamplesResponse | null
-    error: string | null
-  }>({
-    path: initialSamplesPath,
-    data: initialSamples,
-    error: null,
-  })
-
-  useEffect(() => {
-    if (initialFilters) {
-      jsonCache.set(FILTERS_PATH, initialFilters)
-    }
-    if (initialSamples) {
-      jsonCache.set(initialSamplesPath, initialSamples)
-    }
-  }, [initialFilters, initialSamples, initialSamplesPath])
 
   const listState = useMemo(() => {
     if (!searchParams) {
@@ -176,58 +165,33 @@ export default function NlLatentsPage({
     hideSmoke,
   } = listState
 
-  useEffect(() => {
-    if (filters) {
-      return
-    }
-
-    let active = true
-    fetchCachedJson<NlLatentsFilters>(FILTERS_PATH)
-      .then(data => {
-        if (active) setFilters(data)
-      })
-      .catch((error: unknown) => {
-        if (!active) return
-        setFiltersError(error instanceof Error ? error.message : String(error))
-      })
-    return () => {
-      active = false
-    }
-  }, [filters])
-
   const queryPath = useMemo(() => buildSamplesPath(listState), [listState])
+  const filtersQuery = useQuery<NlLatentsFilters, Error>({
+    queryKey: FILTERS_QUERY_KEY,
+    queryFn: fetchFilters,
+    initialData: initialFilters ?? undefined,
+    retry: false,
+  })
+  const samplesQuery = useQuery<NlLatentsSamplesResponse, Error>({
+    queryKey: samplesQueryKey(queryPath),
+    queryFn: () => fetchSamples(queryPath),
+    initialData:
+      initialSamplesPath === queryPath
+        ? (initialSamples ?? undefined)
+        : undefined,
+    retry: false,
+  })
+  const filters = filtersQuery.data ?? null
+  const samples = samplesQuery.data ?? null
 
   useEffect(() => {
-    if (samplesResult.path === queryPath) {
-      return
-    }
-
-    let active = true
-    fetchCachedJson<NlLatentsSamplesResponse>(queryPath)
-      .then(data => {
-        if (!active) return
-        setSamplesResult({ path: queryPath, data, error: null })
-      })
-      .catch((error: unknown) => {
-        if (!active) return
-        const message = error instanceof Error ? error.message : String(error)
-        setSamplesResult({ path: queryPath, data: null, error: message })
-      })
-    return () => {
-      active = false
-    }
-  }, [queryPath, samplesResult.path])
-
-  useEffect(() => {
-    const samples =
-      samplesResult.path === queryPath ? samplesResult.data : null
     if (!samples) return
 
-    prefetchSamplesPage(listState, page - 1)
+    prefetchSamplesPage(queryClient, listState, page - 1)
     if (page < samples.total_pages) {
-      prefetchSamplesPage(listState, page + 1)
+      prefetchSamplesPage(queryClient, listState, page + 1)
     }
-  }, [listState, page, queryPath, samplesResult])
+  }, [listState, page, queryClient, samples])
 
   const updateListState = (updates: Partial<NlLatentsListState>) => {
     const params = listStateToSearchParams({ ...listState, ...updates })
@@ -244,27 +208,13 @@ export default function NlLatentsPage({
 
   const sampleSearch = searchParams?.toString() ?? ''
   const sampleSearchSuffix = sampleSearch ? `?${sampleSearch}` : ''
-  const samples =
-    samplesResult.path === queryPath ? samplesResult.data : null
-  const samplesError =
-    samplesResult.path === queryPath ? samplesResult.error : null
-  const loading = isPending || samplesResult.path !== queryPath
+  const samplesError = queryErrorMessage(samplesQuery.error)
+  const filtersError = queryErrorMessage(filtersQuery.error)
+  const loading = isPending || samplesQuery.isLoading
   const error = initialError ?? samplesError ?? filtersError
   const pageStatus = samples
     ? `Page ${samples.page} of ${samples.total_pages}`
     : null
-
-  const columns = [
-    'Sample',
-    'Family',
-    'Diff',
-    'Split',
-    'Model',
-    'Budget',
-    'Prompt config',
-    'Result',
-    'Created',
-  ]
 
   return (
     <div className="w-full">
@@ -379,7 +329,7 @@ export default function NlLatentsPage({
         <table className="w-full min-w-[1120px] border-collapse">
           <thead>
             <tr>
-              {columns.map(header => (
+              {COLUMNS.map(header => (
                 <th
                   key={header}
                   className="sticky top-0 z-[1] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-4 py-2.5 text-left align-middle font-display text-[11px] font-semibold tracking-[0.06em] text-[var(--text-muted)] uppercase"
@@ -393,7 +343,7 @@ export default function NlLatentsPage({
             {!loading && samples?.samples.length === 0 && (
               <tr>
                 <td
-                  colSpan={columns.length}
+                  colSpan={COLUMNS.length}
                   className="px-4 py-12 text-center align-middle"
                 >
                   <p className="text-sm font-medium text-[var(--text-secondary)]">

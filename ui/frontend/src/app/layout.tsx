@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import { Space_Grotesk, Hanken_Grotesk, Fira_Code } from 'next/font/google'
 import AppShell from '@/components/AppShell'
+import QueryProvider from './query-provider'
 import './globals.css'
 
 const display = Space_Grotesk({
@@ -41,7 +42,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
       className={`${display.variable} ${sans.variable} ${mono.variable}`}
     >
       <body>
-        <AppShell>{children}</AppShell>
+        <QueryProvider>
+          <AppShell>{children}</AppShell>
+        </QueryProvider>
       </body>
     </html>
   )
