@@ -1,0 +1,251 @@
+.nl-page {
+  max-width: 1280px;
+}
+
+.nl-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.nl-table-pill {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.nl-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.nl-filter,
+.nl-toggle {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.nl-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nl-filter select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 500;
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.nl-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+}
+
+.nl-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.nl-error {
+  margin-bottom: 20px;
+}
+
+.nl-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.nl-table-meta {
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 10px 12px;
+}
+
+.nl-table {
+  border-collapse: collapse;
+  min-width: 1120px;
+  width: 100%;
+}
+
+.nl-table th,
+.nl-table td {
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.nl-table th {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.nl-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.nl-sample-link,
+.nl-mono {
+  font-family: var(--font-mono);
+}
+
+.nl-config-cell {
+  max-width: 220px;
+}
+
+.nl-result {
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  padding: 3px 7px;
+}
+
+.nl-result-passed {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.nl-result-failed {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.nl-result-pending {
+  background: var(--yellow-bg);
+  color: var(--yellow);
+}
+
+.nl-empty {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.nl-pagination {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.nl-pagination button {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+.nl-pagination button:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.nl-back-row {
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.nl-detail-grid {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 24px;
+}
+
+.nl-detail-field {
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  min-width: 0;
+  padding: 12px;
+}
+
+.nl-detail-field span {
+  color: var(--text-muted);
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.nl-detail-field strong {
+  color: var(--text-primary);
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.nl-detail-section {
+  margin-bottom: 24px;
+}
+
+.nl-detail-section h3 {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.nl-detail-section pre {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 520px;
+  overflow: auto;
+  padding: 14px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 768px) {
+  .nl-page-header {
+    display: block;
+  }
+
+  .nl-table-pill {
+    display: inline-flex;
+    margin-top: 12px;
+  }
+
+  .nl-pagination {
+    justify-content: flex-start;
+  }
+}

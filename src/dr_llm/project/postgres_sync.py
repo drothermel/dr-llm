@@ -27,6 +27,11 @@ from dr_llm.project.models import (
     ProjectPostgresSyncResult,
     ProjectSyncValidation,
 )
+from dr_llm.project.neon_publish import (
+    ProjectNeonPublishResult,
+    load_neon_publish_config,
+    publish_project_for_neon,
+)
 from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import get_project
 
@@ -44,6 +49,7 @@ class SyncPlan(BaseModel):
     previous_database: str
     temporary_dsn: str
     drop_previous: bool
+    published_tables: tuple[str, ...]
 
 
 class PsqlRestoreTarget(BaseModel):
@@ -72,7 +78,11 @@ class ProjectLookup(Protocol):
 
 class ProjectDatabaseTransfer(Protocol):
     def dump_project_to_file(
-        self, project_name: str, dump_path: Path
+        self,
+        project_name: str,
+        dump_path: Path,
+        *,
+        table_names: tuple[str, ...],
     ) -> None: ...
 
     def restore_sql_file(self, target_dsn: str, dump_path: Path) -> None: ...
@@ -80,8 +90,18 @@ class ProjectDatabaseTransfer(Protocol):
 
 class ProjectDatabaseValidator(Protocol):
     def validate_project_database_copy(
-        self, *, source_dsn: str, target_dsn: str
+        self,
+        *,
+        source_dsn: str,
+        target_dsn: str,
+        table_names: tuple[str, ...],
     ) -> ProjectSyncValidation: ...
+
+
+class ProjectPublisher(Protocol):
+    def publish_project_for_neon(
+        self, name: str
+    ) -> ProjectNeonPublishResult: ...
 
 
 class PostgresAdminOperations(Protocol):
@@ -138,8 +158,14 @@ class ProjectServiceLookup:
 
 
 class DockerPsqlProjectDatabaseTransfer:
-    def dump_project_to_file(self, project_name: str, dump_path: Path) -> None:
-        _dump_project_to_file(project_name, dump_path)
+    def dump_project_to_file(
+        self,
+        project_name: str,
+        dump_path: Path,
+        *,
+        table_names: tuple[str, ...],
+    ) -> None:
+        _dump_project_to_file(project_name, dump_path, table_names=table_names)
 
     def restore_sql_file(self, target_dsn: str, dump_path: Path) -> None:
         _restore_sql_file(target_dsn, dump_path)
@@ -147,14 +173,24 @@ class DockerPsqlProjectDatabaseTransfer:
 
 class PsycopgProjectDatabaseValidator:
     def validate_project_database_copy(
-        self, *, source_dsn: str, target_dsn: str
+        self,
+        *,
+        source_dsn: str,
+        target_dsn: str,
+        table_names: tuple[str, ...],
     ) -> ProjectSyncValidation:
         with psycopg.connect(source_dsn) as source_conn:
             with psycopg.connect(target_dsn) as target_conn:
                 return _validate_project_database_copy(
                     source_conn=source_conn,
                     target_conn=target_conn,
+                    table_names=table_names,
                 )
+
+
+class NeonProjectPublisher:
+    def publish_project_for_neon(self, name: str) -> ProjectNeonPublishResult:
+        return publish_project_for_neon(name)
 
 
 class PsycopgPostgresAdminOperations:
@@ -259,11 +295,13 @@ class PostgresSyncService:
         transfer: ProjectDatabaseTransfer | None = None,
         validator: ProjectDatabaseValidator | None = None,
         admin: PostgresAdminOperations | None = None,
+        publisher: ProjectPublisher | None = None,
     ) -> None:
         self._project_lookup = project_lookup or ProjectServiceLookup()
         self._transfer = transfer or DockerPsqlProjectDatabaseTransfer()
         self._validator = validator or PsycopgProjectDatabaseValidator()
         self._admin = admin or PsycopgPostgresAdminOperations()
+        self._publisher = publisher or NeonProjectPublisher()
 
     def sync_project_to_postgres(
         self,
@@ -285,7 +323,13 @@ class PostgresSyncService:
             plan.project_name,
             plan.target_database,
         )
+        temporary_database_created = False
         try:
+            published = self._publish_project(plan)
+            self._admin.create_database(
+                plan.admin_url, plan.temporary_database
+            )
+            temporary_database_created = True
             self._restore_temporary_database(plan)
             validation = self._validate_temporary_database(plan)
             replaced_existing = self._swap_validated_database(plan)
@@ -297,12 +341,15 @@ class PostgresSyncService:
                 plan.target_database,
                 perf_counter() - started_at,
             )
-            return _build_sync_result(plan, validation, replaced_existing)
+            return _build_sync_result(
+                plan, validation, replaced_existing, published
+            )
         except Exception:
-            with suppress(Exception):
-                self._admin.drop_database(
-                    plan.admin_url, plan.temporary_database
-                )
+            if temporary_database_created:
+                with suppress(Exception):
+                    self._admin.drop_database(
+                        plan.admin_url, plan.temporary_database
+                    )
             raise
 
     def build_sync_plan(
@@ -320,6 +367,7 @@ class PostgresSyncService:
         target_name = validate_pg_identifier(
             target_database or name, "database name"
         )
+        published_tables = load_neon_publish_config().published_table_names
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         temporary_database = _sync_database_name(
             target_name, "sync", timestamp
@@ -334,17 +382,29 @@ class PostgresSyncService:
             previous_database=previous_database,
             temporary_dsn=_url_for_database(admin_url, temporary_database),
             drop_previous=drop_previous,
+            published_tables=published_tables,
         )
 
+    def _publish_project(self, plan: SyncPlan) -> ProjectNeonPublishResult:
+        result = self._publisher.publish_project_for_neon(plan.project_name)
+        if tuple(result.published_tables) != plan.published_tables:
+            raise ProjectError(
+                "Neon publish result table list did not match sync plan."
+            )
+        return result
+
     def _restore_temporary_database(self, plan: SyncPlan) -> None:
-        self._admin.create_database(plan.admin_url, plan.temporary_database)
         with tempfile.NamedTemporaryFile(
             prefix=f"dr_llm_{plan.project_name}_",
             suffix=".sql",
             delete=True,
         ) as dump_file:
             dump_path = Path(dump_file.name)
-            self._transfer.dump_project_to_file(plan.project_name, dump_path)
+            self._transfer.dump_project_to_file(
+                plan.project_name,
+                dump_path,
+                table_names=plan.published_tables,
+            )
             self._transfer.restore_sql_file(plan.temporary_dsn, dump_path)
 
     def _validate_temporary_database(
@@ -353,6 +413,7 @@ class PostgresSyncService:
         validation = self._validator.validate_project_database_copy(
             source_dsn=plan.source_dsn,
             target_dsn=plan.temporary_dsn,
+            table_names=plan.published_tables,
         )
         if not validation.passed:
             raise ProjectError(
@@ -399,11 +460,13 @@ def _build_sync_result(
     plan: SyncPlan,
     validation: ProjectSyncValidation,
     replaced_existing: bool,
+    published: ProjectNeonPublishResult,
 ) -> ProjectPostgresSyncResult:
     return ProjectPostgresSyncResult(
         project_name=plan.project_name,
         target_database=plan.target_database,
         temporary_database=plan.temporary_database,
+        published_tables=list(published.published_tables),
         previous_database=plan.previous_database
         if replaced_existing
         else None,
@@ -416,10 +479,12 @@ def validate_project_database_copy(
     *,
     source_dsn: str,
     target_dsn: str,
+    table_names: tuple[str, ...] = (),
 ) -> ProjectSyncValidation:
     return PsycopgProjectDatabaseValidator().validate_project_database_copy(
         source_dsn=source_dsn,
         target_dsn=target_dsn,
+        table_names=table_names,
     )
 
 
@@ -427,9 +492,18 @@ def _validate_project_database_copy(
     *,
     source_conn: psycopg.Connection[tuple],
     target_conn: psycopg.Connection[tuple],
+    table_names: tuple[str, ...] = (),
 ) -> ProjectSyncValidation:
     source_tables = _public_table_names(source_conn)
     target_tables = _public_table_names(target_conn)
+    if table_names:
+        return _validate_expected_table_copy(
+            source_conn=source_conn,
+            target_conn=target_conn,
+            source_tables=source_tables,
+            target_tables=target_tables,
+            table_names=table_names,
+        )
     mismatches: list[str] = []
     if source_tables != target_tables:
         missing = sorted(set(source_tables) - set(target_tables))
@@ -469,6 +543,52 @@ def _validate_project_database_copy(
     )
 
 
+def _validate_expected_table_copy(
+    *,
+    source_conn: psycopg.Connection[tuple],
+    target_conn: psycopg.Connection[tuple],
+    source_tables: list[str],
+    target_tables: list[str],
+    table_names: tuple[str, ...],
+) -> ProjectSyncValidation:
+    expected_tables = list(table_names)
+    mismatches: list[str] = []
+    missing_source = sorted(set(expected_tables) - set(source_tables))
+    missing_target = sorted(set(expected_tables) - set(target_tables))
+    extra_target = sorted(set(target_tables) - set(expected_tables))
+    if missing_source:
+        mismatches.append(
+            "missing source published tables: " + ", ".join(missing_source)
+        )
+    if missing_target:
+        mismatches.append(
+            "missing target published tables: " + ", ".join(missing_target)
+        )
+    if extra_target:
+        mismatches.append("extra target tables: " + ", ".join(extra_target))
+
+    checked_table_count = 0
+    if not missing_source and not missing_target:
+        for table_name in expected_tables:
+            source_rows = _table_row_count(source_conn, table_name)
+            target_rows = _table_row_count(target_conn, table_name)
+            checked_table_count += 1
+            if source_rows != target_rows:
+                mismatches.append(
+                    f"{table_name} row count mismatch: "
+                    f"source={source_rows} target={target_rows}"
+                )
+
+    return ProjectSyncValidation(
+        source_table_count=len(
+            [table for table in source_tables if table in expected_tables]
+        ),
+        target_table_count=len(target_tables),
+        checked_table_count=checked_table_count,
+        mismatches=mismatches,
+    )
+
+
 def _sync_database_name(
     target_database: str, label: str, timestamp: str
 ) -> str:
@@ -494,15 +614,29 @@ def _url_for_database(base_url: str, database_name: str) -> str:
     )
 
 
-def _dump_project_to_file(name: str, dump_path: Path) -> None:
+def _dump_project_to_file(
+    name: str, dump_path: Path, *, table_names: tuple[str, ...]
+) -> None:
     with dump_path.open("wb") as output_stream:
         call_docker_pg_dump_stream(
             container_name=ProjectInfo.container_name_for(name),
             db_user=ProjectInfo.db_user,
             db_name=ProjectInfo.db_name,
             output_stream=output_stream,
-            extra_args=("--no-owner", "--no-privileges"),
+            extra_args=(
+                "--no-owner",
+                "--no-privileges",
+                *_pg_dump_table_args(table_names),
+            ),
         )
+
+
+def _pg_dump_table_args(table_names: tuple[str, ...]) -> tuple[str, ...]:
+    args: list[str] = []
+    for table_name in table_names:
+        validate_pg_identifier(table_name, "table name")
+        args.extend(("--table", f"public.{table_name}"))
+    return tuple(args)
 
 
 def _restore_sql_file(target_dsn: str, dump_path: Path) -> None:

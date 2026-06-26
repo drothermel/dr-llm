@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 from typing import BinaryIO, cast
 
+import psycopg
 import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,6 +12,11 @@ import dr_llm.project.postgres_sync as postgres_sync_module
 from dr_llm.project.docker_project_metadata import ContainerStatus
 from dr_llm.project.errors import ProjectError
 from dr_llm.project.models import ProjectSyncValidation
+from dr_llm.project.neon_publish import (
+    ProjectNeonPublishResult,
+    PublishedPoolSummary,
+    PublishProcessor,
+)
 from dr_llm.project.project_info import ProjectInfo
 
 
@@ -19,6 +25,7 @@ class ValidationCall(BaseModel):
 
     source_dsn: str
     target_dsn: str
+    table_names: tuple[str, ...]
 
 
 class ProjectLookupFake(BaseModel):
@@ -37,10 +44,12 @@ class SyncCallRecorder(BaseModel):
     operations: list[str] = Field(default_factory=list)
     created_databases: list[str] = Field(default_factory=list)
     dumped_projects: list[str] = Field(default_factory=list)
+    dumped_table_names: list[tuple[str, ...]] = Field(default_factory=list)
     restored_dsns: list[str] = Field(default_factory=list)
     validations: list[ValidationCall] = Field(default_factory=list)
     replaced_databases: list[str] = Field(default_factory=list)
     dropped_databases: list[str] = Field(default_factory=list)
+    published_projects: list[str] = Field(default_factory=list)
     validation_result: ProjectSyncValidation = Field(
         default_factory=lambda: ProjectSyncValidation(
             source_table_count=1,
@@ -59,9 +68,37 @@ class SyncCallRecorder(BaseModel):
         self.operations.append("create")
         self.created_databases.append(database_name)
 
-    def dump_project_to_file(self, project_name: str, dump_path: Path) -> None:
+    def publish_project_for_neon(self, name: str) -> ProjectNeonPublishResult:
+        self.operations.append("publish")
+        self.published_projects.append(name)
+        return ProjectNeonPublishResult(
+            project_name=name,
+            manifest_table="published_pool_summaries",
+            published_tables=[
+                "published_pool_summaries",
+                "published_nl_latents_samples",
+            ],
+            pools=[
+                PublishedPoolSummary(
+                    source_pool="nl_latents",
+                    processor=PublishProcessor.nl_latents_samples_v1,
+                    summary_table="published_nl_latents_samples",
+                    source_row_count=2,
+                    summary_row_count=2,
+                )
+            ],
+        )
+
+    def dump_project_to_file(
+        self,
+        project_name: str,
+        dump_path: Path,
+        *,
+        table_names: tuple[str, ...],
+    ) -> None:
         self.operations.append("dump")
         self.dumped_projects.append(project_name)
+        self.dumped_table_names.append(table_names)
         dump_path.write_text("select 1;\n")
 
     def restore_sql_file(self, target_dsn: str, dump_path: Path) -> None:
@@ -70,11 +107,19 @@ class SyncCallRecorder(BaseModel):
         self.restored_dsns.append(target_dsn)
 
     def validate_project_database_copy(
-        self, *, source_dsn: str, target_dsn: str
+        self,
+        *,
+        source_dsn: str,
+        target_dsn: str,
+        table_names: tuple[str, ...],
     ) -> ProjectSyncValidation:
         self.operations.append("validate")
         self.validations.append(
-            ValidationCall(source_dsn=source_dsn, target_dsn=target_dsn)
+            ValidationCall(
+                source_dsn=source_dsn,
+                target_dsn=target_dsn,
+                table_names=table_names,
+            )
         )
         return self.validation_result
 
@@ -111,6 +156,7 @@ def _sync_service(
         transfer=calls,
         validator=calls,
         admin=calls,
+        publisher=calls,
     )
 
 
@@ -141,6 +187,10 @@ def test_build_sync_plan_derives_temporary_database_target() -> None:
         f"postgresql://example/{plan.temporary_database}?sslmode=require"
     )
     assert plan.drop_previous is True
+    assert plan.published_tables == (
+        "published_pool_summaries",
+        "published_nl_latents_samples",
+    )
 
 
 def test_sync_project_to_postgres_validates_and_swaps_database() -> None:
@@ -158,6 +208,7 @@ def test_sync_project_to_postgres_validates_and_swaps_database() -> None:
     assert result.previous_database is not None
     assert result.previous_database_dropped is True
     assert calls.operation_names == [
+        "publish",
         "create",
         "dump",
         "restore",
@@ -165,7 +216,15 @@ def test_sync_project_to_postgres_validates_and_swaps_database() -> None:
         "replace",
         "drop",
     ]
+    assert calls.published_projects == ["demo"]
     assert calls.dumped_projects == ["demo"]
+    assert calls.dumped_table_names == [
+        ("published_pool_summaries", "published_nl_latents_samples")
+    ]
+    assert result.published_tables == [
+        "published_pool_summaries",
+        "published_nl_latents_samples",
+    ]
 
 
 def test_sync_project_to_postgres_restores_and_validates_temporary_database() -> (
@@ -188,6 +247,10 @@ def test_sync_project_to_postgres_restores_and_validates_temporary_database() ->
         ValidationCall(
             source_dsn="postgresql://postgres:postgres@localhost:5500/dr_llm",
             target_dsn=expected_target_dsn,
+            table_names=(
+                "published_pool_summaries",
+                "published_nl_latents_samples",
+            ),
         )
     ]
 
@@ -212,6 +275,25 @@ def test_sync_project_to_postgres_drops_temp_database_when_validation_fails() ->
 
     assert len(calls.dropped_databases) == 1
     assert "_sync_" in calls.dropped_databases[0]
+
+
+def test_sync_project_to_postgres_fails_on_unexpected_publish_tables() -> None:
+    class WrongPublisher(SyncCallRecorder):
+        def publish_project_for_neon(
+            self, name: str
+        ) -> ProjectNeonPublishResult:
+            result = super().publish_project_for_neon(name)
+            return result.model_copy(update={"published_tables": ["other"]})
+
+    calls = WrongPublisher()
+    service = _sync_service(calls)
+
+    with pytest.raises(ProjectError, match="table list did not match"):
+        service.sync_project_to_postgres(
+            "demo", "postgresql://example/postgres"
+        )
+
+    assert calls.operation_names == ["publish"]
 
 
 def test_sync_project_to_postgres_requires_project_dsn() -> None:
@@ -247,6 +329,65 @@ def test_pgpass_line_escapes_colons_and_backslashes() -> None:
     )
 
     assert line == r"db\:host:5432:db\\name:user\:name:pa\:ss\\word" + "\n"
+
+
+def test_pg_dump_table_args_include_only_public_table_filters() -> None:
+    assert postgres_sync_module._pg_dump_table_args(
+        ("published_pool_summaries", "published_nl_latents_samples")
+    ) == (
+        "--table",
+        "public.published_pool_summaries",
+        "--table",
+        "public.published_nl_latents_samples",
+    )
+
+
+def test_pg_dump_table_args_reject_invalid_table_name() -> None:
+    with pytest.raises(ValueError, match="Invalid PostgreSQL table name"):
+        postgres_sync_module._pg_dump_table_args(("pool raw samples",))
+
+
+def test_validate_expected_table_copy_rejects_extra_target_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counts = {
+        "published_pool_summaries": 1,
+        "published_nl_latents_samples": 2,
+    }
+
+    def fake_row_count(_conn: object, table_name: str) -> int:
+        return counts[table_name]
+
+    monkeypatch.setattr(
+        postgres_sync_module,
+        "_table_row_count",
+        fake_row_count,
+    )
+
+    validation = postgres_sync_module._validate_expected_table_copy(
+        source_conn=cast(psycopg.Connection[tuple], object()),
+        target_conn=cast(psycopg.Connection[tuple], object()),
+        source_tables=[
+            "pool_nl_latents_samples",
+            "published_pool_summaries",
+            "published_nl_latents_samples",
+        ],
+        target_tables=[
+            "published_pool_summaries",
+            "published_nl_latents_samples",
+            "pool_nl_latents_samples",
+        ],
+        table_names=(
+            "published_pool_summaries",
+            "published_nl_latents_samples",
+        ),
+    )
+
+    assert validation.passed is False
+    assert validation.checked_table_count == 2
+    assert validation.mismatches == [
+        "extra target tables: pool_nl_latents_samples"
+    ]
 
 
 def test_parse_restore_target_reads_required_dsn_fields() -> None:

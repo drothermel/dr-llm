@@ -230,6 +230,7 @@ class ProjectPostgresSyncResult(BaseModel):
     project_name: str
     target_database: str
     temporary_database: str
+    published_tables: list[str] = Field(default_factory=list)
     previous_database: str | None = None
     previous_database_dropped: bool = False
     validation: ProjectSyncValidation

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from dr_llm.llm import ControlMode, ProviderName
 import pytest
 from fastapi.testclient import TestClient
@@ -121,3 +123,94 @@ def test_openrouter_static_models_come_from_orchestrator_fallback(
         model["model"] == "deepseek/deepseek-chat-v3.1"
         for model in payload["models"]
     )
+
+
+def test_nl_latents_filters_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ui_api,
+        "_fetch_nl_latents_filters",
+        lambda: ui_api.NlLatentsFiltersResponse(
+            families=["stateful"],
+            splits=["train"],
+            enc_models=["openrouter:openai/gpt-5-nano"],
+            budgets=["100"],
+            difficulties=["3"],
+            data_versions=["tasks_v2"],
+        ),
+    )
+
+    with TestClient(ui_api.app) as client:
+        response = client.get("/api/nl-latents/filters")
+
+    assert response.status_code == 200
+    assert response.json()["families"] == ["stateful"]
+    assert response.json()["enc_models"] == ["openrouter:openai/gpt-5-nano"]
+
+
+def test_nl_latents_samples_endpoint_forwards_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_fetch(**kwargs: object) -> ui_api.NlLatentsSamplesResponse:
+        captured.update(kwargs)
+        return ui_api.NlLatentsSamplesResponse(
+            samples=[
+                ui_api.NlLatentsSampleListRow(
+                    sample_id="sample-1",
+                    family="stateful",
+                    difficulty="3",
+                    split="train",
+                    language="python",
+                    budget="100",
+                    enc_model="openrouter:openai/gpt-5-nano",
+                    dec_model="openrouter:openai/gpt-5-nano",
+                    enc_model_label="openai/gpt-5-nano",
+                    dec_model_label="openai/gpt-5-nano",
+                    status="active",
+                    attempt_count=1,
+                    created_at=datetime(2026, 2, 16, 22, 26),
+                    result_state="passed",
+                    prompt_config_label="Noop / High Level",
+                )
+            ],
+            total=1,
+            page=2,
+            limit=10,
+            total_pages=1,
+        )
+
+    monkeypatch.setattr(ui_api, "_fetch_nl_latents_samples", fake_fetch)
+
+    with TestClient(ui_api.app) as client:
+        response = client.get(
+            "/api/nl-latents/samples",
+            params={
+                "page": 2,
+                "limit": 10,
+                "family": "stateful",
+                "hide_pending": "true",
+            },
+        )
+
+    assert response.status_code == 200
+    assert captured["page"] == 2
+    assert captured["limit"] == 10
+    assert captured["family"] == "stateful"
+    assert captured["hide_pending"] is True
+    payload = response.json()
+    assert payload["samples"][0]["sample_id"] == "sample-1"
+    assert payload["samples"][0]["prompt_config_label"] == "Noop / High Level"
+
+
+def test_nl_latents_sample_detail_endpoint_returns_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ui_api, "_fetch_nl_latents_sample", lambda _id: None)
+
+    with TestClient(ui_api.app) as client:
+        response = client.get("/api/nl-latents/samples/missing")
+
+    assert response.status_code == 404
