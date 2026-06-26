@@ -15,6 +15,7 @@
   --bg-tertiary: oklch(0.965 0.004 270);
   --bg-hover: oklch(0.955 0.005 270);
   --bg-selected: oklch(0.962 0.012 272);
+  --bg-code: oklch(0.99 0.002 270);
   --border: oklch(0.912 0.005 270);
   --border-subtle: oklch(0.945 0.004 270);
   --border-strong: oklch(0.85 0.006 270);
