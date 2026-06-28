@@ -58,6 +58,31 @@ const TOOLS: Tool[] = [
       </svg>
     ),
   },
+  {
+    href: '/samples',
+    title: 'Published Samples',
+    description:
+      'Browse unified summaries across published non-demo pools and projects.',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="20"
+        height="20"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M2.5 4.5H13.5" />
+        <path d="M2.5 8H13.5" />
+        <path d="M2.5 11.5H13.5" />
+        <path d="M5 2.5V13.5" />
+        <path d="M11 2.5V13.5" />
+      </svg>
+    ),
+  },
 ]
 
 export default function Page() {

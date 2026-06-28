@@ -367,7 +367,9 @@ class PostgresSyncService:
         target_name = validate_pg_identifier(
             target_database or name, "database name"
         )
-        published_tables = load_neon_publish_config().published_table_names
+        published_tables = (
+            load_neon_publish_config().published_table_names_for(name)
+        )
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         temporary_database = _sync_database_name(
             target_name, "sync", timestamp

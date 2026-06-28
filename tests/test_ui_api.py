@@ -300,3 +300,113 @@ def test_nl_latents_sample_detail_endpoint_returns_404(
         response = client.get("/api/nl-latents/samples/missing")
 
     assert response.status_code == 404
+
+
+def test_published_filters_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        ui_api,
+        "_fetch_published_filters",
+        lambda: ui_api.PublishedFiltersResponse(
+            projects=["code_comp_v0"],
+            source_pools=["direct_enc_t0"],
+            sample_roles=["encoder_description"],
+            task_families=["stateful"],
+            models=["openai/gpt-5-nano"],
+            result_states=["completed"],
+            datasets=["stateful/1"],
+        ),
+    )
+
+    with TestClient(ui_api.app) as client:
+        response = client.get("/api/published/filters")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["projects"] == ["code_comp_v0"]
+    assert payload["sample_roles"] == ["encoder_description"]
+
+
+def test_published_samples_endpoint_forwards_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_fetch(**kwargs: object) -> ui_api.PublishedSamplesResponse:
+        captured.update(kwargs)
+        return ui_api.PublishedSamplesResponse(
+            samples=[
+                ui_api.PublishedSampleListRow(
+                    source_project="code_comp_v0",
+                    source_pool="direct_enc_t0",
+                    source_sample_id="sample-1",
+                    sample_idx=1,
+                    created_at=datetime(2026, 2, 16, 22, 26),
+                    sample_role="encoder_description",
+                    output_kind="text",
+                    task_family="stateful",
+                    model="openai/gpt-5-nano",
+                    result_state="completed",
+                )
+            ],
+            total=1,
+            page=2,
+            limit=10,
+            total_pages=1,
+        )
+
+    monkeypatch.setattr(ui_api, "_fetch_published_samples", fake_fetch)
+
+    with TestClient(ui_api.app) as client:
+        response = client.get(
+            "/api/published/samples",
+            params={
+                "page": 2,
+                "limit": 10,
+                "project": "code_comp_v0",
+                "source_pool": "direct_enc_t0",
+                "hide_smoke": "true",
+            },
+        )
+
+    assert response.status_code == 200
+    assert captured["page"] == 2
+    assert captured["limit"] == 10
+    assert captured["project"] == "code_comp_v0"
+    assert captured["source_pool"] == "direct_enc_t0"
+    assert captured["hide_smoke"] is True
+    assert response.json()["samples"][0]["source_sample_id"] == "sample-1"
+
+
+def test_published_conditions_parameterizes_smoke_filter() -> None:
+    where, values = ui_api._published_conditions(
+        project=None,
+        source_pool=None,
+        sample_role=None,
+        task_family=None,
+        model=None,
+        result=None,
+        dataset=None,
+        hide_pending=False,
+        hide_smoke=True,
+    )
+
+    assert "coalesce(run_id, '') NOT ILIKE %s" in where
+    assert "coalesce(source_pool, '') NOT ILIKE %s" in where
+    assert values == ["%smoke%", "%smoke%"]
+
+
+def test_published_sample_detail_endpoint_returns_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ui_api,
+        "_fetch_published_sample",
+        lambda _project, _pool, _id: None,
+    )
+
+    with TestClient(ui_api.app) as client:
+        response = client.get(
+            "/api/published/samples/code_comp_v0/direct_enc_t0/missing"
+        )
+
+    assert response.status_code == 404

@@ -76,13 +76,14 @@ class SyncCallRecorder(BaseModel):
             manifest_table="published_pool_summaries",
             published_tables=[
                 "published_pool_summaries",
+                "published_pool_samples",
                 "published_nl_latents_samples",
             ],
             pools=[
                 PublishedPoolSummary(
                     source_pool="nl_latents",
                     processor=PublishProcessor.nl_latents_samples_v1,
-                    summary_table="published_nl_latents_samples",
+                    summary_table="published_pool_samples",
                     source_row_count=2,
                     summary_row_count=2,
                 )
@@ -151,7 +152,7 @@ def _sync_service(
 ) -> postgres_sync_module.PostgresSyncService:
     return postgres_sync_module.PostgresSyncService(
         project_lookup=ProjectLookupFake(
-            project=project or _running_project("demo")
+            project=project or _running_project("nl_latents")
         ),
         transfer=calls,
         validator=calls,
@@ -169,13 +170,13 @@ def test_build_sync_plan_derives_temporary_database_target() -> None:
     service = _sync_service(calls)
 
     plan = service.build_sync_plan(
-        name="demo",
+        name="nl_latents",
         admin_url="postgresql://example/postgres?sslmode=require",
         target_database="remote_demo",
         drop_previous=True,
     )
 
-    assert plan.project_name == "demo"
+    assert plan.project_name == "nl_latents"
     assert plan.source_dsn == (
         "postgresql://postgres:postgres@localhost:5500/dr_llm"
     )
@@ -188,6 +189,7 @@ def test_build_sync_plan_derives_temporary_database_target() -> None:
     assert plan.drop_previous is True
     assert plan.published_tables == (
         "published_pool_summaries",
+        "published_pool_samples",
         "published_nl_latents_samples",
     )
 
@@ -197,13 +199,13 @@ def test_sync_project_to_postgres_validates_and_swaps_database() -> None:
     service = _sync_service(calls)
 
     result = service.sync_project_to_postgres(
-        "demo",
+        "nl_latents",
         "postgresql://example/postgres?sslmode=require",
         drop_previous=True,
     )
 
     assert result.success is True
-    assert result.target_database == "demo"
+    assert result.target_database == "nl_latents"
     assert result.previous_database is not None
     assert result.previous_database_dropped is True
     assert calls.operation_names == [
@@ -215,13 +217,18 @@ def test_sync_project_to_postgres_validates_and_swaps_database() -> None:
         "replace",
         "drop",
     ]
-    assert calls.published_projects == ["demo"]
-    assert calls.dumped_projects == ["demo"]
+    assert calls.published_projects == ["nl_latents"]
+    assert calls.dumped_projects == ["nl_latents"]
     assert calls.dumped_table_names == [
-        ("published_pool_summaries", "published_nl_latents_samples")
+        (
+            "published_pool_summaries",
+            "published_pool_samples",
+            "published_nl_latents_samples",
+        )
     ]
     assert result.published_tables == [
         "published_pool_summaries",
+        "published_pool_samples",
         "published_nl_latents_samples",
     ]
 
@@ -233,7 +240,7 @@ def test_sync_project_to_postgres_restores_and_validates_temporary_database() ->
     service = _sync_service(calls)
 
     result = service.sync_project_to_postgres(
-        "demo",
+        "nl_latents",
         "postgresql://example/postgres?sslmode=require",
     )
 
@@ -248,6 +255,7 @@ def test_sync_project_to_postgres_restores_and_validates_temporary_database() ->
             target_dsn=expected_target_dsn,
             table_names=(
                 "published_pool_summaries",
+                "published_pool_samples",
                 "published_nl_latents_samples",
             ),
         )
@@ -269,7 +277,7 @@ def test_sync_project_to_postgres_drops_temp_database_when_validation_fails() ->
 
     with pytest.raises(ProjectError, match="validation failed"):
         service.sync_project_to_postgres(
-            "demo", "postgresql://example/postgres"
+            "nl_latents", "postgresql://example/postgres"
         )
 
     assert len(calls.dropped_databases) == 1
@@ -289,7 +297,7 @@ def test_sync_project_to_postgres_fails_on_unexpected_publish_tables() -> None:
 
     with pytest.raises(ProjectError, match="table list did not match"):
         service.sync_project_to_postgres(
-            "demo", "postgresql://example/postgres"
+            "nl_latents", "postgresql://example/postgres"
         )
 
     assert calls.operation_names == ["publish"]
@@ -299,12 +307,12 @@ def test_sync_project_to_postgres_requires_project_dsn() -> None:
     calls = SyncCallRecorder()
     service = _sync_service(
         calls,
-        project=ProjectInfo(name="demo", status=ContainerStatus.STOPPED),
+        project=ProjectInfo(name="nl_latents", status=ContainerStatus.STOPPED),
     )
 
     with pytest.raises(ProjectError, match="has no DSN"):
         service.sync_project_to_postgres(
-            "demo", "postgresql://example/postgres"
+            "nl_latents", "postgresql://example/postgres"
         )
 
 
@@ -313,7 +321,7 @@ def test_sync_project_to_postgres_rejects_invalid_admin_url() -> None:
     service = _sync_service(calls)
 
     with pytest.raises(ProjectError, match="scheme and host"):
-        service.sync_project_to_postgres("demo", "postgres")
+        service.sync_project_to_postgres("nl_latents", "postgres")
 
     assert calls.operation_names == []
 
@@ -332,10 +340,16 @@ def test_pgpass_line_escapes_colons_and_backslashes() -> None:
 
 def test_pg_dump_table_args_include_only_public_table_filters() -> None:
     assert postgres_sync_module._pg_dump_table_args(
-        ("published_pool_summaries", "published_nl_latents_samples")
+        (
+            "published_pool_summaries",
+            "published_pool_samples",
+            "published_nl_latents_samples",
+        )
     ) == (
         "--table",
         "public.published_pool_summaries",
+        "--table",
+        "public.published_pool_samples",
         "--table",
         "public.published_nl_latents_samples",
     )
@@ -351,6 +365,7 @@ def test_validate_expected_table_copy_rejects_extra_target_tables(
 ) -> None:
     counts = {
         "published_pool_summaries": 1,
+        "published_pool_samples": 2,
         "published_nl_latents_samples": 2,
     }
 
@@ -369,21 +384,24 @@ def test_validate_expected_table_copy_rejects_extra_target_tables(
         source_tables=[
             "pool_nl_latents_samples",
             "published_pool_summaries",
+            "published_pool_samples",
             "published_nl_latents_samples",
         ],
         target_tables=[
             "published_pool_summaries",
+            "published_pool_samples",
             "published_nl_latents_samples",
             "pool_nl_latents_samples",
         ],
         table_names=(
             "published_pool_summaries",
+            "published_pool_samples",
             "published_nl_latents_samples",
         ),
     )
 
     assert validation.passed is False
-    assert validation.checked_table_count == 2
+    assert validation.checked_table_count == 3
     assert validation.mismatches == (
         "extra target tables: pool_nl_latents_samples",
     )

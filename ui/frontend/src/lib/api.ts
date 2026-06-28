@@ -2,6 +2,9 @@ import type {
   NlLatentsFilters,
   NlLatentsSampleDetail,
   NlLatentsSamplesResponse,
+  PublishedFilters,
+  PublishedSampleDetail,
+  PublishedSamplesResponse,
   ProviderStatus,
 } from './types'
 import { ApiError, fetchJson } from './http'
@@ -61,5 +64,37 @@ export async function fetchNlLatentsSample(
 ): Promise<NlLatentsSampleDetail> {
   return fetchServerJson<NlLatentsSampleDetail>(
     `/api/nl-latents/samples/${encodeURIComponent(sampleId)}`,
+  )
+}
+
+export async function fetchPublishedFiltersCached(): Promise<PublishedFilters> {
+  return fetchServerJsonCached<PublishedFilters>('/api/published/filters')
+}
+
+export async function fetchPublishedSamplesCached(
+  path: string,
+): Promise<PublishedSamplesResponse> {
+  return fetchServerJsonCached<PublishedSamplesResponse>(path)
+}
+
+export async function fetchPublishedFilters(): Promise<PublishedFilters> {
+  return fetchServerJson<PublishedFilters>('/api/published/filters')
+}
+
+export async function fetchPublishedSamples(
+  path: string,
+): Promise<PublishedSamplesResponse> {
+  return fetchServerJson<PublishedSamplesResponse>(path)
+}
+
+export async function fetchPublishedSample(
+  project: string,
+  sourcePool: string,
+  sampleId: string,
+): Promise<PublishedSampleDetail> {
+  return fetchServerJson<PublishedSampleDetail>(
+    `/api/published/samples/${encodeURIComponent(project)}/${encodeURIComponent(
+      sourcePool,
+    )}/${encodeURIComponent(sampleId)}`,
   )
 }

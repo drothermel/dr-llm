@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from enum import StrEnum
 from importlib.resources import files
 from typing import Any
@@ -7,20 +8,34 @@ from typing import Any
 import psycopg
 import yaml
 from psycopg import sql
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from dr_llm.project.docker_psql import validate_pg_identifier
 from dr_llm.project.errors import ProjectError
 from dr_llm.project.project_service import get_project
 
 DEFAULT_CONFIG_RESOURCE = "data/neon_publish.yml"
-PUBLISHED_SCHEMA_VERSION = 1
-NL_LATENTS_PROCESSOR_NAME = "nl_latents_samples_v1"
+PUBLISHED_SCHEMA_VERSION = 2
 MANIFEST_GENERATED_AT_SQL = "now()"
+DEFAULT_PUBLISHED_SAMPLES_TABLE = "published_pool_samples"
+NL_LATENTS_SUMMARY_TABLE = "published_nl_latents_samples"
+NL_LATENTS_PROCESSOR_NAME = "nl_latents_samples_v1"
+NL_LATENTS_ROUNDTRIP_PROCESSOR_NAME = "nl_latents_roundtrip_v1"
+ENCODER_DESCRIPTION_PROCESSOR_NAME = "encoder_description_v1"
+DECODER_CODE_PROCESSOR_NAME = "decoder_code_v1"
 
 
 class PublishProcessor(StrEnum):
     nl_latents_samples_v1 = NL_LATENTS_PROCESSOR_NAME
+    nl_latents_roundtrip_v1 = NL_LATENTS_ROUNDTRIP_PROCESSOR_NAME
+    encoder_description_v1 = ENCODER_DESCRIPTION_PROCESSOR_NAME
+    decoder_code_v1 = DECODER_CODE_PROCESSOR_NAME
+
+
+class SampleRole(StrEnum):
+    encoder_description = "encoder_description"
+    decoder_code = "decoder_code"
+    roundtrip_code = "roundtrip_code"
 
 
 class PublishedPoolConfig(BaseModel):
@@ -28,7 +43,7 @@ class PublishedPoolConfig(BaseModel):
 
     source_pool: str
     processor: PublishProcessor
-    summary_table: str
+    summary_table: str = DEFAULT_PUBLISHED_SAMPLES_TABLE
 
     @field_validator("source_pool", "summary_table")
     @classmethod
@@ -36,12 +51,36 @@ class PublishedPoolConfig(BaseModel):
         return validate_pg_identifier(value, "database identifier")
 
 
+class PublishedProjectConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    project_name: str
+    pools: list[PublishedPoolConfig]
+
+    @field_validator("project_name")
+    @classmethod
+    def _validate_project_name(cls, value: str) -> str:
+        return validate_pg_identifier(value, "database identifier")
+
+    @field_validator("pools")
+    @classmethod
+    def _validate_unique_pools(
+        cls, value: list[PublishedPoolConfig]
+    ) -> list[PublishedPoolConfig]:
+        source_pools = [pool.source_pool for pool in value]
+        if len(set(source_pools)) != len(source_pools):
+            raise ValueError("Published pool source names must be unique.")
+        return value
+
+
 class NeonPublishConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     version: int
     manifest_table: str
-    pools: list[PublishedPoolConfig]
+    published_samples_table: str = DEFAULT_PUBLISHED_SAMPLES_TABLE
+    projects: list[PublishedProjectConfig] = Field(default_factory=list)
+    pools: list[PublishedPoolConfig] = Field(default_factory=list)
 
     @field_validator("version")
     @classmethod
@@ -52,30 +91,62 @@ class NeonPublishConfig(BaseModel):
             )
         return value
 
-    @field_validator("manifest_table")
+    @field_validator("manifest_table", "published_samples_table")
     @classmethod
-    def _validate_manifest_table(cls, value: str) -> str:
+    def _validate_table_name(cls, value: str) -> str:
         return validate_pg_identifier(value, "database identifier")
 
-    @field_validator("pools")
+    @field_validator("projects")
     @classmethod
-    def _validate_unique_tables(
-        cls, value: list[PublishedPoolConfig]
-    ) -> list[PublishedPoolConfig]:
-        source_pools = [pool.source_pool for pool in value]
-        summary_tables = [pool.summary_table for pool in value]
-        if len(set(source_pools)) != len(source_pools):
-            raise ValueError("Published pool source names must be unique.")
-        if len(set(summary_tables)) != len(summary_tables):
-            raise ValueError("Published pool summary tables must be unique.")
+    def _validate_unique_projects(
+        cls, value: list[PublishedProjectConfig]
+    ) -> list[PublishedProjectConfig]:
+        project_names = [project.project_name for project in value]
+        if len(set(project_names)) != len(project_names):
+            raise ValueError("Published project names must be unique.")
         return value
+
+    def project_config(self, project_name: str) -> PublishedProjectConfig:
+        for project in self.projects:
+            if project.project_name == project_name:
+                return project
+        if self.pools and project_name == "nl_latents":
+            return PublishedProjectConfig(
+                project_name=project_name, pools=self.pools
+            )
+        raise ProjectError(
+            f"Project {project_name!r} is not configured for Neon publish."
+        )
+
+    def published_table_names_for(self, project_name: str) -> tuple[str, ...]:
+        project = self.project_config(project_name)
+        tables = {self.manifest_table, self.published_samples_table}
+        if any(
+            pool.processor is PublishProcessor.nl_latents_roundtrip_v1
+            or pool.processor is PublishProcessor.nl_latents_samples_v1
+            for pool in project.pools
+        ):
+            tables.add(NL_LATENTS_SUMMARY_TABLE)
+        return tuple(
+            table
+            for table in (
+                self.manifest_table,
+                self.published_samples_table,
+                NL_LATENTS_SUMMARY_TABLE,
+            )
+            if table in tables
+        )
 
     @property
     def published_table_names(self) -> tuple[str, ...]:
-        return (
-            self.manifest_table,
-            *(pool.summary_table for pool in self.pools),
-        )
+        names: list[str] = []
+        for project in self.projects:
+            for table in self.published_table_names_for(project.project_name):
+                if table not in names:
+                    names.append(table)
+        if not names and self.pools:
+            return self.published_table_names_for("nl_latents")
+        return tuple(names)
 
 
 class PublishedPoolSummary(BaseModel):
@@ -98,6 +169,16 @@ class ProjectNeonPublishResult(BaseModel):
     pools: list[PublishedPoolSummary]
 
 
+class PoolSource(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    project_name: str
+    pool: PublishedPoolConfig
+    source_table: str
+    source_row_count: int
+    table_columns: frozenset[str]
+
+
 def load_neon_publish_config() -> NeonPublishConfig:
     config_path = files("dr_llm.project").joinpath(DEFAULT_CONFIG_RESOURCE)
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
@@ -111,6 +192,7 @@ def load_neon_publish_config() -> NeonPublishConfig:
 
 def publish_project_for_neon(name: str) -> ProjectNeonPublishResult:
     config = load_neon_publish_config()
+    project_config = config.project_config(name)
     project = get_project(name)
     if not project.running:
         raise ProjectError(
@@ -122,11 +204,31 @@ def publish_project_for_neon(name: str) -> ProjectNeonPublishResult:
 
     try:
         with psycopg.connect(project.dsn) as conn:
-            _ensure_publish_manifest(conn, config.manifest_table)
-            summaries = [
-                _publish_pool(conn, config.manifest_table, pool)
-                for pool in config.pools
+            _replace_publish_manifest(conn, config.manifest_table)
+            sources = [
+                _pool_source(conn, project_config.project_name, pool)
+                for pool in project_config.pools
             ]
+            _publish_common_samples(
+                conn,
+                sources=sources,
+                summary_table=config.published_samples_table,
+            )
+            summaries = [
+                _published_pool_summary(
+                    conn,
+                    manifest_table=config.manifest_table,
+                    summary_table=config.published_samples_table,
+                    source=source,
+                )
+                for source in sources
+            ]
+            if _project_has_nl_latents(project_config):
+                _publish_nl_latents_compat_table(
+                    conn,
+                    source_pool="nl_latents",
+                    summary_table=NL_LATENTS_SUMMARY_TABLE,
+                )
             conn.commit()
     except psycopg.OperationalError as exc:
         raise ProjectError(
@@ -137,59 +239,128 @@ def publish_project_for_neon(name: str) -> ProjectNeonPublishResult:
     return ProjectNeonPublishResult(
         project_name=name,
         manifest_table=config.manifest_table,
-        published_tables=list(config.published_table_names),
+        published_tables=list(config.published_table_names_for(name)),
         pools=summaries,
     )
 
 
-def _publish_pool(
+def _project_has_nl_latents(project: PublishedProjectConfig) -> bool:
+    return any(
+        pool.processor
+        in {
+            PublishProcessor.nl_latents_roundtrip_v1,
+            PublishProcessor.nl_latents_samples_v1,
+        }
+        for pool in project.pools
+    )
+
+
+def _pool_source(
     conn: psycopg.Connection[Any],
-    manifest_table: str,
+    project_name: str,
     pool: PublishedPoolConfig,
-) -> PublishedPoolSummary:
-    if pool.processor is not PublishProcessor.nl_latents_samples_v1:
-        raise ProjectError(
-            f"Unsupported Neon publish processor: {pool.processor}"
+) -> PoolSource:
+    source_table = validate_pg_identifier(
+        f"pool_{pool.source_pool}_samples", "table name"
+    )
+    return PoolSource(
+        project_name=project_name,
+        pool=pool,
+        source_table=source_table,
+        source_row_count=_table_row_count(conn, source_table),
+        table_columns=frozenset(_table_columns(conn, source_table)),
+    )
+
+
+def _publish_common_samples(
+    conn: psycopg.Connection[Any],
+    *,
+    sources: list[PoolSource],
+    summary_table: str,
+) -> None:
+    build_table = validate_pg_identifier(
+        f"{summary_table}__build", "table name"
+    )
+    _drop_table(conn, build_table)
+    _ensure_try_parse_jsonb_function(conn)
+    if not sources:
+        _create_empty_common_samples_table(conn, build_table)
+    else:
+        selects = [_common_samples_select(source) for source in sources]
+        conn.execute(
+            sql.SQL("CREATE TABLE {} AS ").format(sql.Identifier(build_table))
+            + sql.SQL(" UNION ALL ").join(selects)
         )
-    return _publish_nl_latents_samples(conn, manifest_table, pool)
+    _replace_table(conn, build_table, summary_table)
+    _create_common_samples_indexes(conn, summary_table)
 
 
-def _ensure_publish_manifest(
+def _published_pool_summary(
+    conn: psycopg.Connection[Any],
+    *,
+    manifest_table: str,
+    summary_table: str,
+    source: PoolSource,
+) -> PublishedPoolSummary:
+    summary_row_count = _published_pool_row_count(
+        conn,
+        summary_table=summary_table,
+        source_pool=source.pool.source_pool,
+    )
+    _upsert_manifest(
+        conn,
+        manifest_table=manifest_table,
+        source=source,
+        summary_table=summary_table,
+        summary_row_count=summary_row_count,
+    )
+    return PublishedPoolSummary(
+        source_pool=source.pool.source_pool,
+        processor=source.pool.processor,
+        summary_table=summary_table,
+        source_row_count=source.source_row_count,
+        summary_row_count=summary_row_count,
+    )
+
+
+def _replace_publish_manifest(
     conn: psycopg.Connection[Any], manifest_table: str
 ) -> None:
+    _drop_table(conn, manifest_table)
     conn.execute(
         sql.SQL(
             """
-            CREATE TABLE IF NOT EXISTS {} (
-                source_pool text PRIMARY KEY,
+            CREATE TABLE {} (
+                source_project text NOT NULL,
+                source_pool text NOT NULL,
                 processor text NOT NULL,
                 summary_table text NOT NULL,
                 source_row_count bigint NOT NULL,
                 summary_row_count bigint NOT NULL,
                 summary_schema_version integer NOT NULL,
-                generated_at timestamptz NOT NULL DEFAULT now()
+                generated_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (source_project, source_pool)
             )
             """
         ).format(sql.Identifier(manifest_table))
     )
 
 
-def _publish_nl_latents_samples(
+def _publish_nl_latents_compat_table(
     conn: psycopg.Connection[Any],
-    manifest_table: str,
-    pool: PublishedPoolConfig,
-) -> PublishedPoolSummary:
+    *,
+    source_pool: str,
+    summary_table: str,
+) -> None:
     source_table = validate_pg_identifier(
-        f"pool_{pool.source_pool}_samples", "table name"
+        f"pool_{source_pool}_samples", "table name"
     )
     catalog_table = validate_pg_identifier(
-        f"{pool.source_pool}_pool_catalog_entries", "table name"
+        f"{source_pool}_pool_catalog_entries", "table name"
     )
     build_table = validate_pg_identifier(
-        f"{pool.summary_table}__build", "table name"
+        f"{summary_table}__build", "table name"
     )
-
-    source_row_count = _table_row_count(conn, source_table)
     _drop_table(conn, build_table)
     _create_nl_latents_summary_table(
         conn,
@@ -197,23 +368,481 @@ def _publish_nl_latents_samples(
         catalog_table=catalog_table,
         build_table=build_table,
     )
-    _replace_table(conn, build_table, pool.summary_table)
-    _create_nl_latents_summary_indexes(conn, pool.summary_table)
-    summary_row_count = _table_row_count(conn, pool.summary_table)
-    _upsert_manifest(
-        conn,
-        manifest_table=manifest_table,
-        pool=pool,
-        source_row_count=source_row_count,
-        summary_row_count=summary_row_count,
+    _replace_table(conn, build_table, summary_table)
+    _create_nl_latents_summary_indexes(conn, summary_table)
+
+
+def _common_samples_select(source: PoolSource) -> sql.Composed:
+    if source.pool.processor in {
+        PublishProcessor.nl_latents_roundtrip_v1,
+        PublishProcessor.nl_latents_samples_v1,
+    }:
+        return _nl_latents_common_select(source)
+    if source.pool.processor is PublishProcessor.encoder_description_v1:
+        return _encoder_common_select(source)
+    if source.pool.processor is PublishProcessor.decoder_code_v1:
+        return _decoder_common_select(source)
+    raise ProjectError(
+        f"Unsupported Neon publish processor: {source.pool.processor}"
     )
-    return PublishedPoolSummary(
-        source_pool=pool.source_pool,
-        processor=pool.processor,
-        summary_table=pool.summary_table,
-        source_row_count=source_row_count,
-        summary_row_count=summary_row_count,
+
+
+def _nl_latents_common_select(source: PoolSource) -> sql.Composed:
+    table = sql.Identifier(source.source_table)
+    payload = sql.SQL(
+        "coalesce(s.response_json, s.request_json, jsonb_build_object())"
     )
+    validation_json = _json_text_expr(payload, "validation_json")
+    response_metadata = _json_text_expr(payload, "metadata_json")
+    key_columns = (
+        "config_id",
+        "family",
+        "difficulty",
+        "split",
+        "language",
+        "budget",
+        "task_id",
+        "task_data_version",
+        "enc_model",
+        "dec_model",
+        "enc_reasoning_effort",
+        "dec_reasoning_effort",
+        "call_id",
+        "status",
+    )
+    return sql.SQL(
+        """
+        SELECT
+            {project_name}::text AS source_project,
+            {pool_name}::text AS source_pool,
+            {source_table}::text AS source_table,
+            s.sample_id AS source_sample_id,
+            s.sample_idx,
+            s.run_id,
+            s.created_at,
+            s.status,
+            s.attempt_count,
+            s.finish_reason,
+            {sample_role}::text AS sample_role,
+            'decoded_code'::text AS output_kind,
+            'response_json.decoded_code'::text AS output_json_path,
+            {payload}->>'decoded_code' AS output_text,
+            s.task_id AS dataset_id,
+            s.task_id,
+            s.family AS task_family,
+            s.split AS task_split,
+            s.language,
+            s.difficulty,
+            s.budget AS budget_label,
+            nullif(s.budget, '')::integer AS budget_chars,
+            s.config_id AS prompt_template_id,
+            s.enc_model AS llm_config_id,
+            split_part(replace(s.dec_model, 'openrouter:', ''), '/', 1)
+                AS provider,
+            replace(s.dec_model, 'openrouter:', '') AS model,
+            s.config_id AS enc_prompt_template_id,
+            s.enc_model AS enc_llm_config_id,
+            s.call_id AS enc_sample_id,
+            s.config_id AS dec_prompt_template_id,
+            s.dec_model AS dec_llm_config_id,
+            NULL::text AS upstream_project,
+            NULL::text AS upstream_pool,
+            NULL::text AS upstream_sample_id,
+            NULL::integer AS upstream_sample_idx,
+            {payload}->>'model_provenance_source' AS source_kind,
+            {payload}->>'description' AS input_text,
+            'payload.description'::text AS input_text_source,
+            CASE
+                WHEN s.response_json IS NULL THEN 'pending'
+                WHEN s.response_json->>'passed' = 'true' THEN 'passed'
+                WHEN s.response_json->>'passed' = 'false' THEN 'failed'
+                ELSE 'pending'
+            END AS result_state,
+            CASE
+                WHEN s.response_json IS NULL THEN NULL::boolean
+                ELSE (s.response_json->>'passed')::boolean
+            END AS passed,
+            ({validation_json}->>'test_pass_rate')::double precision
+                AS validation_pass_rate,
+            {payload}->>'failure_category' AS failure_category,
+            ({payload}->>'budget_ok')::boolean AS budget_ok,
+            ({payload}->>'actual_chars')::integer AS actual_chars,
+            {key_values_json} AS key_values_json,
+            s.request_json,
+            s.response_json,
+            jsonb_build_object(
+                'pool_metadata', coalesce(s.metadata_json, jsonb_build_object()),
+                'response_metadata',
+                    coalesce({response_metadata}, jsonb_build_object())
+            ) AS metadata_json,
+            s.response_json->'usage' AS usage_json,
+            s.response_json->'cost' AS cost_json,
+            {validation_json} AS validation_json
+        FROM {table} s
+        """
+    ).format(
+        project_name=sql.Literal(source.project_name),
+        pool_name=sql.Literal(source.pool.source_pool),
+        source_table=sql.Literal(source.source_table),
+        sample_role=sql.Literal(SampleRole.roundtrip_code.value),
+        payload=payload,
+        validation_json=validation_json,
+        key_values_json=_key_values_json_expr(key_columns),
+        response_metadata=response_metadata,
+        table=table,
+    )
+
+
+def _encoder_common_select(source: PoolSource) -> sql.Composed:
+    table = sql.Identifier(source.source_table)
+    key_columns = _present_columns(
+        source,
+        ("prompt_template_id", "data_sample_id", "llm_config_id", "status"),
+    )
+    metadata = sql.SQL("coalesce(s.metadata_json, jsonb_build_object())")
+    return sql.SQL(
+        """
+        SELECT
+            {project_name}::text AS source_project,
+            {pool_name}::text AS source_pool,
+            {source_table}::text AS source_table,
+            s.sample_id AS source_sample_id,
+            s.sample_idx,
+            s.run_id,
+            s.created_at,
+            {status} AS status,
+            s.attempt_count,
+            s.finish_reason,
+            {sample_role}::text AS sample_role,
+            'text'::text AS output_kind,
+            'response_json.text'::text AS output_json_path,
+            s.response_json->>'text' AS output_text,
+            {data_sample_id} AS dataset_id,
+            coalesce({metadata}->'task'->>'task_id', {data_sample_id})
+                AS task_id,
+            coalesce(
+                {metadata}->'task'->>'family',
+                split_part({data_sample_id}, '/', 1)
+            ) AS task_family,
+            {metadata}->'task'->>'split' AS task_split,
+            coalesce({metadata}->'task'->>'language', 'python') AS language,
+            {metadata}->'task'->>'difficulty' AS difficulty,
+            {metadata}->'budgets'->>'budget_label' AS budget_label,
+            pg_temp._dr_llm_first_int(
+                {prompt_template_id},
+                {metadata}->'budgets'->>'budget_chars'
+            )
+                AS budget_chars,
+            {prompt_template_id} AS prompt_template_id,
+            {llm_config_id} AS llm_config_id,
+            s.response_json->>'provider' AS provider,
+            s.response_json->>'model' AS model,
+            {prompt_template_id} AS enc_prompt_template_id,
+            {llm_config_id} AS enc_llm_config_id,
+            s.sample_id AS enc_sample_id,
+            NULL::text AS dec_prompt_template_id,
+            NULL::text AS dec_llm_config_id,
+            NULL::text AS upstream_project,
+            NULL::text AS upstream_pool,
+            NULL::text AS upstream_sample_id,
+            NULL::integer AS upstream_sample_idx,
+            {metadata}->>'source_kind' AS source_kind,
+            {prompt_text} AS input_text,
+            'request.prompt'::text AS input_text_source,
+            CASE
+                WHEN s.response_json IS NULL THEN 'pending'
+                WHEN s.response_json ? 'error' THEN 'failed'
+                ELSE 'completed'
+            END AS result_state,
+            NULL::boolean AS passed,
+            NULL::double precision AS validation_pass_rate,
+            {metadata}->>'failure_category' AS failure_category,
+            ({metadata}->>'budget_ok')::boolean AS budget_ok,
+            NULL::integer AS actual_chars,
+            {key_values_json} AS key_values_json,
+            s.request_json,
+            s.response_json,
+            s.metadata_json,
+            s.response_json->'usage' AS usage_json,
+            s.response_json->'cost' AS cost_json,
+            NULL::jsonb AS validation_json
+        FROM {table} s
+        """
+    ).format(
+        project_name=sql.Literal(source.project_name),
+        pool_name=sql.Literal(source.pool.source_pool),
+        source_table=sql.Literal(source.source_table),
+        status=_column_or_null(source, "status", "text"),
+        sample_role=sql.Literal(SampleRole.encoder_description.value),
+        data_sample_id=_column_or_null(source, "data_sample_id", "text"),
+        prompt_template_id=_column_or_null(
+            source, "prompt_template_id", "text"
+        ),
+        llm_config_id=_column_or_null(source, "llm_config_id", "text"),
+        metadata=metadata,
+        prompt_text=_prompt_text_expr(sql.SQL("s.request_json->'prompt'")),
+        key_values_json=_key_values_json_expr(key_columns),
+        table=table,
+    )
+
+
+def _decoder_common_select(source: PoolSource) -> sql.Composed:
+    table = sql.Identifier(source.source_table)
+    key_columns = _present_columns(
+        source,
+        (
+            "source_sample_id",
+            "enc_prompt_template_id",
+            "data_sample_id",
+            "enc_llm_config_id",
+            "enc_sample_id",
+            "dec_prompt_template_id",
+            "dec_llm_config_id",
+            "status",
+        ),
+    )
+    metadata = sql.SQL("coalesce(s.metadata_json, jsonb_build_object())")
+    data_sample_id = sql.SQL(
+        "coalesce({metadata}->>'data_sample_id', {column})"
+    ).format(
+        metadata=metadata,
+        column=_column_or_null(source, "data_sample_id", "text"),
+    )
+    source_sample_id = sql.SQL(
+        "coalesce({metadata}->>'source_sample_id', {column})"
+    ).format(
+        metadata=metadata,
+        column=_column_or_null(source, "source_sample_id", "text"),
+    )
+    return sql.SQL(
+        """
+        SELECT
+            {project_name}::text AS source_project,
+            {pool_name}::text AS source_pool,
+            {source_table}::text AS source_table,
+            s.sample_id AS source_sample_id,
+            s.sample_idx,
+            s.run_id,
+            s.created_at,
+            {status} AS status,
+            s.attempt_count,
+            s.finish_reason,
+            {sample_role}::text AS sample_role,
+            'code_text'::text AS output_kind,
+            'response_json.text'::text AS output_json_path,
+            s.response_json->>'text' AS output_text,
+            {data_sample_id} AS dataset_id,
+            coalesce({metadata}->'task'->>'task_id', {data_sample_id})
+                AS task_id,
+            coalesce(
+                {metadata}->'task'->>'family',
+                split_part({data_sample_id}, '/', 1)
+            ) AS task_family,
+            {metadata}->'task'->>'split' AS task_split,
+            coalesce({metadata}->'task'->>'language', 'python') AS language,
+            {metadata}->'task'->>'difficulty' AS difficulty,
+            {metadata}->'budgets'->>'budget_label' AS budget_label,
+            pg_temp._dr_llm_first_int(
+                {dec_prompt_template_id},
+                {metadata}->'budgets'->>'budget_chars'
+            ) AS budget_chars,
+            coalesce({dec_prompt_template_id}, {enc_prompt_template_id})
+                AS prompt_template_id,
+            coalesce({dec_llm_config_id}, s.response_json->>'model')
+                AS llm_config_id,
+            s.response_json->>'provider' AS provider,
+            s.response_json->>'model' AS model,
+            {enc_prompt_template_id} AS enc_prompt_template_id,
+            coalesce({enc_llm_config_id}, {metadata}->>'enc_llm_config_id')
+                AS enc_llm_config_id,
+            {enc_sample_id} AS enc_sample_id,
+            {dec_prompt_template_id} AS dec_prompt_template_id,
+            {dec_llm_config_id} AS dec_llm_config_id,
+            NULL::text AS upstream_project,
+            {metadata}->>'source_pool_name' AS upstream_pool,
+            {source_sample_id} AS upstream_sample_id,
+            ({metadata}->>'source_sample_idx')::integer AS upstream_sample_idx,
+            {metadata}->>'source_kind' AS source_kind,
+            coalesce(
+                {metadata}->>'source_text',
+                {metadata}->'source_sample_payload'->>'text',
+                {prompt_text}
+            ) AS input_text,
+            CASE
+                WHEN {metadata} ? 'source_text' THEN 'metadata.source_text'
+                WHEN {metadata}->'source_sample_payload' ? 'text'
+                    THEN 'metadata.source_sample_payload.text'
+                ELSE 'request.prompt'
+            END AS input_text_source,
+            CASE
+                WHEN s.response_json IS NULL THEN 'pending'
+                WHEN s.response_json ? 'error' THEN 'failed'
+                ELSE 'completed'
+            END AS result_state,
+            NULL::boolean AS passed,
+            NULL::double precision AS validation_pass_rate,
+            {metadata}->>'failure_category' AS failure_category,
+            ({metadata}->>'budget_ok')::boolean AS budget_ok,
+            NULL::integer AS actual_chars,
+            {key_values_json} AS key_values_json,
+            s.request_json,
+            s.response_json,
+            s.metadata_json,
+            s.response_json->'usage' AS usage_json,
+            s.response_json->'cost' AS cost_json,
+            NULL::jsonb AS validation_json
+        FROM {table} s
+        """
+    ).format(
+        project_name=sql.Literal(source.project_name),
+        pool_name=sql.Literal(source.pool.source_pool),
+        source_table=sql.Literal(source.source_table),
+        status=_column_or_null(source, "status", "text"),
+        sample_role=sql.Literal(SampleRole.decoder_code.value),
+        data_sample_id=data_sample_id,
+        metadata=metadata,
+        dec_prompt_template_id=_column_or_null(
+            source, "dec_prompt_template_id", "text"
+        ),
+        enc_prompt_template_id=_column_or_null(
+            source, "enc_prompt_template_id", "text"
+        ),
+        dec_llm_config_id=_column_or_null(source, "dec_llm_config_id", "text"),
+        enc_llm_config_id=_column_or_null(source, "enc_llm_config_id", "text"),
+        enc_sample_id=_column_or_null(source, "enc_sample_id", "text"),
+        source_sample_id=source_sample_id,
+        prompt_text=_prompt_text_expr(sql.SQL("s.request_json->'prompt'")),
+        key_values_json=_key_values_json_expr(key_columns),
+        table=table,
+    )
+
+
+def _create_empty_common_samples_table(
+    conn: psycopg.Connection[Any], build_table: str
+) -> None:
+    conn.execute(
+        sql.SQL(
+            """
+            CREATE TABLE {} (
+                source_project text,
+                source_pool text,
+                source_table text,
+                source_sample_id text,
+                sample_idx integer,
+                run_id text,
+                created_at timestamptz,
+                status text,
+                attempt_count integer,
+                finish_reason text,
+                sample_role text,
+                output_kind text,
+                output_json_path text,
+                output_text text,
+                dataset_id text,
+                task_id text,
+                task_family text,
+                task_split text,
+                language text,
+                difficulty text,
+                budget_label text,
+                budget_chars integer,
+                prompt_template_id text,
+                llm_config_id text,
+                provider text,
+                model text,
+                enc_prompt_template_id text,
+                enc_llm_config_id text,
+                enc_sample_id text,
+                dec_prompt_template_id text,
+                dec_llm_config_id text,
+                upstream_project text,
+                upstream_pool text,
+                upstream_sample_id text,
+                upstream_sample_idx integer,
+                source_kind text,
+                input_text text,
+                input_text_source text,
+                result_state text,
+                passed boolean,
+                validation_pass_rate double precision,
+                failure_category text,
+                budget_ok boolean,
+                actual_chars integer,
+                key_values_json jsonb,
+                request_json jsonb,
+                response_json jsonb,
+                metadata_json jsonb,
+                usage_json jsonb,
+                cost_json jsonb,
+                validation_json jsonb
+            )
+            """
+        ).format(sql.Identifier(build_table))
+    )
+
+
+def _ensure_try_parse_jsonb_function(conn: psycopg.Connection[Any]) -> None:
+    conn.execute(
+        """
+        CREATE OR REPLACE FUNCTION pg_temp.dr_llm_try_parse_jsonb(value text)
+        RETURNS jsonb AS $$
+        BEGIN
+            RETURN value::jsonb;
+        EXCEPTION WHEN others THEN
+            RETURN NULL;
+        END
+        $$ LANGUAGE plpgsql IMMUTABLE;
+        """
+    )
+    conn.execute(
+        """
+        CREATE OR REPLACE FUNCTION pg_temp._dr_llm_first_int(
+            VARIADIC input_values text[]
+        )
+        RETURNS integer AS $$
+        DECLARE
+            value text;
+            match text[];
+        BEGIN
+            FOREACH value IN ARRAY input_values LOOP
+                IF value IS NOT NULL THEN
+                    match := regexp_match(value, '(?:budget|budget_chars|var_budget)=([0-9]+)');
+                    IF match IS NOT NULL THEN
+                        RETURN match[1]::integer;
+                    END IF;
+                    IF value ~ '^[0-9]+$' THEN
+                        RETURN value::integer;
+                    END IF;
+                END IF;
+            END LOOP;
+            RETURN NULL;
+        END
+        $$ LANGUAGE plpgsql IMMUTABLE;
+        """
+    )
+
+
+def _create_common_samples_indexes(
+    conn: psycopg.Connection[Any], table_name: str
+) -> None:
+    for suffix, columns in (
+        ("source", "source_project, source_pool, source_sample_id"),
+        ("list", "source_project, source_pool, sample_role, created_at DESC"),
+        ("dataset", "dataset_id"),
+        ("task_family", "task_family"),
+        ("model", "model"),
+        ("result_state", "result_state"),
+    ):
+        index_name = validate_pg_identifier(
+            f"{table_name}_{suffix}_idx", "index name"
+        )
+        conn.execute(
+            sql.SQL("CREATE INDEX {} ON {} ({})").format(
+                sql.Identifier(index_name),
+                sql.Identifier(table_name),
+                sql.SQL(columns),
+            )
+        )
 
 
 def _create_nl_latents_summary_table(
@@ -289,9 +918,9 @@ def _create_nl_latents_summary_table(
                             pg_temp.dr_llm_try_parse_jsonb(
                                 p.payload->>'metadata_json'
                             ),
-                            '{{}}'::jsonb
+                            jsonb_build_object()
                         )
-                        ELSE '{{}}'::jsonb
+                        ELSE jsonb_build_object()
                     END AS response_metadata_json,
                     CASE
                         WHEN p.payload ? 'validation_json'
@@ -431,21 +1060,6 @@ def _create_nl_latents_summary_table(
     )
 
 
-def _ensure_try_parse_jsonb_function(conn: psycopg.Connection[Any]) -> None:
-    conn.execute(
-        """
-        CREATE OR REPLACE FUNCTION pg_temp.dr_llm_try_parse_jsonb(value text)
-        RETURNS jsonb AS $$
-        BEGIN
-            RETURN value::jsonb;
-        EXCEPTION WHEN others THEN
-            RETURN NULL;
-        END
-        $$ LANGUAGE plpgsql IMMUTABLE;
-        """
-    )
-
-
 def _create_nl_latents_summary_indexes(
     conn: psycopg.Connection[Any], table_name: str
 ) -> None:
@@ -500,14 +1114,15 @@ def _upsert_manifest(
     conn: psycopg.Connection[Any],
     *,
     manifest_table: str,
-    pool: PublishedPoolConfig,
-    source_row_count: int,
+    source: PoolSource,
+    summary_table: str,
     summary_row_count: int,
 ) -> None:
     conn.execute(
         sql.SQL(
             """
             INSERT INTO {} (
+                source_project,
                 source_pool,
                 processor,
                 summary_table,
@@ -516,8 +1131,8 @@ def _upsert_manifest(
                 summary_schema_version,
                 generated_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, {})
-            ON CONFLICT (source_pool) DO UPDATE SET
+            VALUES (%s, %s, %s, %s, %s, %s, %s, {})
+            ON CONFLICT (source_project, source_pool) DO UPDATE SET
                 processor = excluded.processor,
                 summary_table = excluded.summary_table,
                 source_row_count = excluded.source_row_count,
@@ -530,10 +1145,11 @@ def _upsert_manifest(
             sql.SQL(MANIFEST_GENERATED_AT_SQL),
         ),
         [
-            pool.source_pool,
-            pool.processor.value,
-            pool.summary_table,
-            source_row_count,
+            source.project_name,
+            source.pool.source_pool,
+            source.pool.processor.value,
+            summary_table,
+            source.source_row_count,
             summary_row_count,
             PUBLISHED_SCHEMA_VERSION,
         ],
@@ -547,3 +1163,112 @@ def _table_row_count(conn: psycopg.Connection[Any], table_name: str) -> int:
     if row is None or not isinstance(row[0], int):
         raise ProjectError(f"Could not count rows in table {table_name!r}.")
     return row[0]
+
+
+def _published_pool_row_count(
+    conn: psycopg.Connection[Any],
+    *,
+    summary_table: str,
+    source_pool: str,
+) -> int:
+    row = conn.execute(
+        sql.SQL("SELECT count(*) FROM {} WHERE source_pool = %s").format(
+            sql.Identifier(summary_table)
+        ),
+        [source_pool],
+    ).fetchone()
+    if row is None or not isinstance(row[0], int):
+        raise ProjectError(
+            f"Could not count published rows for pool {source_pool!r}."
+        )
+    return row[0]
+
+
+def _table_columns(conn: psycopg.Connection[Any], table_name: str) -> set[str]:
+    rows = conn.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s
+        """,
+        [table_name],
+    ).fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def _column_or_null(
+    source: PoolSource, column_name: str, column_type: str
+) -> sql.Composable:
+    if column_name in source.table_columns:
+        return sql.SQL("s.{}").format(sql.Identifier(column_name))
+    column_types: dict[str, sql.SQL] = {
+        "integer": sql.SQL("integer"),
+        "text": sql.SQL("text"),
+    }
+    sql_type = column_types.get(column_type)
+    if sql_type is None:
+        raise ProjectError(f"Unsupported nullable SQL type: {column_type!r}")
+    return sql.SQL("NULL::{}").format(sql_type)
+
+
+def _present_columns(
+    source: PoolSource, column_names: Iterable[str]
+) -> tuple[str, ...]:
+    return tuple(
+        column_name
+        for column_name in column_names
+        if column_name in source.table_columns
+    )
+
+
+def _key_values_json_expr(column_names: Iterable[str]) -> sql.Composable:
+    parts: list[sql.Composable] = []
+    for column_name in column_names:
+        parts.extend(
+            [
+                sql.Literal(column_name),
+                sql.SQL("s.{}").format(sql.Identifier(column_name)),
+            ]
+        )
+    if not parts:
+        return sql.SQL("'{}'::jsonb")
+    return sql.SQL("jsonb_build_object({})").format(sql.SQL(", ").join(parts))
+
+
+def _json_text_expr(payload: sql.Composable, key: str) -> sql.Composed:
+    return sql.SQL(
+        """
+        CASE
+            WHEN {payload} ? {key}
+             AND nullif({payload}->>{key}, '') IS NOT NULL
+            THEN pg_temp.dr_llm_try_parse_jsonb({payload}->>{key})
+            ELSE NULL::jsonb
+        END
+        """
+    ).format(payload=payload, key=sql.Literal(key))
+
+
+def _prompt_text_expr(prompt_json: sql.Composable) -> sql.Composed:
+    return sql.SQL(
+        """
+        CASE
+            WHEN jsonb_typeof({prompt_json}) = 'string'
+                THEN {prompt_json} #>> ARRAY[]::text[]
+            WHEN jsonb_typeof({prompt_json}) = 'array'
+                THEN (
+                    SELECT string_agg(
+                        CASE
+                            WHEN jsonb_typeof(part.value) = 'string'
+                                THEN part.value #>> ARRAY[]::text[]
+                            ELSE part.value->>'content'
+                        END,
+                        E'\n\n'
+                        ORDER BY part.ord
+                    )
+                    FROM jsonb_array_elements({prompt_json})
+                        WITH ORDINALITY AS part(value, ord)
+                )
+            ELSE NULL::text
+        END
+        """
+    ).format(prompt_json=prompt_json)
