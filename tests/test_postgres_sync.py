@@ -468,6 +468,14 @@ def test_pool_catalog_count_qualifies_public_schema() -> None:
     assert cursor.queries[1] == 'SELECT count(*) FROM "public"."pool_catalog"'
 
 
+def test_terminate_database_connections_targets_client_backends_only() -> None:
+    cursor = RecordingCursor(scalar_rows=[])
+
+    postgres_sync_module._terminate_database_connections(cursor, "demo_sync")
+
+    assert "backend_type = 'client backend'" in cursor.queries[0]
+
+
 def test_parse_restore_target_reads_required_dsn_fields() -> None:
     target_dsn = (
         "postgresql://alice:secret@example.com:6543/demo"
@@ -505,6 +513,16 @@ def test_parse_restore_target_requires_database_and_user(
 
     with pytest.raises(ProjectError, match="database and user"):
         postgres_sync_module._parse_restore_target("postgresql://example")
+
+
+def test_admin_url_for_operations_uses_postgres_maintenance_database() -> None:
+    assert postgres_sync_module._admin_url_for_operations(
+        "postgresql://alice:secret@example.com:6543/code_comp_t1"
+        "?sslmode=require&channel_binding=require"
+    ) == (
+        "postgresql://alice:secret@example.com:6543/postgres"
+        "?sslmode=require&channel_binding=require"
+    )
 
 
 def test_restore_sql_file_uses_passwordless_dsn_and_removes_pgpass(
@@ -742,6 +760,74 @@ def test_replace_database_moves_existing_target_before_swap() -> None:
     assert cursor.operations == [
         ("terminate", "demo"),
         ("rename", "demo->demo_prev"),
+        ("terminate", "demo_sync"),
+        ("rename", "demo_sync->demo"),
+    ]
+
+
+def test_replace_database_retries_temporary_rename_when_database_is_busy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cursor = FakeCursor()
+    rename_attempts = 0
+    sleeps: list[float] = []
+
+    def fake_rename_database(
+        cur: postgres_sync_module.AdminCursor,
+        source_database: str,
+        target_database: str,
+    ) -> None:
+        nonlocal rename_attempts
+        _ = cur
+        rename_attempts += 1
+        if rename_attempts == 1:
+            raise psycopg.errors.ObjectInUse("database is being accessed")
+        cursor.operations.append(
+            ("rename", f"{source_database}->{target_database}")
+        )
+
+    def fake_connect_admin(admin_url: str) -> FakeConnection:
+        _ = admin_url
+        return FakeConnection(cursor_value=cursor)
+
+    monkeypatch.setattr(
+        postgres_sync_module, "sleep", lambda seconds: sleeps.append(seconds)
+    )
+
+    def fake_database_exists(
+        cur: postgres_sync_module.AdminCursor,
+        database_name: str,
+    ) -> bool:
+        _ = (cur, database_name)
+        return False
+
+    def fake_terminate_connections(
+        cur: postgres_sync_module.AdminCursor,
+        database_name: str,
+    ) -> None:
+        _ = cur
+        cursor.operations.append(("terminate", database_name))
+
+    admin = postgres_sync_module.PsycopgPostgresAdminOperations(
+        connect_admin=fake_connect_admin,
+        database_exists=fake_database_exists,
+        rename_database=fake_rename_database,
+        terminate_connections=fake_terminate_connections,
+    )
+
+    replaced_existing = admin.replace_database(
+        postgres_sync_module.DatabaseSwapPlan(
+            admin_url="postgresql://example/postgres",
+            temporary_database="demo_sync",
+            target_database="demo",
+            previous_database="demo_prev",
+        )
+    )
+
+    assert replaced_existing is False
+    assert rename_attempts == 2
+    assert sleeps == [postgres_sync_module.DATABASE_RENAME_RETRY_SECONDS]
+    assert cursor.operations == [
         ("terminate", "demo_sync"),
         ("rename", "demo_sync->demo"),
     ]
