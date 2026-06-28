@@ -8,7 +8,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Protocol, cast
 from urllib.parse import urlsplit, urlunsplit
 
@@ -36,6 +36,10 @@ from dr_llm.project.project_info import ProjectInfo
 from dr_llm.project.project_service import get_project
 
 logger = logging.getLogger(__name__)
+
+DATABASE_RENAME_RETRY_SECONDS = 1.0
+DATABASE_RENAME_TIMEOUT_SECONDS = 60.0
+POSTGRES_ADMIN_DATABASE = "postgres"
 
 
 class SyncPlan(BaseModel):
@@ -235,7 +239,8 @@ class PsycopgPostgresAdminOperations:
                     cur, plan
                 )
                 try:
-                    self._rename_database(
+                    self._terminate_connections(cur, plan.temporary_database)
+                    self._rename_database_waiting_for_connections(
                         cur,
                         plan.temporary_database,
                         plan.target_database,
@@ -285,6 +290,28 @@ class PsycopgPostgresAdminOperations:
             _raise_swap_failure_after_rollback_failure(
                 plan.target_database, rollback_exc
             )
+
+    def _rename_database_waiting_for_connections(
+        self,
+        cur: AdminCursor,
+        source_database: str,
+        target_database: str,
+    ) -> None:
+        deadline = perf_counter() + DATABASE_RENAME_TIMEOUT_SECONDS
+        while True:
+            try:
+                self._rename_database(cur, source_database, target_database)
+                return
+            except psycopg.errors.ObjectInUse:
+                if perf_counter() >= deadline:
+                    raise
+                logger.info(
+                    "Waiting for remaining sessions on database %r before "
+                    "renaming to %r.",
+                    source_database,
+                    target_database,
+                )
+                sleep(DATABASE_RENAME_RETRY_SECONDS)
 
 
 class PostgresSyncService:
@@ -367,7 +394,9 @@ class PostgresSyncService:
         target_name = validate_pg_identifier(
             target_database or name, "database name"
         )
-        published_tables = load_neon_publish_config().published_table_names
+        published_tables = (
+            load_neon_publish_config().published_table_names_for(name)
+        )
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         temporary_database = _sync_database_name(
             target_name, "sync", timestamp
@@ -742,6 +771,8 @@ def _psql_restore_command(target: PsqlRestoreTarget) -> list[str]:
     return [
         "psql",
         target.dsn,
+        "-U",
+        target.user,
         "-v",
         "ON_ERROR_STOP=1",
         "-q",
@@ -770,12 +801,19 @@ def _pgpass_field(value: str) -> str:
 def _connect_admin(admin_url: str) -> AdminConnection:
     try:
         return cast(
-            AdminConnection, psycopg.connect(admin_url, autocommit=True)
+            AdminConnection,
+            psycopg.connect(
+                _admin_url_for_operations(admin_url), autocommit=True
+            ),
         )
     except psycopg.Error as exc:
         raise ProjectError(
             f"Could not connect to remote Postgres: {exc}"
         ) from exc
+
+
+def _admin_url_for_operations(admin_url: str) -> str:
+    return _url_for_database(admin_url, POSTGRES_ADMIN_DATABASE)
 
 
 def _raise_swap_failure_after_rollback_failure(
@@ -823,6 +861,7 @@ def _terminate_database_connections(
         FROM pg_stat_activity
         WHERE datname = %s
           AND pid <> pg_backend_pid()
+          AND backend_type = 'client backend'
         """,
         [database_name],
     )
@@ -850,7 +889,11 @@ def _pool_catalog_count(conn: psycopg.Connection[tuple]) -> int | None:
         )
         if not exists:
             return None
-        cur.execute("SELECT count(*) FROM pool_catalog")
+        cur.execute(
+            sql.SQL("SELECT count(*) FROM {}").format(
+                sql.Identifier("public", "pool_catalog")
+            )
+        )
         return _required_int_scalar(cur.fetchone(), "pool_catalog count query")
 
 
@@ -858,7 +901,7 @@ def _table_row_count(conn: psycopg.Connection[tuple], table_name: str) -> int:
     with conn.cursor() as cur:
         cur.execute(
             sql.SQL("SELECT count(*) FROM {}").format(
-                sql.Identifier(table_name)
+                sql.Identifier("public", table_name)
             )
         )
         return _required_int_scalar(

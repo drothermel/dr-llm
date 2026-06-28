@@ -1,6 +1,160 @@
 version: 1
 manifest_table: published_pool_summaries
-pools:
-  - source_pool: nl_latents
-    processor: nl_latents_samples_v1
-    summary_table: published_nl_latents_samples
+published_samples_table: published_pool_samples
+projects:
+  - project_name: nl_latents
+    pools:
+      - source_pool: nl_latents
+        processor: nl_latents_samples_v1
+  - project_name: code_comp_v0
+    pools:
+      - source_pool: direct_enc_t0
+        processor: encoder_description_v1
+      - source_pool: encoder_pool_t1
+        processor: encoder_description_v1
+      - source_pool: encoder_s6t3g2_v0
+        processor: encoder_description_v1
+      - source_pool: official_decoder_t0
+        processor: decoder_code_v1
+  - project_name: code_comp_t1
+    pools:
+      - source_pool: budget_dec_v0_output_only
+        processor: decoder_code_v1
+      - source_pool: budget_dec_v0
+        processor: decoder_code_v1
+      - source_pool: budget_dec_v0_size6
+        processor: decoder_code_v1
+      - source_pool: budget_enc_v0_output_only
+        processor: encoder_description_v1
+      - source_pool: budget_enc_v0
+        processor: encoder_description_v1
+      - source_pool: budget_enc_v0_size6
+        processor: encoder_description_v1
+      - source_pool: dec_v0_orig_docstring_output_only
+        processor: decoder_code_v1
+      - source_pool: dec_v0_orig_docstring
+        processor: decoder_code_v1
+      - source_pool: dec_v0_orig
+        processor: decoder_code_v1
+  - project_name: lla_v0
+    pools:
+      - source_pool: stateful_d3_train_py_legacy
+        processor: encoder_description_v1
+      - source_pool: stateful_d3_train_py_v2
+        processor: encoder_description_v1
+  - project_name: rsi_v0
+    pools:
+      - source_pool: enc_train_sweep_d4_py
+        processor: encoder_description_v1
+      - source_pool: enc_train_sweep_d4_py_t2
+        processor: encoder_description_v1
+      - source_pool: self_improve_basic_b10
+        processor: encoder_description_v1
+      - source_pool: self_improve_struct_uncon_b10
+        processor: encoder_description_v1
+  - project_name: icbinb_2026_01_31_attempt
+    pools:
+      - source_pool: fizzbuzz1_enc_basic_b05_v1
+        processor: encoder_description_v1
+      - source_pool: fizzbuzz1_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: fizzbuzz1_enc_faithful_b05_v1
+        processor: encoder_description_v1
+      - source_pool: fizzbuzz1_enc_faithful_b10_v1
+        processor: encoder_description_v1
+      - source_pool: fizzbuzz1_enc_structu_910346a2
+        processor: encoder_description_v1
+      - source_pool: fizzbuzz1_enc_structu_ba8db634
+        processor: encoder_description_v1
+      - source_pool: fizzbuzz1_enc_structu_de926a57
+        processor: encoder_description_v1
+      - source_pool: fizzbuzz1_enc_structu_fd622b97
+        processor: encoder_description_v1
+      - source_pool: piecewise1_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: piecewise2_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_basic_b05_v0
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_basic_b075_v0
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_basic_b10_v0
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_faithf_f03b7579
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_faithful_b05_v0
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_faithful_b10_v0
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_struct_1371f96c
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_struct_5936d47e
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_struct_89fa91f1
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_struct_af82f3c0
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_struct_e9f44946
+        processor: encoder_description_v1
+      - source_pool: piecewise3_enc_struct_f3277f32
+        processor: encoder_description_v1
+      - source_pool: piecewise4_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: piecewise5_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: simple_algorithms2_en_50ecc4b1
+        processor: encoder_description_v1
+      - source_pool: simple_algorithms2_en_578efb05
+        processor: encoder_description_v1
+      - source_pool: simple_algorithms2_en_a47945e0
+        processor: encoder_description_v1
+      - source_pool: simple_algorithms3_en_029b8403
+        processor: encoder_description_v1
+      - source_pool: simple_algorithms3_en_5a0e43b1
+        processor: encoder_description_v1
+      - source_pool: simple_algorithms3_en_9b4c9cf2
+        processor: encoder_description_v1
+      - source_pool: simple_algorithms3_en_c7f681ea
+        processor: encoder_description_v1
+      - source_pool: stateful1_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: stateful1_enc_structu_7090a675
+        processor: encoder_description_v1
+      - source_pool: stateful1_enc_structu_bddccd48
+        processor: encoder_description_v1
+      - source_pool: stateful2_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: stateful2_enc_structu_53a66400
+        processor: encoder_description_v1
+      - source_pool: stateful2_enc_structu_fd4eb2ac
+        processor: encoder_description_v1
+      - source_pool: stateful3_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: stateful3_enc_faithful_b10_v1
+        processor: encoder_description_v1
+      - source_pool: stateful3_enc_structu_7baf64b7
+        processor: encoder_description_v1
+      - source_pool: stateful3_enc_structu_dd89288a
+        processor: encoder_description_v1
+      - source_pool: stringrules1_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: stringrules1_enc_stru_4a1a6ea4
+        processor: encoder_description_v1
+      - source_pool: stringrules1_enc_stru_f7007f35
+        processor: encoder_description_v1
+      - source_pool: stringrules2_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: stringrules2_enc_stru_2edd647b
+        processor: encoder_description_v1
+      - source_pool: stringrules2_enc_stru_4210a163
+        processor: encoder_description_v1
+      - source_pool: stringrules3_enc_basic_b10_v1
+        processor: encoder_description_v1
+      - source_pool: stringrules3_enc_fait_6557fb6d
+        processor: encoder_description_v1
+      - source_pool: stringrules3_enc_stru_276fbba1
+        processor: encoder_description_v1
+      - source_pool: stringrules3_enc_stru_a49718b5
+        processor: encoder_description_v1

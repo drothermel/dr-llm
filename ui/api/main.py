@@ -20,6 +20,7 @@ from dr_llm.llm.catalog.service import ModelCatalogService
 from dr_llm.errors import ProviderSemanticError, ProviderTransportError
 from dr_llm.llm import ControlMode, build_default_registry
 from dr_llm.llm.providers.core.registry import ProviderRegistry
+from dr_llm.project.neon_publish import load_neon_publish_config
 
 # ---------------------------------------------------------------------------
 # Response models
@@ -31,6 +32,8 @@ DR_LLM_DATABASE_BASE_URL_ENV = "DR_LLM_DATABASE_BASE_URL"
 POSTGRES_SYNC_ADMIN_URL_ENV = "DR_LLM_POSTGRES_SYNC_ADMIN_URL"
 NL_LATENTS_DATABASE = "nl_latents"
 NL_LATENTS_TABLE = "published_nl_latents_samples"
+PUBLISHED_SAMPLES_TABLE = "published_pool_samples"
+DR_LLM_PUBLISHED_PROJECTS_ENV = "DR_LLM_PUBLISHED_PROJECTS"
 SMOKE_RUN_ID_PATTERN = "%smoke%"
 DEFAULT_PAGE = 1
 DEFAULT_LIMIT = 20
@@ -158,6 +161,89 @@ class NlLatentsSampleDetailResponse(NlLatentsSampleListRow):
     validation_summary_json: dict[str, Any] | None = None
 
 
+class PublishedFiltersResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    projects: list[str] = Field(default_factory=list)
+    source_pools: list[str] = Field(default_factory=list)
+    sample_roles: list[str] = Field(default_factory=list)
+    task_families: list[str] = Field(default_factory=list)
+    models: list[str] = Field(default_factory=list)
+    result_states: list[str] = Field(default_factory=list)
+    datasets: list[str] = Field(default_factory=list)
+
+
+class PublishedSampleListRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source_project: str
+    source_pool: str
+    source_sample_id: str
+    sample_idx: int
+    run_id: str | None = None
+    created_at: datetime | None = None
+    status: str | None = None
+    attempt_count: int | None = None
+    finish_reason: str | None = None
+    sample_role: str
+    output_kind: str
+    dataset_id: str | None = None
+    task_id: str | None = None
+    task_family: str | None = None
+    task_split: str | None = None
+    language: str | None = None
+    difficulty: str | None = None
+    budget_label: str | None = None
+    budget_chars: int | None = None
+    provider: str | None = None
+    model: str | None = None
+    result_state: str
+    passed: bool | None = None
+    validation_pass_rate: float | None = None
+    failure_category: str | None = None
+    budget_ok: bool | None = None
+    actual_chars: int | None = None
+    output_text: str | None = None
+    input_text: str | None = None
+
+
+class PublishedSamplesResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    samples: list[PublishedSampleListRow]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+class PublishedSampleDetailResponse(PublishedSampleListRow):
+    model_config = ConfigDict(frozen=True)
+
+    source_table: str
+    output_json_path: str
+    prompt_template_id: str | None = None
+    llm_config_id: str | None = None
+    enc_prompt_template_id: str | None = None
+    enc_llm_config_id: str | None = None
+    enc_sample_id: str | None = None
+    dec_prompt_template_id: str | None = None
+    dec_llm_config_id: str | None = None
+    upstream_project: str | None = None
+    upstream_pool: str | None = None
+    upstream_sample_id: str | None = None
+    upstream_sample_idx: int | None = None
+    source_kind: str | None = None
+    input_text_source: str | None = None
+    key_values_json: dict[str, Any] | None = None
+    request_json: dict[str, Any] | None = None
+    response_json: dict[str, Any] | None = None
+    metadata_json: dict[str, Any] | None = None
+    usage_json: dict[str, Any] | None = None
+    cost_json: dict[str, Any] | None = None
+    validation_json: dict[str, Any] | None = None
+
+
 def _entry_to_response(entry: ModelCatalogEntry) -> ModelEntryResponse:
     return ModelEntryResponse(
         provider=entry.provider,
@@ -248,6 +334,27 @@ def _connect_pool_database() -> psycopg.Connection[dict[str, Any]]:
     _load_ui_dotenv()
     dsn = _database_url_for_database(NL_LATENTS_DATABASE)
     return psycopg.connect(dsn, row_factory=dict_row)
+
+
+def _connect_project_database(
+    project_name: str,
+) -> psycopg.Connection[dict[str, Any]]:
+    _load_ui_dotenv()
+    dsn = _database_url_for_database(project_name)
+    return psycopg.connect(dsn, row_factory=dict_row)
+
+
+def _published_projects() -> tuple[str, ...]:
+    configured = os.getenv(DR_LLM_PUBLISHED_PROJECTS_ENV)
+    if configured:
+        names = tuple(
+            part.strip() for part in configured.split(",") if part.strip()
+        )
+        if names:
+            return names
+    return tuple(
+        project.project_name for project in load_neon_publish_config().projects
+    )
 
 
 def _fetch_string_options(column_name: str) -> list[str]:
@@ -389,6 +496,222 @@ def _fetch_nl_latents_sample(
     if row is None:
         return None
     return NlLatentsSampleDetailResponse(**row)
+
+
+def _fetch_project_string_options(
+    project_name: str, column_name: str
+) -> list[str]:
+    with _connect_project_database(project_name) as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT {column_name} FROM {PUBLISHED_SAMPLES_TABLE} "
+            f"ORDER BY {column_name}"
+        ).fetchall()
+    return [
+        str(row[column_name]) for row in rows if row[column_name] is not None
+    ]
+
+
+def _fetch_published_filters() -> PublishedFiltersResponse:
+    projects = _published_projects()
+    columns = {
+        "source_pools": "source_pool",
+        "sample_roles": "sample_role",
+        "task_families": "task_family",
+        "models": "model",
+        "result_states": "result_state",
+        "datasets": "dataset_id",
+    }
+    values: dict[str, set[str]] = {name: set() for name in columns}
+    for project_name in projects:
+        for field_name, column_name in columns.items():
+            values[field_name].update(
+                _fetch_project_string_options(project_name, column_name)
+            )
+    return PublishedFiltersResponse(
+        projects=sorted(projects),
+        source_pools=sorted(values["source_pools"]),
+        sample_roles=sorted(values["sample_roles"]),
+        task_families=sorted(values["task_families"]),
+        models=sorted(values["models"]),
+        result_states=sorted(values["result_states"]),
+        datasets=sorted(values["datasets"]),
+    )
+
+
+def _published_conditions(
+    *,
+    project: str | None,
+    source_pool: str | None,
+    sample_role: str | None,
+    task_family: str | None,
+    model: str | None,
+    result: str | None,
+    dataset: str | None,
+    hide_pending: bool,
+    hide_smoke: bool,
+) -> tuple[str, list[str]]:
+    conditions: list[str] = []
+    values: list[str] = []
+    for column_name, value in (
+        ("source_project", project),
+        ("source_pool", source_pool),
+        ("sample_role", sample_role),
+        ("task_family", task_family),
+        ("model", model),
+        ("result_state", result),
+        ("dataset_id", dataset),
+    ):
+        if value:
+            values.append(value)
+            conditions.append(f"{column_name} = %s")
+    if hide_pending:
+        conditions.append("result_state <> 'pending'")
+    if hide_smoke:
+        values.append(SMOKE_RUN_ID_PATTERN)
+        conditions.append("coalesce(run_id, '') NOT ILIKE %s")
+        values.append(SMOKE_RUN_ID_PATTERN)
+        conditions.append("coalesce(source_pool, '') NOT ILIKE %s")
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    return where, values
+
+
+def _target_published_projects(project: str | None) -> tuple[str, ...]:
+    configured_projects = _published_projects()
+    if project:
+        if project not in configured_projects:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Published project not found: {project}",
+            )
+        return (project,)
+    return configured_projects
+
+
+def _fetch_published_samples(
+    *,
+    page: int,
+    limit: int,
+    project: str | None,
+    source_pool: str | None,
+    sample_role: str | None,
+    task_family: str | None,
+    model: str | None,
+    result: str | None,
+    dataset: str | None,
+    hide_pending: bool,
+    hide_smoke: bool,
+) -> PublishedSamplesResponse:
+    page = _parse_positive_int(page, DEFAULT_PAGE)
+    limit = min(MAX_LIMIT, _parse_positive_int(limit, DEFAULT_LIMIT))
+    offset = (page - 1) * limit
+    where, values = _published_conditions(
+        project=project,
+        source_pool=source_pool,
+        sample_role=sample_role,
+        task_family=task_family,
+        model=model,
+        result=result,
+        dataset=dataset,
+        hide_pending=hide_pending,
+        hide_smoke=hide_smoke,
+    )
+    total = 0
+    rows: list[dict[str, Any]] = []
+    per_project_limit = offset + limit
+    for project_name in _target_published_projects(project):
+        with _connect_project_database(project_name) as conn:
+            count_row = conn.execute(
+                f"SELECT count(*) AS count FROM {PUBLISHED_SAMPLES_TABLE} {where}",
+                values,
+            ).fetchone()
+            total += int(count_row["count"]) if count_row is not None else 0
+            rows.extend(
+                conn.execute(
+                    f"""
+                    SELECT
+                        source_project,
+                        source_pool,
+                        source_sample_id,
+                        sample_idx,
+                        run_id,
+                        created_at,
+                        status,
+                        attempt_count,
+                        finish_reason,
+                        sample_role,
+                        output_kind,
+                        dataset_id,
+                        task_id,
+                        task_family,
+                        task_split,
+                        language,
+                        difficulty,
+                        budget_label,
+                        budget_chars,
+                        provider,
+                        model,
+                        result_state,
+                        passed,
+                        validation_pass_rate,
+                        failure_category,
+                        budget_ok,
+                        actual_chars,
+                        left(output_text, 500) AS output_text,
+                        left(input_text, 500) AS input_text
+                    FROM {PUBLISHED_SAMPLES_TABLE}
+                    {where}
+                    ORDER BY created_at DESC NULLS LAST, source_project,
+                             source_pool, sample_idx
+                    LIMIT %s
+                    """,
+                    [*values, per_project_limit],
+                ).fetchall()
+            )
+    rows.sort(
+        key=lambda row: (
+            row["created_at"].timestamp()
+            if row["created_at"] is not None
+            else float("-inf"),
+            row["source_project"],
+            row["source_pool"],
+            row["sample_idx"],
+        ),
+        reverse=True,
+    )
+    page_rows = rows[offset : offset + limit]
+    return PublishedSamplesResponse(
+        samples=[PublishedSampleListRow(**row) for row in page_rows],
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=(total + limit - 1) // limit if limit else 0,
+    )
+
+
+def _fetch_published_sample(
+    project_name: str,
+    source_pool: str,
+    sample_id: str,
+) -> PublishedSampleDetailResponse | None:
+    if project_name not in _published_projects():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Published project not found: {project_name}",
+        )
+    with _connect_project_database(project_name) as conn:
+        row = conn.execute(
+            f"""
+            SELECT *
+            FROM {PUBLISHED_SAMPLES_TABLE}
+            WHERE source_project = %s
+              AND source_pool = %s
+              AND source_sample_id = %s
+            """,
+            [project_name, source_pool, sample_id],
+        ).fetchone()
+    if row is None:
+        return None
+    return PublishedSampleDetailResponse(**row)
 
 
 @asynccontextmanager
@@ -563,6 +886,61 @@ def list_nl_latents_samples(
 )
 def get_nl_latents_sample(sample_id: str) -> NlLatentsSampleDetailResponse:
     sample = _fetch_nl_latents_sample(sample_id)
+    if sample is None:
+        raise HTTPException(status_code=404, detail="Sample not found.")
+    return sample
+
+
+@app.get(
+    "/api/published/filters",
+    response_model=PublishedFiltersResponse,
+)
+def get_published_filters() -> PublishedFiltersResponse:
+    return _fetch_published_filters()
+
+
+@app.get(
+    "/api/published/samples",
+    response_model=PublishedSamplesResponse,
+)
+def list_published_samples(
+    page: int = DEFAULT_PAGE,
+    limit: int = DEFAULT_LIMIT,
+    project: str | None = None,
+    source_pool: str | None = None,
+    sample_role: str | None = None,
+    task_family: str | None = None,
+    model: str | None = None,
+    result: str | None = None,
+    dataset: str | None = None,
+    hide_pending: bool = False,
+    hide_smoke: bool = False,
+) -> PublishedSamplesResponse:
+    return _fetch_published_samples(
+        page=page,
+        limit=limit,
+        project=project,
+        source_pool=source_pool,
+        sample_role=sample_role,
+        task_family=task_family,
+        model=model,
+        result=result,
+        dataset=dataset,
+        hide_pending=hide_pending,
+        hide_smoke=hide_smoke,
+    )
+
+
+@app.get(
+    "/api/published/samples/{project_name}/{source_pool}/{sample_id}",
+    response_model=PublishedSampleDetailResponse,
+)
+def get_published_sample(
+    project_name: str,
+    source_pool: str,
+    sample_id: str,
+) -> PublishedSampleDetailResponse:
+    sample = _fetch_published_sample(project_name, source_pool, sample_id)
     if sample is None:
         raise HTTPException(status_code=404, detail="Sample not found.")
     return sample

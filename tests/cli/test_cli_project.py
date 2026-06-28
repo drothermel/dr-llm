@@ -304,13 +304,14 @@ def test_project_publish_neon_invokes_service(
             manifest_table="published_pool_summaries",
             published_tables=[
                 "published_pool_summaries",
+                "published_pool_samples",
                 "published_nl_latents_samples",
             ],
             pools=[
                 PublishedPoolSummary(
                     source_pool="nl_latents",
                     processor=PublishProcessor.nl_latents_samples_v1,
-                    summary_table="published_nl_latents_samples",
+                    summary_table="published_pool_samples",
                     source_row_count=10,
                     summary_row_count=10,
                 )
@@ -331,6 +332,7 @@ def test_project_publish_neon_invokes_service(
     assert payload["project_name"] == "demo"
     assert payload["published_tables"] == [
         "published_pool_summaries",
+        "published_pool_samples",
         "published_nl_latents_samples",
     ]
 

@@ -17,20 +17,46 @@ from dr_llm.project.neon_publish import (
 from dr_llm.project.project_info import ProjectInfo
 
 
-def test_default_neon_publish_config_whitelists_nl_latents() -> None:
+def test_default_neon_publish_config_whitelists_publishable_projects() -> None:
     config = load_neon_publish_config()
 
     assert config.version == 1
     assert config.manifest_table == "published_pool_summaries"
-    assert config.published_table_names == (
+    assert config.published_samples_table == "published_pool_samples"
+    assert config.published_table_names_for("nl_latents") == (
         "published_pool_summaries",
+        "published_pool_samples",
         "published_nl_latents_samples",
     )
-    assert len(config.pools) == 1
-    [pool] = config.pools
+    assert config.published_table_names_for("code_comp_v0") == (
+        "published_pool_summaries",
+        "published_pool_samples",
+    )
+    assert {project.project_name for project in config.projects} == {
+        "nl_latents",
+        "code_comp_v0",
+        "code_comp_t1",
+        "lla_v0",
+        "rsi_v0",
+        "icbinb_2026_01_31_attempt",
+    }
+    nl_latents = config.project_config("nl_latents")
+    [pool] = nl_latents.pools
     assert pool.source_pool == "nl_latents"
     assert pool.processor is PublishProcessor.nl_latents_samples_v1
-    assert pool.summary_table == "published_nl_latents_samples"
+    assert pool.summary_table == "published_pool_samples"
+
+    code_comp_v0 = config.project_config("code_comp_v0")
+    processors = {
+        pool.source_pool: pool.processor for pool in code_comp_v0.pools
+    }
+    assert (
+        processors["direct_enc_t0"] is PublishProcessor.encoder_description_v1
+    )
+    assert (
+        processors["official_decoder_t0"] is PublishProcessor.decoder_code_v1
+    )
+    assert "reexport_seed_encoder" not in processors
 
 
 def test_publish_project_for_neon_requires_running_project(
@@ -54,29 +80,51 @@ def test_neon_publish_config_rejects_unknown_keys() -> None:
     payload: dict[str, Any] = {
         "version": 1,
         "manifest_table": "published_pool_summaries",
-        "pools": [],
+        "projects": [],
         "unexpected": True,
     }
     with pytest.raises(ValidationError):
         NeonPublishConfig(**payload)
 
 
-def test_neon_publish_config_rejects_duplicate_summary_tables() -> None:
+def test_neon_publish_config_rejects_duplicate_projects() -> None:
     payload: dict[str, Any] = {
         "version": 1,
         "manifest_table": "published_pool_summaries",
-        "pools": [
+        "projects": [
             {
-                "source_pool": "nl_latents",
-                "processor": "nl_latents_samples_v1",
-                "summary_table": "published_nl_latents_samples",
+                "project_name": "nl_latents",
+                "pools": [],
             },
             {
-                "source_pool": "other_pool",
-                "processor": "nl_latents_samples_v1",
-                "summary_table": "published_nl_latents_samples",
+                "project_name": "nl_latents",
+                "pools": [],
             },
         ],
     }
-    with pytest.raises(ValidationError, match="summary tables"):
+    with pytest.raises(ValidationError, match="project names"):
+        NeonPublishConfig(**payload)
+
+
+def test_neon_publish_config_rejects_duplicate_project_pools() -> None:
+    payload: dict[str, Any] = {
+        "version": 1,
+        "manifest_table": "published_pool_summaries",
+        "projects": [
+            {
+                "project_name": "nl_latents",
+                "pools": [
+                    {
+                        "source_pool": "nl_latents",
+                        "processor": "nl_latents_samples_v1",
+                    },
+                    {
+                        "source_pool": "nl_latents",
+                        "processor": "nl_latents_samples_v1",
+                    },
+                ],
+            }
+        ],
+    }
+    with pytest.raises(ValidationError, match="source names"):
         NeonPublishConfig(**payload)

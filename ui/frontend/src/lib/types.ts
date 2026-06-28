@@ -102,3 +102,78 @@ export type NlLatentsSampleDetail = NlLatentsSampleListRow & {
   error_detail: string | null
   validation_summary_json: Record<string, unknown> | null
 }
+
+export type PublishedFilters = {
+  projects: string[]
+  source_pools: string[]
+  sample_roles: string[]
+  task_families: string[]
+  models: string[]
+  result_states: string[]
+  datasets: string[]
+}
+
+export type PublishedSampleListRow = {
+  source_project: string
+  source_pool: string
+  source_sample_id: string
+  sample_idx: number
+  run_id: string | null
+  created_at: string | null
+  status: string | null
+  attempt_count: number | null
+  finish_reason: string | null
+  sample_role: string
+  output_kind: string
+  dataset_id: string | null
+  task_id: string | null
+  task_family: string | null
+  task_split: string | null
+  language: string | null
+  difficulty: string | null
+  budget_label: string | null
+  budget_chars: number | null
+  provider: string | null
+  model: string | null
+  result_state: string
+  passed: boolean | null
+  validation_pass_rate: number | null
+  failure_category: string | null
+  budget_ok: boolean | null
+  actual_chars: number | null
+  output_text: string | null
+  input_text: string | null
+}
+
+export type PublishedSamplesResponse = {
+  samples: PublishedSampleListRow[]
+  total: number
+  page: number
+  limit: number
+  total_pages: number
+}
+
+export type PublishedSampleDetail = PublishedSampleListRow & {
+  source_table: string
+  output_json_path: string
+  prompt_template_id: string | null
+  llm_config_id: string | null
+  enc_prompt_template_id: string | null
+  enc_llm_config_id: string | null
+  enc_sample_id: string | null
+  dec_prompt_template_id: string | null
+  dec_llm_config_id: string | null
+  upstream_project: string | null
+  upstream_pool: string | null
+  upstream_sample_id: string | null
+  upstream_sample_idx: number | null
+  source_kind: string | null
+  input_text_source: string | null
+  key_values_json: Record<string, unknown> | null
+  request_json: Record<string, unknown> | null
+  response_json: Record<string, unknown> | null
+  metadata_json: Record<string, unknown> | null
+  usage_json: Record<string, unknown> | null
+  cost_json: Record<string, unknown> | null
+  validation_json: Record<string, unknown> | null
+}
