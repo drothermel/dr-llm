@@ -51,6 +51,17 @@ def test_openrouter_policy_applies_verified_overrides() -> None:
         OpenRouterEffortLevel.MEDIUM,
         OpenRouterEffortLevel.HIGH,
     )
+    for model in (
+        "google/gemini-2.5-flash",
+        "google/gemini-2.5-flash-lite",
+        "google/gemini-3-flash-preview",
+        "google/gemini-3.1-flash-lite",
+    ):
+        assert (
+            policies[model].request_style
+            == OpenRouterControlRequestStyle.ENABLED_FLAG
+        )
+        assert policies[model].supports_disable is True
     assert (
         policies["deepseek/deepseek-chat"].request_style
         == OpenRouterControlRequestStyle.NONE
