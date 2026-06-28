@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import BinaryIO, cast
 
@@ -407,6 +408,66 @@ def test_validate_expected_table_copy_rejects_extra_target_tables(
     )
 
 
+class RecordingCursor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scalar_rows: list[tuple[object, ...] | None]
+    queries: list[str] = Field(default_factory=list)
+
+    def __enter__(self) -> RecordingCursor:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def execute(self, query: object, params: list[str] | None = None) -> None:
+        _ = params
+        as_string = getattr(query, "as_string", None)
+        if callable(as_string):
+            self.queries.append(cast(Callable[[], str], as_string)())
+            return
+        self.queries.append(str(query))
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self.scalar_rows.pop(0)
+
+
+class RecordingConnection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cursor_value: RecordingCursor
+
+    def cursor(self) -> RecordingCursor:
+        return self.cursor_value
+
+
+def test_table_row_count_qualifies_public_schema() -> None:
+    cursor = RecordingCursor(scalar_rows=[(7,)])
+    conn = RecordingConnection(cursor_value=cursor)
+
+    row_count = postgres_sync_module._table_row_count(
+        cast(psycopg.Connection[tuple], conn),
+        "published_pool_summaries",
+    )
+
+    assert row_count == 7
+    assert cursor.queries == [
+        'SELECT count(*) FROM "public"."published_pool_summaries"'
+    ]
+
+
+def test_pool_catalog_count_qualifies_public_schema() -> None:
+    cursor = RecordingCursor(scalar_rows=[(True,), (3,)])
+    conn = RecordingConnection(cursor_value=cursor)
+
+    pool_count = postgres_sync_module._pool_catalog_count(
+        cast(psycopg.Connection[tuple], conn)
+    )
+
+    assert pool_count == 3
+    assert cursor.queries[1] == 'SELECT count(*) FROM "public"."pool_catalog"'
+
+
 def test_parse_restore_target_reads_required_dsn_fields() -> None:
     target_dsn = (
         "postgresql://alice:secret@example.com:6543/demo"
@@ -484,6 +545,8 @@ def test_restore_sql_file_uses_passwordless_dsn_and_removes_pgpass(
         "psql",
         "postgresql://example.com:6543/demo"
         "?sslmode=require&channel_binding=require",
+        "-U",
+        "alice",
         "-v",
         "ON_ERROR_STOP=1",
         "-q",
@@ -656,7 +719,10 @@ def test_replace_database_renames_temporary_when_target_is_absent() -> None:
     )
 
     assert replaced_existing is False
-    assert cursor.operations == [("rename", "demo_sync->demo")]
+    assert cursor.operations == [
+        ("terminate", "demo_sync"),
+        ("rename", "demo_sync->demo"),
+    ]
 
 
 def test_replace_database_moves_existing_target_before_swap() -> None:
@@ -676,6 +742,7 @@ def test_replace_database_moves_existing_target_before_swap() -> None:
     assert cursor.operations == [
         ("terminate", "demo"),
         ("rename", "demo->demo_prev"),
+        ("terminate", "demo_sync"),
         ("rename", "demo_sync->demo"),
     ]
 
@@ -700,6 +767,7 @@ def test_replace_database_restores_previous_when_swap_fails() -> None:
     assert cursor.operations == [
         ("terminate", "demo"),
         ("rename", "demo->demo_prev"),
+        ("terminate", "demo_sync"),
         ("terminate", "demo_prev"),
         ("rename", "demo_prev->demo"),
     ]
@@ -728,5 +796,6 @@ def test_replace_database_translates_failed_rollback() -> None:
     assert cursor.operations == [
         ("terminate", "demo"),
         ("rename", "demo->demo_prev"),
+        ("terminate", "demo_sync"),
         ("terminate", "demo_prev"),
     ]

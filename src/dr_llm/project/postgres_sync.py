@@ -235,6 +235,7 @@ class PsycopgPostgresAdminOperations:
                     cur, plan
                 )
                 try:
+                    self._terminate_connections(cur, plan.temporary_database)
                     self._rename_database(
                         cur,
                         plan.temporary_database,
@@ -744,6 +745,8 @@ def _psql_restore_command(target: PsqlRestoreTarget) -> list[str]:
     return [
         "psql",
         target.dsn,
+        "-U",
+        target.user,
         "-v",
         "ON_ERROR_STOP=1",
         "-q",
@@ -852,7 +855,11 @@ def _pool_catalog_count(conn: psycopg.Connection[tuple]) -> int | None:
         )
         if not exists:
             return None
-        cur.execute("SELECT count(*) FROM pool_catalog")
+        cur.execute(
+            sql.SQL("SELECT count(*) FROM {}").format(
+                sql.Identifier("public", "pool_catalog")
+            )
+        )
         return _required_int_scalar(cur.fetchone(), "pool_catalog count query")
 
 
@@ -860,7 +867,7 @@ def _table_row_count(conn: psycopg.Connection[tuple], table_name: str) -> int:
     with conn.cursor() as cur:
         cur.execute(
             sql.SQL("SELECT count(*) FROM {}").format(
-                sql.Identifier(table_name)
+                sql.Identifier("public", table_name)
             )
         )
         return _required_int_scalar(
