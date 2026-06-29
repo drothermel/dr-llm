@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
@@ -26,11 +26,15 @@ def test_default_neon_publish_config_whitelists_publishable_projects() -> None:
     assert config.published_table_names_for("nl_latents") == (
         "published_pool_summaries",
         "published_pool_samples",
+        "published_sample_test_failures",
+        "published_tasks",
         "published_nl_latents_samples",
     )
     assert config.published_table_names_for("code_comp_v0") == (
         "published_pool_summaries",
         "published_pool_samples",
+        "published_sample_test_failures",
+        "published_tasks",
     )
     assert {project.project_name for project in config.projects} == {
         "nl_latents",
@@ -128,3 +132,83 @@ def test_neon_publish_config_rejects_duplicate_project_pools() -> None:
     }
     with pytest.raises(ValidationError, match="source names"):
         NeonPublishConfig(**payload)
+
+
+class RecordingPublishConnection:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def execute(self, query: object, params: object | None = None) -> None:
+        _ = params
+        as_string = getattr(query, "as_string", None)
+        if callable(as_string):
+            self.queries.append(as_string())
+            return
+        self.queries.append(str(query))
+
+
+def test_empty_common_samples_table_uses_lean_schema() -> None:
+    conn = RecordingPublishConnection()
+
+    neon_publish_module._create_empty_common_samples_table(
+        cast(Any, conn), "published_pool_samples__build"
+    )
+
+    [query] = conn.queries
+    assert "prompt_tokens integer" in query
+    assert "total_cost_usd numeric" in query
+    assert "error_text text" in query
+    assert "validation_time_seconds double precision" in query
+    assert "key_values_json" not in query
+    assert "request_json jsonb" not in query
+    assert "response_json jsonb" not in query
+    assert "metadata_json jsonb" not in query
+    assert "validation_json jsonb" not in query
+
+
+def test_empty_sample_test_failures_table_stores_failed_case_payloads() -> (
+    None
+):
+    conn = RecordingPublishConnection()
+
+    neon_publish_module._create_empty_sample_test_failures_table(
+        cast(Any, conn), "published_sample_test_failures__build"
+    )
+
+    [query] = conn.queries
+    assert "case_idx integer" in query
+    assert "input_json jsonb" in query
+    assert "expected_json jsonb" in query
+    assert "actual_json jsonb" in query
+    assert "failure_json jsonb" in query
+
+
+def test_encoder_common_select_projects_usage_cost_and_error_fields() -> None:
+    source = neon_publish_module.PoolSource(
+        project_name="code_comp_v0",
+        pool=neon_publish_module.PublishedPoolConfig(
+            source_pool="direct_enc_t0",
+            processor=PublishProcessor.encoder_description_v1,
+        ),
+        source_table="pool_direct_enc_t0_samples",
+        source_row_count=1,
+        table_columns=frozenset(
+            {
+                "prompt_template_id",
+                "data_sample_id",
+                "llm_config_id",
+                "status",
+            }
+        ),
+    )
+
+    query = neon_publish_module._encoder_common_select(source).as_string()
+
+    assert "AS prompt_tokens" in query
+    assert "AS completion_tokens" in query
+    assert "AS total_cost_usd" in query
+    assert "AS error_text" in query
+    assert " AS request_json" not in query
+    assert " AS response_json" not in query
+    assert " AS metadata_json" not in query
+    assert " AS validation_json" not in query

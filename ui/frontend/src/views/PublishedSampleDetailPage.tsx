@@ -12,8 +12,29 @@ type PublishedSampleDetailPageProps = {
   sample: PublishedSampleDetail | null
 }
 
-function prettyJson(value: Record<string, unknown> | null): string | null {
-  return value ? JSON.stringify(value, null, 2) : null
+type DetailItem = {
+  label: string
+  value: string | number | boolean | null | undefined
+}
+
+function prettyJson(value: unknown): string | null {
+  return value === null || value === undefined
+    ? null
+    : JSON.stringify(value, null, 2)
+}
+
+function displayValue(value: DetailItem['value']): string {
+  if (value === null || value === undefined || value === '') return 'none'
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value === 'number') return value.toLocaleString()
+  return value
+}
+
+function hasAnyValue(items: DetailItem[]): boolean {
+  return items.some(
+    item =>
+      item.value !== null && item.value !== undefined && item.value !== '',
+  )
 }
 
 function shortDate(value: string | null): string {
@@ -23,6 +44,36 @@ function shortDate(value: string | null): string {
 
 function roleLabel(value: string): string {
   return value.replaceAll('_', ' ')
+}
+
+function DetailGrid({
+  label,
+  items,
+}: {
+  label: string
+  items: DetailItem[]
+}) {
+  if (!hasAnyValue(items)) return null
+  return (
+    <section className="flex flex-col gap-2.5">
+      <span className={SECTION_LABEL}>{label}</span>
+      <div className="grid grid-cols-3 gap-2 max-lg:grid-cols-2 max-sm:grid-cols-1">
+        {items.map(item => (
+          <div
+            key={item.label}
+            className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-tertiary)] px-3 py-2"
+          >
+            <div className="text-[10px] font-semibold tracking-[0.06em] text-[var(--text-muted)] uppercase">
+              {item.label}
+            </div>
+            <div className="mt-1 font-mono text-[12px] break-all text-[var(--text-primary)]">
+              {displayValue(item.value)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 export default function PublishedSampleDetailPage({
@@ -161,32 +212,110 @@ export default function PublishedSampleDetailPage({
               </div>
             )}
 
-            <div className="grid grid-cols-2 items-start gap-4 max-lg:grid-cols-1">
-              <CodePane
-                label="Key values"
-                value={prettyJson(sample.key_values_json)}
-                language="json"
-                badge="json"
-              />
-              <CodePane
-                label="Validation"
-                value={prettyJson(sample.validation_json)}
-                language="json"
-                badge="json"
-              />
-              <CodePane
-                label="Request"
-                value={prettyJson(sample.request_json)}
-                language="json"
-                badge="json"
-              />
-              <CodePane
-                label="Response"
-                value={prettyJson(sample.response_json)}
-                language="json"
-                badge="json"
-              />
-            </div>
+            <DetailGrid
+              label="LLM result"
+              items={[
+                { label: 'provider', value: sample.provider },
+                { label: 'model', value: sample.model },
+                { label: 'mode', value: sample.mode },
+                { label: 'finish reason', value: sample.finish_reason },
+                { label: 'warnings', value: sample.warning_count },
+                { label: 'error', value: sample.error_text },
+              ]}
+            />
+
+            <DetailGrid
+              label="Usage"
+              items={[
+                { label: 'prompt tokens', value: sample.prompt_tokens },
+                {
+                  label: 'completion tokens',
+                  value: sample.completion_tokens,
+                },
+                { label: 'reasoning tokens', value: sample.reasoning_tokens },
+                { label: 'total tokens', value: sample.total_tokens },
+                {
+                  label: 'computed total',
+                  value: sample.computed_total_tokens,
+                },
+              ]}
+            />
+
+            <DetailGrid
+              label="Cost"
+              items={[
+                { label: 'total usd', value: sample.total_cost_usd },
+                { label: 'prompt usd', value: sample.prompt_cost_usd },
+                {
+                  label: 'completion usd',
+                  value: sample.completion_cost_usd,
+                },
+                { label: 'reasoning usd', value: sample.reasoning_cost_usd },
+                { label: 'currency', value: sample.cost_currency },
+              ]}
+            />
+
+            <DetailGrid
+              label="Validation"
+              items={[
+                { label: 'passed', value: sample.passed },
+                { label: 'pass rate', value: sample.validation_pass_rate },
+                {
+                  label: 'validation seconds',
+                  value: sample.validation_time_seconds,
+                },
+                { label: 'compiles', value: sample.compiles },
+                { label: 'compile error', value: sample.compile_error },
+                { label: 'has code fences', value: sample.has_code_fences },
+                {
+                  label: 'has expected function',
+                  value: sample.has_expected_function,
+                },
+              ]}
+            />
+
+            {sample.test_failures.length > 0 && (
+              <section className="flex flex-col gap-3">
+                <span className={SECTION_LABEL}>Failed tests</span>
+                {sample.test_failures.map((failure, index) => (
+                  <div
+                    key={`${failure.case_key ?? 'case'}-${failure.case_idx ?? index}`}
+                    className="grid grid-cols-2 items-start gap-4 border-t border-[var(--border-subtle)] pt-4 max-lg:grid-cols-1"
+                  >
+                    <CodePane
+                      label={`Failure ${failure.case_key ?? failure.case_idx ?? index}`}
+                      value={prettyJson(failure.failure_json)}
+                      language="json"
+                      badge="json"
+                    />
+                    <CodePane
+                      label="Input"
+                      value={prettyJson(failure.input_json)}
+                      language="json"
+                      badge="json"
+                    />
+                    <CodePane
+                      label="Expected"
+                      value={prettyJson(failure.expected_json)}
+                      language="json"
+                      badge="json"
+                    />
+                    <CodePane
+                      label="Actual"
+                      value={prettyJson(failure.actual_json)}
+                      language="json"
+                      badge="json"
+                      accent
+                    />
+                    <TextPanel
+                      label="Error"
+                      value={failure.error_text}
+                      className="col-span-2 max-lg:col-span-1"
+                    />
+                  </div>
+                ))}
+              </section>
+            )}
           </div>
         </>
       )}

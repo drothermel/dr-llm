@@ -26,6 +26,13 @@ from dr_llm.project.neon_publish import (
 from dr_llm.project.project_info import ProjectInfo
 
 runner = CliRunner()
+EXPECTED_NL_LATENTS_PUBLISHED_TABLES = [
+    "published_pool_summaries",
+    "published_pool_samples",
+    "published_sample_test_failures",
+    "published_tasks",
+    "published_nl_latents_samples",
+]
 
 
 def test_project_start_invokes_service_and_reports_port(
@@ -302,11 +309,7 @@ def test_project_publish_neon_invokes_service(
         return ProjectNeonPublishResult(
             project_name=name,
             manifest_table="published_pool_summaries",
-            published_tables=[
-                "published_pool_summaries",
-                "published_pool_samples",
-                "published_nl_latents_samples",
-            ],
+            published_tables=EXPECTED_NL_LATENTS_PUBLISHED_TABLES,
             pools=[
                 PublishedPoolSummary(
                     source_pool="nl_latents",
@@ -330,11 +333,7 @@ def test_project_publish_neon_invokes_service(
     assert published == ["demo"]
     payload = json.loads(result.stdout)
     assert payload["project_name"] == "demo"
-    assert payload["published_tables"] == [
-        "published_pool_summaries",
-        "published_pool_samples",
-        "published_nl_latents_samples",
-    ]
+    assert payload["published_tables"] == EXPECTED_NL_LATENTS_PUBLISHED_TABLES
 
 
 def test_project_sync_postgres_uses_admin_url_env_var(

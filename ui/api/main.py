@@ -33,11 +33,13 @@ POSTGRES_SYNC_ADMIN_URL_ENV = "DR_LLM_POSTGRES_SYNC_ADMIN_URL"
 NL_LATENTS_DATABASE = "nl_latents"
 NL_LATENTS_TABLE = "published_nl_latents_samples"
 PUBLISHED_SAMPLES_TABLE = "published_pool_samples"
+PUBLISHED_SAMPLE_TEST_FAILURES_TABLE = "published_sample_test_failures"
 DR_LLM_PUBLISHED_PROJECTS_ENV = "DR_LLM_PUBLISHED_PROJECTS"
 SMOKE_RUN_ID_PATTERN = "%smoke%"
 DEFAULT_PAGE = 1
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
+JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
 
 class ProviderStatusResponse(BaseModel):
@@ -217,6 +219,22 @@ class PublishedSamplesResponse(BaseModel):
     total_pages: int
 
 
+class PublishedSampleTestFailure(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source_project: str
+    source_pool: str
+    source_sample_id: str
+    sample_idx: int | None = None
+    case_key: str | None = None
+    case_idx: int | None = None
+    input_json: JsonValue = None
+    expected_json: JsonValue = None
+    actual_json: JsonValue = None
+    error_text: str | None = None
+    failure_json: dict[str, Any] | None = None
+
+
 class PublishedSampleDetailResponse(PublishedSampleListRow):
     model_config = ConfigDict(frozen=True)
 
@@ -235,13 +253,27 @@ class PublishedSampleDetailResponse(PublishedSampleListRow):
     upstream_sample_idx: int | None = None
     source_kind: str | None = None
     input_text_source: str | None = None
-    key_values_json: dict[str, Any] | None = None
-    request_json: dict[str, Any] | None = None
-    response_json: dict[str, Any] | None = None
-    metadata_json: dict[str, Any] | None = None
-    usage_json: dict[str, Any] | None = None
-    cost_json: dict[str, Any] | None = None
-    validation_json: dict[str, Any] | None = None
+    mode: str | None = None
+    warning_count: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    total_tokens: int | None = None
+    computed_total_tokens: int | None = None
+    total_cost_usd: float | None = None
+    prompt_cost_usd: float | None = None
+    completion_cost_usd: float | None = None
+    reasoning_cost_usd: float | None = None
+    cost_currency: str | None = None
+    error_text: str | None = None
+    validation_time_seconds: float | None = None
+    compiles: bool | None = None
+    compile_error: str | None = None
+    has_code_fences: bool | None = None
+    has_expected_function: bool | None = None
+    test_failures: list[PublishedSampleTestFailure] = Field(
+        default_factory=list
+    )
 
 
 def _entry_to_response(entry: ModelCatalogEntry) -> ModelEntryResponse:
@@ -709,9 +741,37 @@ def _fetch_published_sample(
             """,
             [project_name, source_pool, sample_id],
         ).fetchone()
+        failure_rows = conn.execute(
+            f"""
+            SELECT
+                source_project,
+                source_pool,
+                source_sample_id,
+                sample_idx,
+                case_key,
+                case_idx,
+                input_json,
+                expected_json,
+                actual_json,
+                error_text,
+                failure_json
+            FROM {PUBLISHED_SAMPLE_TEST_FAILURES_TABLE}
+            WHERE source_project = %s
+              AND source_pool = %s
+              AND source_sample_id = %s
+            ORDER BY case_idx NULLS LAST, case_key NULLS LAST
+            """,
+            [project_name, source_pool, sample_id],
+        ).fetchall()
     if row is None:
         return None
-    return PublishedSampleDetailResponse(**row)
+    return PublishedSampleDetailResponse(
+        **row,
+        test_failures=[
+            PublishedSampleTestFailure(**failure_row)
+            for failure_row in failure_rows
+        ],
+    )
 
 
 @asynccontextmanager

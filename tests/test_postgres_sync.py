@@ -20,6 +20,14 @@ from dr_llm.project.neon_publish import (
 )
 from dr_llm.project.project_info import ProjectInfo
 
+EXPECTED_NL_LATENTS_PUBLISHED_TABLES = (
+    "published_pool_summaries",
+    "published_pool_samples",
+    "published_sample_test_failures",
+    "published_tasks",
+    "published_nl_latents_samples",
+)
+
 
 class ValidationCall(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -75,11 +83,7 @@ class SyncCallRecorder(BaseModel):
         return ProjectNeonPublishResult(
             project_name=name,
             manifest_table="published_pool_summaries",
-            published_tables=[
-                "published_pool_summaries",
-                "published_pool_samples",
-                "published_nl_latents_samples",
-            ],
+            published_tables=list(EXPECTED_NL_LATENTS_PUBLISHED_TABLES),
             pools=[
                 PublishedPoolSummary(
                     source_pool="nl_latents",
@@ -188,11 +192,7 @@ def test_build_sync_plan_derives_temporary_database_target() -> None:
         f"postgresql://example/{plan.temporary_database}?sslmode=require"
     )
     assert plan.drop_previous is True
-    assert plan.published_tables == (
-        "published_pool_summaries",
-        "published_pool_samples",
-        "published_nl_latents_samples",
-    )
+    assert plan.published_tables == EXPECTED_NL_LATENTS_PUBLISHED_TABLES
 
 
 def test_sync_project_to_postgres_validates_and_swaps_database() -> None:
@@ -220,18 +220,10 @@ def test_sync_project_to_postgres_validates_and_swaps_database() -> None:
     ]
     assert calls.published_projects == ["nl_latents"]
     assert calls.dumped_projects == ["nl_latents"]
-    assert calls.dumped_table_names == [
-        (
-            "published_pool_summaries",
-            "published_pool_samples",
-            "published_nl_latents_samples",
-        )
-    ]
-    assert result.published_tables == [
-        "published_pool_summaries",
-        "published_pool_samples",
-        "published_nl_latents_samples",
-    ]
+    assert calls.dumped_table_names == [EXPECTED_NL_LATENTS_PUBLISHED_TABLES]
+    assert result.published_tables == list(
+        EXPECTED_NL_LATENTS_PUBLISHED_TABLES
+    )
 
 
 def test_sync_project_to_postgres_restores_and_validates_temporary_database() -> (
@@ -254,11 +246,7 @@ def test_sync_project_to_postgres_restores_and_validates_temporary_database() ->
         ValidationCall(
             source_dsn="postgresql://postgres:postgres@localhost:5500/dr_llm",
             target_dsn=expected_target_dsn,
-            table_names=(
-                "published_pool_summaries",
-                "published_pool_samples",
-                "published_nl_latents_samples",
-            ),
+            table_names=EXPECTED_NL_LATENTS_PUBLISHED_TABLES,
         )
     ]
 
@@ -341,16 +329,16 @@ def test_pgpass_line_escapes_colons_and_backslashes() -> None:
 
 def test_pg_dump_table_args_include_only_public_table_filters() -> None:
     assert postgres_sync_module._pg_dump_table_args(
-        (
-            "published_pool_summaries",
-            "published_pool_samples",
-            "published_nl_latents_samples",
-        )
+        EXPECTED_NL_LATENTS_PUBLISHED_TABLES
     ) == (
         "--table",
         "public.published_pool_summaries",
         "--table",
         "public.published_pool_samples",
+        "--table",
+        "public.published_sample_test_failures",
+        "--table",
+        "public.published_tasks",
         "--table",
         "public.published_nl_latents_samples",
     )
@@ -367,6 +355,8 @@ def test_validate_expected_table_copy_rejects_extra_target_tables(
     counts = {
         "published_pool_summaries": 1,
         "published_pool_samples": 2,
+        "published_sample_test_failures": 1,
+        "published_tasks": 1,
         "published_nl_latents_samples": 2,
     }
 
@@ -386,23 +376,23 @@ def test_validate_expected_table_copy_rejects_extra_target_tables(
             "pool_nl_latents_samples",
             "published_pool_summaries",
             "published_pool_samples",
+            "published_sample_test_failures",
+            "published_tasks",
             "published_nl_latents_samples",
         ],
         target_tables=[
             "published_pool_summaries",
             "published_pool_samples",
+            "published_sample_test_failures",
+            "published_tasks",
             "published_nl_latents_samples",
             "pool_nl_latents_samples",
         ],
-        table_names=(
-            "published_pool_summaries",
-            "published_pool_samples",
-            "published_nl_latents_samples",
-        ),
+        table_names=EXPECTED_NL_LATENTS_PUBLISHED_TABLES,
     )
 
     assert validation.passed is False
-    assert validation.checked_table_count == 3
+    assert validation.checked_table_count == 5
     assert validation.mismatches == (
         "extra target tables: pool_nl_latents_samples",
     )

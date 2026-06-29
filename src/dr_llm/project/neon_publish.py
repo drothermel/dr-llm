@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from enum import StrEnum
 from importlib.resources import files
 from typing import Any
@@ -15,9 +14,11 @@ from dr_llm.project.errors import ProjectError
 from dr_llm.project.project_service import get_project
 
 DEFAULT_CONFIG_RESOURCE = "data/neon_publish.yml"
-PUBLISHED_SCHEMA_VERSION = 2
+PUBLISHED_SCHEMA_VERSION = 3
 MANIFEST_GENERATED_AT_SQL = "now()"
 DEFAULT_PUBLISHED_SAMPLES_TABLE = "published_pool_samples"
+PUBLISHED_SAMPLE_TEST_FAILURES_TABLE = "published_sample_test_failures"
+PUBLISHED_TASKS_TABLE = "published_tasks"
 NL_LATENTS_SUMMARY_TABLE = "published_nl_latents_samples"
 NL_LATENTS_PROCESSOR_NAME = "nl_latents_samples_v1"
 NL_LATENTS_ROUNDTRIP_PROCESSOR_NAME = "nl_latents_roundtrip_v1"
@@ -120,7 +121,12 @@ class NeonPublishConfig(BaseModel):
 
     def published_table_names_for(self, project_name: str) -> tuple[str, ...]:
         project = self.project_config(project_name)
-        tables = {self.manifest_table, self.published_samples_table}
+        tables = {
+            self.manifest_table,
+            self.published_samples_table,
+            PUBLISHED_SAMPLE_TEST_FAILURES_TABLE,
+            PUBLISHED_TASKS_TABLE,
+        }
         if any(
             pool.processor is PublishProcessor.nl_latents_roundtrip_v1
             or pool.processor is PublishProcessor.nl_latents_samples_v1
@@ -132,6 +138,8 @@ class NeonPublishConfig(BaseModel):
             for table in (
                 self.manifest_table,
                 self.published_samples_table,
+                PUBLISHED_SAMPLE_TEST_FAILURES_TABLE,
+                PUBLISHED_TASKS_TABLE,
                 NL_LATENTS_SUMMARY_TABLE,
             )
             if table in tables
@@ -214,6 +222,16 @@ def publish_project_for_neon(name: str) -> ProjectNeonPublishResult:
                 sources=sources,
                 summary_table=config.published_samples_table,
             )
+            _publish_sample_test_failures(
+                conn,
+                sources=sources,
+                failures_table=PUBLISHED_SAMPLE_TEST_FAILURES_TABLE,
+            )
+            _publish_tasks(
+                conn,
+                samples_table=config.published_samples_table,
+                tasks_table=PUBLISHED_TASKS_TABLE,
+            )
             summaries = [
                 _published_pool_summary(
                     conn,
@@ -293,6 +311,66 @@ def _publish_common_samples(
         )
     _replace_table(conn, build_table, summary_table)
     _create_common_samples_indexes(conn, summary_table)
+
+
+def _publish_sample_test_failures(
+    conn: psycopg.Connection[Any],
+    *,
+    sources: list[PoolSource],
+    failures_table: str,
+) -> None:
+    build_table = validate_pg_identifier(
+        f"{failures_table}__build", "table name"
+    )
+    _drop_table(conn, build_table)
+    _ensure_try_parse_jsonb_function(conn)
+    selects = [_sample_test_failures_select(source) for source in sources]
+    if not selects:
+        _create_empty_sample_test_failures_table(conn, build_table)
+    else:
+        conn.execute(
+            sql.SQL("CREATE TABLE {} AS ").format(sql.Identifier(build_table))
+            + sql.SQL(" UNION ALL ").join(selects)
+        )
+    _replace_table(conn, build_table, failures_table)
+    _create_sample_test_failures_indexes(conn, failures_table)
+
+
+def _publish_tasks(
+    conn: psycopg.Connection[Any],
+    *,
+    samples_table: str,
+    tasks_table: str,
+) -> None:
+    build_table = validate_pg_identifier(f"{tasks_table}__build", "table name")
+    _drop_table(conn, build_table)
+    conn.execute(
+        sql.SQL(
+            """
+            CREATE TABLE {} AS
+            SELECT
+                source_project,
+                coalesce(dataset_id, task_id) AS dataset_id,
+                coalesce(task_id, dataset_id) AS task_id,
+                min(task_family) AS task_family,
+                min(task_split) AS task_split,
+                min(language) AS language,
+                min(difficulty) AS difficulty,
+                min(input_text) FILTER (
+                    WHERE sample_role = 'encoder_description'
+                      AND input_text IS NOT NULL
+                ) AS prompt_text,
+                NULL::text AS canonical_solution,
+                NULL::text AS test_source,
+                count(*)::bigint AS sample_count
+            FROM {}
+            WHERE dataset_id IS NOT NULL OR task_id IS NOT NULL
+            GROUP BY source_project, dataset_id, task_id
+            """
+        ).format(sql.Identifier(build_table), sql.Identifier(samples_table))
+    )
+    _replace_table(conn, build_table, tasks_table)
+    _create_tasks_indexes(conn, tasks_table)
 
 
 def _published_pool_summary(
@@ -393,23 +471,6 @@ def _nl_latents_common_select(source: PoolSource) -> sql.Composed:
         "coalesce(s.response_json, s.request_json, jsonb_build_object())"
     )
     validation_json = _json_text_expr(payload, "validation_json")
-    response_metadata = _json_text_expr(payload, "metadata_json")
-    key_columns = (
-        "config_id",
-        "family",
-        "difficulty",
-        "split",
-        "language",
-        "budget",
-        "task_id",
-        "task_data_version",
-        "enc_model",
-        "dec_model",
-        "enc_reasoning_effort",
-        "dec_reasoning_effort",
-        "call_id",
-        "status",
-    )
     return sql.SQL(
         """
         SELECT
@@ -467,17 +528,27 @@ def _nl_latents_common_select(source: PoolSource) -> sql.Composed:
             {payload}->>'failure_category' AS failure_category,
             ({payload}->>'budget_ok')::boolean AS budget_ok,
             ({payload}->>'actual_chars')::integer AS actual_chars,
-            {key_values_json} AS key_values_json,
-            s.request_json,
-            s.response_json,
-            jsonb_build_object(
-                'pool_metadata', coalesce(s.metadata_json, jsonb_build_object()),
-                'response_metadata',
-                    coalesce({response_metadata}, jsonb_build_object())
-            ) AS metadata_json,
-            s.response_json->'usage' AS usage_json,
-            s.response_json->'cost' AS cost_json,
-            {validation_json} AS validation_json
+            NULL::text AS mode,
+            NULL::integer AS warning_count,
+            NULL::integer AS prompt_tokens,
+            NULL::integer AS completion_tokens,
+            NULL::integer AS reasoning_tokens,
+            NULL::integer AS total_tokens,
+            NULL::integer AS computed_total_tokens,
+            NULL::numeric AS total_cost_usd,
+            NULL::numeric AS prompt_cost_usd,
+            NULL::numeric AS completion_cost_usd,
+            NULL::numeric AS reasoning_cost_usd,
+            NULL::text AS cost_currency,
+            {payload}->>'detail' AS error_text,
+            ({validation_json}->>'validation_time_seconds')
+                ::double precision AS validation_time_seconds,
+            ({validation_json}->>'compiles')::boolean AS compiles,
+            {validation_json}->>'compile_error' AS compile_error,
+            ({validation_json}->>'has_code_fences')::boolean
+                AS has_code_fences,
+            ({validation_json}->>'has_expected_function')::boolean
+                AS has_expected_function
         FROM {table} s
         """
     ).format(
@@ -487,18 +558,12 @@ def _nl_latents_common_select(source: PoolSource) -> sql.Composed:
         sample_role=sql.Literal(SampleRole.roundtrip_code.value),
         payload=payload,
         validation_json=validation_json,
-        key_values_json=_key_values_json_expr(key_columns),
-        response_metadata=response_metadata,
         table=table,
     )
 
 
 def _encoder_common_select(source: PoolSource) -> sql.Composed:
     table = sql.Identifier(source.source_table)
-    key_columns = _present_columns(
-        source,
-        ("prompt_template_id", "data_sample_id", "llm_config_id", "status"),
-    )
     metadata = sql.SQL("coalesce(s.metadata_json, jsonb_build_object())")
     return sql.SQL(
         """
@@ -559,13 +624,37 @@ def _encoder_common_select(source: PoolSource) -> sql.Composed:
             {metadata}->>'failure_category' AS failure_category,
             ({metadata}->>'budget_ok')::boolean AS budget_ok,
             NULL::integer AS actual_chars,
-            {key_values_json} AS key_values_json,
-            s.request_json,
-            s.response_json,
-            s.metadata_json,
-            s.response_json->'usage' AS usage_json,
-            s.response_json->'cost' AS cost_json,
-            NULL::jsonb AS validation_json
+            s.response_json->>'mode' AS mode,
+            CASE
+                WHEN jsonb_typeof(s.response_json->'warnings') = 'array'
+                    THEN jsonb_array_length(s.response_json->'warnings')
+                ELSE NULL::integer
+            END AS warning_count,
+            (s.response_json->'usage'->>'prompt_tokens')::integer
+                AS prompt_tokens,
+            (s.response_json->'usage'->>'completion_tokens')::integer
+                AS completion_tokens,
+            (s.response_json->'usage'->>'reasoning_tokens')::integer
+                AS reasoning_tokens,
+            (s.response_json->'usage'->>'total_tokens')::integer
+                AS total_tokens,
+            (s.response_json->'usage'->>'computed_total_tokens')::integer
+                AS computed_total_tokens,
+            (s.response_json->'cost'->>'total_cost_usd')::numeric
+                AS total_cost_usd,
+            (s.response_json->'cost'->>'prompt_cost_usd')::numeric
+                AS prompt_cost_usd,
+            (s.response_json->'cost'->>'completion_cost_usd')::numeric
+                AS completion_cost_usd,
+            (s.response_json->'cost'->>'reasoning_cost_usd')::numeric
+                AS reasoning_cost_usd,
+            s.response_json->'cost'->>'currency' AS cost_currency,
+            s.response_json->>'error' AS error_text,
+            NULL::double precision AS validation_time_seconds,
+            NULL::boolean AS compiles,
+            NULL::text AS compile_error,
+            NULL::boolean AS has_code_fences,
+            NULL::boolean AS has_expected_function
         FROM {table} s
         """
     ).format(
@@ -581,26 +670,12 @@ def _encoder_common_select(source: PoolSource) -> sql.Composed:
         llm_config_id=_column_or_null(source, "llm_config_id", "text"),
         metadata=metadata,
         prompt_text=_prompt_text_expr(sql.SQL("s.request_json->'prompt'")),
-        key_values_json=_key_values_json_expr(key_columns),
         table=table,
     )
 
 
 def _decoder_common_select(source: PoolSource) -> sql.Composed:
     table = sql.Identifier(source.source_table)
-    key_columns = _present_columns(
-        source,
-        (
-            "source_sample_id",
-            "enc_prompt_template_id",
-            "data_sample_id",
-            "enc_llm_config_id",
-            "enc_sample_id",
-            "dec_prompt_template_id",
-            "dec_llm_config_id",
-            "status",
-        ),
-    )
     metadata = sql.SQL("coalesce(s.metadata_json, jsonb_build_object())")
     data_sample_id = sql.SQL(
         "coalesce({metadata}->>'data_sample_id', {column})"
@@ -684,13 +759,37 @@ def _decoder_common_select(source: PoolSource) -> sql.Composed:
             {metadata}->>'failure_category' AS failure_category,
             ({metadata}->>'budget_ok')::boolean AS budget_ok,
             NULL::integer AS actual_chars,
-            {key_values_json} AS key_values_json,
-            s.request_json,
-            s.response_json,
-            s.metadata_json,
-            s.response_json->'usage' AS usage_json,
-            s.response_json->'cost' AS cost_json,
-            NULL::jsonb AS validation_json
+            s.response_json->>'mode' AS mode,
+            CASE
+                WHEN jsonb_typeof(s.response_json->'warnings') = 'array'
+                    THEN jsonb_array_length(s.response_json->'warnings')
+                ELSE NULL::integer
+            END AS warning_count,
+            (s.response_json->'usage'->>'prompt_tokens')::integer
+                AS prompt_tokens,
+            (s.response_json->'usage'->>'completion_tokens')::integer
+                AS completion_tokens,
+            (s.response_json->'usage'->>'reasoning_tokens')::integer
+                AS reasoning_tokens,
+            (s.response_json->'usage'->>'total_tokens')::integer
+                AS total_tokens,
+            (s.response_json->'usage'->>'computed_total_tokens')::integer
+                AS computed_total_tokens,
+            (s.response_json->'cost'->>'total_cost_usd')::numeric
+                AS total_cost_usd,
+            (s.response_json->'cost'->>'prompt_cost_usd')::numeric
+                AS prompt_cost_usd,
+            (s.response_json->'cost'->>'completion_cost_usd')::numeric
+                AS completion_cost_usd,
+            (s.response_json->'cost'->>'reasoning_cost_usd')::numeric
+                AS reasoning_cost_usd,
+            s.response_json->'cost'->>'currency' AS cost_currency,
+            s.response_json->>'error' AS error_text,
+            NULL::double precision AS validation_time_seconds,
+            NULL::boolean AS compiles,
+            NULL::text AS compile_error,
+            NULL::boolean AS has_code_fences,
+            NULL::boolean AS has_expected_function
         FROM {table} s
         """
     ).format(
@@ -712,7 +811,120 @@ def _decoder_common_select(source: PoolSource) -> sql.Composed:
         enc_sample_id=_column_or_null(source, "enc_sample_id", "text"),
         source_sample_id=source_sample_id,
         prompt_text=_prompt_text_expr(sql.SQL("s.request_json->'prompt'")),
-        key_values_json=_key_values_json_expr(key_columns),
+        table=table,
+    )
+
+
+def _sample_test_failures_select(source: PoolSource) -> sql.Composed:
+    table = sql.Identifier(source.source_table)
+    payload = sql.SQL(
+        "coalesce(s.response_json, s.request_json, jsonb_build_object())"
+    )
+    validation_json = _json_text_expr(payload, "validation_json")
+    return sql.SQL(
+        """
+        WITH parsed AS (
+            SELECT
+                s.sample_id AS source_sample_id,
+                s.sample_idx,
+                {validation_json} AS validation_json
+            FROM {table} s
+        ),
+        cases AS (
+            SELECT
+                p.source_sample_id,
+                p.sample_idx,
+                NULL::text AS case_key,
+                (array_case.ord - 1)::integer AS case_idx,
+                array_case.value AS case_json
+            FROM parsed p
+            CROSS JOIN LATERAL jsonb_array_elements(
+                CASE
+                    WHEN jsonb_typeof(
+                        p.validation_json->'test_case_results'
+                    ) = 'array'
+                    THEN p.validation_json->'test_case_results'
+                    ELSE '[]'::jsonb
+                END
+            ) WITH ORDINALITY AS array_case(value, ord)
+            UNION ALL
+            SELECT
+                p.source_sample_id,
+                p.sample_idx,
+                object_case.key AS case_key,
+                NULL::integer AS case_idx,
+                object_case.value AS case_json
+            FROM parsed p
+            CROSS JOIN LATERAL jsonb_each(
+                CASE
+                    WHEN jsonb_typeof(
+                        p.validation_json->'test_case_results'
+                    ) = 'object'
+                    THEN p.validation_json->'test_case_results'
+                    ELSE '{{}}'::jsonb
+                END
+            ) AS object_case(key, value)
+        ),
+        normalized AS (
+            SELECT
+                source_sample_id,
+                sample_idx,
+                case_key,
+                case_idx,
+                case_json,
+                coalesce(
+                    case_json->'input',
+                    case_json->'inputs',
+                    case_json->'args',
+                    case_json->'arguments'
+                ) AS input_json,
+                coalesce(
+                    case_json->'expected',
+                    case_json->'expected_output',
+                    case_json->'want'
+                ) AS expected_json,
+                coalesce(
+                    case_json->'actual',
+                    case_json->'actual_output',
+                    case_json->'got',
+                    case_json->'output'
+                ) AS actual_json,
+                coalesce(
+                    case_json->>'error',
+                    case_json->>'exception',
+                    case_json->>'traceback',
+                    case_json->>'message'
+                ) AS error_text
+            FROM cases
+            WHERE pg_temp._dr_llm_test_case_failed(case_json)
+        )
+        SELECT
+            {project_name}::text AS source_project,
+            {pool_name}::text AS source_pool,
+            {source_table}::text AS source_table,
+            source_sample_id,
+            sample_idx,
+            case_key,
+            case_idx,
+            input_json,
+            expected_json,
+            actual_json,
+            error_text,
+            CASE
+                WHEN input_json IS NULL
+                 AND expected_json IS NULL
+                 AND actual_json IS NULL
+                 AND error_text IS NULL
+                THEN case_json
+                ELSE NULL::jsonb
+            END AS failure_json
+        FROM normalized
+        """
+    ).format(
+        project_name=sql.Literal(source.project_name),
+        pool_name=sql.Literal(source.pool.source_pool),
+        source_table=sql.Literal(source.source_table),
+        validation_json=validation_json,
         table=table,
     )
 
@@ -768,13 +980,49 @@ def _create_empty_common_samples_table(
                 failure_category text,
                 budget_ok boolean,
                 actual_chars integer,
-                key_values_json jsonb,
-                request_json jsonb,
-                response_json jsonb,
-                metadata_json jsonb,
-                usage_json jsonb,
-                cost_json jsonb,
-                validation_json jsonb
+                mode text,
+                warning_count integer,
+                prompt_tokens integer,
+                completion_tokens integer,
+                reasoning_tokens integer,
+                total_tokens integer,
+                computed_total_tokens integer,
+                total_cost_usd numeric,
+                prompt_cost_usd numeric,
+                completion_cost_usd numeric,
+                reasoning_cost_usd numeric,
+                cost_currency text,
+                error_text text,
+                validation_time_seconds double precision,
+                compiles boolean,
+                compile_error text,
+                has_code_fences boolean,
+                has_expected_function boolean
+            )
+            """
+        ).format(sql.Identifier(build_table))
+    )
+
+
+def _create_empty_sample_test_failures_table(
+    conn: psycopg.Connection[Any], build_table: str
+) -> None:
+    conn.execute(
+        sql.SQL(
+            """
+            CREATE TABLE {} (
+                source_project text,
+                source_pool text,
+                source_table text,
+                source_sample_id text,
+                sample_idx integer,
+                case_key text,
+                case_idx integer,
+                input_json jsonb,
+                expected_json jsonb,
+                actual_json jsonb,
+                error_text text,
+                failure_json jsonb
             )
             """
         ).format(sql.Identifier(build_table))
@@ -820,6 +1068,36 @@ def _ensure_try_parse_jsonb_function(conn: psycopg.Connection[Any]) -> None:
         $$ LANGUAGE plpgsql IMMUTABLE;
         """
     )
+    conn.execute(
+        """
+        CREATE OR REPLACE FUNCTION pg_temp._dr_llm_test_case_failed(
+            case_json jsonb
+        )
+        RETURNS boolean AS $$
+        DECLARE
+            result_text text;
+        BEGIN
+            result_text := coalesce(
+                case_json->>'passed',
+                case_json->>'success',
+                case_json->>'ok'
+            );
+            IF result_text IS NOT NULL THEN
+                RETURN lower(result_text) IN (
+                    'false',
+                    '0',
+                    'no',
+                    'failed',
+                    'fail'
+                );
+            END IF;
+            RETURN case_json ? 'error'
+                OR case_json ? 'exception'
+                OR case_json ? 'traceback';
+        END
+        $$ LANGUAGE plpgsql IMMUTABLE;
+        """
+    )
 
 
 def _create_common_samples_indexes(
@@ -832,6 +1110,55 @@ def _create_common_samples_indexes(
         ("task_family", "task_family"),
         ("model", "model"),
         ("result_state", "result_state"),
+    ):
+        index_name = validate_pg_identifier(
+            f"{table_name}_{suffix}_idx", "index name"
+        )
+        conn.execute(
+            sql.SQL("CREATE INDEX {} ON {} ({})").format(
+                sql.Identifier(index_name),
+                sql.Identifier(table_name),
+                sql.SQL(columns),
+            )
+        )
+
+
+def _create_sample_test_failures_indexes(
+    conn: psycopg.Connection[Any], table_name: str
+) -> None:
+    for suffix, columns in (
+        ("sample", "source_project, source_pool, source_sample_id"),
+        ("source", "source_project, source_pool"),
+    ):
+        index_name = validate_pg_identifier(
+            f"{table_name}_{suffix}_idx", "index name"
+        )
+        conn.execute(
+            sql.SQL("CREATE INDEX {} ON {} ({})").format(
+                sql.Identifier(index_name),
+                sql.Identifier(table_name),
+                sql.SQL(columns),
+            )
+        )
+
+
+def _create_tasks_indexes(
+    conn: psycopg.Connection[Any], table_name: str
+) -> None:
+    primary_key_name = validate_pg_identifier(
+        f"{table_name}_pk", "constraint name"
+    )
+    conn.execute(
+        sql.SQL(
+            """
+            ALTER TABLE {} ADD CONSTRAINT {}
+            PRIMARY KEY (source_project, dataset_id, task_id)
+            """
+        ).format(sql.Identifier(table_name), sql.Identifier(primary_key_name))
+    )
+    for suffix, columns in (
+        ("family", "task_family"),
+        ("dataset", "dataset_id"),
     ):
         index_name = validate_pg_identifier(
             f"{table_name}_{suffix}_idx", "index name"
@@ -1209,30 +1536,6 @@ def _column_or_null(
     if sql_type is None:
         raise ProjectError(f"Unsupported nullable SQL type: {column_type!r}")
     return sql.SQL("NULL::{}").format(sql_type)
-
-
-def _present_columns(
-    source: PoolSource, column_names: Iterable[str]
-) -> tuple[str, ...]:
-    return tuple(
-        column_name
-        for column_name in column_names
-        if column_name in source.table_columns
-    )
-
-
-def _key_values_json_expr(column_names: Iterable[str]) -> sql.Composable:
-    parts: list[sql.Composable] = []
-    for column_name in column_names:
-        parts.extend(
-            [
-                sql.Literal(column_name),
-                sql.SQL("s.{}").format(sql.Identifier(column_name)),
-            ]
-        )
-    if not parts:
-        return sql.SQL("'{}'::jsonb")
-    return sql.SQL("jsonb_build_object({})").format(sql.SQL(", ").join(parts))
 
 
 def _json_text_expr(payload: sql.Composable, key: str) -> sql.Composed:

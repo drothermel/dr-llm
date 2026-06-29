@@ -153,6 +153,20 @@ export type PublishedSamplesResponse = {
   total_pages: number
 }
 
+export type PublishedSampleTestFailure = {
+  source_project: string
+  source_pool: string
+  source_sample_id: string
+  sample_idx: number | null
+  case_key: string | null
+  case_idx: number | null
+  input_json: unknown
+  expected_json: unknown
+  actual_json: unknown
+  error_text: string | null
+  failure_json: Record<string, unknown> | null
+}
+
 export type PublishedSampleDetail = PublishedSampleListRow & {
   source_table: string
   output_json_path: string
@@ -169,11 +183,23 @@ export type PublishedSampleDetail = PublishedSampleListRow & {
   upstream_sample_idx: number | null
   source_kind: string | null
   input_text_source: string | null
-  key_values_json: Record<string, unknown> | null
-  request_json: Record<string, unknown> | null
-  response_json: Record<string, unknown> | null
-  metadata_json: Record<string, unknown> | null
-  usage_json: Record<string, unknown> | null
-  cost_json: Record<string, unknown> | null
-  validation_json: Record<string, unknown> | null
+  mode: string | null
+  warning_count: number | null
+  prompt_tokens: number | null
+  completion_tokens: number | null
+  reasoning_tokens: number | null
+  total_tokens: number | null
+  computed_total_tokens: number | null
+  total_cost_usd: number | null
+  prompt_cost_usd: number | null
+  completion_cost_usd: number | null
+  reasoning_cost_usd: number | null
+  cost_currency: string | null
+  error_text: string | null
+  validation_time_seconds: number | null
+  compiles: boolean | null
+  compile_error: string | null
+  has_code_fences: boolean | null
+  has_expected_function: boolean | null
+  test_failures: PublishedSampleTestFailure[]
 }

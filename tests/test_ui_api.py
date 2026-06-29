@@ -410,3 +410,76 @@ def test_published_sample_detail_endpoint_returns_404(
         )
 
     assert response.status_code == 404
+
+
+def test_fetch_published_sample_includes_failed_test_cases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sample_row: dict[str, object] = {
+        "source_project": "code_comp_v0",
+        "source_pool": "direct_enc_t0",
+        "source_sample_id": "sample-1",
+        "sample_idx": 1,
+        "created_at": datetime(2026, 2, 16, 22, 26),
+        "sample_role": "encoder_description",
+        "output_kind": "text",
+        "output_json_path": "response_json.text",
+        "source_table": "pool_direct_enc_t0_samples",
+        "result_state": "failed",
+    }
+    failure_row: dict[str, object] = {
+        "source_project": "code_comp_v0",
+        "source_pool": "direct_enc_t0",
+        "source_sample_id": "sample-1",
+        "sample_idx": 1,
+        "case_idx": 0,
+        "case_key": None,
+        "input_json": {"x": 1},
+        "expected_json": {"value": 2},
+        "actual_json": {"value": 3},
+        "error_text": "assertion failed",
+        "failure_json": {"passed": False},
+    }
+
+    class FakeResult:
+        def __init__(self, rows: list[dict[str, object]]) -> None:
+            self._rows = rows
+
+        def fetchone(self) -> dict[str, object] | None:
+            return self._rows[0] if self._rows else None
+
+        def fetchall(self) -> list[dict[str, object]]:
+            return self._rows
+
+    class FakeConnection:
+        def __enter__(self) -> "FakeConnection":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def execute(self, query: str, params: list[str]) -> FakeResult:
+            _ = params
+            if ui_api.PUBLISHED_SAMPLE_TEST_FAILURES_TABLE in query:
+                return FakeResult([failure_row])
+            return FakeResult([sample_row])
+
+    monkeypatch.setattr(
+        ui_api,
+        "_published_projects",
+        lambda: ("code_comp_v0",),
+    )
+    monkeypatch.setattr(
+        ui_api,
+        "_connect_project_database",
+        lambda _project: FakeConnection(),
+    )
+
+    sample = ui_api._fetch_published_sample(
+        "code_comp_v0", "direct_enc_t0", "sample-1"
+    )
+
+    assert sample is not None
+    assert sample.test_failures == [
+        ui_api.PublishedSampleTestFailure(**failure_row)
+    ]
